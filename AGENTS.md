@@ -126,7 +126,7 @@ turbo run test
 
 - the nearest `AGENTS.md` always wins
 - this file is the repo-wide default for `unimatrix-01/`
-- the workspace-root `../AGENTS.md` governs cross-repo behavior when work touches the legacy repo too
+- if a workspace-root `../AGENTS.md` exists, it governs cross-repo behavior when work touches the legacy repo too
 - add deeper `AGENTS.md` files only when a subtree gains stable local conventions that should override this repo-wide guidance
 
 ## Architecture Rules
