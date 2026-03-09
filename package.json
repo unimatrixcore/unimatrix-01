@@ -1,0 +1,22 @@
+{
+  "name": "unimatrix-01",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Initial monorepo foundation for the Unimatrix ecosystem.",
+  "license": "MIT",
+  "packageManager": "pnpm@10.30.3",
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=10"
+  },
+  "scripts": {
+    "dev": "node -e \"console.log('No apps are scaffolded yet.')\"",
+    "build": "node -e \"console.log('No build targets are defined yet.')\"",
+    "lint": "node -e \"console.log('No lint targets are defined yet.')\"",
+    "test": "node -e \"console.log('No test targets are defined yet.')\"",
+    "typecheck": "node -e \"console.log('No typecheck targets are defined yet.')\""
+  },
+  "devDependencies": {
+    "turbo": "^2.8.14"
+  }
+}
