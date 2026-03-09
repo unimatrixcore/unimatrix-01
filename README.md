@@ -4,12 +4,20 @@ Unimatrix-01 is the future TypeScript monorepo for the broader Unimatrix ecosyst
 
 This repository is intentionally starting from a **minimal foundation state** so it can receive a clean first commit and first push without accidental app scaffolding or premature complexity.
 
+It is the active build target. If this repo is checked out beside `unimatrix-01-legacy/`, treat the legacy repo as reference material for content structure, tone, and historical context—not as the architecture to continue.
+
 ## Purpose
 
 - host the public-facing site
 - support projects, blog, docs, and notes
 - provide room for shared UI, schemas, content tooling, and client packages
 - preserve long-term monorepo boundaries from day one
+
+## Relationship to the legacy repo
+
+- `unimatrix-01/` is the future system and the only implementation target for new platform work
+- `unimatrix-01-legacy/` is a Hugo-era reference repo for migration context, information architecture, and historical content patterns
+- legacy implementation details should inform decisions only when they still fit the monorepo direction
 
 ## Current status
 
@@ -24,6 +32,17 @@ This repo currently includes only the root monorepo foundation:
 - minimal root package metadata
 
 No apps or packages are scaffolded yet on purpose.
+
+## Branch and PR workflow
+
+- use one issue branch per unit of work and keep the scope tight
+- prefer the Linear-suggested branch name when available
+- make conventional commits
+- avoid app or package scaffolding unless the issue explicitly asks for it
+- run relevant validation before requesting review
+- when opening a PR, summarize the intent clearly and end the description with `Closes LOC-<issue-key>`
+
+The root `AGENTS.md` is the repo-wide instruction file for now. Add deeper `AGENTS.md` files only when a subtree develops stable local rules that need to override the repo default.
 
 ## Planned direction
 

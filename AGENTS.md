@@ -4,6 +4,8 @@ You are working inside `unimatrix-01/`, the active Unimatrix-01 monorepo.
 
 This directory is the real future system. It is not a temporary comparison space and it is not just a redesign of the Hugo site.
 
+When this repo is checked out beside `unimatrix-01-legacy/`, treat the legacy repo as reference material only. Use it for migration context, content domains, and design instincts, but do not treat Hugo-era implementation details as the target architecture.
+
 ## Purpose
 
 Build a TypeScript monorepo foundation that can support:
@@ -110,6 +112,22 @@ turbo run build
 turbo run lint
 turbo run test
 ```
+
+## Branch and PR Workflow
+
+- use one issue branch per scoped piece of work
+- prefer the Linear-suggested branch name when available
+- keep PRs small and issue-aligned rather than bundling unrelated setup work
+- use conventional commits
+- run relevant validation before requesting review
+- end PR descriptions with `Closes LOC-<issue-key>`
+
+## AGENTS Strategy
+
+- the nearest `AGENTS.md` always wins
+- this file is the repo-wide default for `unimatrix-01/`
+- the workspace-root `../AGENTS.md` governs cross-repo behavior when work touches the legacy repo too
+- add deeper `AGENTS.md` files only when a subtree gains stable local conventions that should override this repo-wide guidance
 
 ## Architecture Rules
 
