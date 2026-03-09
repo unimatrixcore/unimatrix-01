@@ -119,6 +119,7 @@ turbo run test
 - prefer the Linear-suggested branch name when available
 - keep PRs small and issue-aligned rather than bundling unrelated setup work
 - use conventional commits
+- avoid app or package scaffolding unless the issue explicitly asks for it
 - run relevant validation before requesting review
 - end PR descriptions with `Closes LOC-<issue-key>`
 

@@ -35,12 +35,13 @@ No apps or packages are scaffolded yet on purpose.
 
 ## Branch and PR workflow
 
-- use one issue branch per unit of work and keep the scope tight
+- use one issue branch per scoped piece of work
 - prefer the Linear-suggested branch name when available
-- make conventional commits
+- keep PRs small and issue-aligned rather than bundling unrelated setup work
+- use conventional commits
 - avoid app or package scaffolding unless the issue explicitly asks for it
 - run relevant validation before requesting review
-- when opening a PR, summarize the intent clearly and end the description with `Closes LOC-<issue-key>`
+- end PR descriptions with `Closes LOC-<issue-key>`
 
 The root `AGENTS.md` is the repo-wide instruction file for now. Add deeper `AGENTS.md` files only when a subtree develops stable local rules that need to override the repo default.
 
