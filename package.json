@@ -15,5 +15,8 @@
     "lint": "node -e \"console.log('No lint targets are defined yet.')\"",
     "test": "node -e \"console.log('No test targets are defined yet.')\"",
     "typecheck": "node -e \"console.log('No typecheck targets are defined yet.')\""
+  },
+  "devDependencies": {
+    "turbo": "^2.8.14"
   }
 }
