@@ -96,6 +96,25 @@ Use the root scripts as the reproducible quality gates for all work in this repo
 
 Run `pnpm verify` before requesting review unless a scoped package or app defines a narrower command set and the PR only touches that surface area.
 
+## GitHub Actions CI
+
+GitHub Actions validates this monorepo on both issue-branch pushes and pull requests so branch-based work fails fast before review.
+
+The baseline CI workflow uses the pinned repo toolchain:
+
+- Node `22.22.1` from `.node-version`
+- pnpm `10.30.3`
+- `pnpm install --frozen-lockfile`
+
+The workflow then runs the canonical root validation commands as separate steps:
+
+- `pnpm build`
+- `pnpm lint`
+- `pnpm typecheck`
+- `pnpm test`
+
+This keeps CI aligned with the local quality gates instead of introducing a separate automation-only command surface.
+
 ## Shared config packages
 
 `packages/config-typescript` provides strict shared baselines:
