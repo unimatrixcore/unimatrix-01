@@ -128,6 +128,8 @@ The first reusable package boundaries are now explicit:
 - `@unimatrix/api-client` for typed client and transport primitives
 - `@unimatrix/content` for typed content collections, schemas, and content-loading helpers
 
+These packages currently expose explicit placeholder `test` scripts so `pnpm test` exercises the workspace contract consistently until LOC-52 adds real package-level test coverage.
+
 ## Repository shape
 
 ```text

@@ -17,6 +17,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "lint": "eslint .",
+    "test": "node -e \"console.log('No package tests are defined yet. LOC-52 will add package test coverage.')\"",
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {
