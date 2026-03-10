@@ -1,0 +1,15 @@
+{
+  "name": "@unimatrix/config-typescript",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared TypeScript baselines for the Unimatrix monorepo.",
+  "license": "MIT",
+  "files": [
+    "*.json"
+  ],
+  "exports": {
+    "./base.json": "./base.json",
+    "./library.json": "./library.json",
+    "./vite-app.json": "./vite-app.json"
+  }
+}

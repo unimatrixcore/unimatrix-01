@@ -21,17 +21,21 @@ It is the active build target. If this repo is checked out beside `unimatrix-01-
 
 ## Current status
 
-This repo currently includes only the root monorepo foundation:
+This repo currently includes the root monorepo foundation plus shared config packages and minimal usage examples:
 
 - `apps/`
 - `packages/`
 - `content/`
 - `infra/`
+- `packages/config-typescript`
+- `packages/config-eslint`
+- `packages/shared`
+- `apps/web`
 - `pnpm-workspace.yaml`
 - `turbo.json`
-- minimal root package metadata
+- root package metadata and workspace scripts
 
-No apps or packages are scaffolded yet on purpose.
+The app and package workspaces included right now are intentionally minimal and exist to prove the shared config path, not to introduce product code early.
 
 ## Branch and PR workflow
 
@@ -54,7 +58,7 @@ The root `AGENTS.md` is the repo-wide instruction file for now. Add deeper `AGEN
 
 ## Commands
 
-The root scripts are intentionally lightweight placeholders until the first real workspace packages are added.
+The root scripts now proxy workspace tasks through Turbo. The current `apps/web` workspace includes placeholder `dev` and `build` scripts so the root entrypoints stay executable before real app scaffolding lands.
 
 ```bash
 pnpm dev
@@ -64,14 +68,38 @@ pnpm test
 pnpm typecheck
 ```
 
+## Shared config packages
+
+`packages/config-typescript` provides strict shared baselines:
+
+- `base.json`
+- `library.json`
+- `vite-app.json`
+
+The defaults enforce `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitOverride`, and `isolatedModules`.
+The `library.json` preset also enables declaration-oriented library settings with `composite`, `declaration`, and `declarationMap`.
+
+`packages/config-eslint` provides flat-config helpers for typed package and app linting. Consumers pass their own `tsconfigRootDir` so type-aware linting resolves from the consuming workspace rather than the config package.
+
+Usage examples live in:
+
+- `packages/shared`
+- `apps/web`
+
+Each consumer declares the shared config packages in `devDependencies`, extends the TypeScript config in `tsconfig.json`, and imports the ESLint helper from `eslint.config.mjs`.
+
 ## Repository shape
 
 ```text
 .
 ├── apps/
+│   └── web/
 ├── content/
 ├── infra/
 ├── packages/
+│   ├── config-eslint/
+│   ├── config-typescript/
+│   └── shared/
 ├── AGENTS.md
 ├── package.json
 ├── pnpm-workspace.yaml
