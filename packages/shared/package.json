@@ -1,0 +1,16 @@
+{
+  "name": "@unimatrix/shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Example shared package consuming monorepo config packages.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@unimatrix/config-eslint": "workspace:*",
+    "@unimatrix/config-typescript": "workspace:*"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "@unimatrix/web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Minimal app manifest showing shared config consumption.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@unimatrix/config-eslint": "workspace:*",
+    "@unimatrix/config-typescript": "workspace:*"
+  }
+}

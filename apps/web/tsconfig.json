@@ -1,0 +1,4 @@
+{
+  "extends": "@unimatrix/config-typescript/vite-app.json",
+  "include": ["src/**/*.ts"]
+}
