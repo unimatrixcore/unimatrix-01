@@ -56,9 +56,23 @@ The root `AGENTS.md` is the repo-wide instruction file for now. Add deeper `AGEN
 - frontend direction: ShadCN UI, preset `aJMzyTw`, Geist Mono, zero-radius styling, Remix Icons, ADHD-accessible constraints, desktop-first UX bias
 - content direction: Git-based authored content with typed schemas and a future-safe Borg Markdown layer
 
+## Local setup
+
+Use the pinned toolchain from the repo root:
+
+```bash
+corepack enable
+corepack use pnpm@10.30.3
+pnpm install
+```
+
+The root package metadata pins `pnpm@10.30.3`, enforces Node `22.x`, provides `.node-version` pinned to `22.22.1` for local version managers, and keeps workspace dependency resolution explicit through `.npmrc`.
+
+For reproducible installs in automation or fresh clones, prefer `pnpm install --frozen-lockfile`.
+
 ## Commands
 
-The root scripts now proxy workspace tasks through Turbo. The current `apps/web` workspace includes placeholder `dev` and `build` scripts so the root entrypoints stay executable before real app scaffolding lands.
+The root scripts are the canonical workspace entrypoints and proxy tasks through Turbo. The current `apps/web` workspace keeps `dev` and `build` executable with placeholders before real app scaffolding lands, and the current `pnpm test` path exits cleanly when no workspace test tasks are present under Turbo `2.8.14`.
 
 ```bash
 pnpm dev
@@ -66,7 +80,21 @@ pnpm build
 pnpm lint
 pnpm test
 pnpm typecheck
+pnpm check
+pnpm verify
 ```
+
+## Quality gates
+
+Use the root scripts as the reproducible quality gates for all work in this repo:
+
+- `pnpm lint` for static analysis
+- `pnpm typecheck` for TypeScript validation
+- `pnpm test` for automated test suites
+- `pnpm check` for the default pre-review gate (`lint`, `typecheck`, `test`)
+- `pnpm verify` for the fuller local release gate (`build` plus `check`)
+
+Run `pnpm verify` before requesting review unless a scoped package or app defines a narrower command set and the PR only touches that surface area.
 
 ## Shared config packages
 

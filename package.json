@@ -6,15 +6,17 @@
   "license": "MIT",
   "packageManager": "pnpm@10.30.3",
   "engines": {
-    "node": ">=22",
-    "pnpm": ">=10"
+    "node": ">=22 <23",
+    "pnpm": "10.30.3"
   },
   "scripts": {
-    "dev": "turbo run dev",
+    "dev": "turbo run dev --parallel",
     "build": "turbo run build",
     "lint": "turbo run lint",
-    "test": "node -e \"console.log('No test targets are defined yet.')\"",
-    "typecheck": "turbo run typecheck"
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "check": "turbo run lint typecheck test",
+    "verify": "turbo run build lint typecheck test"
   },
   "devDependencies": {
     "eslint": "^9.36.0",
