@@ -98,7 +98,7 @@ Run `pnpm verify` before requesting review unless a scoped package or app define
 
 ## GitHub Actions CI
 
-GitHub Actions validates this monorepo on both issue-branch pushes and pull requests so branch-based work fails fast before review.
+GitHub Actions validates this monorepo on branch pushes. For this repo's same-branch PR workflow, those checks surface directly on the pull request, which avoids duplicate push and pull-request runs for the same commit.
 
 The baseline CI workflow uses the pinned repo toolchain:
 
