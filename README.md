@@ -21,7 +21,7 @@ It is the active build target. If this repo is checked out beside `unimatrix-01-
 
 ## Current status
 
-This repo currently includes the root monorepo foundation plus shared config packages and minimal usage examples:
+This repo currently includes the root monorepo foundation, shared config packages, and the first baseline shared-package boundaries:
 
 - `apps/`
 - `packages/`
@@ -30,12 +30,14 @@ This repo currently includes the root monorepo foundation plus shared config pac
 - `packages/config-typescript`
 - `packages/config-eslint`
 - `packages/shared`
+- `packages/api-client`
+- `packages/content`
 - `apps/web`
 - `pnpm-workspace.yaml`
 - `turbo.json`
 - root package metadata and workspace scripts
 
-The app and package workspaces included right now are intentionally minimal and exist to prove the shared config path, not to introduce product code early.
+The current app and package workspaces remain intentionally small, but the shared package boundaries are now in place so later web, API, and content work can extend them without restructuring.
 
 ## Branch and PR workflow
 
@@ -109,12 +111,22 @@ The `library.json` preset also enables declaration-oriented library settings wit
 
 `packages/config-eslint` provides flat-config helpers for typed package and app linting. Consumers pass their own `tsconfigRootDir` so type-aware linting resolves from the consuming workspace rather than the config package.
 
-Usage examples live in:
+Current typed consumers of the shared config path live in:
 
 - `packages/shared`
+- `packages/api-client`
+- `packages/content`
 - `apps/web`
 
 Each consumer declares the shared config packages in `devDependencies`, extends the TypeScript config in `tsconfig.json`, and imports the ESLint helper from `eslint.config.mjs`.
+
+## Shared baseline packages
+
+The first reusable package boundaries are now explicit:
+
+- `@unimatrix/shared` for shared schemas, contracts, and framework-agnostic types
+- `@unimatrix/api-client` for typed client and transport primitives
+- `@unimatrix/content` for typed content collections, schemas, and content-loading helpers
 
 ## Repository shape
 
@@ -127,7 +139,9 @@ Each consumer declares the shared config packages in `devDependencies`, extends 
 ├── packages/
 │   ├── config-eslint/
 │   ├── config-typescript/
-│   └── shared/
+│   ├── shared/
+│   ├── api-client/
+│   └── content/
 ├── AGENTS.md
 ├── package.json
 ├── pnpm-workspace.yaml
