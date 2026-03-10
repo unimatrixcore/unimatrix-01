@@ -58,8 +58,7 @@ The root `AGENTS.md` is the repo-wide instruction file for now. Add deeper `AGEN
 
 ## Commands
 
-The root scripts now proxy workspace lint and typecheck through Turbo.
-`pnpm build` is wired through Turbo as well, but remains a no-op until individual workspaces add build scripts.
+The root scripts now proxy workspace tasks through Turbo. The current `apps/web` workspace includes placeholder `dev` and `build` scripts so the root entrypoints stay executable before real app scaffolding lands.
 
 ```bash
 pnpm dev
@@ -78,6 +77,7 @@ pnpm typecheck
 - `vite-app.json`
 
 The defaults enforce `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitOverride`, and `isolatedModules`.
+The `library.json` preset also enables declaration-oriented library settings with `composite`, `declaration`, and `declarationMap`.
 
 `packages/config-eslint` provides flat-config helpers for typed package and app linting. Consumers pass their own `tsconfigRootDir` so type-aware linting resolves from the consuming workspace rather than the config package.
 

@@ -6,11 +6,15 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
+    "build": "node -e \"console.log('No app build target is scaffolded yet.')\"",
+    "dev": "node -e \"console.log('No app dev server is scaffolded yet.')\"",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {
     "@unimatrix/config-eslint": "workspace:*",
-    "@unimatrix/config-typescript": "workspace:*"
+    "@unimatrix/config-typescript": "workspace:*",
+    "eslint": "^9.36.0",
+    "typescript": "^5.9.2"
   }
 }

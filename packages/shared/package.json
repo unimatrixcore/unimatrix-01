@@ -11,6 +11,8 @@
   },
   "devDependencies": {
     "@unimatrix/config-eslint": "workspace:*",
-    "@unimatrix/config-typescript": "workspace:*"
+    "@unimatrix/config-typescript": "workspace:*",
+    "eslint": "^9.36.0",
+    "typescript": "^5.9.2"
   }
 }
