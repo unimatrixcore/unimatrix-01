@@ -59,6 +59,7 @@ The root `AGENTS.md` is the repo-wide instruction file for now. Add deeper `AGEN
 ## Commands
 
 The root scripts now proxy workspace lint and typecheck through Turbo.
+`pnpm build` is wired through Turbo as well, but remains a no-op until individual workspaces add build scripts.
 
 ```bash
 pnpm dev
