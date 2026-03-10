@@ -70,6 +70,8 @@ The root package metadata pins `pnpm@10.30.3`, enforces Node `22.x`, provides `.
 
 For reproducible installs in automation or fresh clones, prefer `pnpm install --frozen-lockfile`.
 
+For reproducible installs in automation or fresh clones, prefer `pnpm install --frozen-lockfile`.
+
 ## Commands
 
 The root scripts are the canonical workspace entrypoints and proxy tasks through Turbo. The current `apps/web` workspace keeps `dev` and `build` executable with placeholders before real app scaffolding lands, and the current `pnpm test` path exits cleanly when no workspace test tasks are present under Turbo `2.8.14`.
