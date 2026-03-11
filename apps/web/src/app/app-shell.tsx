@@ -20,6 +20,7 @@ export function AppShell({ children }: AppShellProps) {
         </div>
         <nav aria-label="Scaffold navigation" className="shell-nav">
           <Link
+            activeOptions={{ exact: true }}
             activeProps={{ className: "nav-link nav-link-active" }}
             className="nav-link"
             to="/"

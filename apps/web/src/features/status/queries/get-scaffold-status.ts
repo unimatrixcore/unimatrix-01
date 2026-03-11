@@ -9,7 +9,7 @@ export type ScaffoldStatus = {
 
 async function getScaffoldStatus(): Promise<ScaffoldStatus> {
   await new Promise((resolve) => {
-    window.setTimeout(resolve, 80);
+    setTimeout(resolve, 80);
   });
 
   return {
@@ -24,5 +24,6 @@ export function scaffoldStatusQueryOptions() {
   return queryOptions({
     queryFn: getScaffoldStatus,
     queryKey: ["scaffold-status"],
+    staleTime: 1000 * 60,
   });
 }
