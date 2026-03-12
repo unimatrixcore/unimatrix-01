@@ -73,6 +73,20 @@ The root package metadata pins `pnpm@10.30.3`, enforces Node `22.x`, provides `.
 
 For reproducible installs in automation or fresh clones, prefer `pnpm install --frozen-lockfile`.
 
+## Agent and Automation Validation
+
+Repo support remains pinned to Node `22.22.1` and pnpm `10.30.3`. CI already reads `.node-version` directly and runs on that supported toolchain without any wrapper.
+
+If an agent or automation host is running a different Node major, do not treat that as expanded repo support. Use the checked-in bootstrap wrapper to enter the same Node 22 + pinned pnpm toolchain before running the canonical root commands:
+
+```bash
+./infra/scripts/pnpm-with-node22.sh install --frozen-lockfile
+./infra/scripts/pnpm-with-node22.sh check
+./infra/scripts/pnpm-with-node22.sh verify
+```
+
+This wrapper is only a bootstrap path for unsupported host runtimes such as Node 25 automation environments. Human local setup remains the standard Node 22 path above.
+
 ## Commands
 
 The root scripts are the canonical workspace entrypoints and proxy tasks through Turbo. `apps/web` now exposes real Vite `dev`, `build`, `preview`, `lint`, `test`, and `typecheck` commands, `apps/api` provides its Fastify `dev`, `build`, `start`, `lint`, and `typecheck` commands, and the current `pnpm test` path still exits cleanly while placeholder test scripts remain in place for workspaces that LOC-52 has not covered yet.
