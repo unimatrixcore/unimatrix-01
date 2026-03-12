@@ -21,7 +21,7 @@ It is the active build target. If this repo is checked out beside `unimatrix-01-
 
 ## Current status
 
-This repo currently includes the root monorepo foundation, shared config packages, and the first baseline shared-package boundaries:
+This repo currently includes the root monorepo foundation, shared config packages, the first baseline shared-package boundaries, and runnable shell workspaces for both web and API:
 
 - `apps/`
 - `packages/`
@@ -33,11 +33,12 @@ This repo currently includes the root monorepo foundation, shared config package
 - `packages/api-client`
 - `packages/content`
 - `apps/web`
+- `apps/api`
 - `pnpm-workspace.yaml`
 - `turbo.json`
 - root package metadata and workspace scripts
 
-The current app and package workspaces remain intentionally small, but `apps/web` now includes a runnable Vite + React scaffold shell and the shared package boundaries are in place so later web, API, and content work can extend them without restructuring.
+The current app and package workspaces remain intentionally small, but `apps/web` now includes a runnable Vite + React scaffold shell, `apps/api` provides a minimal Fastify shell, and the shared package boundaries are in place so later web, API, and content work can extend them without restructuring.
 
 ## Branch and PR workflow
 
@@ -74,7 +75,7 @@ For reproducible installs in automation or fresh clones, prefer `pnpm install --
 
 ## Commands
 
-The root scripts are the canonical workspace entrypoints and proxy tasks through Turbo. The `apps/web` workspace now exposes real Vite `dev`, `build`, `preview`, `lint`, and `typecheck` commands, while its test harness remains intentionally deferred to LOC-52. The current `pnpm test` path still exits cleanly when workspace test tasks are placeholder scripts under Turbo `2.8.14`.
+The root scripts are the canonical workspace entrypoints and proxy tasks through Turbo. `apps/web` now exposes real Vite `dev`, `build`, `preview`, `lint`, `test`, and `typecheck` commands, `apps/api` provides its Fastify `dev`, `build`, `start`, `lint`, and `typecheck` commands, and the current `pnpm test` path still exits cleanly while placeholder test scripts remain in place for workspaces that LOC-52 has not covered yet.
 
 ```bash
 pnpm dev
@@ -84,6 +85,7 @@ pnpm test
 pnpm typecheck
 pnpm check
 pnpm verify
+pnpm --filter @unimatrix/api dev
 ```
 
 ## Quality gates
@@ -136,6 +138,7 @@ Current typed consumers of the shared config path live in:
 - `packages/api-client`
 - `packages/content`
 - `apps/web`
+- `apps/api`
 
 Each consumer declares the shared config packages in `devDependencies`, extends the TypeScript config in `tsconfig.json`, and imports the ESLint helper from `eslint.config.mjs`.
 
@@ -154,6 +157,7 @@ These packages currently expose explicit placeholder `test` scripts so `pnpm tes
 ```text
 .
 ├── apps/
+│   ├── api/
 │   └── web/
 ├── content/
 ├── infra/
