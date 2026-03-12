@@ -26,6 +26,7 @@
     "vite": "^7.3.1"
   },
   "dependencies": {
+    "@remixicon/react": "^4.9.0",
     "@tanstack/react-query": "^5.90.21",
     "@tanstack/react-router": "^1.166.6",
     "react": "^19.2.4",
