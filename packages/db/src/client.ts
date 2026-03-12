@@ -19,11 +19,9 @@ export interface DatabaseInstance {
   db: BetterSQLite3Database<typeof schema>;
 }
 
-export function createSqliteClient(
-  overrides: Partial<DatabaseConfig> = {},
+function createSqliteClientFromConfig(
+  config: DatabaseConfig,
 ): BetterSqlite3.Database {
-  const config = resolveDatabaseConfig(overrides);
-
   if (config.filePath !== ":memory:") {
     mkdirSync(dirname(config.filePath), {
       recursive: true,
@@ -38,11 +36,19 @@ export function createSqliteClient(
   return client;
 }
 
+export function createSqliteClient(
+  overrides: Partial<DatabaseConfig> = {},
+): BetterSqlite3.Database {
+  const config = resolveDatabaseConfig(overrides);
+
+  return createSqliteClientFromConfig(config);
+}
+
 export function createDatabase(
   overrides: Partial<DatabaseConfig> = {},
 ): DatabaseInstance {
   const config = resolveDatabaseConfig(overrides);
-  const client = createSqliteClient(config);
+  const client = createSqliteClientFromConfig(config);
   const db = drizzle({ client, schema });
 
   return {

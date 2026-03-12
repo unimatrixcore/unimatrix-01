@@ -1,16 +1,13 @@
-import { fileURLToPath } from "node:url";
-
 import { defineConfig } from "drizzle-kit";
 
-const DEFAULT_SQLITE_DATABASE_FILE_PATH = fileURLToPath(
-  new URL("./local/unimatrix.sqlite", import.meta.url),
-);
+import { resolveDatabaseConfig } from "./src/config";
 
 export default defineConfig({
+  breakpoints: true,
   dialect: "sqlite",
-  schema: "./src/schema/system-settings.ts",
+  schema: "./src/schema/index.ts",
   out: "./drizzle",
   dbCredentials: {
-    url: process.env.DATABASE_URL || DEFAULT_SQLITE_DATABASE_FILE_PATH,
+    url: resolveDatabaseConfig().filePath,
   },
 });

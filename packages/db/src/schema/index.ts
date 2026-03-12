@@ -1,1 +1,1 @@
-export * from "./system-settings.js";
+export * from "./system-settings.ts";
