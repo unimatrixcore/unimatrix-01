@@ -15,10 +15,6 @@
       "default": "./src/index.ts"
     }
   },
-  "peerDependencies": {
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4"
-  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "lint": "eslint .",
