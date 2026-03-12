@@ -86,6 +86,7 @@ If an agent or automation host is running a different Node major, do not treat t
 ```
 
 This wrapper is only a bootstrap path for unsupported host runtimes such as Node 25 automation environments. Human local setup remains the standard Node 22 path above.
+When the host already has local Node `22.x` and pnpm `10.30.3` active, the wrapper takes a fast path and reuses that local toolchain instead of bootstrapping `22.22.1` again.
 
 ## Commands
 

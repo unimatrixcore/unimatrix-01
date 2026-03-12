@@ -24,7 +24,7 @@ if command -v pnpm >/dev/null 2>&1; then
 fi
 
 if [ "${node_major}" = "22" ] && [ "${pnpm_version}" = "10.30.3" ]; then
-  echo "pnpm-with-node22: using local Node 22 and pnpm 10.30.3" >&2
+  echo "pnpm-with-node22: using local Node 22.x and pnpm 10.30.3" >&2
   cd "${repo_root}"
   exec pnpm "$@"
 fi
