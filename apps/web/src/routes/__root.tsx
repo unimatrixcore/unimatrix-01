@@ -1,8 +1,13 @@
-import { Outlet, createRootRouteWithContext } from "@tanstack/react-router";
+import {
+  Link,
+  Outlet,
+  createRootRouteWithContext,
+} from "@tanstack/react-router";
+import { RiAlertLine } from "@remixicon/react";
 
+import { Badge, Button, Card } from "@unimatrix/ui";
 import { AppShell } from "@/app/app-shell";
 import type { AppRouterContext } from "@/app/router";
-import { Surface } from "@/components/surface";
 
 export const Route = createRootRouteWithContext<AppRouterContext>()({
   component: RootComponent,
@@ -19,12 +24,25 @@ function RootComponent() {
 
 function RootNotFound() {
   return (
-    <Surface>
-      <p className="eyebrow">Not found</p>
-      <h2>Unknown route</h2>
-      <p className="body-copy">
-        This scaffold only defines the overview and status routes right now.
-      </p>
-    </Surface>
+    <Card className="border-border/60 bg-card/94 shadow-[0_18px_60px_-36px_color-mix(in_oklab,var(--foreground)_22%,transparent)]">
+      <div className="space-y-4 px-6">
+        <Badge variant="destructive" className="gap-1.5">
+          <RiAlertLine aria-hidden="true" className="size-3.5" />
+          Not found
+        </Badge>
+        <div className="space-y-3">
+          <h2 className="text-2xl leading-tight font-medium tracking-tight">
+            This scaffold only defines the overview and status routes right now.
+          </h2>
+          <p className="max-w-2xl text-sm leading-7 text-muted-foreground lg:text-base">
+            LOC-38 keeps the route count unchanged, so unknown paths still land
+            on the root not-found surface.
+          </p>
+        </div>
+        <Button asChild className="w-fit">
+          <Link to="/">Return to overview</Link>
+        </Button>
+      </div>
+    </Card>
   );
 }

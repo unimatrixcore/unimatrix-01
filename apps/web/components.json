@@ -1,0 +1,24 @@
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "radix-vega",
+  "rsc": false,
+  "tsx": true,
+  "tailwind": {
+    "config": "",
+    "css": "src/styles.css",
+    "baseColor": "neutral",
+    "cssVariables": true,
+    "prefix": ""
+  },
+  "iconLibrary": "remixicon",
+  "aliases": {
+    "components": "../../packages/ui/src/components",
+    "ui": "../../packages/ui/src/components/ui",
+    "utils": "../../packages/ui/src/lib/utils",
+    "lib": "@/lib",
+    "hooks": "@/hooks"
+  },
+  "rtl": false,
+  "menuColor": "default",
+  "menuAccent": "bold"
+}
