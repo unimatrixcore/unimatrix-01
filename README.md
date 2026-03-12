@@ -37,7 +37,7 @@ This repo currently includes the root monorepo foundation, shared config package
 - `turbo.json`
 - root package metadata and workspace scripts
 
-The current app and package workspaces remain intentionally small, but the shared package boundaries are now in place so later web, API, and content work can extend them without restructuring.
+The current app and package workspaces remain intentionally small, but `apps/web` now includes a runnable Vite + React scaffold shell and the shared package boundaries are in place so later web, API, and content work can extend them without restructuring.
 
 ## Branch and PR workflow
 
@@ -74,7 +74,7 @@ For reproducible installs in automation or fresh clones, prefer `pnpm install --
 
 ## Commands
 
-The root scripts are the canonical workspace entrypoints and proxy tasks through Turbo. The current `apps/web` workspace keeps `dev` and `build` executable with placeholders before real app scaffolding lands, and the current `pnpm test` path exits cleanly when no workspace test tasks are present under Turbo `2.8.14`.
+The root scripts are the canonical workspace entrypoints and proxy tasks through Turbo. The `apps/web` workspace now exposes real Vite `dev`, `build`, `preview`, `lint`, and `typecheck` commands, while its test harness remains intentionally deferred to LOC-52. The current `pnpm test` path still exits cleanly when workspace test tasks are placeholder scripts under Turbo `2.8.14`.
 
 ```bash
 pnpm dev
