@@ -1,11 +1,9 @@
 import type { FastifyError } from "fastify";
-import {
-  hasZodFastifySchemaValidationErrors,
-  isResponseSerializationError,
-} from "fastify-type-provider-zod";
+import { hasZodFastifySchemaValidationErrors } from "fastify-type-provider-zod";
 
 export type ApiErrorCode =
   | "VALIDATION_ERROR"
+  | "CLIENT_ERROR"
   | "NOT_FOUND"
   | "INTERNAL_ERROR";
 
@@ -102,6 +100,19 @@ export function createNotFoundErrorEnvelope(requestId: string): ApiErrorEnvelope
   });
 }
 
+function createClientErrorEnvelope(
+  requestId: string,
+  statusCode: number,
+  message: string,
+): ApiErrorEnvelope {
+  return createApiErrorEnvelope({
+    requestId,
+    code: "CLIENT_ERROR",
+    message,
+    statusCode,
+  });
+}
+
 export function normalizeError(
   error: unknown,
   requestId: string,
@@ -151,24 +162,15 @@ export function normalizeError(
     };
   }
 
-  if (fastifyStatusCode !== undefined && fastifyStatusCode < 500) {
+  if (isClientErrorStatusCode(fastifyStatusCode)) {
     return {
-      statusCode: 400,
-      envelope: createApiErrorEnvelope({
+      statusCode: fastifyStatusCode,
+      envelope: createClientErrorEnvelope(
         requestId,
-        code: "VALIDATION_ERROR",
-        message: "Request validation failed",
-        statusCode: 400,
-      }),
+        fastifyStatusCode,
+        getFastifyErrorMessage(error),
+      ),
       logLevel: "warn",
-    };
-  }
-
-  if (isResponseSerializationError(error)) {
-    return {
-      statusCode: 500,
-      envelope: createInternalErrorEnvelope(requestId),
-      logLevel: "error",
     };
   }
 
@@ -232,6 +234,24 @@ function getFastifyStatusCode(error: unknown): number | undefined {
   const { statusCode } = error as FastifyError;
 
   return typeof statusCode === "number" ? statusCode : undefined;
+}
+
+function getFastifyErrorMessage(error: unknown): string {
+  if (typeof error !== "object" || error === null || !("message" in error)) {
+    return "Request failed";
+  }
+
+  const { message } = error as FastifyError;
+
+  return typeof message === "string" && message.length > 0
+    ? message
+    : "Request failed";
+}
+
+function isClientErrorStatusCode(
+  statusCode: number | undefined,
+): statusCode is number {
+  return typeof statusCode === "number" && statusCode >= 400 && statusCode < 500;
 }
 
 function getLogLevelForStatusCode(statusCode: number): ApiErrorLogLevel {

@@ -1,9 +1,7 @@
-import type { FastifyPluginAsync } from "fastify";
+import type { FastifyInstance } from "fastify";
 
 import { setupHttpValidation } from "../lib/http/validation.js";
 
-export const registerCorePlugins: FastifyPluginAsync = (app) => {
+export function setupCorePlugins(app: FastifyInstance): void {
   setupHttpValidation(app);
-
-  return Promise.resolve();
-};
+}
