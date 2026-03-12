@@ -14,7 +14,7 @@ export function loadApiRuntimeConfig(): ApiRuntimeConfig {
   return {
     host: process.env.HOST || DEFAULT_HOST,
     port:
-      Number.isInteger(parsedPort) && parsedPort > 0
+      Number.isInteger(parsedPort) && parsedPort >= 0
         ? parsedPort
         : DEFAULT_PORT,
     nodeEnv: process.env.NODE_ENV || DEFAULT_NODE_ENV,

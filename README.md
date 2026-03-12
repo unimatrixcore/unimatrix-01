@@ -21,7 +21,7 @@ It is the active build target. If this repo is checked out beside `unimatrix-01-
 
 ## Current status
 
-This repo currently includes the root monorepo foundation, shared config packages, the first baseline shared-package boundaries, and minimal app shells for both web and API:
+This repo currently includes the root monorepo foundation, shared config packages, the first baseline shared-package boundaries, and runnable shell workspaces for both web and API:
 
 - `apps/`
 - `packages/`
@@ -38,7 +38,7 @@ This repo currently includes the root monorepo foundation, shared config package
 - `turbo.json`
 - root package metadata and workspace scripts
 
-The current app and package workspaces remain intentionally small, but the shared package boundaries and app shells are now in place so later web, API, and content work can extend them without restructuring.
+The current app and package workspaces remain intentionally small, but `apps/web` now includes a runnable Vite + React scaffold shell, `apps/api` provides a minimal Fastify shell, and the shared package boundaries are in place so later web, API, and content work can extend them without restructuring.
 
 ## Branch and PR workflow
 
@@ -75,7 +75,7 @@ For reproducible installs in automation or fresh clones, prefer `pnpm install --
 
 ## Commands
 
-The root scripts are the canonical workspace entrypoints and proxy tasks through Turbo. The current `apps/web` workspace keeps `dev` and `build` executable with placeholders before real app scaffolding lands, `apps/api` provides a runnable Fastify shell, and the current `pnpm test` path exits cleanly when no workspace test tasks are present under Turbo `2.8.14`.
+The root scripts are the canonical workspace entrypoints and proxy tasks through Turbo. `apps/web` now exposes real Vite `dev`, `build`, `preview`, `lint`, `test`, and `typecheck` commands, `apps/api` provides its Fastify `dev`, `build`, `start`, `lint`, and `typecheck` commands, and the current `pnpm test` path still exits cleanly while placeholder test scripts remain in place for workspaces that LOC-52 has not covered yet.
 
 ```bash
 pnpm dev
