@@ -32,6 +32,7 @@ This repo currently includes the root monorepo foundation, shared config package
 - `packages/shared`
 - `packages/api-client`
 - `packages/content`
+- `packages/db`
 - `apps/web`
 - `apps/api`
 - `pnpm-workspace.yaml`
@@ -164,8 +165,9 @@ The first reusable package boundaries are now explicit:
 - `@unimatrix/shared` for shared schemas, contracts, and framework-agnostic types
 - `@unimatrix/api-client` for typed client and transport primitives
 - `@unimatrix/content` for typed content collections, schemas, and content-loading helpers
+- `@unimatrix/db` for Drizzle ORM, SQLite configuration, and migration tooling
 
-These packages currently expose explicit placeholder `test` scripts so `pnpm test` exercises the workspace contract consistently until LOC-52 adds real package-level test coverage.
+Most of these packages currently expose explicit placeholder `test` scripts so `pnpm test` exercises the workspace contract consistently until LOC-52 adds broader package-level test coverage. `@unimatrix/db` now includes a real SQLite smoke test plus migration scripts for the local persistence baseline.
 
 ## Repository shape
 
@@ -181,7 +183,8 @@ These packages currently expose explicit placeholder `test` scripts so `pnpm tes
 │   ├── config-typescript/
 │   ├── shared/
 │   ├── api-client/
-│   └── content/
+│   ├── content/
+│   └── db/
 ├── AGENTS.md
 ├── package.json
 ├── pnpm-workspace.yaml

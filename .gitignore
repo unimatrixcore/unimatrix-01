@@ -23,6 +23,12 @@ coverage/
 .env.local
 .env.*.local
 
+# local sqlite files
+packages/db/local/*.sqlite
+packages/db/local/*.sqlite-shm
+packages/db/local/*.sqlite-wal
+packages/db/local/*.sqlite-journal
+
 # editor and OS files
 .DS_Store
 Thumbs.db
