@@ -73,7 +73,9 @@ export function buildApp(config: ApiRuntimeConfig): FastifyInstance {
           method: request.method,
           url: request.url,
         },
-        "request failed",
+        normalizedError.envelope.error.code === "NOT_FOUND"
+          ? "route not found"
+          : "request completed with client error",
       );
     }
 
