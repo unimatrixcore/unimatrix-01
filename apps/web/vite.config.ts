@@ -19,6 +19,9 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
+      "@unimatrix/ui": fileURLToPath(
+        new URL("../../packages/ui/src/index.ts", import.meta.url),
+      ),
       react: fileURLToPath(new URL("./node_modules/react", import.meta.url)),
     },
     dedupe: ["react", "react-dom"],
