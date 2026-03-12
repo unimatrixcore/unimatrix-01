@@ -12,11 +12,11 @@
   },
   "iconLibrary": "remixicon",
   "aliases": {
-    "components": "@unimatrix/ui/components",
-    "ui": "@unimatrix/ui/components/ui",
-    "utils": "@unimatrix/ui/lib/utils",
-    "lib": "@unimatrix/ui/lib",
-    "hooks": "@unimatrix/ui/hooks"
+    "components": "src/components",
+    "ui": "src/components/ui",
+    "utils": "src/lib/utils",
+    "lib": "src/lib",
+    "hooks": "src/hooks"
   },
   "rtl": false,
   "menuColor": "default",

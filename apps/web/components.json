@@ -12,9 +12,9 @@
   },
   "iconLibrary": "remixicon",
   "aliases": {
-    "components": "@unimatrix/ui/components",
-    "ui": "@unimatrix/ui/components/ui",
-    "utils": "@unimatrix/ui/lib/utils",
+    "components": "../../packages/ui/src/components",
+    "ui": "../../packages/ui/src/components/ui",
+    "utils": "../../packages/ui/src/lib/utils",
     "lib": "@/lib",
     "hooks": "@/hooks"
   },

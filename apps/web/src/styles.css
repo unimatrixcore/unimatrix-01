@@ -1,13 +1,11 @@
+@import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist-mono";
 
+@source "../../../packages/ui/src/**/*.{ts,tsx}";
+
 :root {
-  color: #101828;
-  background: linear-gradient(180deg, #f4f7fb 0%, #e9eef5 100%);
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
   --background: oklch(1 0 0);
   --foreground: oklch(0.141 0.005 285.823);
   --card: oklch(1 0 0);
@@ -43,140 +41,6 @@
 }
 
 @custom-variant dark (&:is(.dark *));
-
-* {
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-  min-height: 100vh;
-}
-
-a {
-  color: inherit;
-}
-
-#app {
-  min-height: 100vh;
-}
-
-.app-shell {
-  min-height: 100vh;
-  padding: 2rem;
-}
-
-.shell-header,
-.surface {
-  border: 1px solid #c7d2e0;
-  background: rgba(255, 255, 255, 0.88);
-  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.08);
-}
-
-.shell-header {
-  display: grid;
-  gap: 1.5rem;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  padding: 1.5rem;
-}
-
-.shell-copy h1,
-.surface h2 {
-  margin: 0 0 0.75rem;
-}
-
-.lede,
-.body-copy {
-  margin: 0;
-  max-width: 66ch;
-  color: #344054;
-}
-
-.eyebrow {
-  margin: 0 0 0.75rem;
-  color: #475467;
-  font-size: 0.85rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.shell-nav {
-  display: flex;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-
-.nav-link {
-  display: inline-flex;
-  align-items: center;
-  min-height: 2.75rem;
-  padding: 0 1rem;
-  border: 1px solid #c7d2e0;
-  background: #f8fafc;
-  text-decoration: none;
-}
-
-.nav-link:hover,
-.nav-link-active {
-  background: #101828;
-  border-color: #101828;
-  color: #f8fafc;
-}
-
-.shell-content,
-.route-stack {
-  display: grid;
-  gap: 1rem;
-}
-
-.shell-content {
-  margin-top: 1rem;
-}
-
-.surface {
-  padding: 1.5rem;
-}
-
-.detail-list {
-  margin: 0 0 1rem;
-  padding-left: 1.25rem;
-  color: #344054;
-}
-
-.status-grid {
-  display: grid;
-  gap: 1rem;
-  margin: 0 0 1rem;
-}
-
-.status-grid div {
-  padding-bottom: 1rem;
-  border-bottom: 1px solid #d0d5dd;
-}
-
-.status-grid dt {
-  color: #475467;
-  font-size: 0.85rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.status-grid dd {
-  margin: 0.35rem 0 0;
-}
-
-@media (max-width: 900px) {
-  .app-shell {
-    padding: 1rem;
-  }
-
-  .shell-header {
-    grid-template-columns: 1fr;
-  }
-}
 
 .dark {
   --background: oklch(0.141 0.005 285.823);
@@ -251,14 +115,43 @@ a {
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
-  --font-mono: 'Geist Mono Variable', monospace;
+  --font-mono: "Geist Mono Variable", monospace;
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
+
+  html {
+    @apply min-h-full scroll-smooth;
+  }
+
   body {
-    @apply bg-background text-foreground;
+    @apply min-h-screen bg-background text-foreground antialiased;
+    background-image:
+      radial-gradient(
+        circle at top,
+        color-mix(in oklab, var(--primary) 12%, transparent) 0%,
+        transparent 48%
+      ),
+      linear-gradient(
+        180deg,
+        color-mix(in oklab, var(--background) 96%, white) 0%,
+        color-mix(in oklab, var(--background) 88%, var(--secondary)) 100%
+      );
+    font-family: var(--font-mono);
+  }
+
+  a {
+    @apply text-inherit no-underline;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--primary) 26%, transparent);
+  }
+
+  #app {
+    @apply min-h-screen;
   }
 }
