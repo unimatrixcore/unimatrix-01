@@ -1,9 +1,9 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyPluginAsync } from "fastify";
 
 import { healthModule } from "./health/index.js";
 
-export function registerModules(app: FastifyInstance): Promise<void> {
+export const registerModules: FastifyPluginAsync = (app) => {
   app.register(healthModule);
 
   return Promise.resolve();
-}
+};
