@@ -1,22 +1,25 @@
 import { queryOptions } from "@tanstack/react-query";
 
-export type ScaffoldStatus = {
+import { apiClient } from "@/lib/api-client";
+
+type HealthStatus = Awaited<ReturnType<typeof apiClient.getHealth>>;
+
+export interface ScaffoldStatus extends HealthStatus {
   checkedAt: string;
-  mode: string;
-  queryStatus: string;
+  clientStatus: string;
   routerStatus: string;
-};
+}
 
 async function getScaffoldStatus(): Promise<ScaffoldStatus> {
-  await new Promise((resolve) => {
-    setTimeout(resolve, 80);
-  });
+  const health = await apiClient.getHealth();
 
   return {
     checkedAt: new Date().toLocaleTimeString(),
-    mode: import.meta.env.MODE,
-    queryStatus: "QueryClientProvider is active and route data can be prefetched.",
+    clientStatus:
+      "GET /health is fetched through @unimatrix/api-client and parsed with the shared contract.",
     routerStatus: "TanStack Router file-based routing is active.",
+    service: health.service,
+    status: health.status,
   };
 }
 

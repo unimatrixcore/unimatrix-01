@@ -16,9 +16,24 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  server: {
+    proxy: {
+      "/api": {
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ""),
+        target: "http://127.0.0.1:3001",
+      },
+    },
+  },
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
+      "@unimatrix/api-client": fileURLToPath(
+        new URL("../../packages/api-client/src/index.ts", import.meta.url),
+      ),
+      "@unimatrix/shared": fileURLToPath(
+        new URL("../../packages/shared/src/index.ts", import.meta.url),
+      ),
       "@unimatrix/ui": fileURLToPath(
         new URL("../../packages/ui/src/index.ts", import.meta.url),
       ),
