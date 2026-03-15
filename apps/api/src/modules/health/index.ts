@@ -1,27 +1,24 @@
 import type { FastifyPluginAsync } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
-import { z } from "zod";
+import {
+  healthContract,
+  healthQuerySchema,
+  type HealthResponse,
+} from "@unimatrix/shared";
 
-const healthQuerystringSchema = z.strictObject({});
-
-const healthResponseSchema = z.object({
-  service: z.literal("api"),
-  status: z.literal("ok"),
-});
-
-const healthResponse = {
+const healthResponse: HealthResponse = {
   service: "api",
   status: "ok",
-} as const;
+};
 
 export const healthModule: FastifyPluginAsync = (app) => {
   app.withTypeProvider<ZodTypeProvider>().route({
-    method: "GET",
-    url: "/health",
+    method: healthContract.method,
+    url: healthContract.path,
     schema: {
-      querystring: healthQuerystringSchema,
+      querystring: healthQuerySchema,
       response: {
-        200: healthResponseSchema,
+        200: healthContract.responseSchema,
       },
     },
     handler: () => healthResponse,

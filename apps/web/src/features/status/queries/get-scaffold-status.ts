@@ -1,23 +1,46 @@
 import { queryOptions } from "@tanstack/react-query";
 
-export type ScaffoldStatus = {
+import { apiClient } from "@/lib/api-client";
+
+const ROUTER_STATUS_MESSAGE = "TanStack Router file-based routing is active.";
+const SUCCESS_CLIENT_STATUS_MESSAGE =
+  "GET /health is fetched through @unimatrix/api-client and parsed with the shared contract.";
+const FALLBACK_SERVICE = "api";
+const FALLBACK_STATUS = "unavailable";
+
+export interface ScaffoldStatus {
   checkedAt: string;
-  mode: string;
-  queryStatus: string;
+  clientStatus: string;
   routerStatus: string;
-};
+  service: string;
+  status: string;
+}
 
 async function getScaffoldStatus(): Promise<ScaffoldStatus> {
-  await new Promise((resolve) => {
-    setTimeout(resolve, 80);
-  });
+  const checkedAt = new Date().toLocaleTimeString();
 
-  return {
-    checkedAt: new Date().toLocaleTimeString(),
-    mode: import.meta.env.MODE,
-    queryStatus: "QueryClientProvider is active and route data can be prefetched.",
-    routerStatus: "TanStack Router file-based routing is active.",
-  };
+  try {
+    const health = await apiClient.getHealth();
+
+    return {
+      checkedAt,
+      clientStatus: SUCCESS_CLIENT_STATUS_MESSAGE,
+      routerStatus: ROUTER_STATUS_MESSAGE,
+      service: health.service,
+      status: health.status,
+    };
+  } catch (error) {
+    return {
+      checkedAt,
+      clientStatus:
+        error instanceof Error
+          ? `GET /health could not be loaded: ${error.message}`
+          : "GET /health could not be loaded.",
+      routerStatus: ROUTER_STATUS_MESSAGE,
+      service: FALLBACK_SERVICE,
+      status: FALLBACK_STATUS,
+    };
+  }
 }
 
 export function scaffoldStatusQueryOptions() {

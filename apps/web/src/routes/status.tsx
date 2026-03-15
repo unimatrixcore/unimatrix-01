@@ -27,13 +27,18 @@ function StatusRoute() {
     },
     {
       icon: RiServerLine,
-      label: "Query",
-      value: data?.queryStatus ?? "Loading query state...",
+      label: "Client",
+      value: data?.clientStatus ?? "Loading shared contract status...",
     },
     {
       icon: RiPulseLine,
-      label: "Mode",
-      value: data?.mode ?? "Resolving environment...",
+      label: "Service",
+      value: data?.service ?? "Waiting for API response...",
+    },
+    {
+      icon: RiTimer2Line,
+      label: "Status",
+      value: data?.status ?? "Waiting for API response...",
     },
     {
       icon: RiTimer2Line,
@@ -53,7 +58,7 @@ function StatusRoute() {
                 Status route
               </Badge>
               <h2 className="text-2xl leading-tight font-medium tracking-tight">
-                Router and query providers are active in the shared shell.
+                The shared API contract baseline is now wired through the web shell.
               </h2>
             </div>
             <Badge
@@ -69,14 +74,14 @@ function StatusRoute() {
           </div>
 
           <p className="max-w-3xl text-sm leading-7 text-muted-foreground lg:text-base">
-            This route still uses a local async query plus a route loader that
-            prefetches into the shared `QueryClient`. LOC-38 only changes the
-            visual system and shared primitive plumbing around that behavior.
+            The route loader still prefetches into the shared `QueryClient`, but
+            the data now comes from `@unimatrix/api-client` parsing the shared
+            `GET /health` contract exported by `@unimatrix/shared`.
           </p>
 
           <Separator />
 
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
             {statusCards.map(({ icon: Icon, label, value }) => (
               <Card
                 key={label}
