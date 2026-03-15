@@ -70,6 +70,12 @@ function validateApiBaseUrl(value: string | undefined): string {
   );
 
   if (apiBaseUrl.startsWith("/")) {
+    if (apiBaseUrl.startsWith("//")) {
+      throw createWebConfigError(
+        "VITE_API_BASE_URL must be a site-relative path beginning with a single / or a valid http:// or https:// URL.",
+      );
+    }
+
     return apiBaseUrl;
   }
 
@@ -82,9 +88,7 @@ export function loadWebRuntimeConfig(env: WebRuntimeEnv): WebRuntimeConfig {
   };
 }
 
-export function loadWebDevProxyConfig(
-  env: WebDevProxyEnv = process.env,
-): WebDevProxyConfig {
+export function loadWebDevProxyConfig(env: WebDevProxyEnv): WebDevProxyConfig {
   return {
     apiProxyTarget: validateHttpUrl(
       "VITE_API_TARGET",

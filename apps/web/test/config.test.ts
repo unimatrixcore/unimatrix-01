@@ -30,6 +30,11 @@ void test("loadWebRuntimeConfig rejects unsupported api base url values", () => 
     () => loadWebRuntimeConfig({ VITE_API_BASE_URL: "api" }),
     /must be a valid http:\/\/ or https:\/\/ URL/,
   );
+
+  assert.throws(
+    () => loadWebRuntimeConfig({ VITE_API_BASE_URL: "//example.test" }),
+    /site-relative path beginning with a single \/ or a valid http:\/\/ or https:\/\/ URL/,
+  );
 });
 
 void test("loadWebDevProxyConfig uses the documented default target", () => {

@@ -88,6 +88,8 @@ cp apps/api/.env.example apps/api/.env
 cp apps/web/.env.example apps/web/.env
 ```
 
+Vite reads `apps/web/.env*` automatically for local development, so `VITE_API_BASE_URL` and `VITE_API_TARGET` can be configured there. The API entrypoints do **not** currently auto-load `apps/api/.env`, so treat that file as a documented template unless you explicitly source it or use a process manager / loader that exports those values into `process.env` before starting the API.
+
 ### `apps/api`
 
 | Variable | Required | Default | Notes |
@@ -100,7 +102,7 @@ cp apps/web/.env.example apps/web/.env
 
 | Variable | Required | Default | Notes |
 | --- | --- | --- | --- |
-| `VITE_API_BASE_URL` | no | `/api` | Must be either a site-relative path beginning with `/` or an absolute `http://` / `https://` URL. This value is exposed to the browser bundle. |
+| `VITE_API_BASE_URL` | no | `/api` | Must be either a site-relative path beginning with a single `/` or an absolute `http://` / `https://` URL. This value is exposed to the browser bundle. |
 | `VITE_API_TARGET` | no | `http://127.0.0.1:3001` | Must be an absolute `http://` / `https://` URL. This is only used by the Vite dev server proxy and is not read from `import.meta.env` in the browser. |
 
 Invalid or blank values now fail fast with explicit errors during API startup, Vite startup, or web app bootstrap rather than silently falling back to loose parsing.

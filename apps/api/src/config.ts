@@ -63,7 +63,7 @@ function parsePort(value: string | undefined): number {
 
   const port = Number(trimmedValue);
 
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+  if (port < 1 || port > 65535) {
     throw createApiConfigError(
       `PORT must be an integer between 1 and 65535. Received ${JSON.stringify(trimmedValue)}.`,
     );
