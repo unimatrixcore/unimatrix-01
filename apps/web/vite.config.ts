@@ -5,7 +5,9 @@ import react from "@vitejs/plugin-react";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import { defineConfig } from "vite";
 
-const DEFAULT_API_PROXY_TARGET = "http://127.0.0.1:3001";
+import { loadWebDevProxyConfig } from "./src/lib/config";
+
+const devProxyConfig = loadWebDevProxyConfig();
 
 export default defineConfig({
   plugins: [
@@ -23,7 +25,7 @@ export default defineConfig({
       "/api": {
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ""),
-        target: process.env.VITE_API_TARGET ?? DEFAULT_API_PROXY_TARGET,
+        target: devProxyConfig.apiProxyTarget,
       },
     },
   },
