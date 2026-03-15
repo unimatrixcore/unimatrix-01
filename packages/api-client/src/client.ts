@@ -40,7 +40,13 @@ async function parseResponse<TContract extends ApiContract>(
   response: ApiClientResponse,
   contract: TContract,
 ): Promise<ApiContractResponse<TContract>> {
-  const payload = await response.json();
+  let payload: unknown;
+
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error(`${contract.method} ${contract.path} returned a non-JSON response.`);
+  }
 
   return contract.responseSchema.parse(payload) as ApiContractResponse<TContract>;
 }
@@ -61,12 +67,7 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
     });
 
     if (!response.ok) {
-      const body = await response.text();
-      const suffix = body ? `: ${body}` : "";
-
-      throw new Error(
-        `${contract.method} ${contract.path} failed with status ${response.status}${suffix}`,
-      );
+      throw new Error(`${contract.method} ${contract.path} failed with status ${response.status}.`);
     }
 
     return parseResponse(response, contract);

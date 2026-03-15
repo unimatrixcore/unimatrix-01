@@ -18,13 +18,7 @@ export const Route = createFileRoute("/status")({
 });
 
 function StatusRoute() {
-  const { data, error, isError, isFetching } = useQuery(
-    scaffoldStatusQueryOptions(),
-  );
-  const clientStatus =
-    isError && error instanceof Error
-      ? error.message
-      : data?.clientStatus ?? "Loading shared contract status...";
+  const { data, isFetching } = useQuery(scaffoldStatusQueryOptions());
   const statusCards = [
     {
       icon: RiRouteLine,
@@ -34,7 +28,7 @@ function StatusRoute() {
     {
       icon: RiServerLine,
       label: "Client",
-      value: clientStatus,
+      value: data?.clientStatus ?? "Loading shared contract status...",
     },
     {
       icon: RiPulseLine,
@@ -49,7 +43,7 @@ function StatusRoute() {
     {
       icon: RiTimer2Line,
       label: "Last checked",
-      value: data?.checkedAt ?? (isError ? "Request failed" : "Waiting for first fetch..."),
+      value: data?.checkedAt ?? "Waiting for first fetch...",
     },
   ];
 
