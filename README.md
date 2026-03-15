@@ -74,6 +74,43 @@ The root package metadata pins `pnpm@10.30.3`, enforces Node `22.x`, provides `.
 
 For reproducible installs in automation or fresh clones, prefer `pnpm install --frozen-lockfile`.
 
+## App configuration
+
+LOC-42 keeps environment configuration app-local on purpose. The current env surface is small and split across three execution contexts, so the validation helpers live with the apps instead of expanding `packages/shared` prematurely:
+
+- `apps/api/src/config.ts` validates Fastify runtime config
+- `apps/web/src/lib/config.ts` validates browser runtime config and the Vite dev-proxy target
+
+Copy the example files before local development:
+
+```bash
+cp apps/api/.env.example apps/api/.env
+cp apps/web/.env.example apps/web/.env
+```
+
+### `apps/api`
+
+| Variable | Required | Default | Notes |
+| --- | --- | --- | --- |
+| `HOST` | no | `127.0.0.1` | Must be a non-empty host string when set. |
+| `PORT` | no | `3001` | Must be an integer between `1` and `65535` when set. |
+| `NODE_ENV` | no | `development` | Must be one of `development`, `test`, or `production`. |
+
+### `apps/web`
+
+| Variable | Required | Default | Notes |
+| --- | --- | --- | --- |
+| `VITE_API_BASE_URL` | no | `/api` | Must be either a site-relative path beginning with `/` or an absolute `http://` / `https://` URL. This value is exposed to the browser bundle. |
+| `VITE_API_TARGET` | no | `http://127.0.0.1:3001` | Must be an absolute `http://` / `https://` URL. This is only used by the Vite dev server proxy and is not read from `import.meta.env` in the browser. |
+
+Invalid or blank values now fail fast with explicit errors during API startup, Vite startup, or web app bootstrap rather than silently falling back to loose parsing.
+
+Out of scope for LOC-42:
+
+- repo-wide secret management
+- deployment-specific env injection
+- database configuration such as `DATABASE_URL`
+
 ## Agent and Automation Validation
 
 Repo support remains pinned to Node `22.22.1` and pnpm `10.30.3`. CI already reads `.node-version` directly and runs on that supported toolchain without any wrapper.
@@ -102,6 +139,7 @@ pnpm typecheck
 pnpm check
 pnpm verify
 pnpm --filter @unimatrix/api dev
+pnpm --filter @unimatrix/web dev
 ```
 
 ## Quality gates
