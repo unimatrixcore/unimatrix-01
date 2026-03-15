@@ -39,3 +39,6 @@ Thumbs.db
 
 # misc
 *.log
+
+# issue workflow artifacts
+.issues/
