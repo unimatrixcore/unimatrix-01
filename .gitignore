@@ -42,3 +42,4 @@ Thumbs.db
 
 # issue workflow artifacts
 .issues/
+.issues/*.md
