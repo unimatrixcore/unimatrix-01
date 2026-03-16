@@ -82,6 +82,15 @@ Current in-scope domains are intentionally limited to:
 
 `docs` and `notes` remain out of scope for this issue even though the repo shape reserves space for them later.
 
+### Current public route surface
+
+- `/` for the overview, orientation, and public about/contact context
+- `/projects` and `/projects/:slug` for the public project index and detail pages
+- `/blog` and `/blog/:slug` for the public writing index and detail pages
+- `/status` for the lightweight API-status surface
+
+Unknown project or blog slugs intentionally resolve into the app's not-found experience instead of falling through to an unhandled content error.
+
 ### Authoring rules
 
 - keep content Git-backed under `content/`
