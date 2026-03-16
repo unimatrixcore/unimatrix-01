@@ -1,26 +1,42 @@
-export type ContentCollectionKey = "blog" | "projects" | "docs" | "notes";
+export const CONTENT_ROOT_DIRECTORY = "content";
+
+export type ContentCollectionKey = "home" | "projects" | "blog";
+
+export const deferredContentCollections = ["docs", "notes"] as const;
+
+export type DeferredContentCollectionKey =
+  (typeof deferredContentCollections)[number];
 
 export interface ContentCollectionDefinition {
   key: ContentCollectionKey;
   title: string;
-  description?: string;
+  description: string;
+  directory: string;
+  entryShape: "singleton" | "list";
 }
 
-export const defaultContentCollections = [
+export const contentCollections = [
   {
-    key: "blog",
-    title: "Blog",
+    key: "home",
+    title: "Home / About",
+    description: "Singleton homepage and about copy rooted at content/home.",
+    directory: "home",
+    entryShape: "singleton",
   },
   {
     key: "projects",
     title: "Projects",
+    description:
+      "Repo-backed project entries rooted at content/projects for the public site baseline.",
+    directory: "projects",
+    entryShape: "list",
   },
   {
-    key: "docs",
-    title: "Docs",
-  },
-  {
-    key: "notes",
-    title: "Notes",
+    key: "blog",
+    title: "Blog",
+    description:
+      "Repo-backed blog entries rooted at content/blog for the public site baseline.",
+    directory: "blog",
+    entryShape: "list",
   },
 ] satisfies ContentCollectionDefinition[];

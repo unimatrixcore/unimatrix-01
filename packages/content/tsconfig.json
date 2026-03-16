@@ -1,4 +1,4 @@
 {
   "extends": "@unimatrix/config-typescript/library.json",
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts"]
 }
