@@ -5,19 +5,23 @@ import { splitMarkdownIntoParagraphs } from "@/features/content/markdown";
 import { getBlogEntryBySlug } from "@/features/content/site-content";
 import { Badge, Button, Card, Separator } from "@unimatrix/ui";
 
-export const Route = createFileRoute("/blog/$slug")({
+export const Route = createFileRoute("/blog_/$slug")({
   component: BlogDetailRoute,
   loader: ({ params }) => {
     const entry = getBlogEntryBySlug(params.slug);
 
     if (!entry) {
-      throw notFound() as Error;
+      throw createBlogNotFoundError(params.slug);
     }
 
     return entry;
   },
   notFoundComponent: BlogNotFound,
 });
+
+function createBlogNotFoundError(slug: string): Error {
+  return Object.assign(new Error(`Blog entry not found: ${slug}`), notFound());
+}
 
 function BlogDetailRoute() {
   const entry = Route.useLoaderData();
@@ -55,10 +59,7 @@ function BlogDetailRoute() {
 
           <div className="grid gap-4 lg:max-w-4xl">
             {paragraphs.map((paragraph, index) => (
-              <p
-                key={`${index}:${paragraph}`}
-                className="text-sm leading-7 text-muted-foreground lg:text-base"
-              >
+              <p key={index} className="text-sm leading-7 text-muted-foreground lg:text-base">
                 {paragraph}
               </p>
             ))}

@@ -5,19 +5,23 @@ import { splitMarkdownIntoParagraphs } from "@/features/content/markdown";
 import { getProjectEntryBySlug } from "@/features/content/site-content";
 import { Badge, Button, Card, Separator } from "@unimatrix/ui";
 
-export const Route = createFileRoute("/projects/$slug")({
+export const Route = createFileRoute("/projects_/$slug")({
   component: ProjectDetailRoute,
   loader: ({ params }) => {
     const project = getProjectEntryBySlug(params.slug);
 
     if (!project) {
-      throw notFound() as Error;
+      throw createProjectNotFoundError(params.slug);
     }
 
     return project;
   },
   notFoundComponent: ProjectNotFound,
 });
+
+function createProjectNotFoundError(slug: string): Error {
+  return Object.assign(new Error(`Project not found: ${slug}`), notFound());
+}
 
 function ProjectDetailRoute() {
   const project = Route.useLoaderData();
@@ -66,7 +70,7 @@ function ProjectDetailRoute() {
 
           <div className="grid gap-4 lg:max-w-4xl">
             {paragraphs.map((paragraph, index) => (
-              <p key={`${index}:${paragraph}`} className="text-sm leading-7 text-muted-foreground lg:text-base">
+              <p key={index} className="text-sm leading-7 text-muted-foreground lg:text-base">
                 {paragraph}
               </p>
             ))}
