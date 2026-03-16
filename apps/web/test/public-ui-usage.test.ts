@@ -1,11 +1,28 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import test from "node:test";
 
-const repositoryRootUrl = new URL("../../../", import.meta.url);
+function findRepositoryRoot(startDir: string): string {
+  let currentDir = startDir;
+
+  while (!existsSync(join(currentDir, "pnpm-workspace.yaml"))) {
+    const parentDir = dirname(currentDir);
+
+    if (parentDir === currentDir) {
+      throw new Error(`Could not locate the repository root from ${startDir}.`);
+    }
+
+    currentDir = parentDir;
+  }
+
+  return currentDir;
+}
+
+const repositoryRoot = findRepositoryRoot(process.cwd());
 
 function readRepositoryFile(path: string): string {
-  return readFileSync(new URL(path, repositoryRootUrl), "utf8");
+  return readFileSync(join(repositoryRoot, path), "utf8");
 }
 
 void test("@unimatrix/ui exports the intentionally small public-site surface", () => {
