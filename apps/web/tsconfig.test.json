@@ -4,5 +4,9 @@
     "noEmit": false,
     "rootDir": "."
   },
-  "include": ["src/lib/config.ts", "test/**/*.ts"]
+  "include": [
+    "src/features/content/markdown.ts",
+    "src/lib/config.ts",
+    "test/**/*.ts"
+  ]
 }

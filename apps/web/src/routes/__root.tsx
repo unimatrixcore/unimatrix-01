@@ -32,11 +32,11 @@ function RootNotFound() {
         </Badge>
         <div className="space-y-3">
           <h2 className="text-2xl leading-tight font-medium tracking-tight">
-            This scaffold only defines the overview and status routes right now.
+            This site currently defines overview, projects, blog, and status routes.
           </h2>
           <p className="max-w-2xl text-sm leading-7 text-muted-foreground lg:text-base">
-            LOC-38 keeps the route count unchanged, so unknown paths still land
-            on the root not-found surface.
+            The page you're looking for doesn't exist. Try navigating to one of the
+            sections above.
           </p>
         </div>
         <Button asChild className="w-fit">

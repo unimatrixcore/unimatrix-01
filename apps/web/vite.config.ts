@@ -39,6 +39,9 @@ export default defineConfig(({ mode }) => {
         "@unimatrix/api-client": fileURLToPath(
           new URL("../../packages/api-client/src/index.ts", import.meta.url),
         ),
+        "@unimatrix/content": fileURLToPath(
+          new URL("../../packages/content/src/index.ts", import.meta.url),
+        ),
         "@unimatrix/shared": fileURLToPath(
           new URL("../../packages/shared/src/index.ts", import.meta.url),
         ),
