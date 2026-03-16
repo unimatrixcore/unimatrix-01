@@ -53,20 +53,23 @@ void test("apps/web consumes the shared public-site primitives instead of route-
   assert.match(homeRouteSource, /PublicProjectCard/u);
   assert.match(homeRouteSource, /PublicPostListItem/u);
   assert.match(homeRouteSource, /to="\/projects\/\$slug"/u);
-  assert.match(homeRouteSource, /Open project/u);
+  assert.match(homeRouteSource, /renderLink/u);
+  assert.doesNotMatch(homeRouteSource, /Open project/u);
   assert.match(homeRouteSource, /to="\/blog\/\$slug"/u);
-  assert.match(homeRouteSource, /Read entry/u);
+  assert.doesNotMatch(homeRouteSource, /Read entry/u);
 
   assert.match(projectsRouteSource, /PublicSectionHeading/u);
   assert.match(projectsRouteSource, /PublicProjectCard/u);
   assert.match(projectsRouteSource, /to="\/projects\/\$slug"/u);
-  assert.match(projectsRouteSource, /Open project/u);
+  assert.match(projectsRouteSource, /renderLink/u);
+  assert.doesNotMatch(projectsRouteSource, /Open project/u);
   assert.match(projectsRouteSource, /View repository/u);
 
   assert.match(blogRouteSource, /PublicSectionHeading/u);
   assert.match(blogRouteSource, /PublicPostListItem/u);
   assert.match(blogRouteSource, /to="\/blog\/\$slug"/u);
-  assert.match(blogRouteSource, /Read entry/u);
+  assert.match(blogRouteSource, /renderLink/u);
+  assert.doesNotMatch(blogRouteSource, /Read entry/u);
 
   assert.match(projectDetailRouteSource, /createFileRoute\("\/projects_\/\$slug"\)/u);
   assert.match(blogDetailRouteSource, /createFileRoute\("\/blog_\/\$slug"\)/u);

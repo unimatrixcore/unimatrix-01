@@ -43,23 +43,25 @@ function ProjectsRoute() {
           <PublicProjectCard
             key={project.slug}
             project={project}
+            renderLink={({ ariaLabel, children, className }) => (
+              <Link
+                aria-label={ariaLabel}
+                className={className}
+                params={{ slug: project.slug }}
+                to="/projects/$slug"
+              >
+                {children}
+              </Link>
+            )}
             actions={
-              <>
-                <Button asChild variant="outline" className="w-fit gap-2">
-                  <Link to="/projects/$slug" params={{ slug: project.slug }}>
-                    Open project
+              project.frontmatter.repoUrl ? (
+                <Button asChild variant="secondary" className="w-fit gap-2">
+                  <a href={project.frontmatter.repoUrl} rel="noreferrer" target="_blank">
+                    View repository
                     <RiArrowRightUpLine aria-hidden="true" className="size-4" />
-                  </Link>
+                  </a>
                 </Button>
-                {project.frontmatter.repoUrl ? (
-                  <Button asChild variant="secondary" className="w-fit gap-2">
-                    <a href={project.frontmatter.repoUrl} rel="noreferrer" target="_blank">
-                      View repository
-                      <RiArrowRightUpLine aria-hidden="true" className="size-4" />
-                    </a>
-                  </Button>
-                ) : null}
-              </>
+              ) : null
             }
           />
         ))}

@@ -198,19 +198,114 @@ type PublicProjectCardData = {
   slug: string;
 };
 
+type PublicCardLinkRenderer = (props: {
+  ariaLabel: string;
+  children: React.ReactNode;
+  className: string;
+}) => React.ReactElement;
+
+function PublicCardSurface({
+  actions,
+  children,
+  className,
+  id,
+  linkLabel,
+  renderLink,
+  variant,
+}: {
+  actions?: React.ReactNode | undefined;
+  children: React.ReactNode;
+  className?: string | undefined;
+  id?: string | undefined;
+  linkLabel?: string | undefined;
+  renderLink?: PublicCardLinkRenderer | undefined;
+  variant: "compact" | "default";
+}) {
+  const isInteractive = Boolean(renderLink);
+  const content = (
+    <div
+      className={cn(
+        "space-y-4",
+        variant === "default" ? "px-6" : undefined,
+        isInteractive ? "pointer-events-none relative z-10" : undefined,
+      )}
+    >
+      {children}
+      {actions ? (
+        <div
+          className={cn(
+            "flex flex-wrap gap-3",
+            isInteractive ? "pointer-events-auto relative z-20" : undefined,
+          )}
+        >
+          {actions}
+        </div>
+      ) : null}
+    </div>
+  );
+
+  const interactiveClasses = isInteractive
+    ? "transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-card focus-within:border-primary/50 focus-within:ring-primary/30"
+    : undefined;
+
+  const link = renderLink?.({
+    ariaLabel: linkLabel ?? "Open content",
+    children: <span className="sr-only">{linkLabel ?? "Open content"}</span>,
+    className: "absolute inset-0 z-10 outline-none",
+  });
+
+  if (variant === "compact") {
+    return (
+      <div
+        id={id}
+        className={cn(
+          "relative space-y-2 border border-border/60 bg-card/70 px-3 py-3 ring-1 ring-foreground/10",
+          interactiveClasses,
+          className,
+        )}
+      >
+        {link}
+        {content}
+      </div>
+    );
+  }
+
+  return (
+    <Card
+      id={id}
+      className={cn(
+        "relative border-border/60 bg-card/88 shadow-none",
+        interactiveClasses,
+        className,
+      )}
+    >
+      {link}
+      {content}
+    </Card>
+  );
+}
+
 export function PublicProjectCard({
   actions,
   className,
   project,
+  renderLink,
   variant = "default",
 }: {
-  actions?: React.ReactNode;
-  className?: string;
+  actions?: React.ReactNode | undefined;
+  className?: string | undefined;
   project: PublicProjectCardData;
+  renderLink?: PublicCardLinkRenderer | undefined;
   variant?: "compact" | "default";
 }) {
-  const content = (
-    <div className={cn("space-y-4", variant === "default" ? "px-6" : undefined)}>
+  return (
+    <PublicCardSurface
+      actions={actions}
+      className={className}
+      linkLabel={`Open project ${project.frontmatter.title}`}
+      renderLink={renderLink}
+      variant={variant}
+    >
       <div className="flex flex-wrap items-center gap-2">
         <Badge>{project.frontmatter.status}</Badge>
         <Badge variant="outline">{project.frontmatter.publishedAt}</Badge>
@@ -230,15 +325,8 @@ export function PublicProjectCard({
           <p className="text-sm leading-7 text-muted-foreground">{project.excerpt}</p>
         ) : null}
       </div>
-      {actions ? <div className="flex flex-wrap gap-3">{actions}</div> : null}
-    </div>
+    </PublicCardSurface>
   );
-
-  if (variant === "compact") {
-    return <div className={cn("space-y-2 border border-border/60 px-3 py-3", className)}>{content}</div>;
-  }
-
-  return <Card className={cn("border-border/60 bg-card/88 shadow-none", className)}>{content}</Card>;
 }
 
 type PublicPostListItemData = {
@@ -257,17 +345,26 @@ export function PublicPostListItem({
   className,
   entry,
   id,
+  renderLink,
   variant = "default",
 }: {
-  actions?: React.ReactNode;
-  className?: string;
+  actions?: React.ReactNode | undefined;
+  className?: string | undefined;
   entry: PublicPostListItemData;
-  id?: string;
+  id?: string | undefined;
+  renderLink?: PublicCardLinkRenderer | undefined;
   variant?: "compact" | "default";
 }) {
   const summary = entry.frontmatter.description ?? entry.frontmatter.summary;
-  const content = (
-    <div className={cn("space-y-4", variant === "default" ? "px-6" : undefined)}>
+  return (
+    <PublicCardSurface
+      actions={actions}
+      className={className}
+      id={id}
+      linkLabel={`Open blog entry ${entry.frontmatter.title}`}
+      renderLink={renderLink}
+      variant={variant}
+    >
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant="outline">{entry.frontmatter.publishedAt}</Badge>
         {variant === "default" ? <Badge variant="secondary">{entry.slug}</Badge> : null}
@@ -286,21 +383,6 @@ export function PublicPostListItem({
           <p className="text-sm leading-7 text-muted-foreground">{entry.excerpt}</p>
         ) : null}
       </div>
-      {actions ? <div className="flex flex-wrap gap-3">{actions}</div> : null}
-    </div>
-  );
-
-  if (variant === "compact") {
-    return (
-      <div id={id} className={cn("space-y-2 border border-border/60 px-3 py-3", className)}>
-        {content}
-      </div>
-    );
-  }
-
-  return (
-    <Card id={id} className={cn("border-border/60 bg-card/88 shadow-none", className)}>
-      {content}
-    </Card>
+    </PublicCardSurface>
   );
 }

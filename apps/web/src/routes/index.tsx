@@ -105,14 +105,16 @@ function IndexRoute() {
                   key={project.slug}
                   project={project}
                   variant="compact"
-                  actions={
-                    <Button asChild variant="outline" className="w-fit gap-2">
-                      <Link to="/projects/$slug" params={{ slug: project.slug }}>
-                        Open project
-                        <RiArrowRightUpLine aria-hidden="true" className="size-4" />
-                      </Link>
-                    </Button>
-                  }
+                  renderLink={({ ariaLabel, children, className }) => (
+                    <Link
+                      aria-label={ariaLabel}
+                      className={className}
+                      params={{ slug: project.slug }}
+                      to="/projects/$slug"
+                    >
+                      {children}
+                    </Link>
+                  )}
                 />
               ))}
             </div>
@@ -131,14 +133,16 @@ function IndexRoute() {
                   key={entry.slug}
                   entry={entry}
                   variant="compact"
-                  actions={
-                    <Button asChild variant="outline" className="w-fit gap-2">
-                      <Link to="/blog/$slug" params={{ slug: entry.slug }}>
-                        Read entry
-                        <RiArrowRightUpLine aria-hidden="true" className="size-4" />
-                      </Link>
-                    </Button>
-                  }
+                  renderLink={({ ariaLabel, children, className }) => (
+                    <Link
+                      aria-label={ariaLabel}
+                      className={className}
+                      params={{ slug: entry.slug }}
+                      to="/blog/$slug"
+                    >
+                      {children}
+                    </Link>
+                  )}
                 />
               ))}
             </div>
