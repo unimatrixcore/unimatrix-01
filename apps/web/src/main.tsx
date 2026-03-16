@@ -12,6 +12,9 @@ if (!rootElement) {
   throw new Error("Missing #app root element.");
 }
 
+document.documentElement.classList.add("dark");
+document.documentElement.style.colorScheme = "dark";
+
 ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>
     <Providers>

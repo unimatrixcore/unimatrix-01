@@ -125,6 +125,7 @@
 
   html {
     @apply min-h-full scroll-smooth;
+    color-scheme: dark;
   }
 
   body {
@@ -137,8 +138,8 @@
       ),
       linear-gradient(
         180deg,
-        color-mix(in oklab, var(--background) 96%, white) 0%,
-        color-mix(in oklab, var(--background) 88%, var(--secondary)) 100%
+        color-mix(in oklab, var(--background) 96%, black) 0%,
+        color-mix(in oklab, var(--background) 84%, var(--secondary)) 100%
       );
     font-family: var(--font-mono);
   }

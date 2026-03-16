@@ -1,8 +1,8 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { RiArrowRightUpLine, RiStackLine } from "@remixicon/react";
+import { RiStackLine } from "@remixicon/react";
 
 import { blogEntries } from "@/features/content/site-content";
-import { Badge, Button, Card, PublicPostListItem, PublicSectionHeading } from "@unimatrix/ui";
+import { Badge, Card, PublicPostListItem, PublicSectionHeading } from "@unimatrix/ui";
 
 export const Route = createFileRoute("/blog")({
   component: BlogRoute,
@@ -38,14 +38,16 @@ function BlogRoute() {
             id={entry.slug}
             key={entry.slug}
             entry={entry}
-            actions={
-              <Button asChild variant="outline" className="w-fit gap-2">
-                <Link to="/blog/$slug" params={{ slug: entry.slug }}>
-                  Read entry
-                  <RiArrowRightUpLine aria-hidden="true" className="size-4" />
-                </Link>
-              </Button>
-            }
+            renderLink={({ ariaLabel, children, className }) => (
+              <Link
+                aria-label={ariaLabel}
+                className={className}
+                params={{ slug: entry.slug }}
+                to="/blog/$slug"
+              >
+                {children}
+              </Link>
+            )}
           />
         ))}
       </div>
