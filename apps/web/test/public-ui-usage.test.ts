@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import test from "node:test";
 
+const repositoryRootUrl = new URL("../../../", import.meta.url);
+
 function readRepositoryFile(path: string): string {
-  return readFileSync(join(process.cwd(), "..", "..", path), "utf8");
+  return readFileSync(new URL(path, repositoryRootUrl), "utf8");
 }
 
 void test("@unimatrix/ui exports the intentionally small public-site surface", () => {

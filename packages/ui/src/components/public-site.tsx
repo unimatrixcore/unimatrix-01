@@ -118,48 +118,40 @@ export function PublicSectionHeading({
   titleClassName?: string;
   trailing?: React.ReactNode;
 }) {
+  const titleContent = title ? (
+    <h2 className={cn("text-2xl leading-tight font-medium tracking-tight", titleClassName)}>
+      {title}
+    </h2>
+  ) : null;
+
+  const descriptionContent = description ? (
+    <p
+      className={cn(
+        "max-w-3xl text-sm leading-7 text-muted-foreground lg:text-base",
+        descriptionClassName,
+      )}
+    >
+      {description}
+    </p>
+  ) : null;
+
+  const headingContent = (
+    <div className="space-y-3">
+      {titleContent}
+      {descriptionContent}
+    </div>
+  );
+
   return (
     <div className={cn("space-y-4", className)}>
       {badges ? <div className="flex flex-wrap items-center gap-2">{badges}</div> : null}
       {trailing ? (
         <div className="flex items-start justify-between gap-3">
-          <div className="space-y-3">
-            {title ? (
-              <h2 className={cn("text-2xl leading-tight font-medium tracking-tight", titleClassName)}>
-                {title}
-              </h2>
-            ) : null}
-            {description ? (
-              <p
-                className={cn(
-                  "max-w-3xl text-sm leading-7 text-muted-foreground lg:text-base",
-                  descriptionClassName,
-                )}
-              >
-                {description}
-              </p>
-            ) : null}
-          </div>
+          {headingContent}
           {trailing}
         </div>
       ) : (
-        <div className="space-y-3">
-          {title ? (
-            <h2 className={cn("text-2xl leading-tight font-medium tracking-tight", titleClassName)}>
-              {title}
-            </h2>
-          ) : null}
-          {description ? (
-            <p
-              className={cn(
-                "max-w-3xl text-sm leading-7 text-muted-foreground lg:text-base",
-                descriptionClassName,
-              )}
-            >
-              {description}
-            </p>
-          ) : null}
-        </div>
+        headingContent
       )}
     </div>
   );
@@ -218,8 +210,8 @@ export function PublicProjectCard({
       <div className="space-y-2">
         <h3
           className={cn(
-            "leading-tight font-medium tracking-tight",
-            variant === "default" ? "text-xl" : "text-sm leading-6",
+            "font-medium tracking-tight",
+            variant === "default" ? "text-xl leading-tight" : "text-sm leading-6",
           )}
         >
           {project.frontmatter.title}
@@ -279,8 +271,8 @@ export function PublicPostListItem({
       <div className="space-y-2">
         <h3
           className={cn(
-            "leading-tight font-medium tracking-tight",
-            variant === "default" ? "text-xl" : "text-sm leading-6",
+            "font-medium tracking-tight",
+            variant === "default" ? "text-xl leading-tight" : "text-sm leading-6",
           )}
         >
           {entry.frontmatter.title}

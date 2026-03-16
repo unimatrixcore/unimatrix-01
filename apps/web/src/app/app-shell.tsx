@@ -65,33 +65,31 @@ export function AppShell({ children }: AppShellProps) {
   );
 
   return (
-    <div className="min-h-screen">
-      <PublicPageContainer>
-        <PublicAppFrame
-          badges={
-            <>
-              <Badge className="gap-1.5">
-                <RiLayoutGridLine aria-hidden="true" className="size-3.5" />
-                LOC-43
-              </Badge>
-              <Badge variant="outline">Typed content baseline</Badge>
-              <Badge variant="secondary">Repo-backed markdown</Badge>
-            </>
-          }
-          description={homeContent.frontmatter.intro}
-          footerItems={[
-            "Home, project, and blog copy now resolve from repo-backed content files instead of route-local placeholder strings.",
-            "`apps/web` consumes `@unimatrix/content` for parsing and typed contracts while the UI remains in `@unimatrix/ui`.",
-            "Borg Markdown stays future work; this baseline keeps markdown safe and non-executable for the first public-site surface.",
-          ]}
-          navigationAdornment={<RiStackLine aria-hidden="true" className="size-4" />}
-          navigationAriaLabel="Scaffold navigation"
-          navigationItems={navigationItems}
-          title={homeContent.frontmatter.title}
-        />
+    <PublicPageContainer>
+      <PublicAppFrame
+        badges={
+          <>
+            <Badge className="gap-1.5">
+              <RiLayoutGridLine aria-hidden="true" className="size-3.5" />
+              LOC-43
+            </Badge>
+            <Badge variant="outline">Typed content baseline</Badge>
+            <Badge variant="secondary">Repo-backed markdown</Badge>
+          </>
+        }
+        description={homeContent.frontmatter.intro}
+        footerItems={[
+          "Home, project, and blog copy now resolve from repo-backed content files instead of route-local placeholder strings.",
+          "`apps/web` consumes `@unimatrix/content` for parsing and typed contracts while the UI remains in `@unimatrix/ui`.",
+          "Borg Markdown stays future work; this baseline keeps markdown safe and non-executable for the first public-site surface.",
+        ]}
+        navigationAdornment={<RiStackLine aria-hidden="true" className="size-4" />}
+        navigationAriaLabel="Scaffold navigation"
+        navigationItems={navigationItems}
+        title={homeContent.frontmatter.title}
+      />
 
-        <main className="grid gap-6">{children}</main>
-      </PublicPageContainer>
-    </div>
+      <main className="grid gap-6">{children}</main>
+    </PublicPageContainer>
   );
 }
