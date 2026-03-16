@@ -60,6 +60,47 @@ The root `AGENTS.md` is the repo-wide instruction file for now. Add deeper `AGEN
 - frontend direction: ShadCN UI, preset `aJMzyTw`, Geist Mono, zero-radius styling, Remix Icons, ADHD-accessible constraints, desktop-first UX bias
 - content direction: Git-based authored content with typed schemas and a future-safe Borg Markdown layer
 
+## Typed content baseline
+
+LOC-43 establishes the first repo-backed content workflow for the public site:
+
+```text
+content/
+  home/
+    index.md
+  projects/
+    *.md
+  blog/
+    *.md
+```
+
+Current in-scope domains are intentionally limited to:
+
+- home/about
+- projects
+- blog
+
+`docs` and `notes` remain out of scope for this issue even though the repo shape reserves space for them later.
+
+### Authoring rules
+
+- keep content Git-backed under `content/`
+- use frontmatter that matches the typed collection contracts in `packages/content`
+- expect invalid or missing fields to fail with file-specific validation errors
+- keep markdown non-executable; Borg Markdown remains future work rather than part of this baseline
+
+### Validation commands
+
+- `pnpm --filter @unimatrix/content lint`
+- `pnpm --filter @unimatrix/content typecheck`
+- `pnpm --filter @unimatrix/content test`
+- `pnpm --filter @unimatrix/content build`
+- `pnpm --filter @unimatrix/web lint`
+- `pnpm --filter @unimatrix/web typecheck`
+- `pnpm --filter @unimatrix/web test`
+- `pnpm --filter @unimatrix/web build`
+- `pnpm check`
+
 ## Local setup
 
 Use the pinned toolchain from the repo root:

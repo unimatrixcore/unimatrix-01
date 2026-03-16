@@ -6,6 +6,7 @@
     "paths": {
       "@/*": ["./src/*"],
       "@unimatrix/api-client": ["../../packages/api-client/src/index.ts"],
+      "@unimatrix/content": ["../../packages/content/src/index.ts"],
       "@unimatrix/shared": ["../../packages/shared/src/index.ts"],
       "@unimatrix/ui": ["../../packages/ui/src/index.ts"]
     },

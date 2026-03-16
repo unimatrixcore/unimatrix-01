@@ -7,6 +7,7 @@ import {
   RiStackLine,
 } from "@remixicon/react";
 
+import { homeContent } from "@/features/content/site-content";
 import { Badge, Button, Card, Separator, cn } from "@unimatrix/ui";
 
 type AppShellProps = {
@@ -19,6 +20,18 @@ const navItems = [
     icon: RiCompassDiscoverLine,
     label: "Overview",
     to: "/" as const,
+  },
+  {
+    exact: false,
+    icon: RiLayoutGridLine,
+    label: "Projects",
+    to: "/projects" as const,
+  },
+  {
+    exact: false,
+    icon: RiStackLine,
+    label: "Blog",
+    to: "/blog" as const,
   },
   {
     exact: false,
@@ -42,30 +55,27 @@ export function AppShell({ children }: AppShellProps) {
               <div className="flex flex-wrap items-center gap-2">
                 <Badge className="gap-1.5">
                   <RiLayoutGridLine aria-hidden="true" className="size-3.5" />
-                  LOC-38
+                  LOC-43
                 </Badge>
-                <Badge variant="outline">Preset aJMzyTw</Badge>
-                <Badge variant="secondary">Monorepo baseline</Badge>
+                <Badge variant="outline">Typed content baseline</Badge>
+                <Badge variant="secondary">Repo-backed markdown</Badge>
               </div>
               <div className="space-y-3">
                 <p className="text-xs uppercase tracking-[0.32em] text-muted-foreground">
-                  apps/web proof surface
+                  public-site content surface
                 </p>
                 <h1 className="max-w-4xl text-3xl leading-tight font-medium tracking-tight lg:text-5xl">
-                  Shared ShadCN primitives now drive the scaffold routes from
-                  `packages/ui`.
+                  {homeContent.frontmatter.title}
                 </h1>
                 <p className="max-w-3xl text-sm leading-7 text-muted-foreground lg:text-base">
-                  This keeps the design-system baseline in the workspace package
-                  where later public-site work can reuse it without drifting
-                  back into app-local copies.
+                  {homeContent.frontmatter.intro}
                 </p>
               </div>
             </div>
 
             <div className="grid gap-3 self-start">
               <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.28em] text-muted-foreground">
-                <span>Scaffold routes</span>
+                <span>Content routes</span>
                 <RiStackLine aria-hidden="true" className="size-4" />
               </div>
               <nav aria-label="Scaffold navigation" className="grid gap-2">
@@ -99,16 +109,16 @@ export function AppShell({ children }: AppShellProps) {
 
           <div className="grid gap-3 px-6 text-xs leading-6 text-muted-foreground lg:grid-cols-3">
             <p>
-              Zero-radius tokens, Geist Mono, and Remix Icons come from the
-              preset instead of scaffold-only CSS.
+              Home, project, and blog copy now resolve from repo-backed content
+              files instead of route-local placeholder strings.
             </p>
             <p>
-              `apps/web` now consumes `@unimatrix/ui` as the proof surface for
-              the shared baseline package.
+              `apps/web` consumes `@unimatrix/content` for parsing and typed
+              contracts while the UI remains in `@unimatrix/ui`.
             </p>
             <p>
-              Route count stays unchanged while the existing overview, status,
-              and not-found surfaces adopt the new system.
+              Borg Markdown stays future work; this baseline keeps markdown safe
+              and non-executable for the first public-site surface.
             </p>
           </div>
         </Card>
