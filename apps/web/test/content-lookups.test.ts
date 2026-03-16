@@ -19,8 +19,8 @@ void test("content lookup helpers resolve authored entries by slug", () => {
 });
 
 void test("project and blog lookup helpers return undefined for missing slugs", () => {
-  const projects = [{ slug: "berrybot" }] as Parameters<typeof findProjectEntryBySlug>[0];
-  const blogEntries = [{ slug: "typed-baseline" }] as Parameters<typeof findBlogEntryBySlug>[0];
+  const projects = [{ slug: "berrybot" }] as unknown as Parameters<typeof findProjectEntryBySlug>[0];
+  const blogEntries = [{ slug: "typed-baseline" }] as unknown as Parameters<typeof findBlogEntryBySlug>[0];
 
   assert.equal(findProjectEntryBySlug(projects, "missing"), undefined);
   assert.equal(findBlogEntryBySlug(blogEntries, "missing"), undefined);

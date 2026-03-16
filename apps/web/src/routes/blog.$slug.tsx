@@ -11,7 +11,7 @@ export const Route = createFileRoute("/blog/$slug")({
     const entry = getBlogEntryBySlug(params.slug);
 
     if (!entry) {
-      throw notFound();
+      throw notFound() as Error;
     }
 
     return entry;

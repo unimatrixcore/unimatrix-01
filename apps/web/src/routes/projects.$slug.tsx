@@ -11,7 +11,7 @@ export const Route = createFileRoute("/projects/$slug")({
     const project = getProjectEntryBySlug(params.slug);
 
     if (!project) {
-      throw notFound();
+      throw notFound() as Error;
     }
 
     return project;

@@ -1,5 +1,3 @@
-import type { BlogEntry, ProjectEntry } from "@unimatrix/content";
-
 interface SluggedEntry {
   slug: string;
 }
@@ -17,16 +15,16 @@ export function findEntryBySlug<T extends SluggedEntry>(
   return entries.find((entry) => entry.slug === slug);
 }
 
-export function findProjectEntryBySlug(
-  entries: readonly ProjectEntry[],
+export function findProjectEntryBySlug<T extends SluggedEntry>(
+  entries: readonly T[],
   slug: string,
-): ProjectEntry | undefined {
+): T | undefined {
   return findEntryBySlug(entries, slug);
 }
 
-export function findBlogEntryBySlug(
-  entries: readonly BlogEntry[],
+export function findBlogEntryBySlug<T extends SluggedEntry>(
+  entries: readonly T[],
   slug: string,
-): BlogEntry | undefined {
+): T | undefined {
   return findEntryBySlug(entries, slug);
 }
