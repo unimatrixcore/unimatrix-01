@@ -61,6 +61,22 @@ Blog body.
     assert.equal(blogEntry.frontmatter.description, "Blog description");
   });
 
+  it("derives plain-text excerpts from markdown links and images", () => {
+    const blogEntry = parseBlogContentFile(
+      `---
+title: Linked baseline
+slug: linked-baseline
+publishedAt: 2026-03-16
+summary: Blog summary
+---
+See [the docs](https://example.com/docs) and ![diagram](https://example.com/image.png) for details.
+`,
+      "content/blog/linked-baseline.md",
+    );
+
+    assert.equal(blogEntry.excerpt, "See the docs and diagram for details.");
+  });
+
   it("reports missing required frontmatter with a file-specific error", () => {
     assert.throws(
       () =>

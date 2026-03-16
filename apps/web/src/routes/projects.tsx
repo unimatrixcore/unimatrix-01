@@ -41,7 +41,7 @@ function ProjectsRoute() {
               <div className="flex flex-wrap items-center gap-2">
                 <Badge>{project.frontmatter.status}</Badge>
                 <Badge variant="outline">{project.frontmatter.publishedAt}</Badge>
-                <Badge variant="secondary">{project.filePath}</Badge>
+                <Badge variant="secondary">{project.slug}</Badge>
               </div>
               <div className="space-y-2">
                 <h3 className="text-xl leading-tight font-medium tracking-tight">

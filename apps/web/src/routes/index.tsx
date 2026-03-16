@@ -49,8 +49,8 @@ function IndexRoute() {
             <Separator />
 
             <div className="grid gap-4 lg:grid-cols-2">
-              {homeParagraphs.map((paragraph) => (
-                <p key={paragraph} className="text-sm leading-7 text-muted-foreground lg:text-base">
+              {homeParagraphs.map((paragraph, index) => (
+                <p key={`${index}:${paragraph}`} className="text-sm leading-7 text-muted-foreground lg:text-base">
                   {paragraph}
                 </p>
               ))}

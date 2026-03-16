@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { describe, it } from "node:test";
 
 import { ContentValidationError } from "../src/errors.js";
@@ -115,5 +115,57 @@ Broken body.
         name: ContentValidationError.name,
       },
     );
+  });
+
+  it("keeps repo-relative file paths stable when rootDir has a trailing separator", (test) => {
+    const rootDir = mkdtempSync("loc-43-content-");
+    test.after(() => {
+      rmSync(rootDir, { force: true, recursive: true });
+    });
+
+    mkdirSync(join(rootDir, "content", "home"), { recursive: true });
+    mkdirSync(join(rootDir, "content", "projects"), { recursive: true });
+    mkdirSync(join(rootDir, "content", "blog"), { recursive: true });
+
+    writeFileSync(
+      join(rootDir, "content", "home", "index.md"),
+      `---
+title: Home title
+intro: Intro copy
+summary: Summary copy
+mission: Mission copy
+---
+Home body.
+`,
+    );
+    writeFileSync(
+      join(rootDir, "content", "projects", "berrybot.md"),
+      `---
+title: BerryBot
+slug: berrybot
+publishedAt: 2025-05-01
+summary: Project summary
+status: active
+---
+Project body.
+`,
+    );
+    writeFileSync(
+      join(rootDir, "content", "blog", "entry.md"),
+      `---
+title: Blog entry
+slug: blog-entry
+publishedAt: 2026-01-01
+summary: Blog summary
+---
+Blog body.
+`,
+    );
+
+    const siteContent = loadSiteContent({ rootDir: `${rootDir}${sep}` });
+
+    assert.equal(siteContent.home.filePath, "content/home/index.md");
+    assert.equal(siteContent.projects[0]?.filePath, "content/projects/berrybot.md");
+    assert.equal(siteContent.blog[0]?.filePath, "content/blog/entry.md");
   });
 });

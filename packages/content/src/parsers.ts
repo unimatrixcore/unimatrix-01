@@ -99,7 +99,13 @@ export function sortEntriesByPublishedAtDesc<T extends ContentEntryWithPublished
 function deriveExcerpt(body: string): string {
   const firstParagraph = body
     .split(/\n\n+/u)
-    .map((paragraph) => paragraph.replace(/[#>*`_-]/gu, " ").trim())
+    .map((paragraph) =>
+      paragraph
+        .replace(/!\[([^\]]*)\]\([^)]*\)/gu, "$1")
+        .replace(/\[([^\]]+)\]\([^)]*\)/gu, "$1")
+        .replace(/[#>*`_-]/gu, " ")
+        .trim(),
+    )
     .find((paragraph) => paragraph.length > 0);
 
   return firstParagraph?.replace(/\s+/gu, " ") ?? "";

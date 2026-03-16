@@ -85,6 +85,11 @@ function toRepositoryPath(
   rootDir: string | undefined,
   absolutePath: string,
 ): string {
-  const repositoryRoot = rootDir ?? process.cwd();
+  let repositoryRoot = rootDir ?? process.cwd();
+
+  while (repositoryRoot.length > 1 && repositoryRoot.endsWith(sep)) {
+    repositoryRoot = repositoryRoot.slice(0, -1);
+  }
+
   return absolutePath.slice(repositoryRoot.length + 1).split(sep).join("/");
 }

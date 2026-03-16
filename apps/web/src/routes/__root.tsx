@@ -35,8 +35,8 @@ function RootNotFound() {
             This site currently defines overview, projects, blog, and status routes.
           </h2>
           <p className="max-w-2xl text-sm leading-7 text-muted-foreground lg:text-base">
-            LOC-43 wires the first typed content surfaces into the app shell, so
-            unknown paths still land here instead of falling back to scaffold-only copy.
+            The page you're looking for doesn't exist. Try navigating to one of the
+            sections above.
           </p>
         </div>
         <Button asChild className="w-fit">

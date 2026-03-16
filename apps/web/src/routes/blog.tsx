@@ -1,8 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { RiArrowRightUpLine, RiStackLine } from "@remixicon/react";
+import { RiStackLine } from "@remixicon/react";
 
 import { blogEntries } from "@/features/content/site-content";
-import { Badge, Button, Card } from "@unimatrix/ui";
+import { Badge, Card } from "@unimatrix/ui";
 
 export const Route = createFileRoute("/blog")({
   component: BlogRoute,
@@ -37,11 +37,11 @@ function BlogRoute() {
 
       <div className="grid gap-4">
         {entries.map((entry) => (
-          <Card key={entry.slug} className="border-border/60 bg-card/88 shadow-none">
+          <Card id={entry.slug} key={entry.slug} className="border-border/60 bg-card/88 shadow-none">
             <div className="space-y-4 px-6">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="outline">{entry.frontmatter.publishedAt}</Badge>
-                <Badge variant="secondary">{entry.filePath}</Badge>
+                <Badge variant="secondary">{entry.slug}</Badge>
               </div>
               <div className="space-y-2">
                 <h3 className="text-xl leading-tight font-medium tracking-tight">
@@ -52,12 +52,6 @@ function BlogRoute() {
                 </p>
                 <p className="text-sm leading-7 text-muted-foreground">{entry.excerpt}</p>
               </div>
-              <Button asChild variant="outline" className="w-fit gap-2">
-                <a href={`#${entry.slug}`}>
-                  Baseline entry only
-                  <RiArrowRightUpLine aria-hidden="true" className="size-4" />
-                </a>
-              </Button>
             </div>
           </Card>
         ))}
