@@ -53,7 +53,11 @@ void test("apps/web consumes the shared public-site primitives instead of route-
   assert.match(homeRouteSource, /PublicProjectCard/u);
   assert.match(homeRouteSource, /PublicPostListItem/u);
   assert.match(homeRouteSource, /to="\/projects\/\$slug"/u);
-  assert.match(homeRouteSource, /renderLink/u);
+  const homeRouteRenderLinkCount = (homeRouteSource.match(/renderLink/gu) ?? []).length;
+  assert.ok(
+    homeRouteRenderLinkCount >= 2,
+    `Expected at least 2 renderLink usages in index.tsx, got ${homeRouteRenderLinkCount}.`,
+  );
   assert.doesNotMatch(homeRouteSource, /Open project/u);
   assert.match(homeRouteSource, /to="\/blog\/\$slug"/u);
   assert.doesNotMatch(homeRouteSource, /Read entry/u);

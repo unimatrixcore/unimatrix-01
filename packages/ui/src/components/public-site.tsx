@@ -212,15 +212,26 @@ function PublicCardSurface({
   linkLabel,
   renderLink,
   variant,
-}: {
-  actions?: React.ReactNode | undefined;
-  children: React.ReactNode;
-  className?: string | undefined;
-  id?: string | undefined;
-  linkLabel?: string | undefined;
-  renderLink?: PublicCardLinkRenderer | undefined;
-  variant: "compact" | "default";
-}) {
+}: (
+  | {
+      actions?: React.ReactNode | undefined;
+      children: React.ReactNode;
+      className?: string | undefined;
+      id?: string | undefined;
+      linkLabel: string;
+      renderLink: PublicCardLinkRenderer;
+      variant: "compact" | "default";
+    }
+  | {
+      actions?: React.ReactNode | undefined;
+      children: React.ReactNode;
+      className?: string | undefined;
+      id?: string | undefined;
+      linkLabel?: undefined;
+      renderLink?: undefined;
+      variant: "compact" | "default";
+    }
+)) {
   const isInteractive = Boolean(renderLink);
   const content = (
     <div
@@ -245,14 +256,16 @@ function PublicCardSurface({
   );
 
   const interactiveClasses = isInteractive
-    ? "transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-card focus-within:border-primary/50 focus-within:ring-primary/30"
+    ? "transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-card focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/30"
     : undefined;
 
-  const link = renderLink?.({
-    ariaLabel: linkLabel ?? "Open content",
-    children: <span className="sr-only">{linkLabel ?? "Open content"}</span>,
-    className: "absolute inset-0 z-10 outline-none",
-  });
+  const link = renderLink
+    ? renderLink({
+        ariaLabel: linkLabel,
+        children: <span className="sr-only">{linkLabel}</span>,
+        className: "absolute inset-0 z-10 outline-none",
+      })
+    : undefined;
 
   if (variant === "compact") {
     return (
@@ -298,13 +311,19 @@ export function PublicProjectCard({
   renderLink?: PublicCardLinkRenderer | undefined;
   variant?: "compact" | "default";
 }) {
+  const linkProps = renderLink
+    ? {
+        linkLabel: `Open project ${project.frontmatter.title}`,
+        renderLink,
+      }
+    : {};
+
   return (
     <PublicCardSurface
       actions={actions}
       className={className}
-      linkLabel={`Open project ${project.frontmatter.title}`}
-      renderLink={renderLink}
       variant={variant}
+      {...linkProps}
     >
       <div className="flex flex-wrap items-center gap-2">
         <Badge>{project.frontmatter.status}</Badge>
@@ -356,14 +375,20 @@ export function PublicPostListItem({
   variant?: "compact" | "default";
 }) {
   const summary = entry.frontmatter.description ?? entry.frontmatter.summary;
+  const linkProps = renderLink
+    ? {
+        linkLabel: `Open blog entry ${entry.frontmatter.title}`,
+        renderLink,
+      }
+    : {};
+
   return (
     <PublicCardSurface
       actions={actions}
       className={className}
       id={id}
-      linkLabel={`Open blog entry ${entry.frontmatter.title}`}
-      renderLink={renderLink}
       variant={variant}
+      {...linkProps}
     >
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant="outline">{entry.frontmatter.publishedAt}</Badge>
