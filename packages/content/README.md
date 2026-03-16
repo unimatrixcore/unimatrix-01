@@ -60,6 +60,12 @@ All current content files also require a markdown body after the frontmatter blo
 - errors include the repo-relative file path and failing field name
 - current tests cover both valid parsing and invalid authored content
 
+## Public v1 migration boundary
+
+- carry forward only the legacy content that supports the lightweight public-site narrative
+- keep operational queue-status posts, legacy docs routes, and policy-page migrations out of scope unless a later issue expands them
+- remember that `apps/web/src/features/content/site-content.ts` still uses an explicit raw-import registry; `apps/web/test/content-registry.test.ts` exists to catch missed project/blog wiring when new content files are added
+
 ## Commands
 
 - `pnpm --filter @unimatrix/content lint`

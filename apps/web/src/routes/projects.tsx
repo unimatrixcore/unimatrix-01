@@ -21,14 +21,15 @@ function ProjectsRoute() {
               <RiLayoutGridLine aria-hidden="true" className="size-3.5" />
               Projects
             </Badge>
-            <Badge variant="outline">legacy posts translated</Badge>
+            <Badge variant="outline">public v1 selection</Badge>
           </div>
           <div className="space-y-3">
             <h2 className="text-2xl leading-tight font-medium tracking-tight">
-              Project content now lives under content/projects instead of the Hugo-era posts naming.
+              Selected project write-ups now live under content/projects instead of the Hugo-era posts collection.
             </h2>
             <p className="max-w-3xl text-sm leading-7 text-muted-foreground lg:text-base">
-              The route only needs a typed listing for this issue, but the shared collection is now ready for later detail pages.
+              Only the entries that support the lightweight public site are carried forward here;
+              legacy docs routes and policy pages stay intentionally out of scope for now.
             </p>
           </div>
         </div>

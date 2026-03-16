@@ -25,11 +25,11 @@ function BlogRoute() {
           </div>
           <div className="space-y-3">
             <h2 className="text-2xl leading-tight font-medium tracking-tight">
-              Repo-backed blog entries now flow through the shared content package.
+              Selected writing now carries forward the parts of the legacy blog that still fit the new site.
             </h2>
             <p className="max-w-3xl text-sm leading-7 text-muted-foreground lg:text-base">
-              This route is intentionally a small listing surface for LOC-43: it proves the
-              typed content boundary without expanding into a full publishing system yet.
+              Public v1 keeps the blog intentionally small: durable project and architecture notes stay,
+              while one-off queue-status updates are left out of the main narrative.
             </p>
           </div>
         </div>

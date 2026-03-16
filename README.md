@@ -88,6 +88,8 @@ Current in-scope domains are intentionally limited to:
 - use frontmatter that matches the typed collection contracts in `packages/content`
 - expect invalid or missing fields to fail with file-specific validation errors
 - keep markdown non-executable; Borg Markdown remains future work rather than part of this baseline
+- keep the public v1 content set curated; legacy docs, policy pages, and operational queue-status posts stay out of scope unless a new issue expands that boundary
+- when adding new `content/projects/*.md` or `content/blog/*.md` files, also wire them into `apps/web/src/features/content/site-content.ts`; `apps/web/test/content-registry.test.ts` guards this manual registry against omissions
 
 ### Validation commands
 
