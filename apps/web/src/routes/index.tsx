@@ -101,7 +101,19 @@ function IndexRoute() {
             />
             <div className="grid gap-3">
               {projects.map((project) => (
-                <PublicProjectCard key={project.slug} project={project} variant="compact" />
+                <PublicProjectCard
+                  key={project.slug}
+                  project={project}
+                  variant="compact"
+                  actions={
+                    <Button asChild variant="outline" className="w-fit gap-2">
+                      <Link to="/projects/$slug" params={{ slug: project.slug }}>
+                        Open project
+                        <RiArrowRightUpLine aria-hidden="true" className="size-4" />
+                      </Link>
+                    </Button>
+                  }
+                />
               ))}
             </div>
           </div>
@@ -115,7 +127,19 @@ function IndexRoute() {
             />
             <div className="grid gap-3">
               {blogEntries.map((entry) => (
-                <PublicPostListItem key={entry.slug} entry={entry} variant="compact" />
+                <PublicPostListItem
+                  key={entry.slug}
+                  entry={entry}
+                  variant="compact"
+                  actions={
+                    <Button asChild variant="outline" className="w-fit gap-2">
+                      <Link to="/blog/$slug" params={{ slug: entry.slug }}>
+                        Read entry
+                        <RiArrowRightUpLine aria-hidden="true" className="size-4" />
+                      </Link>
+                    </Button>
+                  }
+                />
               ))}
             </div>
           </div>

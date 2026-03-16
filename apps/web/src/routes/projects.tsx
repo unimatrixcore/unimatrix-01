@@ -1,8 +1,14 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute } from "@tanstack/react-router";
 import { RiArrowRightUpLine, RiLayoutGridLine } from "@remixicon/react";
 
 import { projectEntries } from "@/features/content/site-content";
-import { Badge, Card, PublicProjectCard, PublicSectionHeading } from "@unimatrix/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  PublicProjectCard,
+  PublicSectionHeading,
+} from "@unimatrix/ui";
 
 export const Route = createFileRoute("/projects")({
   component: ProjectsRoute,
@@ -37,7 +43,24 @@ function ProjectsRoute() {
           <PublicProjectCard
             key={project.slug}
             project={project}
-            repoLinkIcon={<RiArrowRightUpLine aria-hidden="true" className="size-4" />}
+            actions={
+              <>
+                <Button asChild variant="outline" className="w-fit gap-2">
+                  <Link to="/projects/$slug" params={{ slug: project.slug }}>
+                    Open project
+                    <RiArrowRightUpLine aria-hidden="true" className="size-4" />
+                  </Link>
+                </Button>
+                {project.frontmatter.repoUrl ? (
+                  <Button asChild variant="secondary" className="w-fit gap-2">
+                    <a href={project.frontmatter.repoUrl} rel="noreferrer" target="_blank">
+                      View repository
+                      <RiArrowRightUpLine aria-hidden="true" className="size-4" />
+                    </a>
+                  </Button>
+                ) : null}
+              </>
+            }
           />
         ))}
       </div>

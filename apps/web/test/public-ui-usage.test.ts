@@ -41,18 +41,33 @@ void test("apps/web consumes the shared public-site primitives instead of route-
   const homeRouteSource = readRepositoryFile("apps/web/src/routes/index.tsx");
   const projectsRouteSource = readRepositoryFile("apps/web/src/routes/projects.tsx");
   const blogRouteSource = readRepositoryFile("apps/web/src/routes/blog.tsx");
+  const projectDetailRouteSource = readRepositoryFile("apps/web/src/routes/projects_.$slug.tsx");
+  const blogDetailRouteSource = readRepositoryFile("apps/web/src/routes/blog_.$slug.tsx");
 
   assert.match(appShellSource, /PublicAppFrame/u);
   assert.match(appShellSource, /PublicPageContainer/u);
+  assert.match(appShellSource, /navigationAriaLabel="Site navigation"/u);
 
   assert.match(homeRouteSource, /PublicSectionHeading/u);
   assert.match(homeRouteSource, /PublicContentParagraphs/u);
   assert.match(homeRouteSource, /PublicProjectCard/u);
   assert.match(homeRouteSource, /PublicPostListItem/u);
+  assert.match(homeRouteSource, /to="\/projects\/\$slug"/u);
+  assert.match(homeRouteSource, /Open project/u);
+  assert.match(homeRouteSource, /to="\/blog\/\$slug"/u);
+  assert.match(homeRouteSource, /Read entry/u);
 
   assert.match(projectsRouteSource, /PublicSectionHeading/u);
   assert.match(projectsRouteSource, /PublicProjectCard/u);
+  assert.match(projectsRouteSource, /to="\/projects\/\$slug"/u);
+  assert.match(projectsRouteSource, /Open project/u);
+  assert.match(projectsRouteSource, /View repository/u);
 
   assert.match(blogRouteSource, /PublicSectionHeading/u);
   assert.match(blogRouteSource, /PublicPostListItem/u);
+  assert.match(blogRouteSource, /to="\/blog\/\$slug"/u);
+  assert.match(blogRouteSource, /Read entry/u);
+
+  assert.match(projectDetailRouteSource, /createFileRoute\("\/projects_\/\$slug"\)/u);
+  assert.match(blogDetailRouteSource, /createFileRoute\("\/blog_\/\$slug"\)/u);
 });

@@ -190,14 +190,14 @@ type PublicProjectCardData = {
 };
 
 export function PublicProjectCard({
+  actions,
   className,
   project,
-  repoLinkIcon,
   variant = "default",
 }: {
+  actions?: React.ReactNode;
   className?: string;
   project: PublicProjectCardData;
-  repoLinkIcon?: React.ReactNode;
   variant?: "compact" | "default";
 }) {
   const content = (
@@ -221,14 +221,7 @@ export function PublicProjectCard({
           <p className="text-sm leading-7 text-muted-foreground">{project.excerpt}</p>
         ) : null}
       </div>
-      {variant === "default" && project.frontmatter.repoUrl ? (
-        <Button asChild variant="outline" className="w-fit gap-2">
-          <a href={project.frontmatter.repoUrl} rel="noreferrer" target="_blank">
-            View repository
-            {repoLinkIcon}
-          </a>
-        </Button>
-      ) : null}
+      {actions ? <div className="flex flex-wrap gap-3">{actions}</div> : null}
     </div>
   );
 
@@ -251,11 +244,13 @@ type PublicPostListItemData = {
 };
 
 export function PublicPostListItem({
+  actions,
   className,
   entry,
   id,
   variant = "default",
 }: {
+  actions?: React.ReactNode;
   className?: string;
   entry: PublicPostListItemData;
   id?: string;
@@ -282,6 +277,7 @@ export function PublicPostListItem({
           <p className="text-sm leading-7 text-muted-foreground">{entry.excerpt}</p>
         ) : null}
       </div>
+      {actions ? <div className="flex flex-wrap gap-3">{actions}</div> : null}
     </div>
   );
 

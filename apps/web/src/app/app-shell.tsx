@@ -71,20 +71,20 @@ export function AppShell({ children }: AppShellProps) {
           <>
             <Badge className="gap-1.5">
               <RiLayoutGridLine aria-hidden="true" className="size-3.5" />
-              LOC-43
+              Public v1
             </Badge>
-            <Badge variant="outline">Typed content baseline</Badge>
-            <Badge variant="secondary">Repo-backed markdown</Badge>
+            <Badge variant="outline">Repo-backed content</Badge>
+            <Badge variant="secondary">Safe markdown</Badge>
           </>
         }
         description={homeContent.frontmatter.intro}
         footerItems={[
-          "Home, project, and blog copy now resolve from repo-backed content files instead of route-local placeholder strings.",
-          "`apps/web` consumes `@unimatrix/content` for parsing and typed contracts while the UI remains in `@unimatrix/ui`.",
-          "Borg Markdown stays future work; this baseline keeps markdown safe and non-executable for the first public-site surface.",
+          "Projects and writing stay repo-backed so the public surface remains easy to inspect, review, and evolve.",
+          "The web app uses shared content contracts and shared UI primitives from the monorepo instead of route-local placeholders.",
+          "The first public release keeps markdown intentionally plain and non-executable while richer content tooling stays future work.",
         ]}
         navigationAdornment={<RiStackLine aria-hidden="true" className="size-4" />}
-        navigationAriaLabel="Scaffold navigation"
+        navigationAriaLabel="Site navigation"
         navigationItems={navigationItems}
         title={homeContent.frontmatter.title}
       />

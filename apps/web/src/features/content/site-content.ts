@@ -11,6 +11,8 @@ import {
   sortEntriesByPublishedAtDesc,
 } from "@unimatrix/content";
 
+import { indexEntriesBySlug } from "./lookups";
+
 import homeSource from "../../../../../content/home/index.md?raw";
 import typedBaselineSource from "../../../../../content/blog/building-a-typed-content-baseline.md?raw";
 import borgMarkdownSource from "../../../../../content/blog/on-borg-markdown-as-future-work.md?raw";
@@ -49,3 +51,14 @@ export const featuredProjects = projectEntries.filter(
 );
 
 export const latestBlogEntries = blogEntries.slice(0, 2);
+
+const projectEntriesBySlug = indexEntriesBySlug(projectEntries);
+const blogEntriesBySlug = indexEntriesBySlug(blogEntries);
+
+export function getProjectEntryBySlug(slug: string): ProjectEntry | undefined {
+  return projectEntriesBySlug.get(slug);
+}
+
+export function getBlogEntryBySlug(slug: string): BlogEntry | undefined {
+  return blogEntriesBySlug.get(slug);
+}
