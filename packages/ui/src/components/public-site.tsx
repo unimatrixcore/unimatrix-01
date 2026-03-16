@@ -141,18 +141,27 @@ export function PublicSectionHeading({
       {descriptionContent}
     </div>
   );
+  const hasHeadingContent = Boolean(titleContent || descriptionContent);
+  const badgesContent = badges ? <div className="flex flex-wrap items-center gap-2">{badges}</div> : null;
 
   return (
     <div className={cn("space-y-4", className)}>
-      {badges ? <div className="flex flex-wrap items-center gap-2">{badges}</div> : null}
-      {trailing ? (
+      {badgesContent && trailing ? (
+        <div className="flex items-center justify-between gap-3">
+          {badgesContent}
+          {trailing}
+        </div>
+      ) : badgesContent ? (
+        badgesContent
+      ) : trailing ? (
         <div className="flex items-start justify-between gap-3">
           {headingContent}
           {trailing}
         </div>
       ) : (
-        headingContent
+        null
       )}
+      {hasHeadingContent && !(trailing && !badgesContent) ? headingContent : null}
     </div>
   );
 }
