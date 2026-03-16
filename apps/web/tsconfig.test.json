@@ -6,6 +6,7 @@
   },
   "include": [
     "src/features/content/markdown.ts",
+    "src/features/content/lookups.ts",
     "src/lib/config.ts",
     "test/**/*.ts"
   ]

@@ -55,10 +55,10 @@ export function AppShell({ children }: AppShellProps) {
               <div className="flex flex-wrap items-center gap-2">
                 <Badge className="gap-1.5">
                   <RiLayoutGridLine aria-hidden="true" className="size-3.5" />
-                  LOC-43
+                  Public v1
                 </Badge>
-                <Badge variant="outline">Typed content baseline</Badge>
-                <Badge variant="secondary">Repo-backed markdown</Badge>
+                <Badge variant="outline">Repo-backed content</Badge>
+                <Badge variant="secondary">Safe markdown</Badge>
               </div>
               <div className="space-y-3">
                 <p className="text-xs uppercase tracking-[0.32em] text-muted-foreground">
@@ -78,7 +78,7 @@ export function AppShell({ children }: AppShellProps) {
                 <span>Content routes</span>
                 <RiStackLine aria-hidden="true" className="size-4" />
               </div>
-              <nav aria-label="Scaffold navigation" className="grid gap-2">
+              <nav aria-label="Site navigation" className="grid gap-2">
                 {navItems.map(({ exact, icon: Icon, label, to }) => {
                   const isActive = exact
                     ? pathname === to
@@ -109,16 +109,16 @@ export function AppShell({ children }: AppShellProps) {
 
           <div className="grid gap-3 px-6 text-xs leading-6 text-muted-foreground lg:grid-cols-3">
             <p>
-              Home, project, and blog copy now resolve from repo-backed content
-              files instead of route-local placeholder strings.
+              Projects and writing stay repo-backed so the public surface remains
+              easy to inspect, review, and evolve.
             </p>
             <p>
-              `apps/web` consumes `@unimatrix/content` for parsing and typed
-              contracts while the UI remains in `@unimatrix/ui`.
+              The web app uses shared content contracts and shared UI primitives
+              from the monorepo instead of route-local placeholders.
             </p>
             <p>
-              Borg Markdown stays future work; this baseline keeps markdown safe
-              and non-executable for the first public-site surface.
+              The first public release keeps markdown intentionally plain and
+              non-executable while richer content tooling stays future work.
             </p>
           </div>
         </Card>
