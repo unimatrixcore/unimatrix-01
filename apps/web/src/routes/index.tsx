@@ -9,7 +9,16 @@ import {
 
 import { splitMarkdownIntoParagraphs } from "@/features/content/markdown";
 import { featuredProjects, latestBlogEntries, homeContent } from "@/features/content/site-content";
-import { Badge, Button, Card, Separator } from "@unimatrix/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  PublicContentParagraphs,
+  PublicPostListItem,
+  PublicProjectCard,
+  PublicSectionHeading,
+  Separator,
+} from "@unimatrix/ui";
 
 export const Route = createFileRoute("/")({
   component: IndexRoute,
@@ -29,32 +38,25 @@ function IndexRoute() {
       <div className="grid gap-6">
         <Card className="border-border/60 bg-card/94 shadow-[0_18px_60px_-36px_color-mix(in_oklab,var(--foreground)_22%,transparent)]">
           <div className="space-y-6 px-6">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge className="gap-1.5">
-                <RiCompassDiscoverLine aria-hidden="true" className="size-3.5" />
-                Home content
-              </Badge>
-              <Badge variant="outline">repo-backed</Badge>
-            </div>
-
-            <div className="space-y-3">
-              <h2 className="text-2xl leading-tight font-medium tracking-tight lg:text-3xl">
-                {home.frontmatter.title}
-              </h2>
-              <p className="max-w-2xl text-sm leading-7 text-muted-foreground lg:text-base">
-                {home.frontmatter.summary}
-              </p>
-            </div>
+            <PublicSectionHeading
+              badges={
+                <>
+                  <Badge className="gap-1.5">
+                    <RiCompassDiscoverLine aria-hidden="true" className="size-3.5" />
+                    Home content
+                  </Badge>
+                  <Badge variant="outline">repo-backed</Badge>
+                </>
+              }
+              description={home.frontmatter.summary}
+              descriptionClassName="max-w-2xl"
+              title={home.frontmatter.title}
+              titleClassName="lg:text-3xl"
+            />
 
             <Separator />
 
-            <div className="grid gap-4 lg:grid-cols-2">
-              {homeParagraphs.map((paragraph, index) => (
-                <p key={`${index}:${paragraph}`} className="text-sm leading-7 text-muted-foreground lg:text-base">
-                  {paragraph}
-                </p>
-              ))}
-            </div>
+            <PublicContentParagraphs columns={2} paragraphs={homeParagraphs} />
 
             <div className="flex flex-wrap gap-3">
               <Button asChild className="gap-2">
@@ -81,13 +83,11 @@ function IndexRoute() {
 
         <Card className="border-border/60 bg-card/90 shadow-none">
           <div className="space-y-4 px-6">
-            <div className="flex items-center justify-between gap-3">
-              <Badge variant="secondary">Mission</Badge>
-              <RiLayoutGridLine aria-hidden="true" className="size-4 text-muted-foreground" />
-            </div>
-            <p className="text-sm leading-7 text-muted-foreground lg:text-base">
-              {home.frontmatter.mission}
-            </p>
+            <PublicSectionHeading
+              badges={<Badge variant="secondary">Mission</Badge>}
+              description={home.frontmatter.mission}
+              trailing={<RiLayoutGridLine aria-hidden="true" className="size-4 text-muted-foreground" />}
+            />
           </div>
         </Card>
       </div>
@@ -95,22 +95,13 @@ function IndexRoute() {
       <div className="grid gap-4">
         <Card size="sm" className="border-border/60 bg-card/82 shadow-none backdrop-blur">
           <div className="space-y-4 px-4">
-            <div className="flex items-center justify-between gap-3">
-              <Badge variant="secondary">Featured projects</Badge>
-              <RiLayoutGridLine aria-hidden="true" className="size-4 text-muted-foreground" />
-            </div>
+            <PublicSectionHeading
+              badges={<Badge variant="secondary">Featured projects</Badge>}
+              trailing={<RiLayoutGridLine aria-hidden="true" className="size-4 text-muted-foreground" />}
+            />
             <div className="grid gap-3">
               {projects.map((project) => (
-                <div key={project.slug} className="space-y-2 border border-border/60 px-3 py-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge>{project.frontmatter.status}</Badge>
-                    <Badge variant="outline">{project.frontmatter.publishedAt}</Badge>
-                  </div>
-                  <h3 className="text-sm leading-6 font-medium">{project.frontmatter.title}</h3>
-                  <p className="text-sm leading-6 text-muted-foreground">
-                    {project.frontmatter.summary}
-                  </p>
-                </div>
+                <PublicProjectCard key={project.slug} project={project} variant="compact" />
               ))}
             </div>
           </div>
@@ -118,19 +109,13 @@ function IndexRoute() {
 
         <Card size="sm" className="border-border/60 bg-card/82 shadow-none backdrop-blur">
           <div className="space-y-4 px-4">
-            <div className="flex items-center justify-between gap-3">
-              <Badge variant="secondary">Recent blog posts</Badge>
-              <RiStackLine aria-hidden="true" className="size-4 text-muted-foreground" />
-            </div>
+            <PublicSectionHeading
+              badges={<Badge variant="secondary">Recent blog posts</Badge>}
+              trailing={<RiStackLine aria-hidden="true" className="size-4 text-muted-foreground" />}
+            />
             <div className="grid gap-3">
               {blogEntries.map((entry) => (
-                <div key={entry.slug} className="space-y-2 border border-border/60 px-3 py-3">
-                  <Badge variant="outline">{entry.frontmatter.publishedAt}</Badge>
-                  <h3 className="text-sm leading-6 font-medium">{entry.frontmatter.title}</h3>
-                  <p className="text-sm leading-6 text-muted-foreground">
-                    {entry.frontmatter.summary}
-                  </p>
-                </div>
+                <PublicPostListItem key={entry.slug} entry={entry} variant="compact" />
               ))}
             </div>
           </div>
