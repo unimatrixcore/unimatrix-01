@@ -110,6 +110,12 @@ function IndexRoute() {
                   <p className="text-sm leading-6 text-muted-foreground">
                     {project.frontmatter.summary}
                   </p>
+                  <Button asChild variant="outline" className="w-fit gap-2">
+                    <Link to="/projects/$slug" params={{ slug: project.slug }}>
+                      Open project
+                      <RiArrowRightUpLine aria-hidden="true" className="size-4" />
+                    </Link>
+                  </Button>
                 </div>
               ))}
             </div>
@@ -130,6 +136,12 @@ function IndexRoute() {
                   <p className="text-sm leading-6 text-muted-foreground">
                     {entry.frontmatter.summary}
                   </p>
+                  <Button asChild variant="outline" className="w-fit gap-2">
+                    <Link to="/blog/$slug" params={{ slug: entry.slug }}>
+                      Read entry
+                      <RiArrowRightUpLine aria-hidden="true" className="size-4" />
+                    </Link>
+                  </Button>
                 </div>
               ))}
             </div>

@@ -32,11 +32,10 @@ function RootNotFound() {
         </Badge>
         <div className="space-y-3">
           <h2 className="text-2xl leading-tight font-medium tracking-tight">
-            This site currently defines overview, projects, blog, and status routes.
+            That page is not part of the current public site.
           </h2>
           <p className="max-w-2xl text-sm leading-7 text-muted-foreground lg:text-base">
-            The page you're looking for doesn't exist. Try navigating to one of the
-            sections above.
+            Try returning to the overview or continue into projects, blog, or status from the main navigation.
           </p>
         </div>
         <Button asChild className="w-fit">
