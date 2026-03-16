@@ -10,7 +10,7 @@
     "dev": "vite",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "tmp_dir=$(mktemp -d); trap 'rm -rf \"$tmp_dir\"' EXIT; tsc -p tsconfig.test.json --outDir \"$tmp_dir\" && node --test $tmp_dir/test/*.test.js",
+    "test": "tmp_dir=$(mktemp -d); trap 'rm -rf \"$tmp_dir\"' EXIT; tsc -p tsconfig.test.json --outDir \"$tmp_dir\" && { set -- \"$tmp_dir\"/test/*.test.js; [ -e \"$1\" ] || { echo 'No compiled tests found.' >&2; exit 1; }; node --test \"$@\"; }",
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {

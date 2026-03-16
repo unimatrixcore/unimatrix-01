@@ -19,7 +19,7 @@ function getRegisteredCollectionFilePaths(collectionDirectory: "blog" | "project
     join(process.cwd(), "src", "features", "content", "site-content.ts"),
     "utf8",
   );
-  const filePathPattern = new RegExp(`content/${collectionDirectory}/[a-z0-9-]+\\.md`, "gu");
+  const filePathPattern = new RegExp(`content/${collectionDirectory}/[^/"'\\s]+\\.md`, "gu");
 
   return [...new Set(siteContentSource.match(filePathPattern) ?? [])].sort();
 }
