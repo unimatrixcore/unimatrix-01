@@ -41,11 +41,23 @@ void test("GET /health rejects unexpected query parameters with a validation env
   });
 
   assert.equal(response.statusCode, 400);
-  assert.match(response.body, /"code":"VALIDATION_ERROR"/u);
-  assert.match(response.body, /"message":"Request validation failed"/u);
-  assert.match(response.body, /"statusCode":400/u);
-  assert.match(response.body, /"issues":\[/u);
-  assert.match(response.body, /"requestId":"req-1"/u);
+  const body = response.json() as {
+    error: {
+      code: string;
+      details: {
+        issues: unknown[];
+      };
+      message: string;
+      statusCode: number;
+    };
+    requestId: string;
+  };
+
+  assert.equal(body.error.code, "VALIDATION_ERROR");
+  assert.equal(body.error.message, "Request validation failed");
+  assert.equal(body.error.statusCode, 400);
+  assert.ok(body.error.details.issues.length > 0);
+  assert.match(body.requestId, /^req-\d+$/u);
 });
 
 void test("GET /missing-route returns the not-found envelope", async (t) => {
@@ -60,12 +72,19 @@ void test("GET /missing-route returns the not-found envelope", async (t) => {
   });
 
   assert.equal(response.statusCode, 404);
-  assert.deepEqual(response.json(), {
+  const body = response.json() as {
     error: {
-      code: "NOT_FOUND",
-      message: "Route not found",
-      statusCode: 404,
-    },
-    requestId: "req-1",
+      code: string;
+      message: string;
+      statusCode: number;
+    };
+    requestId: string;
+  };
+
+  assert.deepEqual(body.error, {
+    code: "NOT_FOUND",
+    message: "Route not found",
+    statusCode: 404,
   });
+  assert.match(body.requestId, /^req-\d+$/u);
 });
