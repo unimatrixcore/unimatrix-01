@@ -1,6 +1,11 @@
-# Workspace Map
+# Workspace map
+
+This page maps the current repo tree to ownership boundaries. Use it when you
+need to decide where code, docs, content, or infra changes belong.
 
 ## Current repo tree
+
+The tree below reflects the current live workspace layout.
 
 ```text
 .
@@ -35,29 +40,34 @@
 └── turbo.json
 ```
 
-## Workspace purpose
+## Workspace responsibilities
 
-| Path | Purpose |
-| --- | --- |
-| `apps/web` | Vite + React public web app, including TanStack Router routes, public content rendering, and the `/status` surface. |
-| `apps/api` | Fastify API workspace with runtime config validation, request handling, and local dev server entrypoints. |
-| `packages/ui` | Shared ShadCN-based UI primitives, styles, and UI-level test baseline for the monorepo. |
-| `packages/shared` | Framework-agnostic shared contracts, schemas, and types. |
-| `packages/api-client` | Typed client helpers for consuming API contracts from app code. |
-| `packages/content` | Typed content collections, frontmatter validation, and repo-backed content loaders. |
-| `packages/db` | Drizzle ORM and SQLite persistence baseline, including migration tooling. |
-| `packages/config-typescript` | Shared strict TypeScript config presets for apps and packages. |
-| `packages/config-eslint` | Shared ESLint flat config helpers for typed workspaces. |
-| `content/` | Git-backed authored public content for the current live domains: `home`, `projects`, and `blog`. |
-| `infra/` | Operational support surface for scripts, deployment documentation, and future local container assets. |
+Use the table below to place work in the narrowest correct boundary.
 
-## Reserved / not present yet
+| Path | Purpose | Local reference |
+| --- | --- | --- |
+| `apps/web` | Vite + React public site, TanStack Router routes, and public content rendering | `apps/web/package.json` |
+| `apps/api` | Fastify API workspace with runtime config validation and request handling | `apps/api/package.json` |
+| `packages/ui` | Shared ShadCN-based UI primitives and shared styles | `packages/ui/README.md` |
+| `packages/shared` | Framework-agnostic shared contracts, schemas, and types | `packages/shared/README.md` |
+| `packages/api-client` | Typed client helpers that consume shared contracts | `packages/api-client/README.md` |
+| `packages/content` | Typed content collections, frontmatter validation, and repo-backed loaders | `packages/content/README.md` |
+| `packages/db` | Drizzle ORM and SQLite persistence baseline, including migration tooling | `packages/db/README.md` |
+| `packages/config-typescript` | Shared strict TypeScript config presets | `packages/config-typescript/package.json` |
+| `packages/config-eslint` | Shared ESLint flat-config helpers | `packages/config-eslint/package.json` |
+| `content/` | Git-backed public authored content for `home`, `projects`, and `blog` | `docs/content.md` |
+| `docs/` | Repo-internal operating documentation | `docs/README.md` |
+| `infra/` | Scripts, deployment docs, and local container posture | `infra/deployment/README.md` |
 
-The following paths are intentionally reserved but are not current live workspaces or content roots:
+## Reserved roots
+
+The paths below are intentionally reserved but are not current live
+workspaces or content roots.
 
 - `apps/workers`
 - `content/docs`
 - `content/notes`
-- future packages such as `packages/bmd-parser`
+- Future packages such as `packages/bmd-parser`
 
-Do not describe these as existing runtime surfaces until they are actually checked in and wired into the workspace.
+Do not describe these paths as existing runtime surfaces until they are
+actually checked in and wired into the workspace.

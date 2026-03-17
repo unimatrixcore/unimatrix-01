@@ -1,16 +1,39 @@
 # Unimatrix-01
 
-Unimatrix-01 is the active TypeScript monorepo for the Unimatrix public web surface, API, shared packages, and repo-backed content.
+Unimatrix-01 is the active TypeScript monorepo for the public site, API,
+shared packages, and Git-backed content.
 
-## Quickstart
+## Quick start
 
-```bash
-corepack enable
-corepack use pnpm@10.30.3
-pnpm install
-pnpm dev
-```
+Use the pinned toolchain from `.node-version` and the root
+`packageManager` field when you work locally.
 
-If you want the app-local `.env` files created before starting the dev loop, run `pnpm setup:local` once from the repo root.
+1. Run `corepack enable`.
+2. Run `corepack use pnpm@10.30.3`.
+3. Run `pnpm install`.
+4. Optional: Run `pnpm setup:local` if you want app-local `.env` files
+   created before the dev loop starts.
+5. Run `pnpm dev`.
 
-For the canonical human operating guide, start with [docs/README.md](docs/README.md). For agent execution rules and safety boundaries, see [AGENTS.md](AGENTS.md).
+If your host runtime does not already match the pinned Node and pnpm
+versions, use `./infra/scripts/pnpm-with-node22.sh install
+--frozen-lockfile` and `./infra/scripts/pnpm-with-node22.sh dev`.
+
+## What lives here
+
+This repo keeps the current runtime surface narrow and explicit.
+
+- `apps/web` contains the Vite + React public site.
+- `apps/api` contains the Fastify API.
+- `packages/` contains shared UI, content, database, config, and contract
+  packages.
+- `content/` contains the public authored content rendered by the web app.
+
+## Docs
+
+Use the short index below to jump to the right source of truth.
+
+- Human operating guide: [docs/README.md](docs/README.md)
+- Deployment contract: [infra/deployment/README.md](infra/deployment/README.md)
+- Local container posture: [infra/docker/README.md](infra/docker/README.md)
+- Agent contract: [AGENTS.md](AGENTS.md)
