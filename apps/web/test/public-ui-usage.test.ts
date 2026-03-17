@@ -44,6 +44,15 @@ describe("public UI package usage", () => {
     const rootSource = readRepositoryFile("packages/ui/src/index.ts");
     const publicSource = readRepositoryFile("packages/ui/src/public.ts");
     const uiBarrelSource = readRepositoryFile("packages/ui/src/components/ui/index.ts");
+    const publicExportLines = publicSource.match(/^export \{ .* \} from ".*";$/gmu) ?? [];
+    const expectedPublicExports = {
+      Badge: "./components/ui/badge.js",
+      Button: "./components/ui/button.js",
+      Card: "./components/ui/card.js",
+      Separator: "./components/ui/separator.js",
+      PublicMarkdown: "./components/public-markdown.js",
+      cn: "./lib/utils.js",
+    };
 
     expect(rootSource).toMatch(/components\/ui\/index/u);
     expect(rootSource).toMatch(/PublicMarkdown/u);
@@ -58,14 +67,10 @@ describe("public UI package usage", () => {
     expect(rootSource).not.toMatch(/PublicProjectCard/u);
     expect(rootSource).not.toMatch(/PublicPostListItem/u);
 
-    expect(publicSource.trim().split("\n")).toEqual([
-      'export { Badge } from "./components/ui/badge.js";',
-      'export { Button } from "./components/ui/button.js";',
-      'export { Card } from "./components/ui/card.js";',
-      'export { Separator } from "./components/ui/separator.js";',
-      'export { PublicMarkdown } from "./components/public-markdown.js";',
-      'export { cn } from "./lib/utils.js";',
-    ]);
+    expect(publicExportLines).toHaveLength(Object.keys(expectedPublicExports).length);
+    for (const [exportName, exportPath] of Object.entries(expectedPublicExports)) {
+      expect(publicSource).toContain(`export { ${exportName} } from "${exportPath}";`);
+    }
     expect(publicSource).not.toMatch(/accordion/u);
     expect(publicSource).not.toMatch(/dialog/u);
     expect(publicSource).not.toMatch(/sidebar/u);
@@ -150,6 +155,8 @@ describe("public UI package usage", () => {
     expect(lazyMarkdownSource).toMatch(/lazy\(/u);
     expect(lazyMarkdownSource).toMatch(/import\("@unimatrix\/ui\/public"\)/u);
     expect(lazyMarkdownSource).toMatch(/module\.PublicMarkdown/u);
+    expect(lazyMarkdownSource).toMatch(/getDerivedStateFromError/u);
+    expect(lazyMarkdownSource).toMatch(/Markdown content could not be loaded right now/u);
 
     expect(homeRouteSource).toMatch(/createFileRoute\("\/"\)/u);
     expect(homeRouteSource).toMatch(/loader/u);
