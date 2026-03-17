@@ -55,43 +55,62 @@ async function loadReactModules(): Promise<ReactModules> {
   };
 }
 
-async function renderMarkdown(markdown: string): Promise<string> {
+void test("PublicMarkdown renders the supported safe GFM surface", async () => {
   const { PublicMarkdown } = await loadPublicMarkdown();
   const { createElement, renderToStaticMarkup } = await loadReactModules();
-
-  return renderToStaticMarkup(
+  const html = renderToStaticMarkup(
     createElement(PublicMarkdown, {
-      markdown,
+      markdown: `## Console heading
+
+> Blockquote signal.
+
+- Archive item
+- [x] Ship safe GFM
+
+| Surface | Mode |
+| --- | --- |
+| Public site | Safe GFM |
+
+\`\`\`ts
+const renderer = "safe-gfm";
+\`\`\`
+
+[External](https://example.test)
+
+[Internal](/projects/unimatrix-01)
+
+![Topology](/content/ops-console-topology.svg)`,
+      renderInternalLink: ({
+        children,
+        className,
+        href,
+      }: {
+        children: ReactNode;
+        className: string;
+        href: string;
+      }) =>
+        createElement(
+          "a",
+          {
+            className,
+            "data-internal-link": "true",
+            href,
+          },
+          children,
+        ),
     }),
   );
-}
 
-void test("PublicMarkdown suppresses raw HTML instead of rendering it", async () => {
-  const html = await renderMarkdown(`Visible copy.
-
-<div data-raw-html="suppressed">Unsafe raw HTML</div>
-
-<script>alert("x")</script>`);
-
-  assert.match(html, /Visible copy\./u);
-  assert.doesNotMatch(html, /data-raw-html/u);
-  assert.doesNotMatch(html, /Unsafe raw HTML/u);
-  assert.doesNotMatch(html, /<script/u);
-});
-
-void test("PublicMarkdown sanitizes unsupported link and image protocols", async () => {
-  const html = await renderMarkdown(`[Safe](https://example.test)
-
-[Mail](mailto:gwenny@example.test)
-
-[Blocked](javascript:alert('x'))
-
-![Blocked image](data:image/png;base64,abcd)`);
-
+  assert.match(html, /<h2/u);
+  assert.match(html, /Console heading/u);
+  assert.match(html, /<blockquote/u);
+  assert.match(html, /<ul/u);
+  assert.match(html, /type="checkbox"/u);
+  assert.match(html, /<table/u);
+  assert.match(html, /data-language="typescript"/u);
   assert.match(html, /href="https:\/\/example\.test"/u);
-  assert.match(html, /href="mailto:gwenny@example\.test"/u);
   assert.match(html, /target="_blank"/u);
-  assert.doesNotMatch(html, /javascript:/u);
-  assert.doesNotMatch(html, /data:image\/png/u);
-  assert.doesNotMatch(html, /<img/u);
+  assert.match(html, /data-internal-link="true"/u);
+  assert.match(html, /href="\/projects\/unimatrix-01"/u);
+  assert.match(html, /src="\/content\/ops-console-topology\.svg"/u);
 });

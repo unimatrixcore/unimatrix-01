@@ -9,6 +9,6 @@ The original version of this idea came out of a very specific frustration: I was
 
 That tension is what made Borg Markdown interesting. I wanted a format where authored content could stay close to the design system, where component intent was visible in source, and where the content layer did not disappear behind an admin surface that resisted inspection or customization.
 
-That idea still matters, but the new monorepo needs a narrower first move. Public v1 is intentionally plain repo-backed markdown with typed frontmatter, explicit validation, and no executable content path. That keeps the platform dependable while preserving Borg Markdown as future parser work with a strict safe whitelist instead of mixing an experimental language into the first migration.
+That idea still matters, but the new monorepo needs a narrower first move. Public v1 now ships safe GitHub-flavored markdown rendering on top of repo-backed files with typed frontmatter, explicit validation, and no executable content path. That keeps the platform dependable while preserving Borg Markdown as future parser work with a strict safe whitelist instead of mixing an experimental language into the first migration.
 
 In other words: the legacy post keeps the reason, while the monorepo changes the timing. The safe baseline comes first. The richer content language can wait until it has a clearer boundary and a more deliberate implementation.

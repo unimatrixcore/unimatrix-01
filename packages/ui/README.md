@@ -17,12 +17,15 @@ Shared ShadCN-based UI primitives for the Unimatrix monorepo.
 
 - `PublicPageContainer`
 - `PublicAppFrame`
+- `PublicMarkdown`
 - `PublicSectionHeading`
 - `PublicContentParagraphs`
 - `PublicProjectCard`
 - `PublicPostListItem`
 
 LOC-46 keeps this surface narrow on purpose: it should cover the lightweight public site that already exists without turning `@unimatrix/ui` into a broad application component library.
+
+`PublicMarkdown` now provides safe GitHub-flavored markdown rendering for authored public-site content. Raw HTML and executable MDX remain out of scope, and Borg Markdown remains future parser work rather than part of this package.
 
 ## Commands
 

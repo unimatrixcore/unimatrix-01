@@ -8,6 +8,14 @@ I spend most of my time in TypeScript and Node.js, with side paths through C#, J
 
 The work that matters most to me sits where backend architecture, open-source collaboration, and practical platform design overlap. I want the tools I ship to stay understandable to the people using them and approachable to the people who might want to extend them.
 
+> The current public site is intentionally shaped like an ops console: dense enough to be useful, calm enough to stay readable, and transparent enough to invite inspection.
+
+Three things matter most in that approach:
+
+- typed contracts at the content and app boundaries
+- repo-backed authoring that stays easy to diff and review
+- safe markdown rendering that expands expressiveness without opening an execution path
+
 My north star is collaboration: if a repository helps someone learn, sparks a contribution, or gets forked into something better, then it has done its job.
 
 Star Trek shaped a lot of that instinct. The values that stuck with me were progress through cooperation, shared responsibility, and building systems that make room for more than one person to succeed.

@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Ops console topology</title>
+  <desc id="desc">Diagram showing the public site, safe GFM renderer, content registry, and status route.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" x2="100%" y1="0%" y2="100%">
+      <stop offset="0%" stop-color="#08131a" />
+      <stop offset="100%" stop-color="#111d27" />
+    </linearGradient>
+    <linearGradient id="panel" x1="0%" x2="100%" y1="0%" y2="100%">
+      <stop offset="0%" stop-color="#12212b" />
+      <stop offset="100%" stop-color="#0d1720" />
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="720" fill="url(#bg)" />
+  <g stroke="#1b323e" stroke-width="1">
+    <path d="M0 120H1280" />
+    <path d="M0 240H1280" />
+    <path d="M0 360H1280" />
+    <path d="M0 480H1280" />
+    <path d="M0 600H1280" />
+    <path d="M160 0V720" />
+    <path d="M320 0V720" />
+    <path d="M480 0V720" />
+    <path d="M640 0V720" />
+    <path d="M800 0V720" />
+    <path d="M960 0V720" />
+    <path d="M1120 0V720" />
+  </g>
+  <g fill="none" stroke="#72f2cd" stroke-width="3">
+    <path d="M270 232H485" />
+    <path d="M640 232H855" />
+    <path d="M485 232L530 232" />
+    <path d="M855 232L910 232" />
+    <path d="M392 392H670" />
+  </g>
+  <g fill="url(#panel)" stroke="#2a4351" stroke-width="2">
+    <rect x="110" y="150" width="210" height="164" />
+    <rect x="480" y="150" width="210" height="164" />
+    <rect x="850" y="150" width="210" height="164" />
+    <rect x="295" y="332" width="580" height="196" />
+  </g>
+  <g fill="#d7efe8" font-family="'Geist Mono Variable', 'Courier New', monospace">
+    <text x="122" y="190" font-size="20" letter-spacing="4">PUBLIC_SITE</text>
+    <text x="122" y="224" font-size="42">OPS CONSOLE</text>
+    <text x="122" y="262" font-size="18" fill="#8cb6b0">desktop-first chrome</text>
+
+    <text x="492" y="190" font-size="20" letter-spacing="4">RENDERER</text>
+    <text x="492" y="224" font-size="42">SAFE GFM</text>
+    <text x="492" y="262" font-size="18" fill="#8cb6b0">no raw HTML / no MDX</text>
+
+    <text x="862" y="190" font-size="20" letter-spacing="4">CONTENT</text>
+    <text x="862" y="224" font-size="42">REGISTRY</text>
+    <text x="862" y="262" font-size="18" fill="#8cb6b0">manual raw imports</text>
+
+    <text x="320" y="374" font-size="20" letter-spacing="4">ROUTE SIGNALS</text>
+    <text x="320" y="414" font-size="28">/  projects</text>
+    <text x="320" y="454" font-size="28">/  blog</text>
+    <text x="320" y="494" font-size="28">/  status</text>
+
+    <text x="650" y="414" font-size="28">tables</text>
+    <text x="650" y="454" font-size="28">task lists</text>
+    <text x="650" y="494" font-size="28">syntax color</text>
+
+    <text x="320" y="568" font-size="18" fill="#8cb6b0">
+      repo-backed authored content, typed contracts, internal link handoff
+    </text>
+  </g>
+</svg>

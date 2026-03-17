@@ -29,6 +29,7 @@ void test("@unimatrix/ui exports the intentionally small public-site surface", (
   const source = readRepositoryFile("packages/ui/src/index.ts");
 
   assert.match(source, /PublicAppFrame/u);
+  assert.match(source, /PublicMarkdown/u);
   assert.match(source, /PublicPageContainer/u);
   assert.match(source, /PublicSectionHeading/u);
   assert.match(source, /PublicContentParagraphs/u);
@@ -46,35 +47,40 @@ void test("apps/web consumes the shared public-site primitives instead of route-
 
   assert.match(appShellSource, /PublicAppFrame/u);
   assert.match(appShellSource, /PublicPageContainer/u);
-  assert.match(appShellSource, /navigationAriaLabel="Site navigation"/u);
+  assert.match(appShellSource, /Route deck \/\/ live/u);
+  assert.match(appShellSource, /Safe GFM active/u);
 
   assert.match(homeRouteSource, /PublicSectionHeading/u);
-  assert.match(homeRouteSource, /PublicContentParagraphs/u);
+  assert.match(homeRouteSource, /PublicMarkdown/u);
   assert.match(homeRouteSource, /PublicProjectCard/u);
   assert.match(homeRouteSource, /PublicPostListItem/u);
+  assert.match(homeRouteSource, /renderPublicMarkdownInternalLink/u);
   assert.match(homeRouteSource, /to="\/projects\/\$slug"/u);
   const homeRouteRenderLinkCount = (homeRouteSource.match(/renderLink/gu) ?? []).length;
   assert.ok(
     homeRouteRenderLinkCount >= 2,
     `Expected at least 2 renderLink usages in index.tsx, got ${homeRouteRenderLinkCount}.`,
   );
-  assert.doesNotMatch(homeRouteSource, /Open project/u);
+  assert.doesNotMatch(homeRouteSource, /splitMarkdownIntoParagraphs/u);
   assert.match(homeRouteSource, /to="\/blog\/\$slug"/u);
-  assert.doesNotMatch(homeRouteSource, /Read entry/u);
 
-  assert.match(projectsRouteSource, /PublicSectionHeading/u);
+  assert.match(projectsRouteSource, /Projects archive/u);
   assert.match(projectsRouteSource, /PublicProjectCard/u);
   assert.match(projectsRouteSource, /to="\/projects\/\$slug"/u);
   assert.match(projectsRouteSource, /renderLink/u);
-  assert.doesNotMatch(projectsRouteSource, /Open project/u);
   assert.match(projectsRouteSource, /View repository/u);
 
-  assert.match(blogRouteSource, /PublicSectionHeading/u);
+  assert.match(blogRouteSource, /Blog archive/u);
   assert.match(blogRouteSource, /PublicPostListItem/u);
   assert.match(blogRouteSource, /to="\/blog\/\$slug"/u);
   assert.match(blogRouteSource, /renderLink/u);
-  assert.doesNotMatch(blogRouteSource, /Read entry/u);
 
   assert.match(projectDetailRouteSource, /createFileRoute\("\/projects_\/\$slug"\)/u);
+  assert.match(projectDetailRouteSource, /PublicMarkdown/u);
+  assert.match(projectDetailRouteSource, /renderPublicMarkdownInternalLink/u);
+  assert.doesNotMatch(projectDetailRouteSource, /splitMarkdownIntoParagraphs/u);
   assert.match(blogDetailRouteSource, /createFileRoute\("\/blog_\/\$slug"\)/u);
+  assert.match(blogDetailRouteSource, /PublicMarkdown/u);
+  assert.match(blogDetailRouteSource, /renderPublicMarkdownInternalLink/u);
+  assert.doesNotMatch(blogDetailRouteSource, /splitMarkdownIntoParagraphs/u);
 });

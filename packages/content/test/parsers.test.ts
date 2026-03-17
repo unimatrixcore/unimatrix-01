@@ -61,7 +61,7 @@ Blog body.
     assert.equal(blogEntry.frontmatter.description, "Blog description");
   });
 
-  it("derives plain-text excerpts from markdown links and images", () => {
+  it("derives plain-text excerpts from rich markdown without code fences or table separators", () => {
     const blogEntry = parseBlogContentFile(
       `---
 title: Linked baseline
@@ -69,12 +69,25 @@ slug: linked-baseline
 publishedAt: 2026-03-16
 summary: Blog summary
 ---
-See [the docs](https://example.com/docs) and ![diagram](https://example.com/image.png) for details.
+## Renderer brief
+
+\`\`\`ts
+const unsafe = "<script />";
+\`\`\`
+
+- [x] Review the [public renderer](/blog/building-a-typed-content-baseline) and the ![system map](/content/ops-console-topology.svg) before shipping.
+
+| Surface | Mode |
+| --- | --- |
+| Public site | Safe GFM |
 `,
       "content/blog/linked-baseline.md",
     );
 
-    assert.equal(blogEntry.excerpt, "See the docs and diagram for details.");
+    assert.equal(
+      blogEntry.excerpt,
+      "Review the public renderer and the system map before shipping.",
+    );
   });
 
   it("reports missing required frontmatter with a file-specific error", () => {
