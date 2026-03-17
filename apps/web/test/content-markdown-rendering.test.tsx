@@ -1,19 +1,17 @@
-import assert from "node:assert/strict";
-import test from "node:test";
 import type { ReactNode } from "react";
+import { describe, expect, it } from "vitest";
 
 import {
-  loadPublicMarkdown,
   loadReactModules,
   renderMarkdown,
-} from "./helpers/public-markdown.js";
+  renderMarkdownWithInternalLink,
+} from "./helpers/render-markdown.js";
 
-void test("PublicMarkdown renders the supported safe GFM surface", async () => {
-  const { PublicMarkdown } = await loadPublicMarkdown();
-  const { createElement, renderToStaticMarkup } = await loadReactModules();
-  const html = renderToStaticMarkup(
-    createElement(PublicMarkdown, {
-      markdown: `## Console heading
+describe("PublicMarkdown rendering", () => {
+  it("renders the supported safe GFM surface", () => {
+    const { createElement } = loadReactModules();
+    const html = renderMarkdownWithInternalLink(
+      `## Console heading
 
 > Blockquote signal.
 
@@ -33,7 +31,7 @@ const renderer = "safe-gfm";
 [Internal](/projects/unimatrix-01)
 
 ![Topology](/content/ops-console-topology.svg)`,
-      renderInternalLink: ({
+      ({
         children,
         className,
         href,
@@ -51,25 +49,24 @@ const renderer = "safe-gfm";
           },
           children,
         ),
-    }),
-  );
+    );
 
-  assert.match(html, /<h2/u);
-  assert.match(html, /Console heading/u);
-  assert.match(html, /<blockquote/u);
-  assert.match(html, /<ul/u);
-  assert.match(html, /type="checkbox"/u);
-  assert.match(html, /<table/u);
-  assert.match(html, /data-language="typescript"/u);
-  assert.match(html, /href="https:\/\/example\.test"/u);
-  assert.match(html, /target="_blank"/u);
-  assert.match(html, /data-internal-link="true"/u);
-  assert.match(html, /href="\/projects\/unimatrix-01"/u);
-  assert.match(html, /src="\/content\/ops-console-topology\.svg"/u);
-});
+    expect(html).toMatch(/<h2/u);
+    expect(html).toMatch(/Console heading/u);
+    expect(html).toMatch(/<blockquote/u);
+    expect(html).toMatch(/<ul/u);
+    expect(html).toMatch(/type="checkbox"/u);
+    expect(html).toMatch(/<table/u);
+    expect(html).toMatch(/data-language="typescript"/u);
+    expect(html).toMatch(/href="https:\/\/example\.test"/u);
+    expect(html).toMatch(/target="_blank"/u);
+    expect(html).toMatch(/data-internal-link="true"/u);
+    expect(html).toMatch(/href="\/projects\/unimatrix-01"/u);
+    expect(html).toMatch(/src="\/content\/ops-console-topology\.svg"/u);
+  });
 
-void test("PublicMarkdown renders single-line fenced code without a language as block code", async () => {
-  const html = await renderMarkdown(`Before
+  it("renders single-line fenced code without a language as block code", () => {
+    const html = renderMarkdown(`Before
 
 \`\`\`
 const renderer = "safe-gfm";
@@ -77,8 +74,9 @@ const renderer = "safe-gfm";
 
 After`);
 
-  assert.match(html, /<pre/u);
-  assert.match(html, /data-language="plain"/u);
-  assert.match(html, /const renderer = &quot;safe-gfm&quot;;/u);
-  assert.doesNotMatch(html, /border border-border\/60 bg-background\/80/u);
+    expect(html).toMatch(/<pre/u);
+    expect(html).toMatch(/data-language="plain"/u);
+    expect(html).toMatch(/const renderer = &quot;safe-gfm&quot;;/u);
+    expect(html).not.toMatch(/border border-border\/60 bg-background\/80/u);
+  });
 });

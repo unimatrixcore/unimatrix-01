@@ -183,7 +183,7 @@ When the host already has local Node `22.x` and pnpm `10.30.3` active, the wrapp
 
 ## Commands
 
-The root scripts are the canonical workspace entrypoints and proxy tasks through Turbo. `apps/web` now exposes real Vite `dev`, `build`, `preview`, `lint`, `test`, and `typecheck` commands, `apps/api` provides its Fastify `dev`, `build`, `start`, `lint`, and `typecheck` commands, and the current `pnpm test` path still exits cleanly while placeholder test scripts remain in place for workspaces that LOC-52 has not covered yet.
+The root scripts are the canonical workspace entrypoints and proxy tasks through Turbo. `apps/web` exposes real Vite `dev`, `build`, `preview`, `lint`, `test`, and `typecheck` commands, `apps/api` provides its Fastify `dev`, `build`, `start`, `lint`, `test`, and `typecheck` commands, and the in-scope runtime packages now execute real Vitest suites from their own workspaces.
 
 ```bash
 pnpm dev
@@ -260,7 +260,13 @@ The first reusable package boundaries are now explicit:
 - `@unimatrix/content` for typed content collections, schemas, and content-loading helpers
 - `@unimatrix/db` for Drizzle ORM, SQLite configuration, and migration tooling
 
-Most of these packages currently expose explicit placeholder `test` scripts so `pnpm test` exercises the workspace contract consistently until LOC-52 adds broader package-level test coverage. `@unimatrix/db` now includes a real SQLite smoke test plus migration scripts for the local persistence baseline.
+The current reusable runtime package boundaries are covered by real test entrypoints:
+
+- `@unimatrix/shared` validates the shared health schema and contract surface
+- `@unimatrix/api-client` exercises request construction, headers, error handling, and contract usage
+- `@unimatrix/content` covers parser and repo-backed loader behavior
+- `@unimatrix/ui` includes a jsdom baseline for shared primitives
+- `@unimatrix/db` covers SQLite client setup, path normalization, and migration behavior
 
 ## Repository shape
 

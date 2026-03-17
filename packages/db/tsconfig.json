@@ -2,8 +2,9 @@
   "extends": "@unimatrix/config-typescript/library.json",
   "compilerOptions": {
     "allowImportingTsExtensions": true,
+    "noEmit": true,
     "rewriteRelativeImportExtensions": true,
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "drizzle.config.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts", "drizzle.config.ts", "vitest.config.ts"]
 }

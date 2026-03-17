@@ -1,7 +1,6 @@
-import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import test from "node:test";
+import { describe, expect, it } from "vitest";
 
 function getRepoRootDirectory(): string {
   return join(process.cwd(), "..", "..");
@@ -24,19 +23,19 @@ function getRegisteredCollectionFilePaths(collectionDirectory: "blog" | "project
   return [...new Set(siteContentSource.match(filePathPattern) ?? [])].sort();
 }
 
-void test("site-content registers every authored project and blog file", () => {
-  const siteContentSource = readFileSync(
-    join(process.cwd(), "src", "features", "content", "site-content.ts"),
-    "utf8",
-  );
+describe("site content registry", () => {
+  it("registers every authored project and blog file", () => {
+    const siteContentSource = readFileSync(
+      join(process.cwd(), "src", "features", "content", "site-content.ts"),
+      "utf8",
+    );
 
-  assert.match(siteContentSource, /content\/home\/index\.md/u);
-  assert.deepEqual(
-    getRegisteredCollectionFilePaths("projects"),
-    getAuthoredCollectionFilePaths("projects"),
-  );
-  assert.deepEqual(
-    getRegisteredCollectionFilePaths("blog"),
-    getAuthoredCollectionFilePaths("blog"),
-  );
+    expect(siteContentSource).toMatch(/content\/home\/index\.md/u);
+    expect(getRegisteredCollectionFilePaths("projects")).toEqual(
+      getAuthoredCollectionFilePaths("projects"),
+    );
+    expect(getRegisteredCollectionFilePaths("blog")).toEqual(
+      getAuthoredCollectionFilePaths("blog"),
+    );
+  });
 });
