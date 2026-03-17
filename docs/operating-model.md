@@ -1,55 +1,74 @@
-# Operating Model
+# Operating model
+
+This page defines the current repo boundary for `unimatrix-01`. Use it when
+you need to distinguish live surface from reserved future shape, or when you
+need the working rules that keep the monorepo coherent.
 
 ## Repo purpose
 
-`unimatrix-01/` is the active TypeScript monorepo for the Unimatrix public site, API, shared packages, and repo-backed authored content.
+`unimatrix-01` is the active TypeScript monorepo for the Unimatrix public
+site, API, shared packages, and Git-backed authored content.
 
-The operating model is current-first:
+The operating model is current-first.
 
-- keep the repo runnable today
-- preserve stable package and app boundaries
-- document future surface only when it is clearly marked as reserved
-- use the root scripts as the canonical workflow surface
+- Keep the repo runnable today.
+- Preserve stable package and app boundaries.
+- Document future surface only when it is clearly marked as reserved.
+- Keep the root scripts as the canonical workflow surface.
 
-This repo is already beyond a minimal foundation shell. `apps/web` and `apps/api` run today, shared runtime packages have real test entrypoints, and the public v1 content path is live under `content/`.
+## Live surface
 
-## Current live surface
+These paths exist now and are part of normal contributor workflow.
 
-These surfaces exist now and are part of normal contributor workflow:
-
-- `apps/web` for the Vite + React public site
-- `apps/api` for the Fastify API
-- `packages/ui`, `packages/shared`, `packages/api-client`, `packages/content`, and `packages/db` as live typed package boundaries
-- `packages/config-typescript` and `packages/config-eslint` as shared config baselines
-- `content/home`, `content/projects`, and `content/blog` as the current public authored-content domains
-- `docs/` as the canonical repo-internal operating guide
-- `infra/scripts`, `infra/deployment`, and `infra/docker` as the current operational support surface
+- `apps/web`
+- `apps/api`
+- `packages/ui`
+- `packages/shared`
+- `packages/api-client`
+- `packages/content`
+- `packages/db`
+- `packages/config-typescript`
+- `packages/config-eslint`
+- `content/home`
+- `content/projects`
+- `content/blog`
+- `docs/`
+- `infra/scripts`
+- `infra/deployment`
+- `infra/docker`
 
 ## Reserved future surface
 
-These paths are part of the intended monorepo direction, but they are not current live workspaces or content domains:
+These paths are part of the intended monorepo direction, but they are not
+current live workspaces or content domains.
 
 - `apps/workers`
 - `content/docs`
 - `content/notes`
-- future packages such as `packages/bmd-parser`
-- future internal tools or operational apps that have not been scaffolded yet
+- Future packages such as `packages/bmd-parser`
+- Future internal tools or operational apps that have not been scaffolded
+  yet
 
-When documenting or implementing work, separate present-tense repo facts from reserved future shape.
+When you document or implement work, keep present-tense repo facts separate
+from reserved future shape.
 
-## Branch and PR workflow
+## Working rules
 
-- Use one issue branch per scoped piece of work.
-- Prefer the Linear-suggested branch name when available.
+These rules keep the monorepo aligned with its current scope.
+
+- Treat the root scripts as the canonical workflow surface for local work and
+  CI.
 - Keep PRs small and issue-aligned instead of bundling unrelated setup.
+- Use one issue branch per scoped piece of work.
+- Prefer the Linear-suggested branch name when one exists.
 - Use conventional commits.
 - Avoid app or package scaffolding unless the issue explicitly asks for it.
-- Run the relevant validation commands before requesting review.
+- Run relevant validation before review.
 - End PR descriptions with `Closes LOC-<issue-key>`.
 
-## V1-ready means
+## V1-ready baseline
 
-For this repo, "v1-ready" means the following baseline is true:
+For this repo, v1-ready means the following baseline remains true.
 
 - [x] `apps/web` is runnable as the canonical public web workspace.
 - [x] `apps/api` is runnable as the canonical API workspace.

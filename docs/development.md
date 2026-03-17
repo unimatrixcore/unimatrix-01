@@ -1,61 +1,80 @@
-# Development Workflow
+# Development workflow
+
+This page is the canonical local workflow reference for `unimatrix-01`. Use
+it for toolchain setup, root commands, env bootstrap behavior, CI alignment,
+and database operations.
 
 ## Supported toolchain
 
-- Node `22.22.1` is the supported runtime and is pinned in `.node-version`.
-- pnpm `10.30.3` is the supported package manager and is pinned in the root `package.json` `packageManager` field.
-- `.npmrc` keeps engine checks strict and workspace dependency resolution explicit.
+Use the pinned local toolchain for local work, automation, and CI.
 
-Use the pinned toolchain for local work, automation, and CI.
+- Node `22.22.1` is pinned in `.node-version`.
+- pnpm `10.30.3` is pinned in the root `package.json`
+  `packageManager` field.
+- `.npmrc` keeps engine checks strict and workspace dependency resolution
+  explicit.
 
 ## First-run setup
 
-From the repo root:
+Run the initial setup from the repo root so the workspace resolves
+correctly.
 
-```bash
-corepack enable
-corepack use pnpm@10.30.3
-pnpm install
-pnpm dev
-```
+1. Run `corepack enable`.
+2. Run `corepack use pnpm@10.30.3`.
+3. Run `pnpm install`.
+4. Optional: Run `pnpm setup:local` if you want app-local `.env` files
+   created before you start the dev loop.
+5. Run `pnpm dev`.
 
-For reproducible installs in automation or fresh clones, prefer:
+For reproducible installs in automation or fresh clones, use
+`pnpm install --frozen-lockfile`.
 
-```bash
-pnpm install --frozen-lockfile
-```
+## Local entrypoints
 
-## Local dev entrypoints
+The root scripts are the main entry surface for local work.
 
 ### `pnpm dev`
 
-`pnpm dev` is the canonical local-entry command. It does all of the following before starting the app processes:
+Use `pnpm dev` to start the normal local runtime surface.
 
-- requires Node `22.x`
-- verifies workspace dependencies are already installed
-- creates missing `apps/api/.env` and `apps/web/.env` from their example files
-- leaves existing local env files untouched
-- starts only `@unimatrix/api` and `@unimatrix/web` through Turbo
+- Requires Node `22.x`
+- Verifies workspace dependencies are already installed
+- Creates missing `apps/api/.env` and `apps/web/.env` from their example
+  files
+- Leaves existing local env files untouched
+- Starts only `@unimatrix/api` and `@unimatrix/web` through Turbo
 
 ### `pnpm setup:local`
 
-Use `pnpm setup:local` when you only want to bootstrap local env files without starting the dev servers. It creates missing files from:
+Use `pnpm setup:local` when you want to bootstrap local env files without
+starting the dev servers.
 
-- `apps/api/.env.example`
-- `apps/web/.env.example`
+- Copies `apps/api/.env.example` to `apps/api/.env` only when the target is
+  missing
+- Copies `apps/web/.env.example` to `apps/web/.env` only when the target is
+  missing
+- Never overwrites an existing local env file
 
-Existing local env files are never overwritten.
+## Environment files
 
-## Environment bootstrap behavior
+The app-local env contract is intentionally narrow and predictable.
 
-- The API startup entrypoint loads `apps/api/.env.local` first and then `apps/api/.env` when those files exist.
-- Exported shell environment variables still win, because the API loader does not overwrite values already present in `process.env`.
-- The web app uses Vite's standard `apps/web/.env*` loading behavior for `VITE_` variables.
-- Deployment-oriented examples live in `apps/api/.env.production.example` and `apps/web/.env.production.example`.
+- The API startup path loads `apps/api/.env.local` first and then
+  `apps/api/.env`.
+- Existing shell environment variables still win because the loader does not
+  overwrite values already present in `process.env`.
+- The web app uses Vite's normal `apps/web/.env*` behavior for `VITE_`
+  variables.
+- Deployment examples live in `apps/api/.env.production.example` and
+  `apps/web/.env.production.example`.
 
-Use [infra/deployment/README.md](../infra/deployment/README.md) for deployment-specific environment rules instead of duplicating that contract into repo-operating docs.
+Use [deployment docs](../infra/deployment/README.md) for deployment-specific
+environment rules instead of duplicating them here.
 
 ## Canonical commands
+
+Use the root commands by default. Drop to a workspace command only when you
+are intentionally narrowing scope.
 
 ### Root commands
 
@@ -87,50 +106,54 @@ pnpm --filter @unimatrix/db db:migrate
 pnpm --filter @unimatrix/db db:generate
 ```
 
-Prefer the root scripts unless you are intentionally working inside one workspace.
-
 ## Quality gates
 
-The canonical quality gates are:
+Run the narrowest relevant command set for the change you made.
 
 - `pnpm lint`
 - `pnpm typecheck`
 - `pnpm test`
-- `pnpm check` for the default pre-review gate
-- `pnpm verify` for the fuller local release gate that also includes `build`
-
-Run the narrowest relevant command set for scoped work, and use `pnpm verify` before review when the change spans multiple workspaces or affects the runtime surface.
+- `pnpm check` as the normal pre-review gate
+- `pnpm verify` when the change spans multiple workspaces or affects the
+  runtime surface
 
 ## CI behavior
 
-GitHub Actions CI runs on branch pushes and stays aligned to the root command surface:
+GitHub Actions CI stays aligned to the same root command surface used
+locally.
 
-- checks out the repo without persisted credentials
-- sets up pnpm `10.30.3`
-- reads Node from `.node-version`
-- runs `pnpm install --frozen-lockfile`
-- installs Playwright Chromium for `@unimatrix/web`
-- runs `pnpm build`
-- runs `pnpm lint`
-- runs `pnpm typecheck`
-- runs `pnpm test`
+- Checks out the repo without persisted credentials
+- Sets up pnpm `10.30.3`
+- Reads Node from `.node-version`
+- Runs `pnpm install --frozen-lockfile`
+- Installs Playwright Chromium for `@unimatrix/web`
+- Runs `pnpm build`
+- Runs `pnpm lint`
+- Runs `pnpm typecheck`
+- Runs `pnpm test`
 
-This keeps CI aligned with local contributor workflows instead of introducing a separate automation-only command surface.
-
-Keep ad-hoc browser screenshots and other debug artifacts in ignored `.issues/` scratch space, or leave them uncommitted instead of placing them in the repo root.
+Keep ad-hoc browser screenshots and other debug artifacts in ignored
+`.issues/` scratch space, or leave them uncommitted instead of placing them
+in the repo root.
 
 ## Database workflow
+
+The database package stays SQLite-first unless a later issue changes that
+decision.
 
 - Default SQLite file: `packages/db/local/unimatrix.sqlite`
 - Root migration alias: `pnpm db:migrate`
 - Root migration generation alias: `pnpm db:generate`
 - Supported override: `DATABASE_URL`
 
-When `DATABASE_URL` is unset, the db package uses the default SQLite path above. When it is set, the current code accepts absolute paths, repo-relative paths, `file:` URLs, and `:memory:`.
+When `DATABASE_URL` is unset, the db package uses the default SQLite path.
+When it is set, the current code accepts absolute paths, repo-relative paths,
+`file:` URLs, and `:memory:`.
 
 ## Unsupported host runtimes
 
-If the host is not already running local Node `22.x` and pnpm `10.30.3`, use the checked-in wrapper:
+Use the checked-in wrapper when the host does not already have compatible
+local Node and pnpm versions active.
 
 ```bash
 ./infra/scripts/pnpm-with-node22.sh install --frozen-lockfile
@@ -138,9 +161,6 @@ If the host is not already running local Node `22.x` and pnpm `10.30.3`, use the
 ./infra/scripts/pnpm-with-node22.sh verify
 ```
 
-When the host already has compatible local Node and pnpm versions active, the wrapper takes a fast path and reuses them. Otherwise it bootstraps `node@22.22.1` and `pnpm@10.30.3` through `npm exec`.
-
-For deployment docs and the current local-container posture, use:
-
-- [infra/deployment/README.md](../infra/deployment/README.md)
-- [infra/docker/README.md](../infra/docker/README.md)
+When the host already matches Node `22.x` and pnpm `10.30.3`, the wrapper
+takes a fast path and reuses them. Otherwise it bootstraps `node@22.22.1`
+and `pnpm@10.30.3` through `npm exec`.

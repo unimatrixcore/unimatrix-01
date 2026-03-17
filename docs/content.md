@@ -1,8 +1,13 @@
-# Content Workflow
+# Content workflow
 
-## Current content tree
+This page defines the current public authored-content surface and the rules
+for changing it. Use it when you add, edit, validate, or wire content into
+the web app.
 
-The live public authored-content surface is currently:
+## Live content tree
+
+The live public authored-content surface is intentionally limited to the
+collections below.
 
 ```text
 content/
@@ -14,34 +19,53 @@ content/
     *.md
 ```
 
-Current live domains are intentionally limited to:
+Current live domains are `home`, `projects`, and `blog`. `docs` and `notes`
+remain reserved for later and are not current authored-content roots in this
+repo.
 
-- `home`
-- `projects`
-- `blog`
+## Public route surface
 
-`docs` and `notes` are reserved for later and are not current authored-content roots in this repo.
+The current content collections map to the following public routes.
 
-## Current public route surface
-
-- `/` for the homepage and public about/orientation content
+- `/` for the homepage and public orientation content
 - `/projects` and `/projects/:slug` for the project listing and detail routes
 - `/blog` and `/blog/:slug` for the writing listing and detail routes
-- `/status` for the lightweight API-status route
+- `/status` for the lightweight API status route
 
-Unknown project and blog slugs intentionally fall into the app's not-found experience instead of an unhandled content error.
+Unknown project and blog slugs intentionally fall into the app's not-found
+experience instead of an unhandled content error.
 
-## Authoring and validation rules
+## Authoring rules
+
+Keep public authored content constrained to the current typed collection
+model.
 
 - Keep public authored content Git-backed under `content/`.
 - Match frontmatter to the typed collection contracts in `packages/content`.
-- Expect invalid or missing fields to fail with file-specific validation errors.
-- Keep a markdown body after the frontmatter block for all current content files.
-- The public site renders authored content with safe GitHub-flavored markdown.
+- Expect invalid or missing fields to fail with file-specific validation
+  errors.
+- Keep a markdown body after the frontmatter block for every current content
+  file.
+- The public site renders authored content with safe GitHub-flavored
+  markdown.
 - Raw HTML and executable MDX remain out of scope.
-- Keep the public v1 content set curated; repo-internal docs, policy pages, and other future content domains stay out of scope unless a later issue expands them.
+- Keep the public v1 content set curated. Repo-internal docs, policy pages,
+  and future content domains stay out of scope unless a later issue expands
+  the boundary.
 
-Useful validation commands:
+## Authoring checklist
+
+Use this sequence when you add a new public content file.
+
+1. Create the markdown file under the correct live collection.
+2. Match the frontmatter to the current typed schema in `packages/content`.
+3. If you added `content/projects/*.md` or `content/blog/*.md`, update
+   `apps/web/src/features/content/site-content.ts` in the same change.
+4. Run the relevant content and web validation commands.
+
+## Validation commands
+
+Use the commands below to validate authored content and registry wiring.
 
 ```bash
 pnpm --filter @unimatrix/content lint
@@ -51,17 +75,16 @@ pnpm --filter @unimatrix/content build
 pnpm --filter @unimatrix/web test
 ```
 
-## Manual content registry
+`apps/web/test/content-registry.test.ts` fails when project or blog files
+exist on disk but are not wired into the web app.
 
-`apps/web/src/features/content/site-content.ts` is still a manual raw-import registry for live authored content.
+## Docs versus public content
 
-When you add new public files under `content/projects/*.md` or `content/blog/*.md`, update that registry in the same change. The guardrail for this is `apps/web/test/content-registry.test.ts`, which fails when authored project or blog files exist on disk but are not wired into the web app.
+This repo keeps repo-operating docs and public content separate on purpose.
 
-`content/home/index.md` is also imported explicitly and remains part of that same registry model.
+- `docs/` contains repo-internal operating documentation for contributors
+  and agents.
+- `content/` contains the public authored content that the web app renders.
 
-## Repo docs vs public content
-
-- `docs/` contains repo-internal operating documentation for contributors and agents.
-- `content/` contains public authored content that the web app renders.
-
-Do not create repo-operating documents under `content/docs` for this repo. That path is reserved for future public-site content, not for internal contributor guidance.
+Do not create repo-operating documents under `content/docs`. That path is
+reserved for future public-site content, not internal contributor guidance.
