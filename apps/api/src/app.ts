@@ -37,48 +37,25 @@ export function buildApp(config: ApiRuntimeConfig): FastifyInstance {
 
     if (normalizedError.logLevel === "error") {
       if (isResponseSerializationError(error)) {
-        request.log.error(
-          {
-            err: error,
-            method: request.method,
-            responseSchemaMethod: error.method,
-            responseSchemaUrl: error.url,
-            responseValidationIssues: error.cause.issues,
-            url: request.url,
-          },
-          "request failed",
-        );
+        request.responseLogContext = {
+          err: error,
+          responseSchemaMethod: error.method,
+          responseSchemaUrl: error.url,
+          responseValidationIssues: error.cause.issues,
+        };
       } else {
-        request.log.error(
-          {
-            err: error,
-            method: request.method,
-            url: request.url,
-          },
-          "request failed",
-        );
+        request.responseLogContext = {
+          err: error,
+        };
       }
-    } else if (normalizedError.logLevel === "warn") {
-      request.log.warn(
-        {
-          error: normalizedError.envelope.error,
-          method: request.method,
-          url: request.url,
-        },
-        "request failed",
-      );
     } else {
-      request.log.info(
-        {
-          error: normalizedError.envelope.error,
-          method: request.method,
-          url: request.url,
-        },
-        normalizedError.envelope.error.code === "NOT_FOUND"
-          ? "route not found"
-          : "request completed with client error",
-      );
+      request.responseLogContext = {
+        error: normalizedError.envelope.error,
+      };
     }
+
+    request.responseLogMessage =
+      normalizedError.logLevel === "error" ? "request failed" : "request completed with client error";
 
     reply.status(normalizedError.statusCode).send(normalizedError.envelope);
   });
@@ -87,7 +64,10 @@ export function buildApp(config: ApiRuntimeConfig): FastifyInstance {
     const requestId = String(request.id);
     const envelope = createNotFoundErrorEnvelope(requestId);
 
-    request.log.info({ method: request.method, url: request.url }, "route not found");
+    request.responseLogContext = {
+      error: envelope.error,
+    };
+    request.responseLogMessage = "route not found";
 
     reply.status(404).send(envelope);
   });

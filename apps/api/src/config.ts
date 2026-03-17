@@ -3,13 +3,14 @@ export const API_LOG_LEVELS = ["debug", "info", "warn", "error"] as const;
 
 export type ApiNodeEnv = (typeof API_NODE_ENVS)[number];
 export type ApiLogLevel = (typeof API_LOG_LEVELS)[number];
+export type ApiTrustProxy = boolean | 1;
 
 export interface ApiRuntimeConfig {
   host: string;
   port: number;
   nodeEnv: ApiNodeEnv;
   logLevel: ApiLogLevel;
-  trustProxy: boolean;
+  trustProxy: ApiTrustProxy;
 }
 
 export interface ApiRuntimeEnv {
@@ -119,7 +120,7 @@ function parseLogLevel(value: string | undefined, nodeEnv: ApiNodeEnv): ApiLogLe
   return trimmedValue;
 }
 
-function parseTrustProxy(value: string | undefined): boolean {
+function parseTrustProxy(value: string | undefined): ApiTrustProxy {
   if (value === undefined) {
     return DEFAULT_TRUST_PROXY;
   }
@@ -130,8 +131,12 @@ function parseTrustProxy(value: string | undefined): boolean {
     throw createApiConfigError("TRUST_PROXY must not be empty when it is set.");
   }
 
-  if (trimmedValue === "true" || trimmedValue === "1") {
+  if (trimmedValue === "true") {
     return true;
+  }
+
+  if (trimmedValue === "1") {
+    return 1;
   }
 
   if (trimmedValue === "false" || trimmedValue === "0") {

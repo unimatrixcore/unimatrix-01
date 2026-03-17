@@ -20,7 +20,7 @@ void test("loadApiRuntimeConfig trims and validates explicit values", () => {
       LOG_LEVEL: " warn ",
       NODE_ENV: "production",
       PORT: "4000",
-      TRUST_PROXY: " 1 ",
+      TRUST_PROXY: " true ",
     }),
     {
       host: "0.0.0.0",
@@ -30,6 +30,10 @@ void test("loadApiRuntimeConfig trims and validates explicit values", () => {
       trustProxy: true,
     },
   );
+});
+
+void test("loadApiRuntimeConfig preserves single-hop TRUST_PROXY=1 semantics", () => {
+  assert.equal(loadApiRuntimeConfig({ TRUST_PROXY: " 1 " }).trustProxy, 1);
 });
 
 void test("loadApiRuntimeConfig defaults LOG_LEVEL to info outside development", () => {
@@ -55,6 +59,13 @@ void test("loadApiRuntimeConfig rejects unsupported LOG_LEVEL values", () => {
   assert.throws(
     () => loadApiRuntimeConfig({ LOG_LEVEL: "trace" }),
     /LOG_LEVEL must be one of debug, info, warn, error/,
+  );
+});
+
+void test("loadApiRuntimeConfig rejects blank LOG_LEVEL values", () => {
+  assert.throws(
+    () => loadApiRuntimeConfig({ LOG_LEVEL: "   " }),
+    /LOG_LEVEL must not be empty when it is set/,
   );
 });
 

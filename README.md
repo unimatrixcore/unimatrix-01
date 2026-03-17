@@ -159,7 +159,7 @@ Vite reads `apps/web/.env*` automatically for local development, so `VITE_API_BA
 | `PORT` | no | `3001` | Must be an integer between `1` and `65535` when set. |
 | `NODE_ENV` | no | `development` | Must be one of `development`, `test`, or `production`. |
 | `LOG_LEVEL` | no | `debug` in `development`, `info` in `test` and `production` | Must be one of `debug`, `info`, `warn`, or `error` when set. |
-| `TRUST_PROXY` | no | `false` | Must be one of `true`, `1`, `false`, or `0` when set. |
+| `TRUST_PROXY` | no | `false` | Must be one of `true`, `1`, `false`, or `0` when set. `true` trusts all proxy hops, while `1` trusts a single upstream proxy hop. |
 
 ### `apps/web`
 
