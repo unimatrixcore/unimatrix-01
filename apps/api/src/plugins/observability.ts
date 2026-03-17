@@ -16,6 +16,10 @@ function getResponseLogLevel(statusCode: number): ApiResponseLogLevel {
     return "error";
   }
 
+  if (statusCode === 404) {
+    return "info";
+  }
+
   if (statusCode >= 400) {
     return "warn";
   }
