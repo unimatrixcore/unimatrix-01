@@ -97,6 +97,14 @@
     @apply grid gap-2 pl-6;
   }
 
+  .public-markdown ul {
+    @apply list-disc;
+  }
+
+  .public-markdown ol {
+    @apply list-decimal;
+  }
+
   .public-markdown li {
     @apply leading-7;
   }
