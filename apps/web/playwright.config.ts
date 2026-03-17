@@ -12,8 +12,11 @@ export default defineConfig({
     video: "off",
   },
   webServer: {
-    command: "pnpm run build && pnpm exec vite preview --host localhost --port 4173",
+    command: process.env.CI
+      ? "pnpm exec vite preview --host localhost --port 4173"
+      : "pnpm run build && pnpm exec vite preview --host localhost --port 4173",
     reuseExistingServer: !process.env.CI,
+    timeout: 120_000,
     url: "http://localhost:4173",
   },
   projects: [
