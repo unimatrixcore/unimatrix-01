@@ -50,7 +50,7 @@ describe("@unimatrix/db baseline", () => {
     }
   });
 
-  it("updates updated_at after a row modification", async () => {
+  it("updates updated_at after a row modification", () => {
     const tempDirectory = mkdtempSync(join(tmpdir(), "unimatrix-db-"));
     const filePath = join(tempDirectory, "migration-test.sqlite");
     const client = createSqliteClient({
@@ -68,16 +68,14 @@ describe("@unimatrix/db baseline", () => {
       const insertedRow = client
         .prepare(
           `
-            insert into system_settings (key, value)
-            values (?, ?)
+            insert into system_settings (key, value, updated_at)
+            values (?, ?, ?)
             returning updated_at
           `,
         )
-        .get("site_name", "Unimatrix") as { updated_at: string };
-
-      await new Promise((resolve) => {
-        setTimeout(resolve, 1_100);
-      });
+        .get("site_name", "Unimatrix", "2000-01-01 00:00:00") as {
+        updated_at: string;
+      };
 
       client
         .prepare(
@@ -100,6 +98,9 @@ describe("@unimatrix/db baseline", () => {
         .get("site_name") as { updated_at: string };
 
       expect(updatedRow.updated_at).not.toBe(insertedRow.updated_at);
+      expect(updatedRow.updated_at).toMatch(
+        /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/u,
+      );
     } finally {
       client.close();
       rmSync(tempDirectory, {

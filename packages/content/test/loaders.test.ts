@@ -104,16 +104,10 @@ Broken body.
 `,
       );
 
-      try {
-        loadSiteContent({ rootDir });
-        throw new Error("Expected loadSiteContent to throw for invalid authored content.");
-      } catch (error) {
-        expect(error).toBeInstanceOf(ContentValidationError);
-        expect(error).toBeInstanceOf(Error);
-        expect((error as Error).message).toMatch(
-          /content\/projects\/broken\.md: publishedAt: expected a valid date string/u,
-        );
-      }
+      expect(() => loadSiteContent({ rootDir })).toThrow(ContentValidationError);
+      expect(() => loadSiteContent({ rootDir })).toThrow(
+        /content\/projects\/broken\.md: publishedAt: expected a valid date string/u,
+      );
     } finally {
       rmSync(rootDir, { force: true, recursive: true });
     }

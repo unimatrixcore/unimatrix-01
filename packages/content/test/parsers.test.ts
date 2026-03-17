@@ -142,7 +142,7 @@ summary: Blog summary
   });
 
   it("reports missing required frontmatter with a file-specific error", () => {
-    try {
+    expect(() =>
       parseProjectContentFile(
         `---
 title: BerryBot
@@ -153,14 +153,22 @@ status: active
 Missing summary.
 `,
         "content/projects/berrybot.md",
-      );
-      throw new Error("Expected parseProjectContentFile to throw for invalid frontmatter.");
-    } catch (error) {
-      expect(error).toBeInstanceOf(ContentValidationError);
-      expect(error).toBeInstanceOf(Error);
-      expect((error as Error).message).toMatch(
-          /content\/projects\/berrybot\.md: summary: expected a non-empty string/u,
-      );
-    }
+      ),
+    ).toThrow(ContentValidationError);
+    expect(() =>
+      parseProjectContentFile(
+        `---
+title: BerryBot
+slug: berrybot
+publishedAt: 2025-05-01
+status: active
+---
+Missing summary.
+`,
+        "content/projects/berrybot.md",
+      ),
+    ).toThrow(
+      /content\/projects\/berrybot\.md: summary: expected a non-empty string/u,
+    );
   });
 });

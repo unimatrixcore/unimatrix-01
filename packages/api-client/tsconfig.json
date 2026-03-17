@@ -1,6 +1,7 @@
 {
   "extends": "@unimatrix/config-typescript/library.json",
   "compilerOptions": {
+    "composite": false,
     "noEmit": true,
     "paths": {
       "@unimatrix/shared": ["../shared/src/index.ts"]
@@ -9,7 +10,6 @@
   "include": [
     "src/**/*.ts",
     "test/**/*.ts",
-    "vitest.config.ts",
-    "../shared/src/**/*.ts"
+    "vitest.config.ts"
   ]
 }
