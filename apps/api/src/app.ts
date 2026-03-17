@@ -21,6 +21,7 @@ declare module "fastify" {
 
 export function buildApp(config: ApiRuntimeConfig): FastifyInstance {
   const appOptions = {
+    disableRequestLogging: true,
     forceCloseConnections: true,
     logger: buildLoggerOptions(config),
     trustProxy: config.trustProxy,

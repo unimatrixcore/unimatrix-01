@@ -13,6 +13,21 @@ function createTestApp() {
   });
 }
 
+void test("buildApp disables Fastify default request logging", async () => {
+  const app = createTestApp();
+  const appWithConfig = app as typeof app & {
+    initialConfig?: {
+      disableRequestLogging?: boolean;
+    };
+  };
+
+  try {
+    assert.equal(appWithConfig.initialConfig?.disableRequestLogging, true);
+  } finally {
+    await app.close();
+  }
+});
+
 void test("GET /health returns the expected health payload and hardening headers", async () => {
   const app = createTestApp();
   try {
