@@ -2,9 +2,9 @@
 
 Typed content-system boundary for repo-backed authored content.
 
-LOC-43 keeps this package intentionally small and focused on the first public-site domains only:
+This package stays intentionally small and focused on the current public-site domains only:
 
-- `content/home/index.md` for homepage/about copy
+- `content/home/index.md` for homepage and about copy
 - `content/projects/*.md` for projects
 - `content/blog/*.md` for blog entries
 
@@ -59,13 +59,15 @@ All current content files also require a markdown body after the frontmatter blo
 - invalid or missing fields throw a `ContentValidationError`
 - errors include the repo-relative file path and failing field name
 - current tests cover both valid parsing and invalid authored content
-- excerpt derivation stays plain-text even when authored markdown now includes GFM features such as tables, task lists, links, images, and fenced code
+- excerpt derivation stays plain-text even when authored markdown includes GFM features such as tables, task lists, links, images, and fenced code
 
-## Public v1 migration boundary
+## Public v1 scope boundary
 
-- carry forward only the legacy content that supports the lightweight public-site narrative
-- keep operational queue-status posts, legacy docs routes, and policy-page migrations out of scope unless a later issue expands them
-- remember that `apps/web/src/features/content/site-content.ts` still uses an explicit raw-import registry; `apps/web/test/content-registry.test.ts` exists to catch missed project/blog wiring when new content files are added
+- current live public content is limited to `home`, `projects`, and `blog`
+- repo-internal operating docs belong under `docs/`, not under `content/`
+- operational queue-status posts, policy-page migrations, and future docs or notes collections stay out of scope unless a later issue expands the boundary
+- `apps/web/src/features/content/site-content.ts` still uses an explicit raw-import registry
+- `apps/web/test/content-registry.test.ts` exists to catch missed project and blog wiring when new content files are added
 
 ## Commands
 
@@ -78,6 +80,6 @@ All current content files also require a markdown body after the frontmatter blo
 
 - docs and notes collections
 - raw HTML rendering and executable MDX
-- Borg Markdown as a future safe parser/rendering layer
+- Borg Markdown as a future safe parser and rendering layer
 
-The public site now renders authored content with safe GFM, but that renderer belongs in `@unimatrix/ui`, not this package. `@unimatrix/content` continues to own typed contracts, validation, and repo-backed loading only.
+The public site renders authored content with safe GFM, but that renderer belongs in `@unimatrix/ui`, not this package. `@unimatrix/content` continues to own typed contracts, validation, and repo-backed loading only.

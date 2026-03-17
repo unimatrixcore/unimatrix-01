@@ -1,24 +1,92 @@
 # AGENTS.md
 
-You are working inside `unimatrix-01/`, the active Unimatrix-01 monorepo.
+You are working inside `unimatrix-01/`, the active Unimatrix monorepo.
 
-This directory is the real future system. It is not a temporary comparison space and it is not just a redesign of the Hugo site.
-
-When this repo is checked out beside `unimatrix-01-legacy/`, treat the legacy repo as reference material only. Use it for migration context, content domains, and design instincts, but do not treat Hugo-era implementation details as the target architecture.
+This file is the machine and agent contract. Canonical human operating docs live under [docs/](docs/README.md).
 
 ## Purpose
 
-Build a TypeScript monorepo foundation that can support:
+Build and maintain a TypeScript monorepo that supports:
 
-- the public-facing everything-site
-- projects, blog, docs, and notes
-- shared UI, schemas, content tooling, and client packages
-- future internal tools and operational apps
-- experimental systems that belong in the same ecosystem
+- the public-facing site
+- the API
+- shared UI, schema, content, and client packages
+- Git-backed authored content
+- future internal tools and additional runtime surfaces when they are explicitly added
 
-The design goal is long-term extensibility, coherence, and reuse.
+Optimize for long-term maintainability, coherent package boundaries, and current repo reality instead of speculative scaffolding.
 
-## Default Stack
+## Current live surface
+
+These surfaces exist now and are safe to treat as part of normal repo operations:
+
+- `apps/web`
+- `apps/api`
+- `packages/ui`
+- `packages/shared`
+- `packages/api-client`
+- `packages/content`
+- `packages/db`
+- `packages/config-typescript`
+- `packages/config-eslint`
+- `content/home`
+- `content/projects`
+- `content/blog`
+- `docs/`
+- `infra/scripts`
+- `infra/deployment`
+- `infra/docker`
+
+Reserved but not present as live surfaces yet:
+
+- `apps/workers`
+- `content/docs`
+- `content/notes`
+- future packages such as `packages/bmd-parser`
+
+Do not describe reserved paths as current runtime or content surfaces.
+
+## Toolchain and commands
+
+- Supported Node version: `22.22.1` from `.node-version`
+- Supported pnpm version: `10.30.3` from the root `package.json`
+- `.npmrc` keeps engines strict and workspace resolution explicit
+
+Use these root commands as the canonical operating surface:
+
+```bash
+pnpm install
+pnpm setup:local
+pnpm dev
+pnpm build
+pnpm lint
+pnpm test
+pnpm typecheck
+pnpm check
+pnpm verify
+pnpm db:migrate
+pnpm db:generate
+pnpm --filter @unimatrix/web dev
+pnpm --filter @unimatrix/api dev
+```
+
+If the host runtime is not already on local Node `22.x` and pnpm `10.30.3`, use the wrapper:
+
+```bash
+./infra/scripts/pnpm-with-node22.sh install --frozen-lockfile
+./infra/scripts/pnpm-with-node22.sh check
+./infra/scripts/pnpm-with-node22.sh verify
+```
+
+## Local development behavior
+
+- `pnpm dev` requires Node `22.x`, checks that dependencies are installed, bootstraps missing `apps/api/.env` and `apps/web/.env` from their example files, then runs only `@unimatrix/api` and `@unimatrix/web` through Turbo.
+- `pnpm setup:local` bootstraps those same app-local `.env` files without starting the dev servers.
+- Existing `apps/api/.env` and `apps/web/.env` files are never overwritten by either command.
+- API startup loads `apps/api/.env.local` first and then `apps/api/.env`; shell environment variables still win.
+- The web app uses Vite's normal `apps/web/.env*` loading behavior for `VITE_` variables.
+
+## Default stack
 
 Unless explicitly told otherwise, use these defaults.
 
@@ -63,57 +131,12 @@ Unless explicitly told otherwise, use these defaults.
 
 - Git-based content inside the repo
 - typed frontmatter and content schemas
-- MDX or typed markdown collections for authored content
-- Borg Markdown as a separate safe parser and rendering layer for dynamic interactive responses
+- safe authored-markdown rendering for the public site
+- Borg Markdown as a separate future parser/rendering layer
 
-## Target Shape
+## Workflow guidance
 
-```text
-unimatrix-01/
-  apps/
-    web/
-    api/
-    workers/
-  packages/
-    ui/
-    shared/
-    content/
-    api-client/
-    bmd-parser/
-    config-eslint/
-    config-typescript/
-  content/
-    blog/
-    projects/
-    docs/
-    notes/
-  infra/
-    docker/
-    scripts/
-    github/
-```
-
-Not every directory must exist immediately, but new work should move toward this shape.
-
-## Commands
-
-Use these as the standard targets for new work:
-
-```bash
-pnpm install
-pnpm dev
-pnpm build
-pnpm lint
-pnpm test
-pnpm typecheck
-pnpm --filter web dev
-pnpm --filter api dev
-turbo run build
-turbo run lint
-turbo run test
-```
-
-## Branch and PR Workflow
+### Branch and PR workflow
 
 - use one issue branch per scoped piece of work
 - prefer the Linear-suggested branch name when available
@@ -123,14 +146,13 @@ turbo run test
 - run relevant validation before requesting review
 - end PR descriptions with `Closes LOC-<issue-key>`
 
-## AGENTS Strategy
+### AGENTS strategy
 
 - the nearest `AGENTS.md` always wins
 - this file is the repo-wide default for `unimatrix-01/`
-- if a workspace-root `../AGENTS.md` exists, it governs cross-repo behavior when work touches the legacy repo too
 - add deeper `AGENTS.md` files only when a subtree gains stable local conventions that should override this repo-wide guidance
 
-## Architecture Rules
+## Architecture rules
 
 ### Frontend
 
@@ -166,10 +188,14 @@ turbo run test
 - treat content as a first-class system
 - validate frontmatter and collection schemas
 - keep authored content Git-based
+- current live public content domains are `home`, `projects`, and `blog`
+- `content/docs` and `content/notes` remain reserved, not present
+- when adding new `content/projects/*.md` or `content/blog/*.md` files, also update `apps/web/src/features/content/site-content.ts`
+- `apps/web/test/content-registry.test.ts` exists to catch missed project and blog registry updates
 - never execute untrusted generated content as code
 - Borg Markdown must parse only into a safe whitelist of supported structures and components
 
-## Code Style
+## Code style
 
 - TypeScript by default
 - strict typing preferred
@@ -219,10 +245,10 @@ If a package does not yet implement one of these commands, call that out clearly
 ### Never
 
 - build this as if it were only a static portfolio refresh
-- execute untrusted MDX or arbitrary LLM-generated code
+- execute untrusted markdown, MDX, or arbitrary generated code
 - hardcode secrets or commit credentials
 - collapse everything back into isolated app silos by default
 
-## Definition of Good Work
+## Definition of good work
 
 Good work in `unimatrix-01/` makes the monorepo more coherent, typed, package-aware, content-aware, and ready for future projects to plug into without architectural chaos.
