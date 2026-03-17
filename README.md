@@ -191,7 +191,7 @@ When the host already has local Node `22.x` and pnpm `10.30.3` active, the wrapp
 
 ## Commands
 
-The root scripts are the canonical workspace entrypoints and proxy tasks through Turbo. `apps/web` now exposes real Vite `dev`, `build`, `preview`, `lint`, `test:unit`, `test:smoke`, `test`, and `typecheck` commands. `test:unit` intentionally runs the `@unimatrix/ui` build first because the markdown rendering tests import the published package entry from `packages/ui/dist/index.js`; that keeps `pnpm --filter @unimatrix/web test:unit` self-contained from a fresh checkout. `test:smoke` builds the web app and serves it through `vite preview`, so the smoke suite exercises the production artifact rather than Vite dev mode. The aggregate `test` command remains the canonical local and CI path for the web workspace: unit coverage plus a narrow Chromium smoke suite for `/`, a click-driven route navigation flow, `/projects/unimatrix-01`, and `/blog/building-a-typed-content-baseline`. The `/status` route is intentionally excluded from that smoke suite because it depends on the API surface and stays outside LOC-53 scope. `apps/api` provides its Fastify `dev`, `build`, `start`, `lint`, and `typecheck` commands.
+The root scripts are the canonical workspace entrypoints and proxy tasks through Turbo. `apps/web` now exposes real Vite `dev`, `build`, `preview`, `lint`, `test:unit`, `test:smoke`, `test`, and `typecheck` commands. `test:unit` runs the Vitest-backed web suite directly, including the markdown rendering and `/status` route tests, without a prebuild step. `test:smoke` builds the web app and serves it through `vite preview`, so the smoke suite exercises the production artifact rather than Vite dev mode. The aggregate `test` command remains the canonical local and CI path for the web workspace: unit coverage plus a narrow Chromium smoke suite for `/`, a click-driven route navigation flow, `/projects/unimatrix-01`, and `/blog/building-a-typed-content-baseline`. The `/status` route stays covered in the unit/integration suite because it depends on mocked API data rather than the standalone smoke environment. `apps/api` provides its Fastify `dev`, `build`, `start`, `lint`, `test`, and `typecheck` commands, and the in-scope runtime packages now execute real Vitest suites from their own workspaces.
 
 ```bash
 pnpm dev
@@ -272,7 +272,13 @@ The first reusable package boundaries are now explicit:
 - `@unimatrix/content` for typed content collections, schemas, and content-loading helpers
 - `@unimatrix/db` for Drizzle ORM, SQLite configuration, and migration tooling
 
-Most of these packages currently expose explicit placeholder `test` scripts so `pnpm test` exercises the workspace contract consistently until LOC-52 adds broader package-level test coverage. `@unimatrix/db` now includes a real SQLite smoke test plus migration scripts for the local persistence baseline.
+The current reusable runtime package boundaries are covered by real test entrypoints:
+
+- `@unimatrix/shared` validates the shared health schema and contract surface
+- `@unimatrix/api-client` exercises request construction, headers, error handling, and contract usage
+- `@unimatrix/content` covers parser and repo-backed loader behavior
+- `@unimatrix/ui` includes a jsdom baseline for shared primitives
+- `@unimatrix/db` covers SQLite client setup, path normalization, and migration behavior
 
 ## Repository shape
 

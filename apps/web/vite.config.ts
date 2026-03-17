@@ -3,13 +3,17 @@ import { fileURLToPath, URL } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
-import { defineConfig, loadEnv } from "vite";
+import {
+  defineConfig,
+  loadEnv,
+  type UserConfig,
+} from "vite";
 
 import { loadWebDevProxyConfig } from "./src/lib/config";
 
 const webRootDir = fileURLToPath(new URL(".", import.meta.url));
 
-export default defineConfig(({ mode }) => {
+export function createWebViteConfig(mode: string): UserConfig {
   const env = loadEnv(mode, webRootDir, "VITE_");
   const devProxyConfig = loadWebDevProxyConfig(env);
 
@@ -71,4 +75,6 @@ export default defineConfig(({ mode }) => {
       dedupe: ["react", "react-dom"],
     },
   };
-});
+}
+
+export default defineConfig(({ mode }) => createWebViteConfig(mode));

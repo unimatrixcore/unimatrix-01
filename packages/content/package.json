@@ -21,13 +21,15 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "lint": "eslint .",
-    "test": "tmp_dir=$(mktemp -d); trap 'rm -rf \"$tmp_dir\"' EXIT; tsc -p tsconfig.test.json --outDir \"$tmp_dir\" && node --test \"$tmp_dir/test/loaders.test.js\" \"$tmp_dir/test/parsers.test.js\"",
+    "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {
+    "@types/node": "^22.19.15",
     "@unimatrix/config-eslint": "workspace:*",
     "@unimatrix/config-typescript": "workspace:*",
     "eslint": "^9.36.0",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
   }
 }

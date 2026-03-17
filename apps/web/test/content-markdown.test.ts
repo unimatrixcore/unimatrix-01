@@ -1,22 +1,23 @@
-import assert from "node:assert/strict";
-import test from "node:test";
-import { renderMarkdown } from "./helpers/public-markdown.js";
+import { describe, expect, it } from "vitest";
 
-void test("PublicMarkdown suppresses raw HTML instead of rendering it", async () => {
-  const html = await renderMarkdown(`Visible copy.
+import { renderMarkdown } from "./helpers/render-markdown.js";
+
+describe("PublicMarkdown safety", () => {
+  it("suppresses raw HTML instead of rendering it", () => {
+    const html = renderMarkdown(`Visible copy.
 
 <div data-raw-html="suppressed">Unsafe raw HTML</div>
 
 <script>alert("x")</script>`);
 
-  assert.match(html, /Visible copy\./u);
-  assert.doesNotMatch(html, /data-raw-html/u);
-  assert.doesNotMatch(html, /Unsafe raw HTML/u);
-  assert.doesNotMatch(html, /<script/u);
-});
+    expect(html).toMatch(/Visible copy\./u);
+    expect(html).not.toMatch(/data-raw-html/u);
+    expect(html).not.toMatch(/Unsafe raw HTML/u);
+    expect(html).not.toMatch(/<script/u);
+  });
 
-void test("PublicMarkdown sanitizes unsupported link and image protocols", async () => {
-  const html = await renderMarkdown(`[Safe](https://example.test)
+  it("sanitizes unsupported link and image protocols", () => {
+    const html = renderMarkdown(`[Safe](https://example.test)
 
 [Mail](mailto:gwenny@example.test)
 
@@ -24,10 +25,11 @@ void test("PublicMarkdown sanitizes unsupported link and image protocols", async
 
 ![Blocked image](data:image/png;base64,abcd)`);
 
-  assert.match(html, /href="https:\/\/example\.test"/u);
-  assert.match(html, /href="mailto:gwenny@example\.test"/u);
-  assert.match(html, /target="_blank"/u);
-  assert.doesNotMatch(html, /javascript:/u);
-  assert.doesNotMatch(html, /data:image\/png/u);
-  assert.doesNotMatch(html, /<img/u);
+    expect(html).toMatch(/href="https:\/\/example\.test"/u);
+    expect(html).toMatch(/href="mailto:gwenny@example\.test"/u);
+    expect(html).toMatch(/target="_blank"/u);
+    expect(html).not.toMatch(/javascript:/u);
+    expect(html).not.toMatch(/data:image\/png/u);
+    expect(html).not.toMatch(/<img/u);
+  });
 });

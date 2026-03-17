@@ -10,7 +10,7 @@
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/server.js",
     "lint": "eslint .",
-    "test": "tmp_dir=$(mktemp -d); trap 'rm -rf \"$tmp_dir\"' EXIT; tsc -p tsconfig.test.json --outDir \"$tmp_dir\" && node --test \"$tmp_dir/test/config.test.js\"",
+    "test": "node --import tsx --test test/**/*.test.ts",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {

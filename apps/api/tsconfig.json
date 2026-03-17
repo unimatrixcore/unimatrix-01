@@ -1,6 +1,9 @@
 {
   "extends": "@unimatrix/config-typescript/base.json",
   "compilerOptions": {
+    "paths": {
+      "@unimatrix/shared": ["../../packages/shared/src/index.ts"]
+    },
     "types": ["node"]
   },
   "include": ["src/**/*.ts", "test/**/*.ts"]

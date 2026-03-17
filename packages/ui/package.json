@@ -19,10 +19,13 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "lint": "eslint .",
-    "test": "node -e \"console.log('No package tests are defined yet. LOC-52 will add package test coverage.')\"",
+    "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "jsdom": "^26.1.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@unimatrix/config-eslint": "workspace:*",
@@ -31,7 +34,8 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "shadcn": "^4.0.5",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
   },
   "dependencies": {
     "@fontsource-variable/geist-mono": "^5.2.7",

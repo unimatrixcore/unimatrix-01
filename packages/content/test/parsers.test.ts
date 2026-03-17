@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { describe, expect, it } from "vitest";
 
 import { ContentValidationError } from "../src/errors.js";
 import {
@@ -24,8 +23,8 @@ Paragraph two.
       "content/home/index.md",
     );
 
-    assert.equal(homeContent.frontmatter.title, "Home title");
-    assert.equal(homeContent.excerpt, "Paragraph one.");
+    expect(homeContent.frontmatter.title).toBe("Home title");
+    expect(homeContent.excerpt).toBe("Paragraph one.");
   });
 
   it("parses the project and blog entry contracts", () => {
@@ -56,9 +55,9 @@ Blog body.
       "content/blog/typed-baseline.md",
     );
 
-    assert.equal(projectEntry.frontmatter.featured, true);
-    assert.equal(projectEntry.slug, "berrybot");
-    assert.equal(blogEntry.frontmatter.description, "Blog description");
+    expect(projectEntry.frontmatter.featured).toBe(true);
+    expect(projectEntry.slug).toBe("berrybot");
+    expect(blogEntry.frontmatter.description).toBe("Blog description");
   });
 
   it("derives plain-text excerpts from rich markdown without code fences or table separators", () => {
@@ -84,8 +83,7 @@ const unsafe = "<script />";
       "content/blog/linked-baseline.md",
     );
 
-    assert.equal(
-      blogEntry.excerpt,
+    expect(blogEntry.excerpt).toBe(
       "Review the public renderer and the system map before shipping.",
     );
   });
@@ -103,7 +101,7 @@ Use \`A | B\` to express union types.
       "content/blog/union-types.md",
     );
 
-    assert.equal(blogEntry.excerpt, "Use A | B to express union types.");
+    expect(blogEntry.excerpt).toBe("Use A | B to express union types.");
   });
 
   it("strips empty fenced code blocks before deriving excerpts", () => {
@@ -122,7 +120,7 @@ First visible paragraph.
       "content/blog/empty-fence.md",
     );
 
-    assert.equal(blogEntry.excerpt, "First visible paragraph.");
+    expect(blogEntry.excerpt).toBe("First visible paragraph.");
   });
 
   it("treats compact GFM separator rows as table syntax", () => {
@@ -140,14 +138,13 @@ summary: Blog summary
       "content/blog/compact-table.md",
     );
 
-    assert.equal(blogEntry.excerpt, "Surface Mode Public site Safe GFM");
+    expect(blogEntry.excerpt).toBe("Surface Mode Public site Safe GFM");
   });
 
   it("reports missing required frontmatter with a file-specific error", () => {
-    assert.throws(
-      () =>
-        parseProjectContentFile(
-          `---
+    expect(() =>
+      parseProjectContentFile(
+        `---
 title: BerryBot
 slug: berrybot
 publishedAt: 2025-05-01
@@ -155,12 +152,23 @@ status: active
 ---
 Missing summary.
 `,
-          "content/projects/berrybot.md",
-        ),
-      {
-        message: /content\/projects\/berrybot\.md: summary: expected a non-empty string/u,
-        name: ContentValidationError.name,
-      },
+        "content/projects/berrybot.md",
+      ),
+    ).toThrow(ContentValidationError);
+    expect(() =>
+      parseProjectContentFile(
+        `---
+title: BerryBot
+slug: berrybot
+publishedAt: 2025-05-01
+status: active
+---
+Missing summary.
+`,
+        "content/projects/berrybot.md",
+      ),
+    ).toThrow(
+      /content\/projects\/berrybot\.md: summary: expected a non-empty string/u,
     );
   });
 });
