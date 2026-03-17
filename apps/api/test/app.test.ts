@@ -152,6 +152,48 @@ void test("GET /health exposes x-request-id to allowed cross-origin callers", as
   }
 });
 
+void test("OPTIONS /health returns the configured CORS preflight response", async () => {
+  const app = createTestApp();
+  try {
+    const response = await app.inject({
+      method: "OPTIONS",
+      url: "/health",
+      headers: {
+        origin: "https://status.unimatrix-01.dev",
+        "access-control-request-method": "GET",
+        "access-control-request-headers": "x-client-version,content-type",
+      },
+    });
+
+    assert.equal(response.statusCode, 204);
+    assert.equal(response.body, "");
+    assert.equal(response.headers["access-control-allow-origin"], "https://status.unimatrix-01.dev");
+    assert.match(String(response.headers["access-control-allow-methods"]), /\bGET\b/u);
+    assert.match(String(response.headers["access-control-allow-methods"]), /\bHEAD\b/u);
+    assert.equal(response.headers["access-control-allow-credentials"], undefined);
+  } finally {
+    await app.close();
+  }
+});
+
+void test("GET /health does not throw when the origin header carries port zero", async () => {
+  const app = createTestApp();
+  try {
+    const response = await app.inject({
+      method: "GET",
+      url: "/health",
+      headers: {
+        origin: "https://status.unimatrix-01.dev:0",
+      },
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.headers["access-control-allow-origin"], undefined);
+  } finally {
+    await app.close();
+  }
+});
+
 void test("GET /health rejects unexpected query parameters with a validation envelope", async () => {
   const app = createTestApp();
   try {

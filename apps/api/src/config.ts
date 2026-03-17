@@ -338,7 +338,21 @@ function parseCorsAllowedOrigins(value: string | undefined): ApiCorsConfig {
 }
 
 function originPortForMatching(url: URL): string | null {
-  return normalizeOriginPort(url.protocol as ApiCorsProtocol, url.port);
+  if (url.port.length === 0) {
+    return null;
+  }
+
+  const portNumber = Number(url.port);
+
+  if (!Number.isInteger(portNumber) || portNumber < 0 || portNumber > 65535) {
+    return null;
+  }
+
+  if ((url.protocol === "http:" && portNumber === 80) || (url.protocol === "https:" && portNumber === 443)) {
+    return null;
+  }
+
+  return String(portNumber);
 }
 
 export function isApiCorsOriginAllowed(corsConfig: ApiCorsConfig, origin: string | undefined): boolean {

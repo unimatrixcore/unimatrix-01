@@ -1,5 +1,5 @@
 import { buildApp } from "./app.js";
-import { loadApiRuntimeConfig } from "./config.js";
+import { DEFAULT_API_CORS_ALLOWED_ORIGINS, loadApiRuntimeConfig } from "./config.js";
 import { loadApiLocalEnvFiles } from "./env.js";
 
 loadApiLocalEnvFiles();
@@ -50,6 +50,13 @@ function registerSignalHandlers(): void {
 async function startServer(): Promise<void> {
   try {
     registerSignalHandlers();
+
+    if (config.nodeEnv === "production" && process.env.CORS_ALLOWED_ORIGINS === undefined) {
+      app.log.warn(
+        { defaultAllowedOrigins: DEFAULT_API_CORS_ALLOWED_ORIGINS },
+        "CORS_ALLOWED_ORIGINS is unset in production; using repo defaults that include local development origins",
+      );
+    }
 
     const address = await app.listen({
       host: config.host,
