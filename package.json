@@ -12,6 +12,7 @@
   "scripts": {
     "dev": "node ./infra/scripts/dev.mjs",
     "setup:local": "node ./infra/scripts/setup-local.mjs",
+    "setup:worktree": "node ./infra/scripts/setup-worktree.mjs",
     "db:migrate": "pnpm --filter @unimatrix/db db:migrate",
     "db:generate": "pnpm --filter @unimatrix/db db:generate",
     "build": "turbo run build",

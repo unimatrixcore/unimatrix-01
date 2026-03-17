@@ -1,0 +1,80 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "lsp": {
+    "typescript": {
+      "command": [
+        "/home/gwenp/.opencode/node_modules/.bin/typescript-language-server",
+        "--stdio"
+      ],
+      "extensions": [
+        ".ts",
+        ".tsx",
+        ".js",
+        ".jsx",
+        ".mjs",
+        ".cjs",
+        ".mts",
+        ".cts"
+      ]
+    },
+    "eslint": {
+      "command": [
+        "/home/gwenp/.opencode/node_modules/.bin/vscode-eslint-language-server",
+        "--stdio"
+      ],
+      "extensions": [
+        ".ts",
+        ".tsx",
+        ".js",
+        ".jsx",
+        ".mjs",
+        ".cjs",
+        ".mts",
+        ".cts"
+      ]
+    },
+    "tailwindcss": {
+      "command": [
+        "/home/gwenp/.opencode/node_modules/.bin/tailwindcss-language-server",
+        "--stdio"
+      ],
+      "extensions": [
+        ".ts",
+        ".tsx",
+        ".js",
+        ".jsx",
+        ".css"
+      ]
+    },
+    "yaml-ls": {
+      "command": [
+        "/home/gwenp/.opencode/node_modules/.bin/yaml-language-server",
+        "--stdio"
+      ],
+      "extensions": [
+        ".yaml",
+        ".yml"
+      ]
+    },
+    "json": {
+      "command": [
+        "/home/gwenp/.opencode/node_modules/.bin/vscode-json-language-server",
+        "--stdio"
+      ],
+      "extensions": [
+        ".json",
+        ".jsonc"
+      ]
+    },
+    "marksman": {
+      "command": [
+        "/home/gwenp/.opencode/bin/marksman",
+        "server"
+      ],
+      "extensions": [
+        ".md",
+        ".markdown"
+      ]
+    }
+  }
+}

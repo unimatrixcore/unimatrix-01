@@ -26,6 +26,11 @@ correctly.
    created before you start the dev loop.
 5. Run `pnpm dev`.
 
+For a freshly created worktree or other automation, use
+`./infra/scripts/pnpm-with-node22.sh setup:worktree` to install workspace
+dependencies with a frozen lockfile, bootstrap local env files, and run the
+default database migrations in one step.
+
 For reproducible installs in automation or fresh clones, use
 `pnpm install --frozen-lockfile`.
 
@@ -55,6 +60,20 @@ starting the dev servers.
   missing
 - Never overwrites an existing local env file
 
+### `pnpm setup:worktree`
+
+Use `pnpm setup:worktree` when a new worktree or fresh automation run needs a
+single repo-owned bootstrap command.
+
+- Runs `pnpm install --frozen-lockfile`
+- Copies missing `apps/api/.env` and `apps/web/.env` files from their example
+  files
+- Runs `pnpm db:migrate`
+- Warns when `DATABASE_URL` is already set or when multiple worktrees may need
+  different local ports
+- Accepts `--with-playwright` to install Chromium for `@unimatrix/web` smoke
+  tests
+
 ## Environment files
 
 The app-local env contract is intentionally narrow and predictable.
@@ -81,6 +100,7 @@ are intentionally narrowing scope.
 ```bash
 pnpm dev
 pnpm setup:local
+pnpm setup:worktree
 pnpm build
 pnpm lint
 pnpm test
@@ -157,6 +177,7 @@ local Node and pnpm versions active.
 
 ```bash
 ./infra/scripts/pnpm-with-node22.sh install --frozen-lockfile
+./infra/scripts/pnpm-with-node22.sh setup:worktree
 ./infra/scripts/pnpm-with-node22.sh check
 ./infra/scripts/pnpm-with-node22.sh verify
 ```
