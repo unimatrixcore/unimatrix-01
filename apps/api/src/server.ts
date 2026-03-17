@@ -1,6 +1,8 @@
 import { buildApp } from "./app.js";
 import { loadApiRuntimeConfig } from "./config.js";
+import { loadApiLocalEnvFiles } from "./env.js";
 
+loadApiLocalEnvFiles();
 const config = loadApiRuntimeConfig();
 const app = buildApp(config);
 

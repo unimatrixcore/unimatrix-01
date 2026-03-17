@@ -2,6 +2,7 @@ import { isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const PACKAGE_ROOT_URL = new URL("../", import.meta.url);
+const REPO_ROOT_URL = new URL("../../../", import.meta.url);
 
 export const DEFAULT_SQLITE_DATABASE_FILE_PATH = fileURLToPath(
   new URL("./local/unimatrix.sqlite", PACKAGE_ROOT_URL),
@@ -24,7 +25,7 @@ export function normalizeDatabaseFilePath(filePath: string): string {
     return filePath;
   }
 
-  return fileURLToPath(new URL(filePath, PACKAGE_ROOT_URL));
+  return fileURLToPath(new URL(filePath, REPO_ROOT_URL));
 }
 
 export function resolveDatabaseConfig(

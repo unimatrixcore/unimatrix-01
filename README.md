@@ -115,21 +115,36 @@ Unknown project or blog slugs intentionally resolve into the app's not-found exp
 - `pnpm --filter @unimatrix/web build`
 - `pnpm check`
 
-## Local setup
+## Local development
 
-Use the pinned toolchain from the repo root:
+First-run quickstart from the repo root:
 
 ```bash
 corepack enable
 corepack use pnpm@10.30.3
 pnpm install
+pnpm dev
 ```
 
 The root package metadata pins `pnpm@10.30.3`, enforces Node `22.x`, provides `.node-version` pinned to `22.22.1` for local version managers, and keeps workspace dependency resolution explicit through `.npmrc`.
 
 For reproducible installs in automation or fresh clones, prefer `pnpm install --frozen-lockfile`.
 
-Install Playwright Chromium once for local smoke runs:
+If you want to bootstrap the ignored local env files before starting the dev loop, run:
+
+```bash
+pnpm setup:local
+```
+
+The standard day-to-day loop is:
+
+```bash
+pnpm dev
+pnpm check
+pnpm verify
+```
+
+Playwright browser installation remains optional and is only needed for local smoke tests:
 
 ```bash
 pnpm --filter @unimatrix/web exec playwright install chromium
@@ -142,14 +157,11 @@ LOC-42 keeps environment configuration app-local on purpose. The current env sur
 - `apps/api/src/config.ts` validates Fastify runtime config
 - `apps/web/src/lib/config.ts` validates browser runtime config and the Vite dev-proxy target
 
-Copy the example files before local development:
+`pnpm dev` and `pnpm setup:local` auto-bootstrap `apps/api/.env` and `apps/web/.env` from their example files when those local files are missing. Existing local files are never overwritten.
 
-```bash
-cp apps/api/.env.example apps/api/.env
-cp apps/web/.env.example apps/web/.env
-```
+API startup now auto-loads `apps/api/.env.local` first and then `apps/api/.env` when those files are present. Exported shell environment variables still win over file-loaded values because Node 22 does not overwrite existing env entries.
 
-Vite reads `apps/web/.env*` automatically for local development, so `VITE_API_BASE_URL` and `VITE_API_TARGET` can be configured there. The API entrypoints do **not** currently auto-load `apps/api/.env`, so treat that file as a documented template unless you explicitly source it or use a process manager / loader that exports those values into `process.env` before starting the API.
+Vite still reads `apps/web/.env*` automatically for local development, so `VITE_API_BASE_URL` and `VITE_API_TARGET` continue to live there without extra runtime bootstrap code.
 
 ### `apps/api`
 
@@ -168,11 +180,16 @@ Vite reads `apps/web/.env*` automatically for local development, so `VITE_API_BA
 
 Invalid or blank values now fail fast with explicit errors during API startup, Vite startup, or web app bootstrap rather than silently falling back to loose parsing.
 
-Out of scope for LOC-42:
+## Database workflow
 
-- repo-wide secret management
-- deployment-specific env injection
-- database configuration such as `DATABASE_URL`
+The current API-side local dependency path is intentionally SQLite-first and pnpm-first.
+
+- default SQLite file: `packages/db/local/unimatrix.sqlite`
+- root migration alias: `pnpm db:migrate`
+- root migration generation alias: `pnpm db:generate`
+- supported override: `DATABASE_URL`
+
+When `DATABASE_URL` is unset, the db package uses the default SQLite file above. When it is set, the current code supports absolute paths, repo-relative paths, `file:` URLs, and `:memory:`.
 
 ## Agent and Automation Validation
 
@@ -191,16 +208,19 @@ When the host already has local Node `22.x` and pnpm `10.30.3` active, the wrapp
 
 ## Commands
 
-The root scripts are the canonical workspace entrypoints and proxy tasks through Turbo. `apps/web` now exposes real Vite `dev`, `build`, `preview`, `lint`, `test:unit`, `test:smoke`, `test`, and `typecheck` commands. `test:unit` runs the Vitest-backed web suite directly, including the markdown rendering and `/status` route tests, without a prebuild step. `test:smoke` builds the web app and serves it through `vite preview`, so the smoke suite exercises the production artifact rather than Vite dev mode. The aggregate `test` command remains the canonical local and CI path for the web workspace: unit coverage plus a narrow Chromium smoke suite for `/`, a click-driven route navigation flow, `/projects/unimatrix-01`, and `/blog/building-a-typed-content-baseline`. The `/status` route stays covered in the unit/integration suite because it depends on mocked API data rather than the standalone smoke environment. `apps/api` provides its Fastify `dev`, `build`, `start`, `lint`, `test`, and `typecheck` commands, and the in-scope runtime packages now execute real Vitest suites from their own workspaces.
+The root scripts are the canonical workspace entrypoints. `pnpm dev` is now the managed local-entry command: it checks for Node `22.x`, verifies workspace dependencies are installed, bootstraps missing app-local `.env` files, and then starts only `@unimatrix/api` and `@unimatrix/web` through Turbo. `apps/web` still exposes real Vite `dev`, `build`, `preview`, `lint`, `test:unit`, `test:smoke`, `test`, and `typecheck` commands. `test:unit` runs the Vitest-backed web suite directly, including the markdown rendering and `/status` route tests, without a prebuild step. `test:smoke` builds the web app and serves it through `vite preview`, so the smoke suite exercises the production artifact rather than Vite dev mode. The aggregate `test` command remains the canonical local and CI path for the web workspace: unit coverage plus a narrow Chromium smoke suite for `/`, a click-driven route navigation flow, `/projects/unimatrix-01`, and `/blog/building-a-typed-content-baseline`. The `/status` route stays covered in the unit/integration suite because it depends on mocked API data rather than the standalone smoke environment. `apps/api` provides its Fastify `dev`, `build`, `start`, `lint`, `test`, and `typecheck` commands, and the in-scope runtime packages now execute real Vitest suites from their own workspaces.
 
 ```bash
 pnpm dev
+pnpm setup:local
 pnpm build
 pnpm lint
 pnpm test
 pnpm typecheck
 pnpm check
 pnpm verify
+pnpm db:migrate
+pnpm db:generate
 pnpm --filter @unimatrix/api dev
 pnpm --filter @unimatrix/web dev
 pnpm --filter @unimatrix/web test:smoke

@@ -10,7 +10,10 @@
     "pnpm": "10.30.3"
   },
   "scripts": {
-    "dev": "turbo run dev --parallel",
+    "dev": "node ./infra/scripts/dev.mjs",
+    "setup:local": "node ./infra/scripts/setup-local.mjs",
+    "db:migrate": "pnpm --filter @unimatrix/db db:migrate",
+    "db:generate": "pnpm --filter @unimatrix/db db:generate",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "test": "turbo run test",
