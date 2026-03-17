@@ -28,6 +28,24 @@ function toRepoRelativePath(filePath) {
   return relative(REPO_ROOT, filePath).replaceAll("\\", "/");
 }
 
+function createBootstrapLocalEnvError(file, error) {
+  const examplePath = toRepoRelativePath(file.examplePath);
+  const targetPath = toRepoRelativePath(file.targetPath);
+
+  if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+    return new Error(
+      `Cannot bootstrap ${targetPath}: example file ${examplePath} is missing.`,
+      { cause: error },
+    );
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+
+  return new Error(`Cannot bootstrap ${targetPath}: ${message}`, {
+    cause: error instanceof Error ? error : undefined,
+  });
+}
+
 export async function bootstrapLocalEnvFiles() {
   const results = [];
 
@@ -40,7 +58,12 @@ export async function bootstrapLocalEnvFiles() {
       continue;
     }
 
-    await copyFile(file.examplePath, file.targetPath);
+    try {
+      await copyFile(file.examplePath, file.targetPath);
+    } catch (error) {
+      throw createBootstrapLocalEnvError(file, error);
+    }
+
     results.push({
       ...file,
       status: "created",
@@ -65,9 +88,15 @@ export function printBootstrapLocalEnvFiles(results) {
 }
 
 async function main() {
-  const results = await bootstrapLocalEnvFiles();
-  printBootstrapLocalEnvFiles(results);
-  console.log("Next: pnpm dev");
+  try {
+    const results = await bootstrapLocalEnvFiles();
+    printBootstrapLocalEnvFiles(results);
+    console.log("Next: pnpm dev");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(message);
+    process.exit(1);
+  }
 }
 
 if (isMainModule()) {

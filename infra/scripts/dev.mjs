@@ -40,8 +40,14 @@ async function main() {
   ensureSupportedNodeVersion();
   ensureWorkspaceDependenciesInstalled();
 
-  const bootstrapResults = await bootstrapLocalEnvFiles();
-  printBootstrapLocalEnvFiles(bootstrapResults);
+  try {
+    const bootstrapResults = await bootstrapLocalEnvFiles();
+    printBootstrapLocalEnvFiles(bootstrapResults);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(message);
+    process.exit(1);
+  }
 
   const child = spawn(
     PNPM_COMMAND,

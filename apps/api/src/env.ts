@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { relative, resolve } from "node:path";
-import { TextDecoder } from "node:util";
+import { parseEnv, TextDecoder } from "node:util";
 import { fileURLToPath } from "node:url";
 
 const API_ROOT_DIRECTORY = fileURLToPath(new URL("../", import.meta.url));
@@ -27,6 +27,16 @@ function validateApiLocalEnvFile(filePath: string): void {
   if (fileContents.includes(0)) {
     throw new Error("file must not contain NUL bytes.");
   }
+
+  const parsedValues = parseEnv(fileContents.toString("utf8"));
+
+  for (const [key, value] of Object.entries(parsedValues)) {
+    if (Object.hasOwn(process.env, key)) {
+      continue;
+    }
+
+    process.env[key] = value;
+  }
 }
 
 function loadApiLocalEnvFile(apiRootDirectory: string, fileName: ".env" | ".env.local"): void {
@@ -34,7 +44,6 @@ function loadApiLocalEnvFile(apiRootDirectory: string, fileName: ".env" | ".env.
 
   try {
     validateApiLocalEnvFile(filePath);
-    process.loadEnvFile(filePath);
   } catch (error) {
     if (isMissingFileError(error)) {
       return;

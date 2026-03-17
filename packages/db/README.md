@@ -22,9 +22,9 @@ Minimal persistence boundary for the Unimatrix monorepo.
 - generate migrations: `pnpm --filter @unimatrix/db db:generate`
 - apply migrations: `pnpm --filter @unimatrix/db db:migrate`
 - `DATABASE_URL` override forms:
-- absolute filesystem path
-- repo-relative filesystem path
-- `file:` URL
-- `:memory:`
+  - absolute filesystem path
+  - repo-relative filesystem path
+  - `file:` URL
+  - `:memory:`
 
 LOC-40 keeps this package intentionally small so later persistence work can build forward without moving the boundary.
