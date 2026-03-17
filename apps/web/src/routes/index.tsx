@@ -45,14 +45,13 @@ function IndexRoute() {
                   <>
                     <Badge className="gap-1.5">
                       <RiCompassDiscoverLine aria-hidden="true" className="size-3.5" />
-                      System brief
+                      Route brief
                     </Badge>
                     <Badge variant="outline">homepage route</Badge>
                   </>
                 }
-                description={home.frontmatter.intro}
-                title={home.frontmatter.title}
-                titleClassName="max-w-4xl text-4xl lg:text-5xl"
+                title="What this public route is for"
+                titleClassName="max-w-3xl text-3xl lg:text-4xl"
               />
 
               <div className="grid gap-4 lg:grid-cols-2">
@@ -138,7 +137,6 @@ function IndexRoute() {
                   <Badge variant="outline">rendered markdown</Badge>
                 </>
               }
-              description={home.frontmatter.summary}
               title="How the site is being run"
               trailing={<RiLayoutGridLine aria-hidden="true" className="size-4 text-muted-foreground" />}
             />
