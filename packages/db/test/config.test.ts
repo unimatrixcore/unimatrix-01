@@ -23,8 +23,8 @@ describe("database path normalization", () => {
     expect(normalizeDatabaseFilePath(absolutePath)).toBe(absolutePath);
   });
 
-  it("resolves relative paths from the package root", () => {
-    expect(normalizeDatabaseFilePath("local/relative-test.sqlite")).toBe(
+  it("resolves relative paths from the repo root", () => {
+    expect(normalizeDatabaseFilePath("packages/db/local/relative-test.sqlite")).toBe(
       fileURLToPath(new URL("../local/relative-test.sqlite", import.meta.url)),
     );
   });
