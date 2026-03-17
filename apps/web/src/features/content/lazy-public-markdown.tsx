@@ -44,7 +44,7 @@ class LazyPublicMarkdownErrorBoundary extends Component<
   LazyPublicMarkdownErrorBoundaryProps,
   LazyPublicMarkdownErrorBoundaryState
 > {
-  state: LazyPublicMarkdownErrorBoundaryState = {
+  override state: LazyPublicMarkdownErrorBoundaryState = {
     hasError: false,
   };
 
@@ -54,7 +54,7 @@ class LazyPublicMarkdownErrorBoundary extends Component<
     };
   }
 
-  componentDidUpdate(
+  override componentDidUpdate(
     prevProps: Readonly<LazyPublicMarkdownErrorBoundaryProps>,
   ) {
     if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
@@ -64,7 +64,7 @@ class LazyPublicMarkdownErrorBoundary extends Component<
     }
   }
 
-  render() {
+  override render() {
     if (this.state.hasError) {
       return <LazyPublicMarkdownErrorState />;
     }

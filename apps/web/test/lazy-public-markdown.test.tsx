@@ -25,7 +25,7 @@ describe("LazyPublicMarkdown", () => {
   });
 
   it("renders a graceful message when the public markdown chunk fails to load", async () => {
-    vi.doMock("@unimatrix/ui/public", async () => {
+    vi.doMock("@unimatrix/ui/public", () => {
       throw new Error("chunk unavailable");
     });
 
