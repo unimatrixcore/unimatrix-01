@@ -170,6 +170,8 @@ Vite still reads `apps/web/.env*` automatically for local development, so `VITE_
 | `HOST` | no | `127.0.0.1` | Must be a non-empty host string when set. |
 | `PORT` | no | `3001` | Must be an integer between `1` and `65535` when set. |
 | `NODE_ENV` | no | `development` | Must be one of `development`, `test`, or `production`. |
+| `LOG_LEVEL` | no | `debug` in `development`, `info` in `test` and `production` | Must be one of `debug`, `info`, `warn`, or `error` when set. |
+| `TRUST_PROXY` | no | `false` | Must be one of `true`, `1`, `false`, or `0` when set. `true` trusts all proxy hops, while `1` trusts a single upstream proxy hop. |
 
 ### `apps/web`
 
@@ -179,6 +181,18 @@ Vite still reads `apps/web/.env*` automatically for local development, so `VITE_
 | `VITE_API_TARGET` | no | `http://127.0.0.1:3001` | Must be an absolute `http://` / `https://` URL. This is only used by the Vite dev server proxy and is not read from `import.meta.env` in the browser. |
 
 Invalid or blank values now fail fast with explicit errors during API startup, Vite startup, or web app bootstrap rather than silently falling back to loose parsing.
+
+## Operational Baseline
+
+The API currently keeps an intentional same-origin browser posture. It does not enable CORS or emit `Access-Control-Allow-Origin` headers, and local web development continues to use the existing Vite `/api` proxy instead of widening the API surface area.
+
+Every API response now includes an `x-request-id` header so request correlation survives across success, validation, and not-found responses. The API also emits a request completion log on every response with `requestId`, `method`, `route` or URL, `statusCode`, and `durationMs`.
+
+Fastify now runs with `@fastify/helmet` as the baseline response-header layer. Content Security Policy stays disabled because the API currently serves JSON only, and Strict-Transport-Security stays disabled outside `production` to avoid sticky HSTS behavior during local HTTP development.
+
+`GET /health` keeps the existing JSON contract unchanged while adding `Cache-Control: no-store, no-cache, must-revalidate` and `Pragma: no-cache` so health checks are never cached by browsers or intermediaries.
+
+Repo update hygiene is now handled by weekly Dependabot runs for root `npm` dependencies and GitHub Actions. Minor and patch updates are grouped to reduce churn, majors stay separate, and the open PR limit is kept conservative.
 
 ## Database workflow
 
@@ -248,6 +262,8 @@ The baseline CI workflow uses the pinned repo toolchain:
 - Node `22.22.1` from `.node-version`
 - pnpm `10.30.3`
 - `pnpm install --frozen-lockfile`
+- `actions/checkout` with `persist-credentials: false`
+- a job timeout to avoid stuck runs
 
 The workflow then runs the canonical root validation commands as separate steps:
 

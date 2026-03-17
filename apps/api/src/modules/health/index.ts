@@ -21,7 +21,12 @@ export const healthModule: FastifyPluginAsync = (app) => {
         200: healthContract.responseSchema,
       },
     },
-    handler: () => healthResponse,
+    handler: (_request, reply) => {
+      reply.header("Cache-Control", "no-store, no-cache, must-revalidate");
+      reply.header("Pragma", "no-cache");
+
+      return healthResponse;
+    },
   });
 
   return Promise.resolve();

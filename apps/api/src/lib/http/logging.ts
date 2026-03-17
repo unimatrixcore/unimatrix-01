@@ -19,7 +19,7 @@ export function buildLoggerOptions(config: ApiRuntimeConfig): ApiLoggerOptions {
   const isDevelopment = config.nodeEnv === "development";
 
   return {
-    level: isDevelopment ? "debug" : "info",
+    level: config.logLevel,
     redact: {
       paths: [...REDACTED_LOG_PATHS],
       censor: "[REDACTED]",
