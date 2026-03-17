@@ -27,6 +27,8 @@ export interface ReactModules {
 }
 
 export async function loadPublicMarkdown(): Promise<PublicMarkdownModule> {
+  // Tests import the built package entry so they exercise the exported package shape.
+  // Run `pnpm --filter @unimatrix/ui build` before these tests if dist is stale or missing.
   const moduleUrl = pathToFileURL(
     join(process.cwd(), "..", "..", "packages", "ui", "dist", "index.js"),
   ).href;

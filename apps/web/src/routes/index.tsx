@@ -138,7 +138,7 @@ function IndexRoute() {
                   <Badge variant="outline">rendered markdown</Badge>
                 </>
               }
-              description={home.frontmatter.mission}
+              description={home.frontmatter.summary}
               title="How the site is being run"
               trailing={<RiLayoutGridLine aria-hidden="true" className="size-4 text-muted-foreground" />}
             />

@@ -447,7 +447,7 @@ function sanitizeMarkdownNodeUrl(url: string, key: string): string {
     return sanitizeMarkdownImageSource(url) ?? "";
   }
 
-  return url;
+  return "";
 }
 
 function sanitizeMarkdownLink(url: string | undefined | null): SanitizedLink {

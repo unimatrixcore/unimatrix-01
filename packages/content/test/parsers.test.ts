@@ -90,6 +90,59 @@ const unsafe = "<script />";
     );
   });
 
+  it("preserves pipe characters in prose excerpts outside table blocks", () => {
+    const blogEntry = parseBlogContentFile(
+      `---
+title: Union types
+slug: union-types
+publishedAt: 2026-03-16
+summary: Blog summary
+---
+Use \`A | B\` to express union types.
+`,
+      "content/blog/union-types.md",
+    );
+
+    assert.equal(blogEntry.excerpt, "Use A | B to express union types.");
+  });
+
+  it("strips empty fenced code blocks before deriving excerpts", () => {
+    const blogEntry = parseBlogContentFile(
+      `---
+title: Empty fence
+slug: empty-fence
+publishedAt: 2026-03-16
+summary: Blog summary
+---
+\`\`\`
+\`\`\`
+
+First visible paragraph.
+`,
+      "content/blog/empty-fence.md",
+    );
+
+    assert.equal(blogEntry.excerpt, "First visible paragraph.");
+  });
+
+  it("treats compact GFM separator rows as table syntax", () => {
+    const blogEntry = parseBlogContentFile(
+      `---
+title: Compact table
+slug: compact-table
+publishedAt: 2026-03-16
+summary: Blog summary
+---
+| Surface | Mode |
+| - | - |
+| Public site | Safe GFM |
+`,
+      "content/blog/compact-table.md",
+    );
+
+    assert.equal(blogEntry.excerpt, "Surface Mode Public site Safe GFM");
+  });
+
   it("reports missing required frontmatter with a file-specific error", () => {
     assert.throws(
       () =>

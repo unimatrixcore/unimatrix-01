@@ -202,7 +202,7 @@ function optionalProperty<T extends string, TValue>(
 
 function stripFencedCodeBlocks(markdown: string): string {
   return markdown.replace(
-    /(?:^|\n)(`{3,}|~{3,})[^\n]*\n[\s\S]*?\n\1[ \t]*(?=\n|$)/gu,
+    /(?:^|\n)(`{3,}|~{3,})[^\n]*\n[\s\S]*?\1[ \t]*(?=\n|$)/gu,
     "\n",
   );
 }
@@ -226,7 +226,7 @@ function normalizeExcerptBlock(block: string): {
   const isTableBlock = lines.some(isTableSeparatorLine);
   const normalizedText = lines
     .filter((line) => !isTableSeparatorLine(line))
-    .map(normalizeExcerptLine)
+    .map((line) => normalizeExcerptLine(line, isTableBlock))
     .filter((line) => line.length > 0)
     .join(" ")
     .replace(/\s+/gu, " ")
@@ -238,7 +238,7 @@ function normalizeExcerptBlock(block: string): {
   };
 }
 
-function normalizeExcerptLine(line: string): string {
+function normalizeExcerptLine(line: string, isTableLine: boolean): string {
   let normalizedLine = line.trim();
 
   if (normalizedLine.length === 0) {
@@ -260,7 +260,7 @@ function normalizeExcerptLine(line: string): string {
     "",
   );
 
-  if (normalizedLine.includes("|")) {
+  if (isTableLine && normalizedLine.includes("|")) {
     normalizedLine = normalizedLine
       .split("|")
       .map((segment) => segment.trim())
@@ -279,5 +279,5 @@ function normalizeExcerptLine(line: string): string {
 }
 
 function isTableSeparatorLine(line: string): boolean {
-  return /^\s*\|?(?:\s*:?-{3,}:?\s*\|)+(?:\s*:?-{3,}:?\s*)?$/u.test(line);
+  return /^\s*\|?(?:\s*:?-+:?\s*\|)+(?:\s*:?-+:?\s*)?$/u.test(line);
 }
