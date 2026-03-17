@@ -15,7 +15,7 @@ import {
 } from "@/features/public-site/components";
 import {
   Badge,
-} from "@unimatrix/ui";
+} from "@unimatrix/ui/public";
 
 type AppShellProps = {
   children: ReactNode;

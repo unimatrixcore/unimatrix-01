@@ -117,6 +117,8 @@ GitHub Actions CI runs on branch pushes and stays aligned to the root command su
 
 This keeps CI aligned with local contributor workflows instead of introducing a separate automation-only command surface.
 
+Keep ad-hoc browser screenshots and other debug artifacts in ignored `.issues/` scratch space, or leave them uncommitted instead of placing them in the repo root.
+
 ## Database workflow
 
 - Default SQLite file: `packages/db/local/unimatrix.sqlite`

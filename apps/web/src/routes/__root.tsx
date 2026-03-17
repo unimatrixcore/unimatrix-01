@@ -7,7 +7,7 @@ import { RiAlertLine } from "@remixicon/react";
 
 import { AppShell } from "@/app/app-shell";
 import type { AppRouterContext } from "@/app/router";
-import { Badge, Button, Card } from "@unimatrix/ui";
+import { Badge, Button, Card } from "@unimatrix/ui/public";
 
 export const Route = createRootRouteWithContext<AppRouterContext>()({
   component: RootComponent,
