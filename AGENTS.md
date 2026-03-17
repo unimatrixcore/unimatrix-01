@@ -63,5 +63,7 @@
 - Making major package-boundary changes
 
 ## Commit attribution
-- If you create commits, add
+- If you are a Codex agent and you create commits, add
   `Co-Authored-By: Codex <noreply@openai.com>`.
+- If you are a Claude Code agent and you create commits, add
+  `Co-Authored-By: Claude <noreply@anthropic.com>`.

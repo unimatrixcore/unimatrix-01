@@ -70,11 +70,11 @@ These rules keep the monorepo aligned with its current scope.
 
 For this repo, v1-ready means the following baseline remains true.
 
-- `apps/web` is runnable as the canonical public web workspace.
-- `apps/api` is runnable as the canonical API workspace.
-- Root scripts are the canonical operating surface for local work and CI.
-- The toolchain is pinned to Node `22.22.1` and pnpm `10.30.3`.
-- Shared packages are typed and reusable across app boundaries.
-- Git-backed typed content exists for `home`, `projects`, and `blog`.
-- The deployment and environment contract is documented.
-- CI runs against the same root commands contributors use locally.
+- [x] `apps/web` is runnable as the canonical public web workspace.
+- [x] `apps/api` is runnable as the canonical API workspace.
+- [x] Root scripts are the canonical operating surface for local work and CI.
+- [x] The toolchain is pinned to Node `22.22.1` and pnpm `10.30.3`.
+- [x] Shared packages are typed and reusable across app boundaries.
+- [x] Git-backed typed content exists for `home`, `projects`, and `blog`.
+- [x] The deployment and environment contract is documented.
+- [x] CI runs against the same root commands contributors use locally.
