@@ -136,6 +136,8 @@ If you want to bootstrap the ignored local env files before starting the dev loo
 pnpm setup:local
 ```
 
+`apps/api/.env.example` and `apps/web/.env.example` are the local-development bootstrap files. Deployment-oriented examples live in `apps/api/.env.production.example` and `apps/web/.env.production.example`, and the deployment contract is documented in `infra/deployment/README.md`.
+
 The standard day-to-day loop is:
 
 ```bash
@@ -163,6 +165,8 @@ API startup now auto-loads `apps/api/.env.local` first and then `apps/api/.env` 
 
 Vite still reads `apps/web/.env*` automatically for local development, so `VITE_API_BASE_URL` and `VITE_API_TARGET` continue to live there without extra runtime bootstrap code.
 
+Separate-origin deployment values are intentionally documented in `infra/deployment/README.md` instead of expanding the root README into broader operating documentation.
+
 ### `apps/api`
 
 | Variable | Required | Default | Notes |
@@ -184,7 +188,7 @@ Invalid or blank values now fail fast with explicit errors during API startup, V
 
 ## Operational Baseline
 
-The API currently keeps an intentional same-origin browser posture. It does not enable CORS or emit `Access-Control-Allow-Origin` headers, and local web development continues to use the existing Vite `/api` proxy instead of widening the API surface area.
+The API now supports both same-origin browser deployment and separate-origin public browser access. Same-origin deployments can keep `VITE_API_BASE_URL=/api`, while separate-origin deployments use an absolute browser API base URL and configure API CORS through `CORS_ALLOWED_ORIGINS`. See `infra/deployment/README.md` for the deployment-specific contract.
 
 Every API response now includes an `x-request-id` header so request correlation survives across success, validation, and not-found responses. The API also emits a request completion log on every response with `requestId`, `method`, `route` or URL, `statusCode`, and `durationMs`.
 

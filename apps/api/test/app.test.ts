@@ -2,15 +2,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { buildApp } from "../src/app.js";
+import { loadApiRuntimeConfig, type ApiRuntimeEnv } from "../src/config.js";
 
-function createTestApp() {
-  return buildApp({
-    host: "127.0.0.1",
-    logLevel: "error",
-    nodeEnv: "test",
-    port: 3001,
-    trustProxy: false,
-  });
+function createTestApp(env: ApiRuntimeEnv = {}) {
+  return buildApp(
+    loadApiRuntimeConfig({
+      LOG_LEVEL: "error",
+      NODE_ENV: "test",
+      ...env,
+    }),
+  );
 }
 
 void test("buildApp disables Fastify default request logging", async () => {
@@ -52,6 +53,142 @@ void test("GET /health returns the expected health payload and hardening headers
     assert.equal(response.headers["access-control-allow-origin"], undefined);
     assert.equal(response.headers["content-security-policy"], undefined);
     assert.equal(response.headers["strict-transport-security"], undefined);
+  } finally {
+    await app.close();
+  }
+});
+
+void test("GET /health allows the unimatrix apex origin", async () => {
+  const app = createTestApp();
+  try {
+    const response = await app.inject({
+      method: "GET",
+      url: "/health",
+      headers: {
+        origin: "https://unimatrix-01.dev",
+      },
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.headers["access-control-allow-origin"], "https://unimatrix-01.dev");
+    assert.equal(response.headers["access-control-expose-headers"], "x-request-id");
+    assert.equal(response.headers["access-control-allow-credentials"], undefined);
+  } finally {
+    await app.close();
+  }
+});
+
+void test("GET /health allows configured unimatrix subdomains", async () => {
+  const app = createTestApp();
+  try {
+    const response = await app.inject({
+      method: "GET",
+      url: "/health",
+      headers: {
+        origin: "https://status.unimatrix-01.dev",
+      },
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.headers["access-control-allow-origin"], "https://status.unimatrix-01.dev");
+  } finally {
+    await app.close();
+  }
+});
+
+void test("GET /health allows the omnimatrix apex origin", async () => {
+  const app = createTestApp();
+  try {
+    const response = await app.inject({
+      method: "GET",
+      url: "/health",
+      headers: {
+        origin: "https://omnimatrix.dev",
+      },
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.headers["access-control-allow-origin"], "https://omnimatrix.dev");
+  } finally {
+    await app.close();
+  }
+});
+
+void test("GET /health does not allow disallowed cross-origin requests", async () => {
+  const app = createTestApp();
+  try {
+    const response = await app.inject({
+      method: "GET",
+      url: "/health",
+      headers: {
+        origin: "https://evil.example",
+      },
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.headers["access-control-allow-origin"], undefined);
+  } finally {
+    await app.close();
+  }
+});
+
+void test("GET /health exposes x-request-id to allowed cross-origin callers", async () => {
+  const app = createTestApp();
+  try {
+    const response = await app.inject({
+      method: "GET",
+      url: "/health",
+      headers: {
+        origin: "https://status.omnimatrix.dev",
+      },
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.match(String(response.headers["x-request-id"]), /^req-\d+$/u);
+    assert.equal(response.headers["access-control-allow-origin"], "https://status.omnimatrix.dev");
+    assert.equal(response.headers["access-control-expose-headers"], "x-request-id");
+  } finally {
+    await app.close();
+  }
+});
+
+void test("OPTIONS /health returns the configured CORS preflight response", async () => {
+  const app = createTestApp();
+  try {
+    const response = await app.inject({
+      method: "OPTIONS",
+      url: "/health",
+      headers: {
+        origin: "https://status.unimatrix-01.dev",
+        "access-control-request-method": "GET",
+        "access-control-request-headers": "x-client-version,content-type",
+      },
+    });
+
+    assert.equal(response.statusCode, 204);
+    assert.equal(response.body, "");
+    assert.equal(response.headers["access-control-allow-origin"], "https://status.unimatrix-01.dev");
+    assert.match(String(response.headers["access-control-allow-methods"]), /\bGET\b/u);
+    assert.match(String(response.headers["access-control-allow-methods"]), /\bHEAD\b/u);
+    assert.equal(response.headers["access-control-allow-credentials"], undefined);
+  } finally {
+    await app.close();
+  }
+});
+
+void test("GET /health does not throw when the origin header carries port zero", async () => {
+  const app = createTestApp();
+  try {
+    const response = await app.inject({
+      method: "GET",
+      url: "/health",
+      headers: {
+        origin: "https://status.unimatrix-01.dev:0",
+      },
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.headers["access-control-allow-origin"], undefined);
   } finally {
     await app.close();
   }
