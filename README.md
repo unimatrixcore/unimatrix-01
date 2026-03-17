@@ -108,6 +108,8 @@ Unknown project or blog slugs intentionally resolve into the app's not-found exp
 - `pnpm --filter @unimatrix/content test`
 - `pnpm --filter @unimatrix/content build`
 - `pnpm --filter @unimatrix/web lint`
+- `pnpm --filter @unimatrix/web test:unit`
+- `pnpm --filter @unimatrix/web test:smoke`
 - `pnpm --filter @unimatrix/web typecheck`
 - `pnpm --filter @unimatrix/web test`
 - `pnpm --filter @unimatrix/web build`
@@ -126,6 +128,12 @@ pnpm install
 The root package metadata pins `pnpm@10.30.3`, enforces Node `22.x`, provides `.node-version` pinned to `22.22.1` for local version managers, and keeps workspace dependency resolution explicit through `.npmrc`.
 
 For reproducible installs in automation or fresh clones, prefer `pnpm install --frozen-lockfile`.
+
+Install Playwright Chromium once for local smoke runs:
+
+```bash
+pnpm --filter @unimatrix/web exec playwright install chromium
+```
 
 ## App configuration
 
@@ -183,7 +191,7 @@ When the host already has local Node `22.x` and pnpm `10.30.3` active, the wrapp
 
 ## Commands
 
-The root scripts are the canonical workspace entrypoints and proxy tasks through Turbo. `apps/web` exposes real Vite `dev`, `build`, `preview`, `lint`, `test`, and `typecheck` commands, `apps/api` provides its Fastify `dev`, `build`, `start`, `lint`, `test`, and `typecheck` commands, and the in-scope runtime packages now execute real Vitest suites from their own workspaces.
+The root scripts are the canonical workspace entrypoints and proxy tasks through Turbo. `apps/web` now exposes real Vite `dev`, `build`, `preview`, `lint`, `test:unit`, `test:smoke`, `test`, and `typecheck` commands. `test:unit` runs the Vitest-backed web suite directly, including the markdown rendering and `/status` route tests, without a prebuild step. `test:smoke` builds the web app and serves it through `vite preview`, so the smoke suite exercises the production artifact rather than Vite dev mode. The aggregate `test` command remains the canonical local and CI path for the web workspace: unit coverage plus a narrow Chromium smoke suite for `/`, a click-driven route navigation flow, `/projects/unimatrix-01`, and `/blog/building-a-typed-content-baseline`. The `/status` route stays covered in the unit/integration suite because it depends on mocked API data rather than the standalone smoke environment. `apps/api` provides its Fastify `dev`, `build`, `start`, `lint`, `test`, and `typecheck` commands, and the in-scope runtime packages now execute real Vitest suites from their own workspaces.
 
 ```bash
 pnpm dev
@@ -195,6 +203,8 @@ pnpm check
 pnpm verify
 pnpm --filter @unimatrix/api dev
 pnpm --filter @unimatrix/web dev
+pnpm --filter @unimatrix/web test:smoke
+pnpm --filter @unimatrix/web test
 ```
 
 ## Quality gates
@@ -225,6 +235,8 @@ The workflow then runs the canonical root validation commands as separate steps:
 - `pnpm lint`
 - `pnpm typecheck`
 - `pnpm test`
+
+Before the `pnpm test` step, CI installs Playwright Chromium for `@unimatrix/web` so the root test path can run the public-site smoke suite without a separate workflow job.
 
 This keeps CI aligned with the local quality gates instead of introducing a separate automation-only command surface.
 

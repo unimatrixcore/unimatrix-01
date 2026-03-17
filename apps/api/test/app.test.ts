@@ -41,7 +41,7 @@ void test("GET /health rejects unexpected query parameters with a validation env
   });
 
   assert.equal(response.statusCode, 400);
-  const body = response.json() as {
+  const body: {
     error: {
       code: string;
       details: {
@@ -51,7 +51,7 @@ void test("GET /health rejects unexpected query parameters with a validation env
       statusCode: number;
     };
     requestId: string;
-  };
+  } = response.json();
 
   assert.equal(body.error.code, "VALIDATION_ERROR");
   assert.equal(body.error.message, "Request validation failed");
@@ -72,14 +72,14 @@ void test("GET /missing-route returns the not-found envelope", async (t) => {
   });
 
   assert.equal(response.statusCode, 404);
-  const body = response.json() as {
+  const body: {
     error: {
       code: string;
       message: string;
       statusCode: number;
     };
     requestId: string;
-  };
+  } = response.json();
 
   assert.deepEqual(body.error, {
     code: "NOT_FOUND",
