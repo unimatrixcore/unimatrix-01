@@ -4,7 +4,7 @@ slug: unimatrix-01
 publishedAt: 2026-03-16
 summary: The TypeScript monorepo foundation for the future Unimatrix site, packages, and internal tooling.
 status: in-progress
-repoUrl: https://github.com/gwenphalan/unimatrix-01
+repoUrl: https://github.com/unimatrixcore/unimatrix-01
 featured: true
 ---
 Unimatrix-01 is the new long-term platform. It keeps the public site, shared packages, and future operational tooling in one typed workspace so new work can extend the system without rebuilding the architecture every time.
