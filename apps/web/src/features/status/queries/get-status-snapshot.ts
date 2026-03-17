@@ -8,7 +8,7 @@ const SUCCESS_CLIENT_STATUS_MESSAGE =
 const FALLBACK_SERVICE = "api";
 const FALLBACK_STATUS = "unavailable";
 
-export interface ScaffoldStatus {
+export interface StatusSnapshot {
   checkedAt: string;
   clientStatus: string;
   routerStatus: string;
@@ -16,7 +16,7 @@ export interface ScaffoldStatus {
   status: string;
 }
 
-async function getScaffoldStatus(): Promise<ScaffoldStatus> {
+async function getStatusSnapshot(): Promise<StatusSnapshot> {
   const checkedAt = new Date().toLocaleTimeString();
 
   try {
@@ -43,10 +43,10 @@ async function getScaffoldStatus(): Promise<ScaffoldStatus> {
   }
 }
 
-export function scaffoldStatusQueryOptions() {
+export function statusSnapshotQueryOptions() {
   return queryOptions({
-    queryFn: getScaffoldStatus,
-    queryKey: ["scaffold-status"],
+    queryFn: getStatusSnapshot,
+    queryKey: ["status-snapshot"],
     staleTime: 1000 * 60,
   });
 }

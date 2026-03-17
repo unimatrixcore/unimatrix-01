@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -24,23 +24,53 @@ function readRepositoryFile(path: string): string {
   return readFileSync(join(repositoryRoot, path), "utf8");
 }
 
+function collectRepositoryFiles(path: string): string[] {
+  const absolutePath = join(repositoryRoot, path);
+  const entries = readdirSync(absolutePath, { withFileTypes: true });
+
+  return entries.flatMap((entry) => {
+    const relativePath = join(path, entry.name);
+
+    if (entry.isDirectory()) {
+      return collectRepositoryFiles(relativePath);
+    }
+
+    return relativePath;
+  });
+}
+
 describe("public UI package usage", () => {
-  it("@unimatrix/ui is the canonical shared shadcn package surface", () => {
-    const source = readRepositoryFile("packages/ui/src/index.ts");
+  it("@unimatrix/ui remains broad while @unimatrix/ui/public stays intentionally narrow", () => {
+    const rootSource = readRepositoryFile("packages/ui/src/index.ts");
+    const publicSource = readRepositoryFile("packages/ui/src/public.ts");
     const uiBarrelSource = readRepositoryFile("packages/ui/src/components/ui/index.ts");
 
-    expect(source).toMatch(/components\/ui\/index/u);
-    expect(source).toMatch(/PublicMarkdown/u);
-    expect(source).toMatch(/cn/u);
+    expect(rootSource).toMatch(/components\/ui\/index/u);
+    expect(rootSource).toMatch(/PublicMarkdown/u);
+    expect(rootSource).toMatch(/cn/u);
     expect(uiBarrelSource).toMatch(/accordion/u);
     expect(uiBarrelSource).toMatch(/dialog/u);
     expect(uiBarrelSource).toMatch(/sidebar/u);
-    expect(source).not.toMatch(/PublicAppFrame/u);
-    expect(source).not.toMatch(/PublicPageContainer/u);
-    expect(source).not.toMatch(/PublicSectionHeading/u);
-    expect(source).not.toMatch(/PublicContentParagraphs/u);
-    expect(source).not.toMatch(/PublicProjectCard/u);
-    expect(source).not.toMatch(/PublicPostListItem/u);
+    expect(rootSource).not.toMatch(/PublicAppFrame/u);
+    expect(rootSource).not.toMatch(/PublicPageContainer/u);
+    expect(rootSource).not.toMatch(/PublicSectionHeading/u);
+    expect(rootSource).not.toMatch(/PublicContentParagraphs/u);
+    expect(rootSource).not.toMatch(/PublicProjectCard/u);
+    expect(rootSource).not.toMatch(/PublicPostListItem/u);
+
+    expect(publicSource.trim().split("\n")).toEqual([
+      'export { Badge } from "./components/ui/badge.js";',
+      'export { Button } from "./components/ui/button.js";',
+      'export { Card } from "./components/ui/card.js";',
+      'export { Separator } from "./components/ui/separator.js";',
+      'export { PublicMarkdown } from "./components/public-markdown.js";',
+      'export { cn } from "./lib/utils.js";',
+    ]);
+    expect(publicSource).not.toMatch(/accordion/u);
+    expect(publicSource).not.toMatch(/dialog/u);
+    expect(publicSource).not.toMatch(/sidebar/u);
+    expect(publicSource).not.toMatch(/sonner/u);
+    expect(publicSource).not.toMatch(/vaul/u);
   });
 
   it("packages/ui owns the canonical shadcn config and shared stylesheet export", () => {
@@ -51,6 +81,7 @@ describe("public UI package usage", () => {
     const webStylesSource = readRepositoryFile("apps/web/src/styles.css");
 
     expect(uiPackageJson).toContain("\"./styles.css\"");
+    expect(uiPackageJson).toContain("\"./public\"");
     expect(webStylesSource).toContain('@import "@unimatrix/ui/styles.css";');
     expect(webStylesSource).not.toContain('@import "shadcn/tailwind.css";');
     expect(webStylesSource).not.toContain('@import "@fontsource-variable/geist-mono";');
@@ -66,62 +97,121 @@ describe("public UI package usage", () => {
     expect(publicSiteSource).toMatch(/PublicSectionHeading/u);
     expect(publicSiteSource).toMatch(/PublicProjectCard/u);
     expect(publicSiteSource).toMatch(/PublicPostListItem/u);
-    expect(publicSiteSource).toContain('from "@unimatrix/ui"');
+    expect(publicSiteSource).toContain('from "@unimatrix/ui/public"');
+    expect(publicSiteSource).not.toContain('from "@unimatrix/ui"');
   });
 
-  it("apps/web consumes shared primitives from @unimatrix/ui and public-site compositions from the app", () => {
+  it("apps/web source and tests avoid the root @unimatrix/ui barrel for runtime imports", () => {
+    const sourceFiles = [
+      ...collectRepositoryFiles("apps/web/src"),
+      ...collectRepositoryFiles("apps/web/test"),
+    ].filter((path) => /\.(ts|tsx)$/u.test(path) && !path.endsWith("routeTree.gen.ts"));
+
+    const rootBarrelImports = sourceFiles.filter((path) =>
+      /^\s*import\s.+from "@unimatrix\/ui";$/mu.test(readRepositoryFile(path)),
+    );
+
+    expect(rootBarrelImports).toEqual([]);
+  });
+
+  it("apps/web consumes shared primitives from @unimatrix/ui/public and keeps route composition in lazy files", () => {
     const appShellSource = readRepositoryFile("apps/web/src/app/app-shell.tsx");
+    const lazyMarkdownSource = readRepositoryFile(
+      "apps/web/src/features/content/lazy-public-markdown.tsx",
+    );
     const homeRouteSource = readRepositoryFile("apps/web/src/routes/index.tsx");
+    const homeLazyRouteSource = readRepositoryFile("apps/web/src/routes/index.lazy.tsx");
     const projectsRouteSource = readRepositoryFile("apps/web/src/routes/projects.tsx");
+    const projectsLazyRouteSource = readRepositoryFile("apps/web/src/routes/projects.lazy.tsx");
     const blogRouteSource = readRepositoryFile("apps/web/src/routes/blog.tsx");
+    const blogLazyRouteSource = readRepositoryFile("apps/web/src/routes/blog.lazy.tsx");
+    const statusRouteSource = readRepositoryFile("apps/web/src/routes/status.tsx");
+    const statusLazyRouteSource = readRepositoryFile("apps/web/src/routes/status.lazy.tsx");
     const projectDetailRouteSource = readRepositoryFile(
       "apps/web/src/routes/projects_.$slug.tsx",
     );
+    const projectDetailLazyRouteSource = readRepositoryFile(
+      "apps/web/src/routes/projects_.$slug.lazy.tsx",
+    );
     const blogDetailRouteSource = readRepositoryFile(
       "apps/web/src/routes/blog_.$slug.tsx",
+    );
+    const blogDetailLazyRouteSource = readRepositoryFile(
+      "apps/web/src/routes/blog_.$slug.lazy.tsx",
     );
 
     expect(appShellSource).toMatch(/PublicAppFrame/u);
     expect(appShellSource).toMatch(/PublicPageContainer/u);
     expect(appShellSource).toMatch(/@\/features\/public-site\/components/u);
+    expect(appShellSource).toMatch(/@unimatrix\/ui\/public/u);
     expect(appShellSource).toMatch(/Route deck \/\/ live/u);
     expect(appShellSource).toMatch(/Safe GFM active/u);
 
-    expect(homeRouteSource).toMatch(/PublicSectionHeading/u);
-    expect(homeRouteSource).toMatch(/PublicMarkdown/u);
-    expect(homeRouteSource).toMatch(/PublicProjectCard/u);
-    expect(homeRouteSource).toMatch(/PublicPostListItem/u);
-    expect(homeRouteSource).toMatch(/@\/features\/public-site\/components/u);
-    expect(homeRouteSource).toMatch(/renderPublicMarkdownInternalLink/u);
-    expect(homeRouteSource).toMatch(/to="\/projects\/\$slug"/u);
-    const homeRouteRenderLinkCount = (homeRouteSource.match(/renderLink/gu) ?? [])
-      .length;
+    expect(lazyMarkdownSource).toMatch(/lazy\(/u);
+    expect(lazyMarkdownSource).toMatch(/import\("@unimatrix\/ui\/public"\)/u);
+    expect(lazyMarkdownSource).toMatch(/module\.PublicMarkdown/u);
+
+    expect(homeRouteSource).toMatch(/createFileRoute\("\/"\)/u);
+    expect(homeRouteSource).toMatch(/loader/u);
+    expect(homeRouteSource).not.toMatch(/PublicMarkdown/u);
+    expect(homeLazyRouteSource).toMatch(/createLazyFileRoute\("\/"\)/u);
+    expect(homeLazyRouteSource).toMatch(/@unimatrix\/ui\/public/u);
+    expect(homeLazyRouteSource).toMatch(/PublicSectionHeading/u);
+    expect(homeLazyRouteSource).toMatch(/LazyPublicMarkdown/u);
+    expect(homeLazyRouteSource).toMatch(/PublicProjectCard/u);
+    expect(homeLazyRouteSource).toMatch(/PublicPostListItem/u);
+    expect(homeLazyRouteSource).toMatch(/@\/features\/public-site\/components/u);
+    expect(homeLazyRouteSource).toMatch(/renderPublicMarkdownInternalLink/u);
+    expect(homeLazyRouteSource).toMatch(/to="\/projects\/\$slug"/u);
+    const homeRouteRenderLinkCount = (homeLazyRouteSource.match(/renderLink/gu) ?? []).length;
     expect(homeRouteRenderLinkCount).toBeGreaterThanOrEqual(2);
-    expect(homeRouteSource).not.toMatch(/splitMarkdownIntoParagraphs/u);
-    expect(homeRouteSource).toMatch(/to="\/blog\/\$slug"/u);
+    expect(homeLazyRouteSource).not.toMatch(/splitMarkdownIntoParagraphs/u);
+    expect(homeLazyRouteSource).toMatch(/to="\/blog\/\$slug"/u);
 
-    expect(projectsRouteSource).toMatch(/Projects archive/u);
-    expect(projectsRouteSource).toMatch(/PublicProjectCard/u);
-    expect(projectsRouteSource).toMatch(/@\/features\/public-site\/components/u);
-    expect(projectsRouteSource).toMatch(/to="\/projects\/\$slug"/u);
-    expect(projectsRouteSource).toMatch(/renderLink/u);
-    expect(projectsRouteSource).toMatch(/View repository/u);
+    expect(projectsRouteSource).toMatch(/createFileRoute\("\/projects"\)/u);
+    expect(projectsRouteSource).not.toMatch(/PublicProjectCard/u);
+    expect(projectsLazyRouteSource).toMatch(/createLazyFileRoute\("\/projects"\)/u);
+    expect(projectsLazyRouteSource).toMatch(/Projects archive/u);
+    expect(projectsLazyRouteSource).toMatch(/PublicProjectCard/u);
+    expect(projectsLazyRouteSource).toMatch(/@\/features\/public-site\/components/u);
+    expect(projectsLazyRouteSource).toMatch(/to="\/projects\/\$slug"/u);
+    expect(projectsLazyRouteSource).toMatch(/renderLink/u);
+    expect(projectsLazyRouteSource).toMatch(/View repository/u);
 
-    expect(blogRouteSource).toMatch(/Blog archive/u);
-    expect(blogRouteSource).toMatch(/PublicPostListItem/u);
-    expect(blogRouteSource).toMatch(/@\/features\/public-site\/components/u);
-    expect(blogRouteSource).toMatch(/to="\/blog\/\$slug"/u);
-    expect(blogRouteSource).toMatch(/renderLink/u);
+    expect(blogRouteSource).toMatch(/createFileRoute\("\/blog"\)/u);
+    expect(blogRouteSource).not.toMatch(/PublicPostListItem/u);
+    expect(blogLazyRouteSource).toMatch(/createLazyFileRoute\("\/blog"\)/u);
+    expect(blogLazyRouteSource).toMatch(/Blog archive/u);
+    expect(blogLazyRouteSource).toMatch(/PublicPostListItem/u);
+    expect(blogLazyRouteSource).toMatch(/@\/features\/public-site\/components/u);
+    expect(blogLazyRouteSource).toMatch(/to="\/blog\/\$slug"/u);
+    expect(blogLazyRouteSource).toMatch(/renderLink/u);
 
-    expect(projectDetailRouteSource).toMatch(
-      /createFileRoute\("\/projects_\/\$slug"\)/u,
+    expect(statusRouteSource).toMatch(/createFileRoute\("\/status"\)/u);
+    expect(statusRouteSource).toMatch(/statusSnapshotQueryOptions/u);
+    expect(statusRouteSource).not.toMatch(/Query cache prefetch/u);
+    expect(statusLazyRouteSource).toMatch(/createLazyFileRoute\("\/status"\)/u);
+    expect(statusLazyRouteSource).toMatch(/@unimatrix\/ui\/public/u);
+    expect(statusLazyRouteSource).toMatch(/Query cache prefetch/u);
+
+    expect(projectDetailRouteSource).toMatch(/createFileRoute\("\/projects_\/\$slug"\)/u);
+    expect(projectDetailRouteSource).toMatch(/throw createProjectNotFoundError/u);
+    expect(projectDetailRouteSource).not.toMatch(/PublicMarkdown/u);
+    expect(projectDetailLazyRouteSource).toMatch(
+      /createLazyFileRoute\("\/projects_\/\$slug"\)/u,
     );
-    expect(projectDetailRouteSource).toMatch(/PublicMarkdown/u);
-    expect(projectDetailRouteSource).toMatch(/renderPublicMarkdownInternalLink/u);
-    expect(projectDetailRouteSource).not.toMatch(/splitMarkdownIntoParagraphs/u);
+    expect(projectDetailLazyRouteSource).toMatch(/notFoundComponent: ProjectNotFound/u);
+    expect(projectDetailLazyRouteSource).toMatch(/LazyPublicMarkdown/u);
+    expect(projectDetailLazyRouteSource).toMatch(/renderPublicMarkdownInternalLink/u);
+    expect(projectDetailLazyRouteSource).not.toMatch(/splitMarkdownIntoParagraphs/u);
+
     expect(blogDetailRouteSource).toMatch(/createFileRoute\("\/blog_\/\$slug"\)/u);
-    expect(blogDetailRouteSource).toMatch(/PublicMarkdown/u);
-    expect(blogDetailRouteSource).toMatch(/renderPublicMarkdownInternalLink/u);
-    expect(blogDetailRouteSource).not.toMatch(/splitMarkdownIntoParagraphs/u);
+    expect(blogDetailRouteSource).toMatch(/throw createBlogNotFoundError/u);
+    expect(blogDetailRouteSource).not.toMatch(/PublicMarkdown/u);
+    expect(blogDetailLazyRouteSource).toMatch(/createLazyFileRoute\("\/blog_\/\$slug"\)/u);
+    expect(blogDetailLazyRouteSource).toMatch(/notFoundComponent: BlogNotFound/u);
+    expect(blogDetailLazyRouteSource).toMatch(/LazyPublicMarkdown/u);
+    expect(blogDetailLazyRouteSource).toMatch(/renderPublicMarkdownInternalLink/u);
+    expect(blogDetailLazyRouteSource).not.toMatch(/splitMarkdownIntoParagraphs/u);
   });
 });

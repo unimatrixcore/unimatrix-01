@@ -2,7 +2,7 @@ import type { ReactElement, ReactNode } from "react";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { PublicMarkdown } from "@unimatrix/ui";
+import { PublicMarkdown } from "@unimatrix/ui/public";
 
 export interface RenderInternalLinkProps {
   children: ReactNode;

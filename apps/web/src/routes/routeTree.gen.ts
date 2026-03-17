@@ -20,32 +20,32 @@ const StatusRoute = StatusRouteImport.update({
   id: '/status',
   path: '/status',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any).lazy(() => import('./status.lazy').then((d) => d.Route))
 const ProjectsRoute = ProjectsRouteImport.update({
   id: '/projects',
   path: '/projects',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any).lazy(() => import('./projects.lazy').then((d) => d.Route))
 const BlogRoute = BlogRouteImport.update({
   id: '/blog',
   path: '/blog',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any).lazy(() => import('./blog.lazy').then((d) => d.Route))
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any).lazy(() => import('./index.lazy').then((d) => d.Route))
 const ProjectsSlugRoute = ProjectsSlugRouteImport.update({
   id: '/projects_/$slug',
   path: '/projects/$slug',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any).lazy(() => import('./projects_.$slug.lazy').then((d) => d.Route))
 const BlogSlugRoute = BlogSlugRouteImport.update({
   id: '/blog_/$slug',
   path: '/blog/$slug',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any).lazy(() => import('./blog_.$slug.lazy').then((d) => d.Route))
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
