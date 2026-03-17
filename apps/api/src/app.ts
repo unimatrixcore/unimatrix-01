@@ -23,6 +23,7 @@ export function buildApp(config: ApiRuntimeConfig): FastifyInstance {
   const appOptions = {
     forceCloseConnections: true,
     logger: buildLoggerOptions(config),
+    trustProxy: config.trustProxy,
   } satisfies FastifyServerOptions;
 
   const app: FastifyInstance = Fastify(appOptions);
