@@ -23,14 +23,12 @@
     "@unimatrix/config-typescript": "workspace:*",
     "@vitejs/plugin-react": "^5.1.4",
     "eslint": "^9.36.0",
-    "shadcn": "^4.0.5",
     "tailwindcss": "^4.2.1",
     "tw-animate-css": "^1.4.0",
     "typescript": "^5.9.2",
     "vite": "^7.3.1"
   },
   "dependencies": {
-    "@fontsource-variable/geist-mono": "^5.2.7",
     "@remixicon/react": "^4.9.0",
     "@tanstack/react-query": "^5.90.21",
     "@tanstack/react-router": "^1.166.6",

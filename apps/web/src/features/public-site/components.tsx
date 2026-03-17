@@ -1,10 +1,6 @@
 import type * as React from "react";
 
-import { Badge } from "./ui/badge.js";
-import { Button } from "./ui/button.js";
-import { Card } from "./ui/card.js";
-import { Separator } from "./ui/separator.js";
-import { cn } from "../lib/utils.js";
+import { Badge, Button, Card, Separator, cn } from "@unimatrix/ui";
 
 export interface PublicAppFrameNavigationItem {
   active?: boolean;

@@ -1,13 +1,15 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { RiArrowRightUpLine, RiLayoutGridLine } from "@remixicon/react";
 
+import {
+  PublicProjectCard,
+  PublicSectionHeading,
+} from "@/features/public-site/components";
 import { projectEntries } from "@/features/content/site-content";
 import {
   Badge,
   Button,
   Card,
-  PublicProjectCard,
-  PublicSectionHeading,
 } from "@unimatrix/ui";
 
 export const Route = createFileRoute("/projects")({

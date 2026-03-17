@@ -134,9 +134,12 @@ export function PublicMarkdown({
       );
     },
     code({ children, className: codeClassName, node, ...props }) {
-      void node;
       const rawCode = childrenToString(children);
-      const isBlockCode = Boolean(resolveCodeLanguage(codeClassName) ?? rawCode.includes("\n"));
+      const isBlockCode = isMarkdownCodeBlock({
+        className: codeClassName,
+        node,
+        rawCode,
+      });
 
       if (isBlockCode) {
         return (
@@ -393,6 +396,42 @@ function resolveCodeLanguage(className?: string): string | undefined {
     default:
       return language;
   }
+}
+
+function isMarkdownCodeBlock({
+  className,
+  node,
+  rawCode,
+}: {
+  className: string | undefined;
+  node: unknown;
+  rawCode: string;
+}): boolean {
+  if (resolveCodeLanguage(className)) {
+    return true;
+  }
+
+  if (rawCode.includes("\n")) {
+    return true;
+  }
+
+  const codeNode = node as
+    | {
+        position?: {
+          end?: { line?: number } | undefined;
+          start?: { column?: number; line?: number } | undefined;
+        } | undefined;
+      }
+    | undefined;
+  const startLine = codeNode?.position?.start?.line;
+  const endLine = codeNode?.position?.end?.line;
+
+  return Boolean(
+    startLine &&
+      endLine &&
+      endLine > startLine &&
+      codeNode?.position?.start?.column === 1,
+  );
 }
 
 function hasPrismLanguage(language: string): boolean {

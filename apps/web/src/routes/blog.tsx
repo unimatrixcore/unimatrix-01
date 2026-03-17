@@ -1,8 +1,12 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { RiStackLine } from "@remixicon/react";
 
+import {
+  PublicPostListItem,
+  PublicSectionHeading,
+} from "@/features/public-site/components";
 import { blogEntries } from "@/features/content/site-content";
-import { Badge, Card, PublicPostListItem, PublicSectionHeading } from "@unimatrix/ui";
+import { Badge, Card } from "@unimatrix/ui";
 
 export const Route = createFileRoute("/blog")({
   component: BlogRoute,

@@ -4,28 +4,27 @@ Shared ShadCN-based UI primitives for the Unimatrix monorepo.
 
 ## Belongs here
 
-- low-level shared primitives like `Button`, `Badge`, `Card`, and `Separator`
-- the intentionally small composed public-site surface used by `apps/web`
+- the canonical shadcn package for the repo
+- the full built-in shadcn component surface generated into `src/components/ui`
+- shared primitives and helpers such as `cn`
+- shared styling exported as `@unimatrix/ui/styles.css`
+- cross-app rendering primitives that are still genuinely shared, such as `PublicMarkdown`
 
 ## Does not belong here
 
 - route loaders or content parsing logic
-- dashboard/admin-specific components
-- speculative app-specific abstractions without an in-repo caller
+- public-site-specific compositions for `apps/web`
+- dashboard/admin-specific compositions
+- speculative app-specific abstractions without a clear cross-app caller
 
-## Current public-site surface
+## Current model
 
-- `PublicPageContainer`
-- `PublicAppFrame`
 - `PublicMarkdown`
-- `PublicSectionHeading`
-- `PublicContentParagraphs`
-- `PublicProjectCard`
-- `PublicPostListItem`
+- `src/components/ui/*` is the built-in shadcn surface for shared primitives
+- `apps/web` owns public-site compositions such as frames, section headings, cards, and route-specific layout pieces
+- `apps/web/src/styles.css` layers site-specific presentation on top of `@unimatrix/ui/styles.css`
 
-LOC-46 keeps this surface narrow on purpose: it should cover the lightweight public site that already exists without turning `@unimatrix/ui` into a broad application component library.
-
-`PublicMarkdown` now provides safe GitHub-flavored markdown rendering for authored public-site content. Raw HTML and executable MDX remain out of scope, and Borg Markdown remains future parser work rather than part of this package.
+`PublicMarkdown` provides safe GitHub-flavored markdown rendering for authored content. Raw HTML and executable MDX remain out of scope, and Borg Markdown remains future parser work rather than part of this package.
 
 ## Commands
 

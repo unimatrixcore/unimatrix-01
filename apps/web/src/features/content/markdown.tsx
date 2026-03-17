@@ -11,7 +11,7 @@ export function renderPublicMarkdownInternalLink({
   href: string;
 }): React.ReactElement {
   return (
-    <Link className={className} to={href as never}>
+    <Link className={className} to={href}>
       {children}
     </Link>
   );

@@ -8,15 +8,17 @@ import {
 } from "@remixicon/react";
 
 import { renderPublicMarkdownInternalLink } from "@/features/content/markdown";
+import {
+  PublicPostListItem,
+  PublicProjectCard,
+  PublicSectionHeading,
+} from "@/features/public-site/components";
 import { featuredProjects, latestBlogEntries, homeContent } from "@/features/content/site-content";
 import {
   Badge,
   Button,
   Card,
   PublicMarkdown,
-  PublicPostListItem,
-  PublicProjectCard,
-  PublicSectionHeading,
   Separator,
 } from "@unimatrix/ui";
 

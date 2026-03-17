@@ -9,10 +9,12 @@ import {
 
 import { homeContent } from "@/features/content/site-content";
 import {
-  Badge,
   PublicAppFrame,
   PublicPageContainer,
   type PublicAppFrameNavigationItem,
+} from "@/features/public-site/components";
+import {
+  Badge,
 } from "@unimatrix/ui";
 
 type AppShellProps = {

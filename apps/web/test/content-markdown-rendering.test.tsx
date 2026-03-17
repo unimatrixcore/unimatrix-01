@@ -1,59 +1,12 @@
 import assert from "node:assert/strict";
-import { createRequire } from "node:module";
-import { join } from "node:path";
 import test from "node:test";
-import { pathToFileURL } from "node:url";
+import type { ReactNode } from "react";
 
-import type {
-  ReactElement,
-  ReactNode,
-  createElement as CreateElementFn,
-} from "react";
-import type { renderToStaticMarkup as RenderToStaticMarkupFn } from "react-dom/server";
-
-interface PublicMarkdownModule {
-  PublicMarkdown: (props: {
-    markdown: string;
-    className?: string | undefined;
-    renderInternalLink?: ((props: {
-      href: string;
-      children: ReactNode;
-      className: string;
-    }) => ReactElement) | undefined;
-  }) => ReactElement;
-}
-
-interface ReactModules {
-  createElement: typeof CreateElementFn;
-  renderToStaticMarkup: typeof RenderToStaticMarkupFn;
-}
-
-async function loadPublicMarkdown() {
-  const moduleUrl = pathToFileURL(
-    join(process.cwd(), "..", "..", "packages", "ui", "dist", "index.js"),
-  ).href;
-
-  const publicMarkdownModule: unknown = await import(moduleUrl);
-
-  return publicMarkdownModule as PublicMarkdownModule;
-}
-
-async function loadReactModules(): Promise<ReactModules> {
-  const rootRequire = createRequire(join(process.cwd(), "package.json"));
-  const reactModule: unknown = await import(
-    pathToFileURL(rootRequire.resolve("react")).href,
-  );
-  const reactDomServerModule: unknown = await import(
-    pathToFileURL(rootRequire.resolve("react-dom/server")).href,
-  );
-
-  return {
-    createElement: (reactModule as { createElement: typeof CreateElementFn }).createElement,
-    renderToStaticMarkup: (
-      reactDomServerModule as { renderToStaticMarkup: typeof RenderToStaticMarkupFn }
-    ).renderToStaticMarkup,
-  };
-}
+import {
+  loadPublicMarkdown,
+  loadReactModules,
+  renderMarkdown,
+} from "./helpers/public-markdown.js";
 
 void test("PublicMarkdown renders the supported safe GFM surface", async () => {
   const { PublicMarkdown } = await loadPublicMarkdown();
@@ -113,4 +66,19 @@ const renderer = "safe-gfm";
   assert.match(html, /data-internal-link="true"/u);
   assert.match(html, /href="\/projects\/unimatrix-01"/u);
   assert.match(html, /src="\/content\/ops-console-topology\.svg"/u);
+});
+
+void test("PublicMarkdown renders single-line fenced code without a language as block code", async () => {
+  const html = await renderMarkdown(`Before
+
+\`\`\`
+const renderer = "safe-gfm";
+\`\`\`
+
+After`);
+
+  assert.match(html, /<pre/u);
+  assert.match(html, /data-language="plain"/u);
+  assert.match(html, /const renderer = &quot;safe-gfm&quot;;/u);
+  assert.doesNotMatch(html, /border border-border\/60 bg-background\/80/u);
 });
