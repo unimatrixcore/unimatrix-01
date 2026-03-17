@@ -9,10 +9,11 @@
     "build": "vite build",
     "dev": "vite",
     "lint": "eslint .",
+    "pretest:unit": "pnpm --dir ../.. --filter @unimatrix/ui build",
     "preview": "vite preview",
     "test": "pnpm run test:unit && pnpm run test:smoke",
     "test:smoke": "playwright test",
-    "test:unit": "pnpm --dir ../.. --filter @unimatrix/ui build && tmp_dir=$(mktemp -d); trap 'rm -rf \"$tmp_dir\"' EXIT; tsc -p tsconfig.test.json --outDir \"$tmp_dir\" && { set -- \"$tmp_dir\"/test/*.test.js; [ -e \"$1\" ] || { echo 'No compiled tests found.' >&2; exit 1; }; node --test \"$@\"; }",
+    "test:unit": "tmp_dir=$(mktemp -d); trap 'rm -rf \"$tmp_dir\"' EXIT; tsc -p tsconfig.test.json --outDir \"$tmp_dir\" && { set -- \"$tmp_dir\"/test/*.test.js; [ -e \"$1\" ] || { echo 'No compiled tests found.' >&2; exit 1; }; node --test \"$@\"; }",
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {
