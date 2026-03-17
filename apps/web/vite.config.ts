@@ -34,24 +34,41 @@ export default defineConfig(({ mode }) => {
       },
     },
     resolve: {
-      alias: {
-        "@": fileURLToPath(new URL("./src", import.meta.url)),
-        "@unimatrix/api-client": fileURLToPath(
-          new URL("../../packages/api-client/src/index.ts", import.meta.url),
-        ),
-        "@unimatrix/content": fileURLToPath(
-          new URL("../../packages/content/src/index.ts", import.meta.url),
-        ),
-        "@unimatrix/shared": fileURLToPath(
-          new URL("../../packages/shared/src/index.ts", import.meta.url),
-        ),
-        "@unimatrix/ui": fileURLToPath(
-          new URL("../../packages/ui/src/index.ts", import.meta.url),
-        ),
-        react: fileURLToPath(new URL("./node_modules/react", import.meta.url)),
-      },
+      alias: [
+        {
+          find: "@",
+          replacement: fileURLToPath(new URL("./src", import.meta.url)),
+        },
+        {
+          find: /^@unimatrix\/api-client$/,
+          replacement: fileURLToPath(
+            new URL("../../packages/api-client/src/index.ts", import.meta.url),
+          ),
+        },
+        {
+          find: /^@unimatrix\/content$/,
+          replacement: fileURLToPath(
+            new URL("../../packages/content/src/index.ts", import.meta.url),
+          ),
+        },
+        {
+          find: /^@unimatrix\/shared$/,
+          replacement: fileURLToPath(
+            new URL("../../packages/shared/src/index.ts", import.meta.url),
+          ),
+        },
+        {
+          find: /^@unimatrix\/ui$/,
+          replacement: fileURLToPath(
+            new URL("../../packages/ui/src/index.ts", import.meta.url),
+          ),
+        },
+        {
+          find: /^react$/,
+          replacement: fileURLToPath(new URL("./node_modules/react", import.meta.url)),
+        },
+      ],
       dedupe: ["react", "react-dom"],
     },
   };
 });
-

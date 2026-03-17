@@ -61,7 +61,7 @@ Blog body.
     assert.equal(blogEntry.frontmatter.description, "Blog description");
   });
 
-  it("derives plain-text excerpts from markdown links and images", () => {
+  it("derives plain-text excerpts from rich markdown without code fences or table separators", () => {
     const blogEntry = parseBlogContentFile(
       `---
 title: Linked baseline
@@ -69,12 +69,78 @@ slug: linked-baseline
 publishedAt: 2026-03-16
 summary: Blog summary
 ---
-See [the docs](https://example.com/docs) and ![diagram](https://example.com/image.png) for details.
+## Renderer brief
+
+\`\`\`ts
+const unsafe = "<script />";
+\`\`\`
+
+- [x] Review the [public renderer](/blog/building-a-typed-content-baseline) and the ![system map](/content/ops-console-topology.svg) before shipping.
+
+| Surface | Mode |
+| --- | --- |
+| Public site | Safe GFM |
 `,
       "content/blog/linked-baseline.md",
     );
 
-    assert.equal(blogEntry.excerpt, "See the docs and diagram for details.");
+    assert.equal(
+      blogEntry.excerpt,
+      "Review the public renderer and the system map before shipping.",
+    );
+  });
+
+  it("preserves pipe characters in prose excerpts outside table blocks", () => {
+    const blogEntry = parseBlogContentFile(
+      `---
+title: Union types
+slug: union-types
+publishedAt: 2026-03-16
+summary: Blog summary
+---
+Use \`A | B\` to express union types.
+`,
+      "content/blog/union-types.md",
+    );
+
+    assert.equal(blogEntry.excerpt, "Use A | B to express union types.");
+  });
+
+  it("strips empty fenced code blocks before deriving excerpts", () => {
+    const blogEntry = parseBlogContentFile(
+      `---
+title: Empty fence
+slug: empty-fence
+publishedAt: 2026-03-16
+summary: Blog summary
+---
+\`\`\`
+\`\`\`
+
+First visible paragraph.
+`,
+      "content/blog/empty-fence.md",
+    );
+
+    assert.equal(blogEntry.excerpt, "First visible paragraph.");
+  });
+
+  it("treats compact GFM separator rows as table syntax", () => {
+    const blogEntry = parseBlogContentFile(
+      `---
+title: Compact table
+slug: compact-table
+publishedAt: 2026-03-16
+summary: Blog summary
+---
+| Surface | Mode |
+| - | - |
+| Public site | Safe GFM |
+`,
+      "content/blog/compact-table.md",
+    );
+
+    assert.equal(blogEntry.excerpt, "Surface Mode Public site Safe GFM");
   });
 
   it("reports missing required frontmatter with a file-specific error", () => {

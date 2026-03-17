@@ -9,10 +9,12 @@ import {
 
 import { homeContent } from "@/features/content/site-content";
 import {
-  Badge,
   PublicAppFrame,
   PublicPageContainer,
   type PublicAppFrameNavigationItem,
+} from "@/features/public-site/components";
+import {
+  Badge,
 } from "@unimatrix/ui";
 
 type AppShellProps = {
@@ -55,7 +57,7 @@ export function AppShell({ children }: AppShellProps) {
     ({ exact, icon: Icon, label, to }) => ({
       active: exact ? pathname === to : pathname.startsWith(to),
       content: (
-        <Link to={to}>
+        <Link className="flex w-full items-center gap-2" to={to}>
           <Icon aria-hidden="true" className="size-4" />
           {label}
         </Link>
@@ -70,26 +72,27 @@ export function AppShell({ children }: AppShellProps) {
         badges={
           <>
             <Badge className="gap-1.5">
-              <RiLayoutGridLine aria-hidden="true" className="size-3.5" />
-              Public v1
+              <RiCompassDiscoverLine aria-hidden="true" className="size-3.5" />
+              Ops console
             </Badge>
             <Badge variant="outline">Repo-backed content</Badge>
-            <Badge variant="secondary">Safe markdown</Badge>
+            <Badge variant="secondary">Safe GFM active</Badge>
           </>
         }
         description={homeContent.frontmatter.intro}
         footerItems={[
-          "Projects and writing stay repo-backed so the public surface remains easy to inspect, review, and evolve.",
-          "The web app uses shared content contracts and shared UI primitives from the monorepo instead of route-local placeholders.",
-          "The first public release keeps markdown intentionally plain and non-executable while richer content tooling stays future work.",
+          "Authored markdown stays repo-backed behind the explicit raw-import registry in apps/web so review and routing remain obvious.",
+          "The web shell now renders safe GitHub-flavored markdown for authored content without enabling raw HTML or runtime MDX.",
+          "Borg Markdown still matters, but it remains future parser work instead of part of this branch.",
         ]}
         navigationAdornment={<RiStackLine aria-hidden="true" className="size-4" />}
         navigationAriaLabel="Site navigation"
+        navigationHeading="Route deck // live"
         navigationItems={navigationItems}
         title={homeContent.frontmatter.title}
       />
 
-      <main className="grid gap-6">{children}</main>
+      <main className="grid gap-6 lg:gap-8">{children}</main>
     </PublicPageContainer>
   );
 }

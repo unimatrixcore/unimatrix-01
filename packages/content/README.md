@@ -59,6 +59,7 @@ All current content files also require a markdown body after the frontmatter blo
 - invalid or missing fields throw a `ContentValidationError`
 - errors include the repo-relative file path and failing field name
 - current tests cover both valid parsing and invalid authored content
+- excerpt derivation stays plain-text even when authored markdown now includes GFM features such as tables, task lists, links, images, and fenced code
 
 ## Public v1 migration boundary
 
@@ -76,5 +77,7 @@ All current content files also require a markdown body after the frontmatter blo
 ## Deferred work
 
 - docs and notes collections
-- detail-page routing and richer rendering
+- raw HTML rendering and executable MDX
 - Borg Markdown as a future safe parser/rendering layer
+
+The public site now renders authored content with safe GFM, but that renderer belongs in `@unimatrix/ui`, not this package. `@unimatrix/content` continues to own typed contracts, validation, and repo-backed loading only.

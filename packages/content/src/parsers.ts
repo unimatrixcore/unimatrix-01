@@ -97,18 +97,25 @@ export function sortEntriesByPublishedAtDesc<T extends ContentEntryWithPublished
 }
 
 function deriveExcerpt(body: string): string {
-  const firstParagraph = body
-    .split(/\n\n+/u)
-    .map((paragraph) =>
-      paragraph
-        .replace(/!\[([^\]]*)\]\([^)]*\)/gu, "$1")
-        .replace(/\[([^\]]+)\]\([^)]*\)/gu, "$1")
-        .replace(/[#>*`_-]/gu, " ")
-        .trim(),
-    )
-    .find((paragraph) => paragraph.length > 0);
+  const blocks = stripFencedCodeBlocks(body).split(/\n\s*\n+/u);
+  let tableFallback: string | undefined;
 
-  return firstParagraph?.replace(/\s+/gu, " ") ?? "";
+  for (const block of blocks) {
+    const normalizedBlock = normalizeExcerptBlock(block);
+
+    if (normalizedBlock.text.length === 0) {
+      continue;
+    }
+
+    if (normalizedBlock.kind === "table") {
+      tableFallback ??= normalizedBlock.text;
+      continue;
+    }
+
+    return normalizedBlock.text;
+  }
+
+  return tableFallback ?? "";
 }
 
 function requireBody(body: string, filePath: string): string {
@@ -191,4 +198,86 @@ function optionalProperty<T extends string, TValue>(
   return value === undefined
     ? {}
     : ({ [key]: value } as Partial<Record<T, TValue>>);
+}
+
+function stripFencedCodeBlocks(markdown: string): string {
+  return markdown.replace(
+    /(?:^|\n)(`{3,}|~{3,})[^\n]*\n[\s\S]*?\1[ \t]*(?=\n|$)/gu,
+    "\n",
+  );
+}
+
+function normalizeExcerptBlock(block: string): {
+  kind: "content" | "table";
+  text: string;
+} {
+  const lines = block
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  if (lines.length === 0) {
+    return {
+      kind: "content",
+      text: "",
+    };
+  }
+
+  const isTableBlock = lines.some(isTableSeparatorLine);
+  const normalizedText = lines
+    .filter((line) => !isTableSeparatorLine(line))
+    .map((line) => normalizeExcerptLine(line, isTableBlock))
+    .filter((line) => line.length > 0)
+    .join(" ")
+    .replace(/\s+/gu, " ")
+    .trim();
+
+  return {
+    kind: isTableBlock ? "table" : "content",
+    text: normalizedText,
+  };
+}
+
+function normalizeExcerptLine(line: string, isTableLine: boolean): string {
+  let normalizedLine = line.trim();
+
+  if (normalizedLine.length === 0) {
+    return "";
+  }
+
+  normalizedLine = normalizedLine.replace(/^>+\s*/u, "");
+
+  if (/^#{1,6}\s+/u.test(normalizedLine)) {
+    return "";
+  }
+
+  if (/^\s*(?:[-*_]\s*){3,}$/u.test(normalizedLine)) {
+    return "";
+  }
+
+  normalizedLine = normalizedLine.replace(
+    /^\s*(?:[-+*]|\d+[.)])\s+(?:\[[ xX]\]\s+)?/u,
+    "",
+  );
+
+  if (isTableLine && normalizedLine.includes("|")) {
+    normalizedLine = normalizedLine
+      .split("|")
+      .map((segment) => segment.trim())
+      .filter((segment) => segment.length > 0)
+      .join(" ");
+  }
+
+  return normalizedLine
+    .replace(/!\[([^\]]*)\]\([^)]*\)/gu, "$1")
+    .replace(/\[([^\]]+)\]\([^)]*\)/gu, "$1")
+    .replace(/<((?:https?:\/\/|mailto:)[^>]+)>/gu, "$1")
+    .replace(/`([^`]+)`/gu, "$1")
+    .replace(/<\/?[^>]+>/gu, " ")
+    .replace(/[*_~]/gu, "")
+    .trim();
+}
+
+function isTableSeparatorLine(line: string): boolean {
+  return /^\s*\|?(?:\s*:?-+:?\s*\|)+(?:\s*:?-+:?\s*)?$/u.test(line);
 }

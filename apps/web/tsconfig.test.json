@@ -5,9 +5,10 @@
     "rootDir": "."
   },
   "include": [
-    "src/features/content/markdown.ts",
+    "src/features/content/markdown.tsx",
     "src/features/content/lookups.ts",
     "src/lib/config.ts",
-    "test/**/*.ts"
+    "test/**/*.ts",
+    "test/**/*.tsx"
   ]
 }

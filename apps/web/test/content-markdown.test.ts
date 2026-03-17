@@ -1,24 +1,33 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { renderMarkdown } from "./helpers/public-markdown.js";
 
-import { splitMarkdownIntoParagraphs } from "../src/features/content/markdown.js";
+void test("PublicMarkdown suppresses raw HTML instead of rendering it", async () => {
+  const html = await renderMarkdown(`Visible copy.
 
-void test("splitMarkdownIntoParagraphs normalizes heading markers and spacing", () => {
-  assert.deepEqual(
-    splitMarkdownIntoParagraphs(`# Heading
+<div data-raw-html="suppressed">Unsafe raw HTML</div>
 
-Paragraph one.
+<script>alert("x")</script>`);
 
-Paragraph   two.`),
-    ["Heading", "Paragraph one.", "Paragraph two."],
-  );
+  assert.match(html, /Visible copy\./u);
+  assert.doesNotMatch(html, /data-raw-html/u);
+  assert.doesNotMatch(html, /Unsafe raw HTML/u);
+  assert.doesNotMatch(html, /<script/u);
 });
 
-void test("splitMarkdownIntoParagraphs strips safe inline markdown syntax to plain text", () => {
-  assert.deepEqual(
-    splitMarkdownIntoParagraphs(`- [Read more](https://example.test)
+void test("PublicMarkdown sanitizes unsupported link and image protocols", async () => {
+  const html = await renderMarkdown(`[Safe](https://example.test)
 
-Quoted _note_ with \`inline code\`.`),
-    ["Read more", "Quoted note with inline code."],
-  );
+[Mail](mailto:gwenny@example.test)
+
+[Blocked](javascript:alert('x'))
+
+![Blocked image](data:image/png;base64,abcd)`);
+
+  assert.match(html, /href="https:\/\/example\.test"/u);
+  assert.match(html, /href="mailto:gwenny@example\.test"/u);
+  assert.match(html, /target="_blank"/u);
+  assert.doesNotMatch(html, /javascript:/u);
+  assert.doesNotMatch(html, /data:image\/png/u);
+  assert.doesNotMatch(html, /<img/u);
 });
