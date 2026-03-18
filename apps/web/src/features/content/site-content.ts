@@ -11,26 +11,61 @@ import {
   sortEntriesByPublishedAtDesc,
 } from "@unimatrix/content";
 
+import { normalizePortfolioCopy } from "@/features/public-site/copy";
 import { indexEntriesBySlug } from "./lookups";
 
 import homeSource from "../../../../../content/home/index.md?raw";
 import placeholderPostSource from "../../../../../content/blog/placeholder-post.md?raw";
 import placeholderProjectSource from "../../../../../content/projects/placeholder-project.md?raw";
 
-export const homeContent: HomePageContent = parseHomeContentFile(
-  homeSource,
-  "content/home/index.md",
-);
+const parsedHomeContent = parseHomeContentFile(homeSource, "content/home/index.md");
+
+export const homeContent: HomePageContent = {
+  ...parsedHomeContent,
+  body: normalizePortfolioCopy(parsedHomeContent.body),
+  frontmatter: {
+    ...parsedHomeContent.frontmatter,
+    intro: normalizePortfolioCopy(parsedHomeContent.frontmatter.intro),
+    mission: normalizePortfolioCopy(parsedHomeContent.frontmatter.mission),
+    summary: normalizePortfolioCopy(parsedHomeContent.frontmatter.summary),
+  },
+};
+
+const parsedProjectEntries = [
+  parseProjectContentFile(placeholderProjectSource, "content/projects/placeholder-project.md"),
+];
 
 export const projectEntries: ProjectEntry[] = sortEntriesByPublishedAtDesc([
-  parseProjectContentFile(
-    placeholderProjectSource,
-    "content/projects/placeholder-project.md",
-  ),
+  ...parsedProjectEntries.map((entry) => ({
+    ...entry,
+    body: normalizePortfolioCopy(entry.body),
+    excerpt: normalizePortfolioCopy(entry.excerpt),
+    frontmatter: {
+      ...entry.frontmatter,
+      summary: normalizePortfolioCopy(entry.frontmatter.summary),
+      title: normalizePortfolioCopy(entry.frontmatter.title),
+    },
+  })),
 ]);
 
-export const blogEntries: BlogEntry[] = sortEntriesByPublishedAtDesc([
+const parsedBlogEntries = [
   parseBlogContentFile(placeholderPostSource, "content/blog/placeholder-post.md"),
+];
+
+export const blogEntries: BlogEntry[] = sortEntriesByPublishedAtDesc([
+  ...parsedBlogEntries.map((entry) => ({
+    ...entry,
+    body: normalizePortfolioCopy(entry.body),
+    excerpt: normalizePortfolioCopy(entry.excerpt),
+    frontmatter: {
+      ...entry.frontmatter,
+      description: normalizePortfolioCopy(
+        entry.frontmatter.description ?? entry.frontmatter.summary,
+      ),
+      summary: normalizePortfolioCopy(entry.frontmatter.summary),
+      title: normalizePortfolioCopy(entry.frontmatter.title),
+    },
+  })),
 ]);
 
 export const siteContent: SiteContent = {

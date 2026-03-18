@@ -9,18 +9,13 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './__root'
-import { Route as StatusRouteImport } from './status'
 import { Route as ProjectsRouteImport } from './projects'
 import { Route as BlogRouteImport } from './blog'
+import { Route as AboutRouteImport } from './about'
 import { Route as IndexRouteImport } from './index'
 import { Route as ProjectsSlugRouteImport } from './projects_.$slug'
 import { Route as BlogSlugRouteImport } from './blog_.$slug'
 
-const StatusRoute = StatusRouteImport.update({
-  id: '/status',
-  path: '/status',
-  getParentRoute: () => rootRouteImport,
-} as any).lazy(() => import('./status.lazy').then((d) => d.Route))
 const ProjectsRoute = ProjectsRouteImport.update({
   id: '/projects',
   path: '/projects',
@@ -31,6 +26,11 @@ const BlogRoute = BlogRouteImport.update({
   path: '/blog',
   getParentRoute: () => rootRouteImport,
 } as any).lazy(() => import('./blog.lazy').then((d) => d.Route))
+const AboutRoute = AboutRouteImport.update({
+  id: '/about',
+  path: '/about',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() => import('./about.lazy').then((d) => d.Route))
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -49,26 +49,26 @@ const BlogSlugRoute = BlogSlugRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
   '/blog': typeof BlogRoute
   '/projects': typeof ProjectsRoute
-  '/status': typeof StatusRoute
   '/blog/$slug': typeof BlogSlugRoute
   '/projects/$slug': typeof ProjectsSlugRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
   '/blog': typeof BlogRoute
   '/projects': typeof ProjectsRoute
-  '/status': typeof StatusRoute
   '/blog/$slug': typeof BlogSlugRoute
   '/projects/$slug': typeof ProjectsSlugRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
   '/blog': typeof BlogRoute
   '/projects': typeof ProjectsRoute
-  '/status': typeof StatusRoute
   '/blog_/$slug': typeof BlogSlugRoute
   '/projects_/$slug': typeof ProjectsSlugRoute
 }
@@ -76,47 +76,34 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/about'
     | '/blog'
     | '/projects'
-    | '/status'
     | '/blog/$slug'
     | '/projects/$slug'
   fileRoutesByTo: FileRoutesByTo
-  to:
-    | '/'
-    | '/blog'
-    | '/projects'
-    | '/status'
-    | '/blog/$slug'
-    | '/projects/$slug'
+  to: '/' | '/about' | '/blog' | '/projects' | '/blog/$slug' | '/projects/$slug'
   id:
     | '__root__'
     | '/'
+    | '/about'
     | '/blog'
     | '/projects'
-    | '/status'
     | '/blog_/$slug'
     | '/projects_/$slug'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AboutRoute: typeof AboutRoute
   BlogRoute: typeof BlogRoute
   ProjectsRoute: typeof ProjectsRoute
-  StatusRoute: typeof StatusRoute
   BlogSlugRoute: typeof BlogSlugRoute
   ProjectsSlugRoute: typeof ProjectsSlugRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/status': {
-      id: '/status'
-      path: '/status'
-      fullPath: '/status'
-      preLoaderRoute: typeof StatusRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/projects': {
       id: '/projects'
       path: '/projects'
@@ -129,6 +116,13 @@ declare module '@tanstack/react-router' {
       path: '/blog'
       fullPath: '/blog'
       preLoaderRoute: typeof BlogRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/about': {
+      id: '/about'
+      path: '/about'
+      fullPath: '/about'
+      preLoaderRoute: typeof AboutRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -157,9 +151,9 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AboutRoute: AboutRoute,
   BlogRoute: BlogRoute,
   ProjectsRoute: ProjectsRoute,
-  StatusRoute: StatusRoute,
   BlogSlugRoute: BlogSlugRoute,
   ProjectsSlugRoute: ProjectsSlugRoute,
 }

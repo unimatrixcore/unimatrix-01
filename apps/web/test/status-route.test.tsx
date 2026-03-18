@@ -20,12 +20,12 @@ import { Providers } from "@/app/providers";
 import { createAppRouter } from "@/app/router";
 import { createAppQueryClient } from "@/lib/query-client";
 
-describe("status route", () => {
+describe("about route", () => {
   beforeEach(() => {
     getHealthMock.mockReset();
   });
 
-  it("renders the /status route with query-backed health data", async () => {
+  it("renders the /about route with contact details and a subtle system check", async () => {
     getHealthMock.mockResolvedValue({
       service: "api",
       status: "ok",
@@ -34,7 +34,7 @@ describe("status route", () => {
     const queryClient = createAppQueryClient();
     const router = createAppRouter({
       history: createMemoryHistory({
-        initialEntries: ["/status"],
+        initialEntries: ["/about"],
       }),
       queryClient,
     });
@@ -50,12 +50,12 @@ describe("status route", () => {
     });
 
     expect(
-      await screen.findByText("TanStack Router file-based routing is active."),
+      await screen.findByText(
+        "Draft an email",
+      ),
     ).toBeInTheDocument();
     expect(
-      await screen.findByText(
-        "GET /health is fetched through @unimatrix/api-client and parsed with the shared contract.",
-      ),
+      await screen.findByText("gwen.phalan@gmail.com"),
     ).toBeInTheDocument();
     expect(screen.getByText("api")).toBeInTheDocument();
     expect(screen.getByText("ok")).toBeInTheDocument();

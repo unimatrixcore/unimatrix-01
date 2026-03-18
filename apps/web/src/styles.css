@@ -9,18 +9,18 @@
     background-color: var(--background);
     background-image:
       radial-gradient(
-        circle at top left,
-        color-mix(in oklab, var(--primary) 22%, transparent) 0%,
-        transparent 34%
+        circle at 12% 12%,
+        color-mix(in oklab, var(--primary) 18%, transparent) 0%,
+        transparent 28%
       ),
       radial-gradient(
-        circle at 80% 0%,
-        color-mix(in oklab, var(--chart-2) 14%, transparent) 0%,
-        transparent 24%
+        circle at 88% 10%,
+        color-mix(in oklab, var(--chart-2) 12%, transparent) 0%,
+        transparent 20%
       ),
       linear-gradient(
         0deg,
-        color-mix(in oklab, white 4%, transparent) 1px,
+        color-mix(in oklab, white 3%, transparent) 1px,
         transparent 1px
       ),
       linear-gradient(
@@ -30,10 +30,10 @@
       ),
       linear-gradient(
         180deg,
-        color-mix(in oklab, var(--background) 84%, black) 0%,
-        color-mix(in oklab, var(--background) 92%, var(--secondary)) 100%
+        color-mix(in oklab, var(--background) 88%, black) 0%,
+        color-mix(in oklab, var(--background) 94%, var(--secondary)) 100%
       );
-    background-size: 100% 100%, 100% 100%, 48px 48px, 48px 48px, 100% 100%;
+    background-size: 100% 100%, 100% 100%, 64px 64px, 64px 64px, 100% 100%;
     background-attachment: fixed;
   }
 
@@ -46,91 +46,76 @@
       linear-gradient(
         180deg,
         transparent 0%,
-        color-mix(in oklab, var(--primary) 4%, transparent) 50%,
+        color-mix(in oklab, var(--primary) 5%, transparent) 50%,
         transparent 100%
       ),
       linear-gradient(
         180deg,
         color-mix(in oklab, white 2%, transparent) 0,
         transparent 3px,
-        transparent 6px,
-        color-mix(in oklab, white 1%, transparent) 7px
+        transparent 8px,
+        color-mix(in oklab, white 1%, transparent) 9px
       );
-    opacity: 0.28;
+    opacity: 0.16;
     z-index: -1;
   }
 }
 
 @layer components {
-  .borg-panel {
-    @apply relative border border-border/70 bg-background/72 backdrop-blur-xl;
+  .site-panel {
+    @apply relative border border-border/70 bg-background/80 backdrop-blur-xl;
     box-shadow:
-      0 0 0 1px color-mix(in oklab, var(--primary) 14%, transparent),
-      0 32px 120px -80px color-mix(in oklab, var(--primary) 34%, transparent);
+      0 0 0 1px color-mix(in oklab, var(--primary) 12%, transparent),
+      0 22px 72px -68px color-mix(in oklab, var(--primary) 22%, transparent);
   }
 
-  .borg-panel::before {
+  .site-panel::before {
     content: "";
     position: absolute;
     inset: 0;
     pointer-events: none;
     background: linear-gradient(
       180deg,
-      color-mix(in oklab, var(--primary) 10%, transparent) 0%,
-      transparent 28%
+      color-mix(in oklab, var(--primary) 8%, transparent) 0%,
+      transparent 32%
     );
-    opacity: 0.8;
+    opacity: 0.55;
   }
 
-  .borg-subpanel {
-    @apply relative border border-border/60 bg-background/58;
-    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--primary) 10%, transparent);
+  .site-panel-strong {
+    box-shadow:
+      0 0 0 1px color-mix(in oklab, var(--primary) 16%, transparent),
+      0 26px 88px -78px color-mix(in oklab, var(--primary) 28%, transparent);
   }
 
-  .borg-subpanel::before {
+  .site-shell::after {
     content: "";
     position: absolute;
     inset: 0;
     pointer-events: none;
     background: linear-gradient(
-      135deg,
-      color-mix(in oklab, var(--primary) 10%, transparent) 0%,
-      transparent 38%
+      90deg,
+      color-mix(in oklab, white 2%, transparent) 1px,
+      transparent 1px
     );
-    opacity: 0.65;
+    background-size: 18rem 100%;
+    opacity: 0.08;
   }
 
-  .borg-grid-surface::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    background-image:
-      linear-gradient(
-        0deg,
-        color-mix(in oklab, white 2%, transparent) 1px,
-        transparent 1px
-      ),
-      linear-gradient(
-        90deg,
-        color-mix(in oklab, white 2%, transparent) 1px,
-        transparent 1px
-      );
-    background-size: 20px 20px;
-    opacity: 0.2;
+  .site-label {
+    @apply text-[0.68rem] uppercase tracking-[0.24em] text-muted-foreground;
   }
 
-  .borg-section-kicker {
-    @apply text-[0.68rem] uppercase tracking-[0.38em] text-primary/78;
+  .site-atlas-link {
+    background-image: linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--primary) 6%, transparent) 0%,
+      transparent 100%
+    );
   }
 
-  .borg-data-label {
-    @apply text-[0.68rem] uppercase tracking-[0.28em] text-muted-foreground;
-  }
-
-  .borg-status-led {
-    @apply inline-block h-2.5 w-2.5 border border-primary/70 bg-primary/80;
-    box-shadow: 0 0 14px color-mix(in oklab, var(--primary) 50%, transparent);
+  .reading-frame {
+    @apply mx-auto max-w-4xl;
   }
 
   .public-markdown {
@@ -149,21 +134,21 @@
   .public-markdown h2,
   .public-markdown h3,
   .public-markdown h4 {
-    @apply mt-10 text-foreground;
-    line-height: 0.96;
-    letter-spacing: -0.05em;
+    @apply mt-8 text-foreground;
+    line-height: 1;
+    letter-spacing: -0.04em;
   }
 
   .public-markdown h1 {
-    @apply text-3xl lg:text-4xl;
+    @apply text-3xl lg:text-[2.6rem];
   }
 
   .public-markdown h2 {
-    @apply text-2xl lg:text-3xl;
+    @apply text-2xl lg:text-[2rem];
   }
 
   .public-markdown h3 {
-    @apply text-xl lg:text-2xl;
+    @apply text-xl lg:text-[1.55rem];
   }
 
   .public-markdown h4 {
@@ -177,7 +162,7 @@
   .public-markdown pre,
   .public-markdown table,
   .public-markdown img {
-    @apply my-6;
+    @apply my-5;
   }
 
   .public-markdown a {
@@ -222,7 +207,7 @@
   }
 
   .public-markdown hr {
-    @apply my-10 border-border/70;
+    @apply my-8 border-border/70;
   }
 
   .public-markdown table {
