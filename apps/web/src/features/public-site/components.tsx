@@ -49,7 +49,7 @@ export function PublicAppFrame({
           {badges ? <div className="flex flex-wrap items-center gap-2">{badges}</div> : null}
 
           <div className="space-y-4">
-            <p className="borg-section-kicker">UNIMATRIX-01 // NODE: GWENNY</p>
+            <p className="borg-section-kicker">Public node</p>
             <h1 className="max-w-5xl text-4xl leading-[0.9] font-medium tracking-[-0.08em] text-foreground sm:text-5xl lg:text-6xl">
               {title}
             </h1>

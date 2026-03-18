@@ -3,8 +3,6 @@ import { createLazyFileRoute } from "@tanstack/react-router";
 import {
   RiLoader4Line,
   RiPulseLine,
-  RiRouteLine,
-  RiServerLine,
   RiTimer2Line,
 } from "@remixicon/react";
 
@@ -18,16 +16,6 @@ export const Route = createLazyFileRoute("/status")({
 function StatusRoute() {
   const { data, isFetching } = useQuery(statusSnapshotQueryOptions());
   const statusCards = [
-    {
-      icon: RiRouteLine,
-      label: "Router",
-      value: data?.routerStatus ?? "Loading route state...",
-    },
-    {
-      icon: RiServerLine,
-      label: "Client",
-      value: data?.clientStatus ?? "Loading shared contract status...",
-    },
     {
       icon: RiPulseLine,
       label: "Service",
@@ -117,7 +105,7 @@ function StatusRoute() {
         </div>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {statusCards.map(({ icon: Icon, label, value }) => (
           <Card key={label} className="borg-panel overflow-hidden" size="sm">
             <div className="space-y-3 px-4 py-4">
