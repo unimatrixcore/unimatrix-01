@@ -1,7 +1,179 @@
-# Local container workflow
+# Docker and Compose
 
-No Compose workflow is checked in yet.
+This directory documents the repo-owned container workflow for the current live
+surface:
 
-The current API implementation has no live external service dependency, so LOC-54 keeps the default local path pnpm-first and SQLite-first instead of introducing `docker-compose.yml` or `compose.yaml` early.
+- `apps/web` as a static Vite SPA image
+- `apps/api` as a Fastify Node runtime image
 
-If future API work adds a real local service dependency, optional Compose files belong under `infra/docker/`.
+Dokploy plus Traefik is the primary production target for now. The Docker and
+Compose files here are the secondary, manual deployment path and the local
+validation path for containerized builds.
+
+## Files
+
+- `apps/web/Dockerfile`: multi-stage web image build
+- `apps/web/nginx.conf`: static file server config with SPA fallback
+- `apps/api/Dockerfile`: multi-stage API image build
+- `infra/docker/compose.yaml`: manual two-service stack for `web` and `api`
+- `.dockerignore`: root build hygiene for repo-root Docker contexts
+
+## Monorepo build rules
+
+Build both images from the repo root, not from an individual app directory.
+
+That is required because:
+
+- `apps/web` resolves workspace source aliases from `apps/web/vite.config.ts`
+  and `apps/web/tsconfig.json`
+- `apps/web` imports public markdown directly from `content/`
+- `apps/api` depends on `@unimatrix/shared`, and the compiled API still imports
+  that package by workspace name at runtime
+
+The checked-in images assume these repo-root build contexts:
+
+```bash
+docker build -f apps/web/Dockerfile .
+docker build -f apps/api/Dockerfile .
+```
+
+## Web image
+
+The web image builds `apps/web/dist` and serves it from a small internal Nginx
+container. Nginx is only the static file server inside the container. It is not
+the public edge proxy; Traefik stays the edge router in Dokploy.
+
+### Web build inputs
+
+- `apps/web`
+- `packages/ui`
+- `packages/api-client`
+- `packages/shared`
+- `packages/content`
+- `content/`
+- root workspace metadata such as `package.json`, `pnpm-lock.yaml`, and
+  `pnpm-workspace.yaml`
+
+### Web runtime contract
+
+- container port: `8080`
+- build artifact: `apps/web/dist`
+- required SPA fallback: unknown application routes must serve `index.html`
+- build-time env: `VITE_API_BASE_URL`
+
+`VITE_API_BASE_URL` is compiled into the frontend bundle. Change it at image
+build time, not after the container starts.
+
+Example build:
+
+```bash
+docker build \
+  -f apps/web/Dockerfile \
+  --build-arg VITE_API_BASE_URL=http://localhost:3001 \
+  -t unimatrix-web:local \
+  .
+```
+
+## API image
+
+The API image builds `@unimatrix/shared`, compiles `apps/api`, then uses
+`pnpm deploy` to package the runtime with production dependencies.
+
+### API runtime contract
+
+- entrypoint: `node dist/server.js`
+- container port: `3001`
+- healthcheck path: `/health`
+- required runtime env:
+  - `HOST`
+  - `PORT`
+  - `NODE_ENV`
+  - `LOG_LEVEL`
+  - `TRUST_PROXY`
+  - `CORS_ALLOWED_ORIGINS`
+
+The image defaults `HOST=0.0.0.0`, `PORT=3001`, and `NODE_ENV=production`.
+
+Example build:
+
+```bash
+docker build -f apps/api/Dockerfile -t unimatrix-api:local .
+```
+
+Example run:
+
+```bash
+docker run --rm -p 3001:3001 \
+  -e CORS_ALLOWED_ORIGINS=http://localhost:8080 \
+  unimatrix-api:local
+```
+
+## Compose workflow
+
+Use `infra/docker/compose.yaml` for the manual two-service stack.
+
+From the repo root:
+
+```bash
+docker compose -f infra/docker/compose.yaml up --build
+```
+
+The default manual stack assumes:
+
+- web at `http://localhost:8080`
+- api at `http://localhost:3001`
+- web build arg `VITE_API_BASE_URL=http://localhost:3001`
+- API CORS allowlist `http://localhost:8080`
+
+You can override those values without editing the file:
+
+```bash
+VITE_API_BASE_URL=http://localhost:3001 \
+CORS_ALLOWED_ORIGINS=http://localhost:8080,http://127.0.0.1:8080 \
+docker compose -f infra/docker/compose.yaml up --build
+```
+
+To stop the stack:
+
+```bash
+docker compose -f infra/docker/compose.yaml down
+```
+
+## Verification
+
+After startup, verify:
+
+```bash
+curl http://localhost:3001/health
+curl -I http://localhost:8080/
+```
+
+Then open these routes in a browser and confirm they render after both a normal
+navigation and a refresh:
+
+- `/`
+- `/about`
+- `/blog`
+- `/projects`
+
+## Current database posture
+
+The current API implementation does not import `@unimatrix/db`, so this first
+container workflow does not add:
+
+- SQLite volumes
+- migration services
+- Compose database setup
+
+If future API work adopts `@unimatrix/db`, update this directory to document:
+
+- a persistent volume for the SQLite database file
+- a one-off migration command or service
+- the single-writer caveat of SQLite for multi-instance deployments
+
+## Relationship to production deployment docs
+
+- `infra/docker/README.md`: repo-owned Dockerfiles, Compose, and manual
+  container workflow
+- `infra/deployment/README.md`: Dokploy plus Traefik production deployment
+  guidance
