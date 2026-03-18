@@ -47,54 +47,52 @@ function StatusRoute() {
 
   return (
     <div className="grid gap-6">
-      <Card className="border border-border/70 bg-background/56 shadow-[0_34px_130px_-82px_color-mix(in_oklab,var(--foreground)_76%,transparent)] backdrop-blur-xl">
-        <div className="grid gap-8 px-6 xl:grid-cols-[minmax(0,1fr)_18rem]">
+      <Card className="borg-panel borg-grid-surface overflow-hidden border-primary/20 bg-background/82">
+        <div className="grid gap-8 px-6 py-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
           <div className="space-y-6">
             <div className="flex flex-wrap items-center gap-2">
               <Badge className="gap-1.5">
                 <RiPulseLine aria-hidden="true" className="size-3.5" />
-                Status route
+                Diagnostic array
               </Badge>
               <Badge variant="outline">Query cache prefetch</Badge>
             </div>
 
             <div className="space-y-3">
-              <h2 className="max-w-4xl text-3xl leading-[0.96] font-medium tracking-[-0.05em] lg:text-5xl">
-                The shared API contract baseline is wired through the public console.
+              <h2 className="max-w-4xl text-3xl leading-[0.9] font-medium tracking-[-0.07em] text-foreground lg:text-5xl">
+                Collective diagnostics remain linked to the live API surface.
               </h2>
-              <p className="max-w-3xl text-sm leading-7 text-muted-foreground lg:text-base">
-                The route loader still prefetches into the shared `QueryClient`, and the client
-                state still comes from `@unimatrix/api-client` parsing the shared `GET /health`
-                contract exported by `@unimatrix/shared`.
+              <p className="max-w-3xl text-sm leading-7 text-muted-foreground lg:text-base lg:leading-8">
+                The route loader still prefetches into the shared query client, then this view
+                renders the latest health snapshot as a cold systems readout instead of a generic
+                dashboard.
               </p>
             </div>
 
-            <Separator />
+            <Separator className="border-primary/15" />
 
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {statusCards.map(({ icon: Icon, label, value }) => (
-                <Card
-                  key={label}
-                  size="sm"
-                  className="border border-border/70 bg-background/42 shadow-none backdrop-blur"
-                >
-                  <div className="space-y-3 px-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <Badge variant="secondary">{label}</Badge>
-                      <Icon aria-hidden="true" className="size-4 text-muted-foreground" />
-                    </div>
-                    <p className="text-sm leading-7 text-foreground/88">{value}</p>
-                  </div>
-                </Card>
-              ))}
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="borg-subpanel px-4 py-4">
+                <p className="borg-data-label">Router path</p>
+                <p className="mt-3 text-sm leading-7 text-foreground/88">
+                  {data?.routerStatus ?? "Loading route state..."}
+                </p>
+              </div>
+
+              <div className="borg-subpanel px-4 py-4">
+                <p className="borg-data-label">Client path</p>
+                <p className="mt-3 text-sm leading-7 text-foreground/88">
+                  {data?.clientStatus ?? "Loading shared contract status..."}
+                </p>
+              </div>
             </div>
           </div>
 
           <div className="grid gap-3 self-start">
-            <div className="border border-border/70 bg-background/40 px-4 py-4">
+            <div className="borg-subpanel px-4 py-4">
               <Badge
-                variant={isFetching ? "default" : "outline"}
                 className={cn("gap-1.5", isFetching && "animate-pulse")}
+                variant={isFetching ? "default" : "outline"}
               >
                 <RiLoader4Line
                   aria-hidden="true"
@@ -103,22 +101,35 @@ function StatusRoute() {
                 Query {isFetching ? "updating" : "idle"}
               </Badge>
               <p className="mt-4 text-sm leading-7 text-foreground/88">
-                The command deck preserves the same fetch path and data shape while presenting the
-                route with denser system framing.
+                Health data remains query-backed. Only the visual framing has been assimilated into
+                the Borg surface.
               </p>
             </div>
-            <div className="border border-border/70 bg-background/40 px-4 py-4">
-              <p className="text-[0.7rem] uppercase tracking-[0.28em] text-muted-foreground">
-                Surface notes
-              </p>
+
+            <div className="borg-subpanel px-4 py-4">
+              <p className="borg-data-label">Surface notes</p>
               <p className="mt-3 text-sm leading-7 text-foreground/88">
-                Query behavior is unchanged in this branch. Only the route chrome and density have
-                been refreshed.
+                Shared contracts still define the shape of the payload. This page only changes how
+                those values are presented.
               </p>
             </div>
           </div>
         </div>
       </Card>
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        {statusCards.map(({ icon: Icon, label, value }) => (
+          <Card key={label} className="borg-panel overflow-hidden" size="sm">
+            <div className="space-y-3 px-4 py-4">
+              <div className="flex items-center justify-between gap-3">
+                <Badge variant="secondary">{label}</Badge>
+                <Icon aria-hidden="true" className="size-4 text-primary" />
+              </div>
+              <p className="text-sm leading-7 text-foreground/88">{value}</p>
+            </div>
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }

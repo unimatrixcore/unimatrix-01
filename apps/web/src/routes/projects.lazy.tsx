@@ -5,11 +5,7 @@ import {
   PublicProjectCard,
   PublicSectionHeading,
 } from "@/features/public-site/components";
-import {
-  Badge,
-  Button,
-  Card,
-} from "@unimatrix/ui/public";
+import { Badge, Button, Card } from "@unimatrix/ui/public";
 
 export const Route = createLazyFileRoute("/projects")({
   component: ProjectsRoute,
@@ -17,45 +13,41 @@ export const Route = createLazyFileRoute("/projects")({
 
 function ProjectsRoute() {
   const projects = Route.useLoaderData();
-  const activeProjects = projects.filter(
-    (project) => project.frontmatter.status === "in-progress",
-  ).length;
+  const featuredProjects = projects.filter((project) => project.frontmatter.featured).length;
   const repositoryLinkedProjects = projects.filter((project) => project.frontmatter.repoUrl).length;
 
   return (
     <div className="grid gap-6">
-      <Card className="border border-border/70 bg-background/56 shadow-[0_32px_120px_-76px_color-mix(in_oklab,var(--foreground)_72%,transparent)] backdrop-blur-xl">
-        <div className="grid gap-8 px-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
+      <Card className="borg-panel borg-grid-surface overflow-hidden border-primary/20 bg-background/82">
+        <div className="grid gap-8 px-6 py-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
           <PublicSectionHeading
             badges={
               <>
                 <Badge className="gap-1.5">
                   <RiLayoutGridLine aria-hidden="true" className="size-3.5" />
-                  Projects archive
+                  Project lattice
                 </Badge>
-                <Badge variant="outline">public route index</Badge>
+                <Badge variant="outline">Repo-backed index</Badge>
               </>
             }
-            description="This route behaves like a compact dossier index: typed repo-backed entries stay visible, linkable, and easy to audit without reviving the Hugo-era content model."
-            title="Current project write-ups are organized as a console archive instead of loose cards."
+            description="Each project entry is a deliberate node in the public lattice: typed frontmatter, explicit registration, and a detail page ready for inspection."
+            title="Project surfaces stay sparse until a system can explain itself clearly."
           />
 
           <div className="grid gap-3 self-start">
-            <div className="border border-border/70 bg-background/40 px-4 py-4">
-              <p className="text-[0.7rem] uppercase tracking-[0.28em] text-muted-foreground">
-                Archive counts
-              </p>
+            <div className="borg-subpanel px-4 py-4">
+              <p className="borg-data-label">Lattice counts</p>
               <dl className="mt-4 grid gap-3 text-sm text-foreground/88">
                 <div className="flex items-center justify-between gap-3">
-                  <dt>Total entries</dt>
+                  <dt>Total nodes</dt>
                   <dd>{projects.length}</dd>
                 </div>
                 <div className="flex items-center justify-between gap-3">
-                  <dt>In progress</dt>
-                  <dd>{activeProjects}</dd>
+                  <dt>Featured</dt>
+                  <dd>{featuredProjects}</dd>
                 </div>
                 <div className="flex items-center justify-between gap-3">
-                  <dt>Repo links</dt>
+                  <dt>External repos</dt>
                   <dd>{repositoryLinkedProjects}</dd>
                 </div>
               </dl>
@@ -81,9 +73,9 @@ function ProjectsRoute() {
             )}
             actions={
               project.frontmatter.repoUrl ? (
-                <Button asChild variant="secondary" className="w-fit gap-2">
+                <Button asChild className="w-fit gap-2" variant="secondary">
                   <a href={project.frontmatter.repoUrl} rel="noreferrer" target="_blank">
-                    View repository
+                    Open repository
                     <RiArrowRightUpLine aria-hidden="true" className="size-4" />
                   </a>
                 </Button>

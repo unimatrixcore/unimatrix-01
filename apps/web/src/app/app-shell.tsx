@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
-  RiCompassDiscoverLine,
+  RiBroadcastLine,
   RiLayoutGridLine,
   RiPulseLine,
   RiStackLine,
@@ -13,9 +13,7 @@ import {
   PublicPageContainer,
   type PublicAppFrameNavigationItem,
 } from "@/features/public-site/components";
-import {
-  Badge,
-} from "@unimatrix/ui/public";
+import { Badge } from "@unimatrix/ui/public";
 
 type AppShellProps = {
   children: ReactNode;
@@ -24,8 +22,8 @@ type AppShellProps = {
 const navItems = [
   {
     exact: true,
-    icon: RiCompassDiscoverLine,
-    label: "Overview",
+    icon: RiBroadcastLine,
+    label: "Node",
     to: "/" as const,
   },
   {
@@ -37,7 +35,7 @@ const navItems = [
   {
     exact: false,
     icon: RiStackLine,
-    label: "Blog",
+    label: "Transmissions",
     to: "/blog" as const,
   },
   {
@@ -72,24 +70,24 @@ export function AppShell({ children }: AppShellProps) {
         badges={
           <>
             <Badge className="gap-1.5">
-              <RiCompassDiscoverLine aria-hidden="true" className="size-3.5" />
-              Ops console
+              <RiBroadcastLine aria-hidden="true" className="size-3.5" />
+              Collective interface
             </Badge>
             <Badge variant="outline">Repo-backed content</Badge>
-            <Badge variant="secondary">Safe GFM active</Badge>
+            <Badge variant="secondary">Safe markdown only</Badge>
           </>
         }
         description={homeContent.frontmatter.intro}
         footerItems={[
-          "Authored markdown stays repo-backed behind the explicit raw-import registry in apps/web so review and routing remain obvious.",
-          "The web shell now renders safe GitHub-flavored markdown for authored content without enabling raw HTML or runtime MDX.",
-          "Borg Markdown still matters, but it remains future parser work instead of part of this branch.",
+          homeContent.frontmatter.summary,
+          homeContent.frontmatter.mission,
+          "TypeScript, Node.js, cybersecurity study, and open-source system design remain the active signal cluster.",
         ]}
-        navigationAdornment={<RiStackLine aria-hidden="true" className="size-4" />}
+        navigationAdornment={<RiPulseLine aria-hidden="true" className="size-4 text-primary" />}
         navigationAriaLabel="Site navigation"
-        navigationHeading="Route deck // live"
+        navigationHeading="System navigation"
         navigationItems={navigationItems}
-        title={homeContent.frontmatter.title}
+        title="UNIMATRIX-01 // NODE: GWENNY"
       />
 
       <main className="grid gap-6 lg:gap-8">{children}</main>

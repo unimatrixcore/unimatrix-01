@@ -1,21 +1,13 @@
 ---
-title: Gwenny builds backend-first systems that stay transparent, collaborative, and understandable.
-intro: I'm Gwenny, a backend-leaning builder working across TypeScript, Node.js, cybersecurity study, and open collaboration.
-summary: Unimatrix-01 is the public home for projects and writing that favor transparency, maintainability, and calm platform design.
-mission: I want the things I build to be easy to inspect, fork, learn from, and turn into something better together.
+title: Build systems that survive contact.
+intro: Gwenny is a backend-leaning TypeScript and Node.js developer, cybersecurity student, open-source builder, and sci-fi worldbuilder.
+summary: This node is a personal portfolio rendered like a Collective interface: projects, writing, and system design notes arranged for inspection instead of spectacle.
+mission: Assimilate good patterns, expose the contract, keep the architecture legible, and leave every system easier for the next contributor to extend.
 ---
-I spend most of my time in TypeScript and Node.js, with side paths through C#, Java, Python, and the kind of security thinking that keeps systems honest.
+I build software the same way I imagine starships should be built: with clear internal structure, reliable interfaces, and enough transparency that another engineer can step in without guessing what the hull is hiding. Most of my work starts in TypeScript and Node.js, then branches into API design, typed contracts, automation, and the security questions that keep distributed systems honest.
 
-The work that matters most to me sits where backend architecture, open-source collaboration, and practical platform design overlap. I want the tools I ship to stay understandable to the people using them and approachable to the people who might want to extend them.
+The strongest systems are not the ones that look invulnerable. They are the ones that make their assumptions visible. I prefer boundaries that are explicit, schemas that fail loudly, and workflows that can be audited by a teammate reading the repository cold. If a feature depends on hidden state or tribal knowledge, it is not done yet.
 
-> The current public site is intentionally shaped like an ops console: dense enough to be useful, calm enough to stay readable, and transparent enough to invite inspection.
+That is why I keep coming back to repo-backed content, shared contracts, and composition over cleverness. Good patterns deserve assimilation: not because every project should become identical, but because proven structure frees attention for the hard decisions. I want codebases that can absorb improvement without losing their shape.
 
-Three things matter most in that approach:
-
-- typed contracts at the content and app boundaries
-- repo-backed authoring that stays easy to diff and review
-- safe markdown rendering that expands expressiveness without opening an execution path
-
-My north star is collaboration: if a repository helps someone learn, sparks a contribution, or gets forked into something better, then it has done its job.
-
-Star Trek shaped a lot of that instinct. The values that stuck with me were progress through cooperation, shared responsibility, and building systems that make room for more than one person to succeed.
+Collaboration matters just as much as architecture. Open-source work, pair debugging, design review, and security-minded iteration all come from the same instinct: systems should make room for more than one person to understand them. The goal is not to dominate the stack. The goal is to build something precise enough to trust and humane enough to hand over.

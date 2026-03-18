@@ -50,13 +50,13 @@ describe("status route", () => {
     });
 
     expect(
-      await screen.findByText("TanStack Router file-based routing is active."),
-    ).toBeInTheDocument();
+      await screen.findAllByText("TanStack Router file-based routing is active."),
+    ).not.toHaveLength(0);
     expect(
-      await screen.findByText(
+      await screen.findAllByText(
         "GET /health is fetched through @unimatrix/api-client and parsed with the shared contract.",
       ),
-    ).toBeInTheDocument();
+    ).not.toHaveLength(0);
     expect(screen.getByText("api")).toBeInTheDocument();
     expect(screen.getByText("ok")).toBeInTheDocument();
   });
