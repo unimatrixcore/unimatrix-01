@@ -30,13 +30,12 @@ function AboutRoute() {
       ? `Portfolio inquiry from ${formState.name}`
       : "Portfolio inquiry";
     const lines = [
-      formState.name ? `Name: ${formState.name}` : undefined,
-      formState.email ? `Email: ${formState.email}` : undefined,
-      "",
+      formState.name ? `Name: ${formState.name}` : null,
+      formState.email ? `Email: ${formState.email}` : null,
       formState.message || "I'd like to get in touch about your work.",
-    ].filter(Boolean);
+    ].filter((line): line is string => line !== null);
 
-    return `mailto:${emailAddress}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(lines.join("\n"))}`;
+    return `mailto:${emailAddress}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(lines.join("\n\n"))}`;
   }, [formState.email, formState.message, formState.name]);
 
   return (

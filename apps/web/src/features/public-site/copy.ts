@@ -48,8 +48,8 @@ const exactReplacements = new Map<string, string>([
 const patternReplacements: Array<[RegExp, string]> = [
   [/\bCollective\b/gu, "site"],
   [/\bcollective\b/gu, "site"],
-  [/\bnode\b/gu, "site"],
-  [/\bNode\b/gu, "Site"],
+  [/\bnode(?!\.js)\b/gu, "site"],
+  [/\bNode(?!\.js)\b/gu, "Site"],
   [/\bdossier\b/gu, "write-up"],
   [/\bDossier\b/gu, "Write-up"],
   [/\btransmission\b/gu, "post"],
