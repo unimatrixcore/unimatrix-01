@@ -12,7 +12,7 @@
     "preview": "vite preview",
     "test": "pnpm run test:unit && pnpm run test:smoke",
     "test:smoke": "playwright test",
-    "test:unit": "vitest run",
+    "test:unit": "pnpm --filter @unimatrix/ui build && vitest run",
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {

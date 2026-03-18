@@ -24,30 +24,29 @@ function RootComponent() {
 
 function RootNotFound() {
   return (
-    <Card className="border border-border/70 bg-background/56 shadow-[0_32px_120px_-76px_color-mix(in_oklab,var(--foreground)_72%,transparent)] backdrop-blur-xl">
-      <div className="space-y-5 px-6">
+    <Card className="site-panel site-panel-strong max-w-3xl px-6 py-6 lg:px-8 lg:py-8">
+      <div className="space-y-5">
         <Badge variant="destructive" className="gap-1.5">
           <RiAlertLine aria-hidden="true" className="size-3.5" />
-          Route offline
+          Page unavailable
         </Badge>
         <div className="space-y-3">
-          <h2 className="text-2xl leading-tight font-medium tracking-[-0.04em]">
-            That page is not part of the current public site.
+          <h2 className="text-3xl leading-tight font-medium tracking-[-0.05em] text-foreground">
+            That page is not part of the current site.
           </h2>
-          <p className="max-w-2xl text-sm leading-7 text-muted-foreground lg:text-base">
-            Try returning to the overview or move into projects, blog, or status from the route
-            deck above.
+          <p className="max-w-2xl text-sm leading-7 text-muted-foreground lg:text-base lg:leading-8">
+            Return home or jump straight to projects, writing, or the about page.
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
           <Button asChild className="w-fit">
-            <Link to="/">Return to overview</Link>
+            <Link to="/">Go home</Link>
           </Button>
           <Button asChild variant="outline" className="w-fit">
             <Link to="/projects">Open projects</Link>
           </Button>
           <Button asChild variant="secondary" className="w-fit">
-            <Link to="/blog">Open blog</Link>
+            <Link to="/about">Open about</Link>
           </Button>
         </div>
       </div>

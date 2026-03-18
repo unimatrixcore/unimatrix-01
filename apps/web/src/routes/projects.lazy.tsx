@@ -1,11 +1,11 @@
 import { Link, createLazyFileRoute } from "@tanstack/react-router";
-import { RiArrowRightUpLine, RiLayoutGridLine } from "@remixicon/react";
+import { RiArrowRightUpLine, RiFolderLine } from "@remixicon/react";
 
 import {
-  PublicProjectCard,
+  PublicProjectLedgerItem,
   PublicSectionHeading,
 } from "@/features/public-site/components";
-import { Badge, Button, Card } from "@unimatrix/ui/public";
+import { Badge, Button } from "@unimatrix/ui/public";
 
 export const Route = createLazyFileRoute("/projects")({
   component: ProjectsRoute,
@@ -17,73 +17,90 @@ function ProjectsRoute() {
   const repositoryLinkedProjects = projects.filter((project) => project.frontmatter.repoUrl).length;
 
   return (
-    <div className="grid gap-6">
-      <Card className="borg-panel borg-grid-surface overflow-hidden border-primary/20 bg-background/82">
-        <div className="grid gap-8 px-6 py-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
-          <PublicSectionHeading
-            badges={
-              <>
-                <Badge className="gap-1.5">
-                  <RiLayoutGridLine aria-hidden="true" className="size-3.5" />
-                  Project lattice
-                </Badge>
-                <Badge variant="outline">Repo-backed index</Badge>
-              </>
-            }
-            description="Each project entry is a deliberate node in the public lattice: typed frontmatter, explicit registration, and a detail page ready for inspection."
-            title="Project surfaces stay sparse until a system can explain itself clearly."
-          />
+    <div className="grid gap-8 lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-9">
+      <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
+        <div className="space-y-3">
+          <p className="site-label">Projects</p>
+          <p className="text-sm leading-7 text-muted-foreground">
+            Built to compare quickly: status first, then summary, then the deeper project page.
+          </p>
+        </div>
 
-          <div className="grid gap-3 self-start">
-            <div className="borg-subpanel px-4 py-4">
-              <p className="borg-data-label">Lattice counts</p>
-              <dl className="mt-4 grid gap-3 text-sm text-foreground/88">
-                <div className="flex items-center justify-between gap-3">
-                  <dt>Total nodes</dt>
-                  <dd>{projects.length}</dd>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <dt>Featured</dt>
-                  <dd>{featuredProjects}</dd>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <dt>External repos</dt>
-                  <dd>{repositoryLinkedProjects}</dd>
-                </div>
-              </dl>
-            </div>
+        <div className="site-panel px-5 py-4">
+          <p className="site-label">How to browse</p>
+          <p className="mt-3 text-sm leading-7 text-foreground/88">
+            Start with the summary, check current status, and open the full page only when you want
+            implementation detail.
+          </p>
+        </div>
+
+        <div className="grid gap-3">
+          <div className="site-panel px-5 py-4">
+            <p className="site-label">Total projects</p>
+            <p className="mt-3 text-2xl leading-none font-medium tracking-[-0.06em] text-foreground">
+              {projects.length}
+            </p>
+          </div>
+          <div className="site-panel px-5 py-4">
+            <p className="site-label">Featured</p>
+            <p className="mt-3 text-2xl leading-none font-medium tracking-[-0.06em] text-foreground">
+              {featuredProjects}
+            </p>
+          </div>
+          <div className="site-panel px-5 py-4">
+            <p className="site-label">Repositories linked</p>
+            <p className="mt-3 text-2xl leading-none font-medium tracking-[-0.06em] text-foreground">
+              {repositoryLinkedProjects}
+            </p>
           </div>
         </div>
-      </Card>
+      </aside>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        {projects.map((project) => (
-          <PublicProjectCard
-            key={project.slug}
-            project={project}
-            renderLink={({ ariaLabel, children, className }) => (
-              <Link
-                aria-label={ariaLabel}
-                className={className}
-                params={{ slug: project.slug }}
-                to="/projects/$slug"
-              >
-                {children}
-              </Link>
-            )}
-            actions={
-              project.frontmatter.repoUrl ? (
-                <Button asChild className="w-fit gap-2" variant="secondary">
-                  <a href={project.frontmatter.repoUrl} rel="noreferrer" target="_blank">
-                    Open repository
-                    <RiArrowRightUpLine aria-hidden="true" className="size-4" />
-                  </a>
-                </Button>
-              ) : null
-            }
-          />
-        ))}
-      </div>
+      <section className="grid gap-4">
+        <PublicSectionHeading
+          badges={
+            <>
+              <Badge className="gap-1.5">
+                <RiFolderLine aria-hidden="true" className="size-3.5" />
+                Project list
+              </Badge>
+              <Badge variant="outline">Direct comparison</Badge>
+            </>
+          }
+          description="A compact list of current work, with enough context to decide where to dive deeper."
+          title="Selected builds and experiments"
+        />
+
+        <div className="grid gap-3">
+          {projects.map((project, index) => (
+            <PublicProjectLedgerItem
+              actions={
+                project.frontmatter.repoUrl ? (
+                  <Button asChild className="w-fit gap-2" variant="secondary">
+                    <a href={project.frontmatter.repoUrl} rel="noreferrer" target="_blank">
+                      Open repository
+                      <RiArrowRightUpLine aria-hidden="true" className="size-4" />
+                    </a>
+                  </Button>
+                ) : null
+              }
+              index={index + 1}
+              key={project.slug}
+              project={project}
+              renderLink={({ ariaLabel, children, className }) => (
+                <Link
+                  aria-label={ariaLabel}
+                  className={className}
+                  params={{ slug: project.slug }}
+                  to="/projects/$slug"
+                >
+                  {children}
+                </Link>
+              )}
+            />
+          ))}
+        </div>
+      </section>
     </div>
   );
 }
