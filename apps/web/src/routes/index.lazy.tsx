@@ -1,25 +1,21 @@
 import { Link, createLazyFileRoute } from "@tanstack/react-router";
 import {
   RiArrowRightUpLine,
-  RiCompassDiscoverLine,
+  RiBroadcastLine,
   RiLayoutGridLine,
   RiPulseLine,
   RiStackLine,
 } from "@remixicon/react";
 
-import { renderPublicMarkdownInternalLink } from "@/features/content/markdown";
 import { LazyPublicMarkdown } from "@/features/content/lazy-public-markdown";
+import { renderPublicMarkdownInternalLink } from "@/features/content/markdown";
 import {
+  PublicContentParagraphs,
   PublicPostListItem,
   PublicProjectCard,
   PublicSectionHeading,
 } from "@/features/public-site/components";
-import {
-  Badge,
-  Button,
-  Card,
-  Separator,
-} from "@unimatrix/ui/public";
+import { Badge, Button, Card, Separator } from "@unimatrix/ui/public";
 
 export const Route = createLazyFileRoute("/")({
   component: IndexRoute,
@@ -29,224 +25,176 @@ function IndexRoute() {
   const { blogEntries, home, projects } = Route.useLoaderData();
 
   return (
-    <div className="grid gap-6 2xl:grid-cols-[minmax(0,1.35fr)_24rem]">
-      <div className="grid gap-6">
-        <Card className="border border-border/70 bg-background/58 shadow-[0_32px_120px_-76px_color-mix(in_oklab,var(--foreground)_72%,transparent)] backdrop-blur-xl">
-          <div className="grid gap-8 px-6 xl:grid-cols-[minmax(0,1fr)_18rem]">
-            <div className="space-y-6">
+    <div className="grid gap-6">
+      <Card className="borg-panel borg-grid-surface overflow-hidden border-primary/20 bg-background/82">
+        <div className="grid gap-8 px-6 py-6 xl:grid-cols-[minmax(0,1.2fr)_22rem]">
+          <div className="space-y-6">
+            <div className="flex flex-wrap gap-2">
+              <Badge className="gap-1.5">
+                <RiBroadcastLine aria-hidden="true" className="size-3.5" />
+                Primary node
+              </Badge>
+              <Badge variant="outline">Backend-first systems</Badge>
+              <Badge variant="secondary">Open-source and security minded</Badge>
+            </div>
+
+            <div className="space-y-4">
+              <p className="borg-section-kicker">Collective signal</p>
+              <h2 className="max-w-4xl text-4xl leading-[0.88] font-medium tracking-[-0.08em] text-foreground sm:text-5xl lg:text-6xl">
+                {home.frontmatter.title}
+              </h2>
+              <p className="max-w-3xl text-base leading-8 text-foreground/88">
+                {home.frontmatter.intro}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-3">
+              <Button asChild className="gap-2">
+                <Link to="/projects">
+                  Inspect project nodes
+                  <RiArrowRightUpLine aria-hidden="true" className="size-4" />
+                </Link>
+              </Button>
+              <Button asChild className="gap-2" variant="outline">
+                <Link to="/blog">
+                  Read transmissions
+                  <RiArrowRightUpLine aria-hidden="true" className="size-4" />
+                </Link>
+              </Button>
+              <Button asChild className="gap-2" variant="secondary">
+                <Link to="/status">
+                  Open diagnostics
+                  <RiPulseLine aria-hidden="true" className="size-4" />
+                </Link>
+              </Button>
+            </div>
+          </div>
+
+          <div className="grid gap-3 self-start">
+            <div className="borg-subpanel px-4 py-4">
+              <p className="borg-data-label">Signal inventory</p>
+              <dl className="mt-4 grid gap-3 text-sm text-foreground/88">
+                <div className="flex items-center justify-between gap-3">
+                  <dt>Featured projects</dt>
+                  <dd>{projects.length}</dd>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <dt>Queued transmissions</dt>
+                  <dd>{blogEntries.length}</dd>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <dt>Registry mode</dt>
+                  <dd>manual</dd>
+                </div>
+              </dl>
+            </div>
+
+            <div className="borg-subpanel px-4 py-4">
+              <p className="borg-data-label">Design posture</p>
+              <p className="mt-3 text-sm leading-7 text-foreground/88">
+                High-contrast structure, deliberate whitespace, and cold monospaced framing keep
+                the interface readable under sustained attention.
+              </p>
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_24rem]">
+        <div className="grid gap-6">
+          <PublicContentParagraphs
+            columns={2}
+            paragraphs={[home.frontmatter.summary, home.frontmatter.mission]}
+          />
+
+          <Card className="borg-panel overflow-hidden">
+            <div className="space-y-6 px-6 py-6">
               <PublicSectionHeading
                 badges={
                   <>
                     <Badge className="gap-1.5">
-                      <RiCompassDiscoverLine aria-hidden="true" className="size-3.5" />
-                      Route brief
+                      <RiBroadcastLine aria-hidden="true" className="size-3.5" />
+                      Operating doctrine
                     </Badge>
-                    <Badge variant="outline">homepage route</Badge>
+                    <Badge variant="outline">Repo-authored markdown</Badge>
                   </>
                 }
-                title="What this public route is for"
-                titleClassName="max-w-3xl text-3xl lg:text-4xl"
+                description="The body copy stays in markdown, but the surrounding frame treats it like a technical dossier rather than a blog dump."
+                title="Systems worth shipping should explain themselves under inspection."
+                trailing={<RiLayoutGridLine aria-hidden="true" className="size-4 text-primary" />}
               />
 
-              <div className="grid gap-4 lg:grid-cols-2">
-                <div className="border border-border/60 bg-background/35 px-4 py-4">
-                  <p className="text-[0.7rem] uppercase tracking-[0.28em] text-muted-foreground">
-                    Console summary
-                  </p>
-                  <p className="mt-3 text-sm leading-7 text-foreground/90">
-                    {home.frontmatter.summary}
-                  </p>
-                </div>
-                <div className="border border-border/60 bg-background/35 px-4 py-4">
-                  <p className="text-[0.7rem] uppercase tracking-[0.28em] text-muted-foreground">
-                    Operating stance
-                  </p>
-                  <p className="mt-3 text-sm leading-7 text-foreground/90">
-                    {home.frontmatter.mission}
-                  </p>
-                </div>
-              </div>
+              <Separator className="border-primary/15" />
 
-              <div className="flex flex-wrap gap-3">
-                <Button asChild className="gap-2">
-                  <Link to="/projects">
-                    Browse projects
-                    <RiArrowRightUpLine aria-hidden="true" className="size-4" />
-                  </Link>
-                </Button>
-                <Button asChild variant="outline" className="gap-2">
-                  <Link to="/blog">
-                    Read the blog
-                    <RiArrowRightUpLine aria-hidden="true" className="size-4" />
-                  </Link>
-                </Button>
-                <Button asChild variant="secondary" className="gap-2">
-                  <Link to="/status">
-                    Open status route
-                    <RiPulseLine aria-hidden="true" className="size-4" />
-                  </Link>
-                </Button>
+              <LazyPublicMarkdown
+                markdown={home.body}
+                renderInternalLink={renderPublicMarkdownInternalLink}
+              />
+            </div>
+          </Card>
+        </div>
+
+        <aside className="grid gap-4 self-start xl:sticky xl:top-6">
+          <Card className="borg-panel overflow-hidden" size="sm">
+            <div className="space-y-4 px-4 py-4">
+              <PublicSectionHeading
+                badges={<Badge variant="secondary">Featured project nodes</Badge>}
+                description="Current public build surfaces prepared for direct drill-down."
+                trailing={<RiLayoutGridLine aria-hidden="true" className="size-4 text-primary" />}
+              />
+
+              <div className="grid gap-3">
+                {projects.map((project) => (
+                  <PublicProjectCard
+                    key={project.slug}
+                    project={project}
+                    renderLink={({ ariaLabel, children, className }) => (
+                      <Link
+                        aria-label={ariaLabel}
+                        className={className}
+                        params={{ slug: project.slug }}
+                        to="/projects/$slug"
+                      >
+                        {children}
+                      </Link>
+                    )}
+                    variant="compact"
+                  />
+                ))}
               </div>
             </div>
+          </Card>
 
-            <div className="grid gap-3 self-start">
-              <div className="border border-border/70 bg-background/40 px-4 py-4">
-                <p className="text-[0.7rem] uppercase tracking-[0.28em] text-muted-foreground">
-                  Route inventory
-                </p>
-                <dl className="mt-4 grid gap-3 text-sm text-foreground/90">
-                  <div className="flex items-center justify-between gap-3">
-                    <dt>Featured projects</dt>
-                    <dd>{projects.length}</dd>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <dt>Latest notes</dt>
-                    <dd>{blogEntries.length}</dd>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <dt>Registry mode</dt>
-                    <dd>manual imports</dd>
-                  </div>
-                </dl>
-              </div>
-              <div className="border border-border/70 bg-background/40 px-4 py-4">
-                <p className="text-[0.7rem] uppercase tracking-[0.28em] text-muted-foreground">
-                  Renderer signal
-                </p>
-                <p className="mt-3 text-sm leading-7 text-foreground/88">
-                  Safe GFM with explicit internal-link handling and no runtime content discovery.
-                </p>
-              </div>
-            </div>
-          </div>
-        </Card>
+          <Card className="borg-panel overflow-hidden" size="sm">
+            <div className="space-y-4 px-4 py-4">
+              <PublicSectionHeading
+                badges={<Badge variant="secondary">Latest transmissions</Badge>}
+                description="Field notes and written diagnostics queued inside the same node."
+                trailing={<RiStackLine aria-hidden="true" className="size-4 text-primary" />}
+              />
 
-        <Card className="border border-border/70 bg-background/56 shadow-[0_34px_130px_-82px_color-mix(in_oklab,var(--foreground)_66%,transparent)] backdrop-blur-xl">
-          <div className="space-y-6 px-6">
-            <PublicSectionHeading
-              badges={
-                <>
-                  <Badge variant="secondary">Mission / operating model</Badge>
-                  <Badge variant="outline">rendered markdown</Badge>
-                </>
-              }
-              title="How the site is being run"
-              trailing={
-                <RiLayoutGridLine aria-hidden="true" className="size-4 text-muted-foreground" />
-              }
-            />
-
-            <Separator />
-
-            <LazyPublicMarkdown
-              markdown={home.body}
-              renderInternalLink={renderPublicMarkdownInternalLink}
-            />
-          </div>
-        </Card>
-      </div>
-
-      <div className="grid gap-4">
-        <Card
-          size="sm"
-          className="border border-border/70 bg-background/46 shadow-none backdrop-blur-xl"
-        >
-          <div className="space-y-4 px-4">
-            <PublicSectionHeading
-              badges={<Badge variant="secondary">Featured projects</Badge>}
-              description="Active build targets and platform write-ups currently surfaced on the public route."
-              trailing={
-                <RiLayoutGridLine aria-hidden="true" className="size-4 text-muted-foreground" />
-              }
-            />
-            <div className="grid gap-3">
-              {projects.map((project) => (
-                <PublicProjectCard
-                  key={project.slug}
-                  project={project}
-                  variant="compact"
-                  renderLink={({ ariaLabel, children, className }) => (
-                    <Link
-                      aria-label={ariaLabel}
-                      className={className}
-                      params={{ slug: project.slug }}
-                      to="/projects/$slug"
-                    >
-                      {children}
-                    </Link>
-                  )}
-                />
-              ))}
-            </div>
-          </div>
-        </Card>
-
-        <Card
-          size="sm"
-          className="border border-border/70 bg-background/46 shadow-none backdrop-blur-xl"
-        >
-          <div className="space-y-4 px-4">
-            <PublicSectionHeading
-              badges={<Badge variant="secondary">Recent blog posts</Badge>}
-              description="Latest architecture notes and content-system updates from the repo-backed collection."
-              trailing={<RiStackLine aria-hidden="true" className="size-4 text-muted-foreground" />}
-            />
-            <div className="grid gap-3">
-              {blogEntries.map((entry) => (
-                <PublicPostListItem
-                  key={entry.slug}
-                  entry={entry}
-                  variant="compact"
-                  renderLink={({ ariaLabel, children, className }) => (
-                    <Link
-                      aria-label={ariaLabel}
-                      className={className}
-                      params={{ slug: entry.slug }}
-                      to="/blog/$slug"
-                    >
-                      {children}
-                    </Link>
-                  )}
-                />
-              ))}
-            </div>
-          </div>
-        </Card>
-
-        <Card
-          size="sm"
-          className="border border-border/70 bg-background/46 shadow-none backdrop-blur-xl"
-        >
-          <div className="space-y-4 px-4">
-            <PublicSectionHeading
-              badges={<Badge variant="secondary">Status snapshot</Badge>}
-              description="The live health check stays on its own route, but the shell keeps the signal visible here."
-              trailing={<RiPulseLine aria-hidden="true" className="size-4 text-muted-foreground" />}
-            />
-
-            <div className="grid gap-3 text-sm text-foreground/88">
-              <div className="border border-border/60 bg-background/35 px-3 py-3">
-                <p className="text-[0.7rem] uppercase tracking-[0.28em] text-muted-foreground">
-                  Content
-                </p>
-                <p className="mt-2 leading-7">Repo-backed, typed, and manually registered.</p>
-              </div>
-              <div className="border border-border/60 bg-background/35 px-3 py-3">
-                <p className="text-[0.7rem] uppercase tracking-[0.28em] text-muted-foreground">
-                  Rendering
-                </p>
-                <p className="mt-2 leading-7">Safe GFM only. Raw HTML and executable MDX stay off.</p>
+              <div className="grid gap-3">
+                {blogEntries.map((entry) => (
+                  <PublicPostListItem
+                    key={entry.slug}
+                    entry={entry}
+                    renderLink={({ ariaLabel, children, className }) => (
+                      <Link
+                        aria-label={ariaLabel}
+                        className={className}
+                        params={{ slug: entry.slug }}
+                        to="/blog/$slug"
+                      >
+                        {children}
+                      </Link>
+                    )}
+                    variant="compact"
+                  />
+                ))}
               </div>
             </div>
-
-            <Button asChild variant="outline" className="w-full gap-2">
-              <Link to="/status">
-                Inspect the status route
-                <RiArrowRightUpLine aria-hidden="true" className="size-4" />
-              </Link>
-            </Button>
-          </div>
-        </Card>
+          </Card>
+        </aside>
       </div>
     </div>
   );

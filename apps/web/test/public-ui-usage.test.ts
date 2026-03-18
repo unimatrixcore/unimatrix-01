@@ -149,8 +149,8 @@ describe("public UI package usage", () => {
     expect(appShellSource).toMatch(/PublicPageContainer/u);
     expect(appShellSource).toMatch(/@\/features\/public-site\/components/u);
     expect(appShellSource).toMatch(/@unimatrix\/ui\/public/u);
-    expect(appShellSource).toMatch(/Route deck \/\/ live/u);
-    expect(appShellSource).toMatch(/Safe GFM active/u);
+    expect(appShellSource).toMatch(/UNIMATRIX-01 \/\/ NODE: GWENNY/u);
+    expect(appShellSource).toMatch(/Safe markdown only/u);
 
     expect(lazyMarkdownSource).toMatch(/lazy\(/u);
     expect(lazyMarkdownSource).toMatch(/import\("@unimatrix\/ui\/public"\)/u);
@@ -169,6 +169,7 @@ describe("public UI package usage", () => {
     expect(homeLazyRouteSource).toMatch(/PublicPostListItem/u);
     expect(homeLazyRouteSource).toMatch(/@\/features\/public-site\/components/u);
     expect(homeLazyRouteSource).toMatch(/renderPublicMarkdownInternalLink/u);
+    expect(homeLazyRouteSource).toMatch(/Inspect project nodes/u);
     expect(homeLazyRouteSource).toMatch(/to="\/projects\/\$slug"/u);
     const homeRouteRenderLinkCount = (homeLazyRouteSource.match(/renderLink/gu) ?? []).length;
     expect(homeRouteRenderLinkCount).toBeGreaterThanOrEqual(2);
@@ -178,17 +179,17 @@ describe("public UI package usage", () => {
     expect(projectsRouteSource).toMatch(/createFileRoute\("\/projects"\)/u);
     expect(projectsRouteSource).not.toMatch(/PublicProjectCard/u);
     expect(projectsLazyRouteSource).toMatch(/createLazyFileRoute\("\/projects"\)/u);
-    expect(projectsLazyRouteSource).toMatch(/Projects archive/u);
+    expect(projectsLazyRouteSource).toMatch(/Project lattice/u);
     expect(projectsLazyRouteSource).toMatch(/PublicProjectCard/u);
     expect(projectsLazyRouteSource).toMatch(/@\/features\/public-site\/components/u);
     expect(projectsLazyRouteSource).toMatch(/to="\/projects\/\$slug"/u);
     expect(projectsLazyRouteSource).toMatch(/renderLink/u);
-    expect(projectsLazyRouteSource).toMatch(/View repository/u);
+    expect(projectsLazyRouteSource).toMatch(/Open repository/u);
 
     expect(blogRouteSource).toMatch(/createFileRoute\("\/blog"\)/u);
     expect(blogRouteSource).not.toMatch(/PublicPostListItem/u);
     expect(blogLazyRouteSource).toMatch(/createLazyFileRoute\("\/blog"\)/u);
-    expect(blogLazyRouteSource).toMatch(/Blog archive/u);
+    expect(blogLazyRouteSource).toMatch(/Transmission archive/u);
     expect(blogLazyRouteSource).toMatch(/PublicPostListItem/u);
     expect(blogLazyRouteSource).toMatch(/@\/features\/public-site\/components/u);
     expect(blogLazyRouteSource).toMatch(/to="\/blog\/\$slug"/u);
@@ -199,7 +200,7 @@ describe("public UI package usage", () => {
     expect(statusRouteSource).not.toMatch(/Query cache prefetch/u);
     expect(statusLazyRouteSource).toMatch(/createLazyFileRoute\("\/status"\)/u);
     expect(statusLazyRouteSource).toMatch(/@unimatrix\/ui\/public/u);
-    expect(statusLazyRouteSource).toMatch(/Query cache prefetch/u);
+    expect(statusLazyRouteSource).toMatch(/Diagnostic array/u);
 
     expect(projectDetailRouteSource).toMatch(/createFileRoute\("\/projects_\/\$slug"\)/u);
     expect(projectDetailRouteSource).toMatch(/throw createProjectNotFoundError/u);

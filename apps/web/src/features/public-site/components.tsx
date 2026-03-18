@@ -15,7 +15,7 @@ export function PublicPageContainer({
   return (
     <div
       className={cn(
-        "mx-auto flex min-h-screen w-full max-w-[108rem] flex-col gap-8 px-4 py-4 sm:px-6 lg:px-8 lg:py-6 xl:px-10",
+        "relative mx-auto flex min-h-screen w-full max-w-[116rem] flex-col gap-8 px-4 py-4 sm:px-6 lg:px-8 lg:py-6 xl:px-10",
         className,
       )}
       {...props}
@@ -29,7 +29,7 @@ export function PublicAppFrame({
   footerItems = [],
   navigationAdornment,
   navigationAriaLabel = "Site navigation",
-  navigationHeading = "Content routes",
+  navigationHeading = "System navigation",
   navigationItems,
   title,
 }: {
@@ -43,50 +43,59 @@ export function PublicAppFrame({
   title: React.ReactNode;
 }) {
   return (
-    <Card className="border border-border/70 bg-background/60 shadow-[0_40px_140px_-72px_color-mix(in_oklab,var(--foreground)_80%,transparent)] backdrop-blur-xl">
-      <div className="grid gap-8 px-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
-        <div className="space-y-7">
+    <Card className="borg-panel borg-grid-surface overflow-hidden border-primary/20 bg-background/80">
+      <div className="grid gap-8 px-6 py-6 xl:grid-cols-[minmax(0,1.35fr)_22rem]">
+        <div className="space-y-6">
           {badges ? <div className="flex flex-wrap items-center gap-2">{badges}</div> : null}
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_18rem]">
-            <div className="space-y-4">
-              <p className="text-[0.68rem] uppercase tracking-[0.36em] text-primary/80">
-                Ops console // public surface
-              </p>
-              <h1 className="max-w-5xl text-4xl leading-[0.94] font-medium tracking-[-0.06em] lg:text-6xl">
-                {title}
-              </h1>
-              <p className="max-w-3xl text-sm leading-7 text-muted-foreground lg:text-base">
-                {description}
+
+          <div className="space-y-4">
+            <p className="borg-section-kicker">Public node</p>
+            <h1 className="max-w-5xl text-4xl leading-[0.9] font-medium tracking-[-0.08em] text-foreground sm:text-5xl lg:text-6xl">
+              {title}
+            </h1>
+            <p className="max-w-3xl text-sm leading-7 text-foreground/86 lg:text-base lg:leading-8">
+              {description}
+            </p>
+          </div>
+
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_18rem]">
+            <div className="borg-subpanel px-4 py-4">
+              <div className="flex items-center justify-between gap-3">
+                <span className="borg-data-label">Collective link</span>
+                {navigationAdornment}
+              </div>
+              <p className="mt-3 text-sm leading-7 text-foreground/88">
+                Backend systems, security study, and worldbuilding signals converge here through a
+                single public node.
               </p>
             </div>
 
-            <div className="grid gap-3 self-start border border-border/70 bg-background/45 px-4 py-4">
-              <div className="flex items-center justify-between gap-3 text-[0.68rem] uppercase tracking-[0.28em] text-muted-foreground">
-                <span>Signal frame</span>
-                {navigationAdornment}
-              </div>
-              <p className="text-sm leading-7 text-foreground/88">
-                Repo-backed authored content, safe GitHub-flavored markdown, and typed route
-                contracts are now the live public path.
+            <div className="borg-subpanel px-4 py-4">
+              <span className="borg-data-label">Surface contract</span>
+              <p className="mt-3 text-sm leading-7 text-foreground/88">
+                Repo-backed markdown, explicit registries, and safe rendering keep this interface
+                inspectable under load.
               </p>
             </div>
           </div>
         </div>
 
         <div className="grid gap-3 self-start">
-          <div className="flex items-center justify-between gap-3 text-[0.68rem] uppercase tracking-[0.28em] text-muted-foreground">
-            <span>{navigationHeading}</span>
+          <div className="flex items-center justify-between gap-3">
+            <span className="borg-data-label">{navigationHeading}</span>
+            <span aria-hidden="true" className="borg-status-led" />
           </div>
+
           <nav aria-label={navigationAriaLabel} className="grid gap-2">
             {navigationItems.map((item) => (
               <Button
                 key={item.key}
                 asChild
                 className={cn(
-                  "h-auto w-full justify-start border px-4 py-3 text-left text-[0.72rem] uppercase tracking-[0.26em] shadow-none [&_svg]:size-4",
+                  "h-auto w-full justify-start border px-4 py-3 text-left text-[0.72rem] uppercase tracking-[0.24em] shadow-none transition-colors [&_svg]:size-4",
                   item.active
-                    ? "border-primary/40 bg-primary/16 text-foreground"
-                    : "border-border/70 bg-background/45 text-muted-foreground hover:bg-secondary/55 hover:text-foreground",
+                    ? "border-primary/40 bg-primary/18 text-foreground hover:bg-primary/20"
+                    : "border-border/70 bg-background/50 text-muted-foreground hover:border-primary/30 hover:bg-secondary/45 hover:text-foreground",
                 )}
                 size="lg"
                 variant={item.active ? "default" : "outline"}
@@ -100,17 +109,12 @@ export function PublicAppFrame({
 
       {footerItems.length > 0 ? (
         <>
-          <Separator className="mt-2" />
-          <div className="grid gap-3 px-6 text-xs leading-6 text-muted-foreground md:grid-cols-2 xl:grid-cols-3">
+          <Separator className="border-primary/15" />
+          <div className="grid gap-3 px-6 pb-6 md:grid-cols-2 xl:grid-cols-3">
             {footerItems.map((item, index) => (
-              <div
-                key={index}
-                className="border border-border/60 bg-background/35 px-4 py-3"
-              >
-                <p className="text-[0.68rem] uppercase tracking-[0.28em] text-muted-foreground">
-                  0{index + 1}
-                </p>
-                <p className="mt-3">{item}</p>
+              <div key={index} className="borg-subpanel px-4 py-4">
+                <p className="borg-data-label">0{index + 1}</p>
+                <p className="mt-3 text-sm leading-7 text-foreground/84">{item}</p>
               </div>
             ))}
           </div>
@@ -138,13 +142,13 @@ export function PublicSectionHeading({
   trailing?: React.ReactNode;
 }) {
   return (
-    <div className={cn("grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]", className)}>
+    <div className={cn("grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start", className)}>
       <div className="space-y-4">
         {badges ? <div className="flex flex-wrap items-center gap-2">{badges}</div> : null}
         {title ? (
           <h2
             className={cn(
-              "text-2xl leading-[1] font-medium tracking-[-0.05em] text-foreground lg:text-4xl",
+              "max-w-4xl text-2xl leading-[0.94] font-medium tracking-[-0.06em] text-foreground lg:text-4xl",
               titleClassName,
             )}
           >
@@ -154,7 +158,7 @@ export function PublicSectionHeading({
         {description ? (
           <p
             className={cn(
-              "max-w-3xl text-sm leading-7 text-muted-foreground lg:text-base",
+              "max-w-3xl text-sm leading-7 text-muted-foreground lg:text-base lg:leading-8",
               descriptionClassName,
             )}
           >
@@ -182,7 +186,7 @@ export function PublicContentParagraphs({
       {paragraphs.map((paragraph, index) => (
         <p
           key={`${index}:${paragraph}`}
-          className="border border-border/60 bg-background/35 px-4 py-4 text-sm leading-7 text-muted-foreground lg:text-base"
+          className="borg-subpanel px-4 py-4 text-sm leading-7 text-foreground/84 lg:text-base lg:leading-8"
         >
           {paragraph}
         </p>
@@ -208,6 +212,19 @@ type PublicCardLinkRenderer = (props: {
   children: React.ReactNode;
   className: string;
 }) => React.ReactElement;
+
+function getProjectStatusClassName(status: string) {
+  switch (status.toLowerCase()) {
+    case "active":
+      return "border-primary/35 bg-primary/16 text-foreground";
+    case "in-progress":
+      return "border-chart-2/35 bg-chart-2/14 text-foreground";
+    case "standby":
+      return "border-border bg-secondary/55 text-foreground";
+    default:
+      return "border-border/70 bg-background/60 text-foreground";
+  }
+}
 
 function PublicCardSurface({
   actions,
@@ -242,7 +259,7 @@ function PublicCardSurface({
     <div
       className={cn(
         "space-y-5",
-        variant === "default" ? "px-6" : undefined,
+        variant === "default" ? "px-5 py-5 sm:px-6 sm:py-6" : "px-4 py-4",
         isInteractive ? "pointer-events-none relative z-10" : undefined,
       )}
     >
@@ -261,14 +278,14 @@ function PublicCardSurface({
   );
 
   const interactiveClasses = isInteractive
-    ? "transition-all duration-200 hover:-translate-y-1 hover:border-primary/45 hover:bg-secondary/20 focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/25"
+    ? "transition-[transform,border-color,box-shadow,background-color] duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-secondary/36 focus-within:border-primary/50 focus-within:shadow-[0_0_0_1px_color-mix(in_oklab,var(--primary)_35%,transparent)]"
     : undefined;
 
   const link = renderLink
     ? renderLink({
         ariaLabel: linkLabel,
         children: <span className="sr-only">{linkLabel}</span>,
-        className: "absolute inset-0 z-10 outline-none",
+        className: "absolute inset-0 z-10 outline-none focus-visible:ring-2 focus-visible:ring-primary/45",
       })
     : undefined;
 
@@ -277,7 +294,7 @@ function PublicCardSurface({
       <div
         id={id}
         className={cn(
-          "relative space-y-2 border border-border/70 bg-background/45 px-4 py-4 ring-1 ring-foreground/10",
+          "borg-subpanel relative overflow-hidden",
           interactiveClasses,
           className,
         )}
@@ -289,14 +306,7 @@ function PublicCardSurface({
   }
 
   return (
-    <Card
-      id={id}
-      className={cn(
-        "relative border border-border/70 bg-background/50 shadow-[0_30px_110px_-74px_color-mix(in_oklab,var(--foreground)_70%,transparent)]",
-        interactiveClasses,
-        className,
-      )}
-    >
+    <Card id={id} className={cn("borg-panel relative overflow-hidden", interactiveClasses, className)}>
       {link}
       {content}
     </Card>
@@ -331,18 +341,19 @@ export function PublicProjectCard({
       {...linkProps}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <Badge variant="outline">Project</Badge>
-        <Badge>{project.frontmatter.status}</Badge>
+        <Badge variant="outline">Project node</Badge>
+        <Badge className={cn("border", getProjectStatusClassName(project.frontmatter.status))}>
+          {project.frontmatter.status}
+        </Badge>
         <Badge variant="secondary">{project.frontmatter.publishedAt}</Badge>
       </div>
+
       <div className="space-y-3">
-        <p className="text-[0.7rem] uppercase tracking-[0.28em] text-muted-foreground">
-          /{project.slug}
-        </p>
+        <p className="borg-data-label">Designation / {project.slug}</p>
         <h3
           className={cn(
-            "font-medium tracking-[-0.04em] text-foreground",
-            variant === "default" ? "text-2xl leading-tight" : "text-base leading-6",
+            "font-medium tracking-[-0.05em] text-foreground",
+            variant === "default" ? "text-2xl leading-tight" : "text-lg leading-6",
           )}
         >
           {project.frontmatter.title}
@@ -399,17 +410,16 @@ export function PublicPostListItem({
       {...linkProps}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <Badge variant="outline">Log</Badge>
+        <Badge variant="outline">Transmission</Badge>
         <Badge variant="secondary">{entry.frontmatter.publishedAt}</Badge>
       </div>
+
       <div className="space-y-3">
-        <p className="text-[0.7rem] uppercase tracking-[0.28em] text-muted-foreground">
-          /{entry.slug}
-        </p>
+        <p className="borg-data-label">Log / {entry.slug}</p>
         <h3
           className={cn(
-            "font-medium tracking-[-0.04em] text-foreground",
-            variant === "default" ? "text-2xl leading-tight" : "text-base leading-6",
+            "font-medium tracking-[-0.05em] text-foreground",
+            variant === "default" ? "text-2xl leading-tight" : "text-lg leading-6",
           )}
         >
           {entry.frontmatter.title}

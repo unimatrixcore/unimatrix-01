@@ -27,11 +27,9 @@ test("homepage load", async ({ page }) => {
 
   await gotoRoute(page, "/");
 
-  await expect(
-    main.getByRole("heading", { name: "What this public route is for" }),
-  ).toBeVisible();
-  await expect(main.getByRole("link", { name: "Browse projects" })).toBeVisible();
-  await expect(main.getByRole("link", { name: "Read the blog" })).toBeVisible();
+  await expect(main.getByRole("heading", { name: "Build systems that survive contact." })).toBeVisible();
+  await expect(main.getByRole("link", { name: "Inspect project nodes" })).toBeVisible();
+  await expect(main.getByRole("link", { name: "Read transmissions" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Site navigation" })).toBeVisible();
 
   expectNoPageErrors(pageErrors);
@@ -46,21 +44,21 @@ test("navigation smoke flow", async ({ page }) => {
   await siteNavigation.getByRole("link", { name: "Projects" }).click();
   await expect(page).toHaveURL(/\/projects$/u);
   await expect(
-    page.getByRole("link", { name: "Open project Unimatrix-01" }),
+    page.getByRole("link", { name: "Open project Designation Pending" }),
   ).toBeVisible();
 
-  await page.getByRole("link", { name: "Open project Unimatrix-01" }).click();
-  await expect(page).toHaveURL(/\/projects\/unimatrix-01$/u);
-  await expect(page.getByRole("heading", { name: "Unimatrix-01" })).toBeVisible();
+  await page.getByRole("link", { name: "Open project Designation Pending" }).click();
+  await expect(page).toHaveURL(/\/projects\/placeholder-project$/u);
+  await expect(page.getByRole("heading", { name: "Designation Pending" })).toBeVisible();
 
-  await page.getByRole("link", { name: "Back to projects" }).click();
+  await page.getByRole("link", { name: "Back to project index" }).click();
   await expect(page).toHaveURL(/\/projects$/u);
 
-  await siteNavigation.getByRole("link", { name: "Blog" }).click();
+  await siteNavigation.getByRole("link", { name: "Transmissions" }).click();
   await expect(page).toHaveURL(/\/blog$/u);
   await expect(
     page.getByRole("link", {
-      name: "Open blog entry Building a typed content baseline for the new site",
+      name: "Open blog entry Transmission Pending",
     }),
   ).toBeVisible();
 
@@ -70,13 +68,13 @@ test("navigation smoke flow", async ({ page }) => {
 test("project page render", async ({ page }) => {
   const pageErrors = collectPageErrors(page);
 
-  await gotoRoute(page, "/projects/unimatrix-01");
+  await gotoRoute(page, "/projects/placeholder-project");
 
-  await expect(page.getByText("Project detail", { exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Unimatrix-01" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Platform shape" })).toBeVisible();
-  await expect(page.getByRole("img", { name: "Ops console topology" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Back to projects" })).toBeVisible();
+  await expect(page.getByText("Project node", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Designation Pending" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Full project record" })).toBeVisible();
+  await expect(page.getByText("Assimilation continues off-screen.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Back to project index" })).toBeVisible();
 
   expectNoPageErrors(pageErrors);
 });
@@ -84,17 +82,13 @@ test("project page render", async ({ page }) => {
 test("blog page render", async ({ page }) => {
   const pageErrors = collectPageErrors(page);
 
-  await gotoRoute(page, "/blog/building-a-typed-content-baseline");
+  await gotoRoute(page, "/blog/placeholder-post");
 
-  await expect(page.getByText("Blog detail", { exact: true })).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "Building a typed content baseline for the new site" }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "Current rollout checklist" }),
-  ).toBeVisible();
-  await expect(page.locator("table").filter({ hasText: "Safe GFM" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Back to blog" })).toBeVisible();
+  await expect(page.getByText("Transmission detail", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Transmission Pending" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Authored record" })).toBeVisible();
+  await expect(page.getByText("The signal is acknowledged")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Back to transmission archive" })).toBeVisible();
 
   expectNoPageErrors(pageErrors);
 });

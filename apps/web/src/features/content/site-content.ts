@@ -14,10 +14,8 @@ import {
 import { indexEntriesBySlug } from "./lookups";
 
 import homeSource from "../../../../../content/home/index.md?raw";
-import typedBaselineSource from "../../../../../content/blog/building-a-typed-content-baseline.md?raw";
-import borgMarkdownSource from "../../../../../content/blog/on-borg-markdown-as-future-work.md?raw";
-import berrybotSource from "../../../../../content/projects/berrybot.md?raw";
-import unimatrixSource from "../../../../../content/projects/unimatrix-01.md?raw";
+import placeholderPostSource from "../../../../../content/blog/placeholder-post.md?raw";
+import placeholderProjectSource from "../../../../../content/projects/placeholder-project.md?raw";
 
 export const homeContent: HomePageContent = parseHomeContentFile(
   homeSource,
@@ -25,19 +23,14 @@ export const homeContent: HomePageContent = parseHomeContentFile(
 );
 
 export const projectEntries: ProjectEntry[] = sortEntriesByPublishedAtDesc([
-  parseProjectContentFile(berrybotSource, "content/projects/berrybot.md"),
-  parseProjectContentFile(unimatrixSource, "content/projects/unimatrix-01.md"),
+  parseProjectContentFile(
+    placeholderProjectSource,
+    "content/projects/placeholder-project.md",
+  ),
 ]);
 
 export const blogEntries: BlogEntry[] = sortEntriesByPublishedAtDesc([
-  parseBlogContentFile(
-    typedBaselineSource,
-    "content/blog/building-a-typed-content-baseline.md",
-  ),
-  parseBlogContentFile(
-    borgMarkdownSource,
-    "content/blog/on-borg-markdown-as-future-work.md",
-  ),
+  parseBlogContentFile(placeholderPostSource, "content/blog/placeholder-post.md"),
 ]);
 
 export const siteContent: SiteContent = {
