@@ -4,33 +4,14 @@ import {
   createMemoryHistory,
 } from "@tanstack/react-router";
 import { act } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-
-const { getHealthMock } = vi.hoisted(() => ({
-  getHealthMock: vi.fn(),
-}));
-
-vi.mock("@/lib/api-client", () => ({
-  apiClient: {
-    getHealth: getHealthMock,
-  },
-}));
+import { describe, expect, it } from "vitest";
 
 import { Providers } from "@/app/providers";
 import { createAppRouter } from "@/app/router";
 import { createAppQueryClient } from "@/lib/query-client";
 
 describe("about route", () => {
-  beforeEach(() => {
-    getHealthMock.mockReset();
-  });
-
-  it("renders the /about route with contact details and a subtle system check", async () => {
-    getHealthMock.mockResolvedValue({
-      service: "api",
-      status: "ok",
-    });
-
+  it("renders the /about route with contact details and an email draft form", async () => {
     const queryClient = createAppQueryClient();
     const router = createAppRouter({
       history: createMemoryHistory({
@@ -57,7 +38,6 @@ describe("about route", () => {
     expect(
       await screen.findByText("gwen.phalan@gmail.com"),
     ).toBeInTheDocument();
-    expect(screen.getByText("api")).toBeInTheDocument();
-    expect(screen.getByText("ok")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /open email draft/i })).toBeInTheDocument();
   });
 });

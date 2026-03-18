@@ -63,7 +63,8 @@ test("navigation smoke flow", async ({ page }) => {
 
   await gotoRoute(page, "/about");
   await expect(page).toHaveURL(/\/about$/u);
-  await expect(page.getByRole("heading", { name: /I build reliable TypeScript systems/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "About" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Draft an email" })).toBeVisible();
 
   expectNoPageErrors(pageErrors);
 });
@@ -73,9 +74,12 @@ test("project page render", async ({ page }) => {
 
   await gotoRoute(page, "/projects/placeholder-project");
 
-  await expect(page.getByText("Project details", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Project in progress" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Full project write-up" })).toBeVisible();
+  await expect(
+    page.getByText("This project is in progress. Public details will be added when the work is ready to share.", {
+      exact: false,
+    }),
+  ).toBeVisible();
   await expect(page.getByText("This project entry is in standby", { exact: false })).toBeVisible();
   await expect(page.getByRole("link", { name: "Back to projects" })).toBeVisible();
 
@@ -87,10 +91,9 @@ test("blog page render", async ({ page }) => {
 
   await gotoRoute(page, "/blog/placeholder-post");
 
-  await expect(page.getByText("Writing view", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Post in progress" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Full article" })).toBeVisible();
-  await expect(page.getByText("This post is queued for writing.", { exact: false })).toBeVisible();
+  await expect(page.getByText("This post is queued for writing. It will be published when it is ready to be useful.", { exact: false })).toBeVisible();
+  await expect(page.getByText("This post slot has been reserved but not yet populated.", { exact: false })).toBeVisible();
   await expect(page.getByRole("link", { name: "Back to writing" })).toBeVisible();
 
   expectNoPageErrors(pageErrors);

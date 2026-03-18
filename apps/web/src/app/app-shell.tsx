@@ -27,32 +27,24 @@ const navItems = [
     exact: true,
     icon: RiHome5Line,
     label: "Home",
-    routeCode: "01",
-    routeSummary: "Overview, featured work, and recent writing.",
     to: "/" as const,
   },
   {
     exact: false,
     icon: RiFolderLine,
     label: "Projects",
-    routeCode: "02",
-    routeSummary: "Selected builds, current status, and deeper project notes.",
     to: "/projects" as const,
   },
   {
     exact: false,
     icon: RiArticleLine,
     label: "Writing",
-    routeCode: "03",
-    routeSummary: "Posts, implementation notes, and longer-form thinking.",
     to: "/blog" as const,
   },
   {
     exact: false,
     icon: RiUserLine,
     label: "About",
-    routeCode: "04",
-    routeSummary: "Background, contact details, and a simple way to reach out.",
     to: "/about" as const,
   },
 ];
@@ -165,50 +157,36 @@ export function AppShell({ children }: AppShellProps) {
       </a>
 
       <header className="site-panel site-shell overflow-hidden" ref={headerRef}>
-        <div className="grid gap-8 px-5 py-6 lg:grid-cols-[minmax(0,1.05fr)_minmax(22rem,30rem)] lg:px-8 lg:py-7">
-          <div className="space-y-4">
+        <div className="flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6 lg:px-8 lg:py-5">
+          <div className="space-y-1.5">
             <Breadcrumbs items={breadcrumbItems} />
-
-            <div className="space-y-3">
-              <div className="max-w-3xl space-y-3">
-                <p className="text-3xl leading-[0.94] font-medium tracking-[-0.06em] text-foreground lg:text-[3.35rem]">
-                  Gwenny Phalan
-                </p>
-                <p className="max-w-2xl text-sm leading-7 text-foreground/86 lg:text-[0.95rem] lg:leading-7">
-                  Gwenny is a jack of all trades, master of none, with a graveyard of unfinished
-                  TypeScript/Web, game dev, video editing, writing, and filmmaking projects.
-                </p>
-              </div>
-            </div>
+            <p className="text-2xl leading-[0.94] font-medium tracking-[-0.06em] text-foreground lg:text-[2.4rem]">
+              Gwenny Phalan
+            </p>
           </div>
 
-          <div className="grid gap-3 self-start sm:grid-cols-2">
-            {navItems.map(({ icon: Icon, label, routeCode, to, exact }) => {
+          <nav aria-label="Primary" className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
+            {navItems.map(({ icon: Icon, label, to, exact }) => {
               const active = isNavItemActive(pathname, exact, to);
 
               return (
                 <Link
                   aria-current={active ? "page" : undefined}
-                  key={to}
                   className={cn(
-                    "site-atlas-link group flex min-h-24 items-center justify-between gap-4 border px-4 py-4 outline-none transition-[border-color,background-color,transform] duration-200 hover:-translate-y-0.5 hover:border-primary/45 hover:bg-secondary/26 focus-visible:ring-2 focus-visible:ring-primary/45",
+                    "inline-flex w-full items-center justify-center gap-2 border px-3 py-1.5 text-sm font-medium transition-[border-color,background-color,color] duration-200 outline-none focus-visible:ring-2 focus-visible:ring-primary/45 sm:w-auto",
                     active
-                      ? "border-primary/45 bg-primary/10 text-foreground"
-                      : "border-border/70 bg-background/70 text-foreground/84",
+                      ? "border-primary/45 bg-primary/12 text-foreground"
+                      : "border-border/70 bg-background/72 text-muted-foreground hover:border-primary/35 hover:text-foreground",
                   )}
+                  key={to}
                   to={to}
                 >
-                  <div className="flex min-w-0 items-center gap-4">
-                    <span className="site-label">{routeCode}</span>
-                    <p className="truncate text-lg leading-tight font-medium tracking-[-0.04em] text-foreground">
-                      {label}
-                    </p>
-                  </div>
-                  <Icon aria-hidden="true" className="size-4 shrink-0 text-primary" />
+                  <Icon aria-hidden="true" className="size-3.5" />
+                  <span>{label}</span>
                 </Link>
               );
             })}
-          </div>
+          </nav>
         </div>
       </header>
 
@@ -233,13 +211,13 @@ export function AppShell({ children }: AppShellProps) {
                   const active = isNavItemActive(pathname, exact, to);
 
                   return (
-                      <Link
-                        aria-current={active ? "page" : undefined}
-                        className={cn(
-                          "inline-flex w-full items-center justify-center gap-2 border px-3 py-1 text-sm font-medium transition-[border-color,background-color,color] duration-200 outline-none focus-visible:ring-2 focus-visible:ring-primary/45 lg:w-auto",
-                          active
-                            ? "border-primary/45 bg-primary/12 text-foreground"
-                            : "border-border/70 bg-background/72 text-muted-foreground hover:border-primary/35 hover:text-foreground",
+                    <Link
+                      aria-current={active ? "page" : undefined}
+                      className={cn(
+                        "inline-flex w-full items-center justify-center gap-2 border px-3 py-1 text-sm font-medium transition-[border-color,background-color,color] duration-200 outline-none focus-visible:ring-2 focus-visible:ring-primary/45 lg:w-auto",
+                        active
+                          ? "border-primary/45 bg-primary/12 text-foreground"
+                          : "border-border/70 bg-background/72 text-muted-foreground hover:border-primary/35 hover:text-foreground",
                       )}
                       key={to}
                       to={to}
