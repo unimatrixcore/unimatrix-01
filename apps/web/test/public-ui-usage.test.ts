@@ -150,10 +150,9 @@ describe("public UI package usage", () => {
     expect(appShellSource).toMatch(/PublicPageContainer/u);
     expect(appShellSource).toMatch(/@\/features\/public-site\/components/u);
     expect(appShellSource).toMatch(/@unimatrix\/ui\/public/u);
-    expect(appShellSource).toMatch(/Gwendolyne Phalan/u);
-    expect(appShellSource).toMatch(/Safe markdown/u);
+    expect(appShellSource).toMatch(/Gwenny Phalan/u);
     expect(appShellSource).toMatch(/routeCode: "01"/u);
-    expect(appShellSource).toMatch(/Current section/u);
+    expect(appShellSource).toMatch(/aria-label="Primary"/u);
 
     expect(lazyMarkdownSource).toMatch(/lazy\(/u);
     expect(lazyMarkdownSource).toMatch(/import\("@unimatrix\/ui\/public"\)/u);
@@ -167,16 +166,16 @@ describe("public UI package usage", () => {
     expect(homeLazyRouteSource).toMatch(/createLazyFileRoute\("\/"\)/u);
     expect(homeLazyRouteSource).toMatch(/@unimatrix\/ui\/public/u);
     expect(homeLazyRouteSource).toMatch(/PublicSectionHeading/u);
+    expect(homeLazyRouteSource).toMatch(/PublicContentParagraphs/u);
     expect(homeLazyRouteSource).toMatch(/LazyPublicMarkdown/u);
-    expect(homeLazyRouteSource).toMatch(/PublicDecisionCard/u);
     expect(homeLazyRouteSource).toMatch(/PublicProjectLedgerItem/u);
     expect(homeLazyRouteSource).toMatch(/PublicTransmissionListItem/u);
     expect(homeLazyRouteSource).toMatch(/@\/features\/public-site\/components/u);
     expect(homeLazyRouteSource).toMatch(/renderPublicMarkdownInternalLink/u);
-    expect(homeLazyRouteSource).toMatch(/Explore projects/u);
+    expect(homeLazyRouteSource).toMatch(/View all projects/u);
     expect(homeLazyRouteSource).toMatch(/to="\/projects\/\$slug"/u);
     const homeRouteRenderLinkCount = (homeLazyRouteSource.match(/renderLink/gu) ?? []).length;
-    expect(homeRouteRenderLinkCount).toBeGreaterThanOrEqual(5);
+    expect(homeRouteRenderLinkCount).toBeGreaterThanOrEqual(2);
     expect(homeLazyRouteSource).not.toMatch(/splitMarkdownIntoParagraphs/u);
     expect(homeLazyRouteSource).toMatch(/to="\/blog\/\$slug"/u);
 

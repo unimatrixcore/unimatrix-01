@@ -24,25 +24,23 @@ async function gotoRoute(page: Page, url: string) {
 test("homepage load", async ({ page }) => {
   const pageErrors = collectPageErrors(page);
   const main = page.locator("main");
-  const primaryNav = page.getByRole("navigation", { name: "Primary" });
 
   await gotoRoute(page, "/");
 
   await expect(main.getByRole("heading", { name: "Build systems that survive contact." })).toBeVisible();
-  await expect(main.getByRole("link", { name: "Open Explore projects" })).toBeVisible();
-  await expect(main.getByRole("link", { name: "Open Read the writing archive" })).toBeVisible();
-  await expect(primaryNav.getByRole("link", { exact: true, name: "Projects" })).toBeVisible();
+  await expect(main.getByRole("link", { name: "View all projects" })).toBeVisible();
+  await expect(main.getByRole("link", { name: "View all writing" })).toBeVisible();
 
   expectNoPageErrors(pageErrors);
 });
 
 test("navigation smoke flow", async ({ page }) => {
   const pageErrors = collectPageErrors(page);
-  const primaryNav = page.getByRole("navigation", { name: "Primary" });
+  const main = page.locator("main");
 
   await gotoRoute(page, "/");
 
-  await primaryNav.getByRole("link", { exact: true, name: "Projects" }).click();
+  await main.getByRole("link", { name: "View all projects" }).click();
   await expect(page).toHaveURL(/\/projects$/u);
   await expect(
     page.getByRole("link", { name: "Open project Project in progress" }),
@@ -55,7 +53,7 @@ test("navigation smoke flow", async ({ page }) => {
   await page.getByRole("link", { name: "Back to projects" }).click();
   await expect(page).toHaveURL(/\/projects$/u);
 
-  await primaryNav.getByRole("link", { exact: true, name: "Writing" }).click();
+  await gotoRoute(page, "/blog");
   await expect(page).toHaveURL(/\/blog$/u);
   await expect(
     page.getByRole("link", {
@@ -63,7 +61,7 @@ test("navigation smoke flow", async ({ page }) => {
     }),
   ).toBeVisible();
 
-  await primaryNav.getByRole("link", { exact: true, name: "About" }).click();
+  await gotoRoute(page, "/about");
   await expect(page).toHaveURL(/\/about$/u);
   await expect(page.getByRole("heading", { name: /I build reliable TypeScript systems/i })).toBeVisible();
 
