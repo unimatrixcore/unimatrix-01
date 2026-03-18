@@ -46,7 +46,7 @@ export function PublicSectionHeading({
         {title ? (
           <h2
             className={cn(
-              "max-w-5xl text-2xl leading-[0.96] font-medium tracking-[-0.05em] text-foreground lg:text-4xl",
+              "max-w-5xl text-2xl leading-[0.96] font-medium tracking-[-0.05em] text-foreground lg:text-3xl",
               titleClassName,
             )}
           >
@@ -156,7 +156,7 @@ export function PublicDecisionCard({
   return (
     <PublicLinkedSurface linkLabel={`Open ${title}`} renderLink={renderLink}>
       <div className="space-y-2.5">
-        <p className="site-label">{eyebrow}</p>
+        <p className="text-xs font-medium tracking-wide text-muted-foreground">{eyebrow}</p>
         <h3 className="text-xl leading-tight font-medium tracking-[-0.04em] text-foreground lg:text-[1.65rem]">
           {title}
         </h3>
@@ -216,51 +216,25 @@ export function PublicProjectLedgerItem({
       className="h-full overflow-hidden"
       {...linkProps}
     >
-      <div className="grid gap-5 lg:grid-cols-[3.5rem_minmax(0,1fr)_13rem] lg:items-start">
-        <div className="space-y-2 border-b border-border/60 pb-4 lg:border-b-0 lg:border-r lg:pb-0 lg:pr-5">
-          <p className="site-label">No.</p>
-          <p className="text-2xl leading-none font-medium tracking-[-0.06em] text-foreground lg:text-[1.7rem]">
-            {String(index).padStart(2, "0")}
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+        <div className="space-y-2.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge className={cn("border", getProjectStatusClassName(project.frontmatter.status))}>
+              {project.frontmatter.status}
+            </Badge>
+            <span className="text-xs text-muted-foreground">{project.frontmatter.publishedAt}</span>
+          </div>
+          <h3 className="text-xl leading-tight font-medium tracking-[-0.04em] text-foreground lg:text-[1.5rem]">
+            {project.frontmatter.title}
+          </h3>
+          <p className="max-w-3xl text-sm leading-7 text-foreground/88 lg:text-[0.95rem] lg:leading-7">
+            {project.frontmatter.summary}
           </p>
         </div>
 
-        <div className="space-y-3.5">
-          <div className="space-y-2.5">
-            <p className="site-label">projects/{project.slug}</p>
-            <h3 className="text-xl leading-tight font-medium tracking-[-0.04em] text-foreground lg:text-[1.7rem]">
-              {project.frontmatter.title}
-            </h3>
-            <p className="max-w-3xl text-sm leading-7 text-foreground/88 lg:text-[0.95rem] lg:leading-7">
-              {project.frontmatter.summary}
-            </p>
-            <p className="max-w-3xl text-sm leading-7 text-muted-foreground">{project.excerpt}</p>
-          </div>
-        </div>
-
-        <dl className="grid gap-3 border-t border-border/60 pt-4 text-sm lg:border-t-0 lg:border-l lg:pl-5 lg:pt-0">
-          <div>
-            <dt className="site-label">Status</dt>
-            <dd className="mt-1.5">
-              <Badge className={cn("border", getProjectStatusClassName(project.frontmatter.status))}>
-                {project.frontmatter.status}
-              </Badge>
-            </dd>
-          </div>
-          <div>
-            <dt className="site-label">Published</dt>
-            <dd className="mt-1.5 text-foreground/88">{project.frontmatter.publishedAt}</dd>
-          </div>
-          <div>
-            <dt className="site-label">Repository</dt>
-            <dd className="mt-1.5 text-foreground/88">
-              {project.frontmatter.repoUrl ? "Linked" : "Pending"}
-            </dd>
-          </div>
-          <div>
-            <dt className="site-label">Format</dt>
-            <dd className="mt-1.5 text-foreground/88">Write-up</dd>
-          </div>
-        </dl>
+        <p className="hidden text-2xl leading-none font-medium tracking-[-0.06em] text-muted-foreground/50 lg:block lg:text-[1.7rem]">
+          {String(index).padStart(2, "0")}
+        </p>
       </div>
     </PublicLinkedSurface>
   );
@@ -296,35 +270,20 @@ export function PublicTransmissionListItem({
 
   return (
     <PublicLinkedSurface className="h-full overflow-hidden" {...linkProps}>
-      <div className="grid gap-5 lg:grid-cols-[3.5rem_minmax(0,1fr)_13rem] lg:items-start">
-        <div className="space-y-2 border-b border-border/60 pb-4 md:border-b-0 md:border-r md:pb-0 md:pr-5">
-          <p className="site-label">Post</p>
-          <p className="text-2xl leading-none font-medium tracking-[-0.06em] text-foreground lg:text-[1.7rem]">
-            {String(index).padStart(2, "0")}
-          </p>
-        </div>
-
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
         <div className="space-y-2.5">
-          <p className="site-label">blog/{entry.slug}</p>
-          <h3 className="text-xl leading-tight font-medium tracking-[-0.04em] text-foreground lg:text-[1.7rem]">
+          <span className="text-xs text-muted-foreground">{entry.frontmatter.publishedAt}</span>
+          <h3 className="text-xl leading-tight font-medium tracking-[-0.04em] text-foreground lg:text-[1.5rem]">
             {entry.frontmatter.title}
           </h3>
           <p className="max-w-3xl text-sm leading-7 text-foreground/88 lg:text-[0.95rem] lg:leading-7">
             {summary}
           </p>
-          <p className="max-w-3xl text-sm leading-7 text-muted-foreground">{entry.excerpt}</p>
         </div>
 
-        <dl className="grid gap-3 border-t border-border/60 pt-4 text-sm lg:border-t-0 lg:border-l lg:pl-5 lg:pt-0">
-          <div>
-            <dt className="site-label">Published</dt>
-            <dd className="mt-1.5 text-foreground/88">{entry.frontmatter.publishedAt}</dd>
-          </div>
-          <div>
-            <dt className="site-label">Format</dt>
-            <dd className="mt-1.5 text-foreground/88">Article</dd>
-          </div>
-        </dl>
+        <p className="hidden text-2xl leading-none font-medium tracking-[-0.06em] text-muted-foreground/50 lg:block lg:text-[1.7rem]">
+          {String(index).padStart(2, "0")}
+        </p>
       </div>
     </PublicLinkedSurface>
   );
@@ -342,7 +301,7 @@ export function PublicMetadataStrip({
     <dl className="grid gap-px overflow-hidden border border-border/70 bg-border/70 md:grid-cols-2 xl:grid-cols-4">
       {items.map((item, index) => (
         <div key={index} className="bg-background px-4 py-3.5">
-          <dt className="site-label">{item.label}</dt>
+          <dt className="text-xs font-medium tracking-wide text-muted-foreground">{item.label}</dt>
           <dd className="mt-2 text-sm leading-7 text-foreground/88">{item.value}</dd>
         </div>
       ))}
@@ -360,8 +319,7 @@ export function PublicReadingFrame({
   return (
     <article className="reading-frame">
       <div className="border-b border-border/60 pb-4">
-        <p className="site-label">Reading view</p>
-        <h2 className="mt-2.5 text-xl leading-tight font-medium tracking-[-0.04em] text-foreground lg:text-[1.65rem]">
+        <h2 className="text-xl leading-tight font-medium tracking-[-0.04em] text-foreground lg:text-[1.65rem]">
           {title}
         </h2>
       </div>

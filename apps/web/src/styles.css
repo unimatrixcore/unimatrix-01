@@ -115,11 +115,11 @@
   }
 
   .reading-frame {
-    @apply mx-auto max-w-4xl;
+    @apply mx-auto max-w-3xl;
   }
 
   .public-markdown {
-    @apply text-[0.95rem] leading-7 text-muted-foreground;
+    @apply max-w-[65ch] text-[0.95rem] leading-7 text-muted-foreground;
   }
 
   .public-markdown > :first-child {
