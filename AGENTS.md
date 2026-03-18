@@ -1,104 +1,87 @@
-# AGENTS.md
+# Agent Instructions
 
-## 1. Overview
-`unimatrix-01` is the active TypeScript monorepo for the Unimatrix public site, API, shared workspace packages, and repo-backed authored content. Keep changes current-first: stay inside the live surface, and treat reserved paths as future scope until an issue explicitly activates them.
+## Package Manager
+- Use **pnpm** with Node `22.22.1` and pnpm `10.30.3`
+- Canonical root commands: `pnpm install`, `pnpm dev`, `pnpm setup:local`, `pnpm setup:worktree`, `pnpm check`, `pnpm verify`
+- Full root surface: `pnpm build`, `pnpm lint`, `pnpm test`, `pnpm typecheck`, `pnpm db:migrate`, `pnpm db:generate`
+- Repro install: `pnpm install --frozen-lockfile`
+- If host Node/pnpm mismatch: `./infra/scripts/pnpm-with-node22.sh <pnpm-args>`
 
-## 2. Folder Structure
-- `apps`: runnable applications.
-  - `web`: Vite + React public site, TanStack Router routes, public content rendering, and browser tests.
-  - `api`: Fastify API with validated runtime config, shared contracts, core plugins, and route modules.
-- `packages`: shared workspace boundaries.
-  - `ui`: shared shadcn-based primitives, shared styles, and safe markdown rendering.
-  - `shared`: framework-agnostic contracts, Zod schemas, and reusable types.
-  - `api-client`: typed transport helpers that consume `@unimatrix/shared` contracts.
-  - `content`: typed content parsing, frontmatter validation, and repo-backed loaders.
-  - `db`: Drizzle + SQLite persistence helpers, schema exports, and migrations.
-  - `config-typescript`: shared TypeScript baselines for apps and libraries.
-  - `config-eslint`: shared ESLint flat-config factories for apps and packages.
-- `content`: public authored markdown rendered by `apps/web`.
-  - `home`: homepage and about copy.
-  - `projects`: public project entries.
-  - `blog`: public blog entries.
-- `docs`: repo-internal operating docs, workspace maps, and contributor guidance.
-- `infra`: workflow helpers and deployment guidance.
-  - `scripts`: local setup and dev entrypoints.
-  - `deployment`: deployment contract and environment guidance.
-  - `docker`: local container posture and related docs.
-- Reserved surface: `apps/workers`, `content/docs`, `content/notes`, and future packages such as `packages/bmd-parser` stay out of normal work unless an issue expands the boundary.
+## Workspace
+- Monorepo: `apps/*` and `packages/*` from `pnpm-workspace.yaml`; root scripts fan out through Turbo
+- Live apps: `apps/web` (Vite + React + TanStack Router public site), `apps/api` (Fastify API)
+- Live packages: `packages/ui`, `packages/shared`, `packages/api-client`, `packages/content`, `packages/db`, `packages/config-typescript`, `packages/config-eslint`
+- Live content: `content/home`, `content/projects`, `content/blog`
+- Repo-internal docs: `docs/`; infra/runtime helpers: `infra/scripts`, `infra/deployment`, `infra/docker`
+- Reserved, not live: `apps/workers`, `content/docs`, `content/notes`, future packages like `packages/bmd-parser`
+- Keep repo facts current-first; do not treat reserved paths as active runtime surface
+- Nearest nested `AGENTS.md` overrides this file
 
-## 3. Working Agreements
-- Treat the root scripts as the canonical workflow surface; use `pnpm`, and fall back to `./infra/scripts/pnpm-with-node22.sh` if local Node or pnpm do not match the pinned versions.
-- Keep work inside existing app and package boundaries; prefer shared packages over app-local duplication only when multiple workspaces genuinely need the abstraction.
-- Validate external input boundaries with Zod, keep API handlers thin, and carry shared request or response shapes through `@unimatrix/shared` instead of redefining them locally.
-- Preserve the frontend system in `apps/web`: ShadCN UI, preset `aJMzyTw`, Geist Mono, zero-radius styling, Remix Icons, ADHD-accessible UX, and a desktop-first bias.
-- Keep public content Git-backed and safe-rendered; do not introduce raw HTML, executable MDX, or generated-code execution into the authored content path.
-- When adding `content/projects/*.md` or `content/blog/*.md`, update `apps/web/src/features/content/site-content.ts` in the same change so the explicit registry remains accurate.
-- Ask first before changing pnpm, Vite, Fastify, Turborepo, moving off SQLite without a demonstrated need, introducing a headless CMS, or making major package-boundary changes.
+## Workspace Responsibilities
+- `apps/web`: route-driven public site, public content rendering, app-owned public-site compositions
+- `apps/api`: runtime config validation, Fastify plugins, feature route modules, HTTP error normalization
+- `packages/ui`: shared shadcn primitives, shared styles, safe markdown rendering, `@unimatrix/ui/public`
+- `packages/shared`: framework-agnostic API contracts, Zod schemas, exported shared types only
+- `packages/api-client`: typed fetch transport consuming `@unimatrix/shared` contracts
+- `packages/content`: pure parsing, frontmatter validation, repo-backed loaders for live public content only
+- `packages/db`: Drizzle + SQLite persistence, schema barrel, migrations, local DB path resolution
 
-## Package manager
-- Use `pnpm`.
-- Core commands: `pnpm install`, `pnpm setup:local`, `pnpm dev`,
-  `pnpm check`, `pnpm verify`.
-- If local Node or pnpm do not match `.node-version` and the root
-  `packageManager` field, use
-  `./infra/scripts/pnpm-with-node22.sh ...`.
-
-## Source of truth
-- Human docs: `docs/README.md`.
-- Deployment contract: `infra/deployment/README.md`.
-- Package boundaries: package-level `README.md` files under `packages/`.
-- The nearest `AGENTS.md` overrides this file.
-
-## Live surface
-- Apps: `apps/web`, `apps/api`
-- Packages: `packages/ui`, `packages/shared`, `packages/api-client`,
-  `packages/content`, `packages/db`, `packages/config-typescript`,
-  `packages/config-eslint`
-- Content: `content/home`, `content/projects`, `content/blog`
-- Ops/docs: `docs/`, `infra/scripts`, `infra/deployment`, `infra/docker`
-
-## Reserved, not live
-- `apps/workers`
-- `content/docs`
-- `content/notes`
-- Future packages such as `packages/bmd-parser`
-
-## Scoped commands
+## File-Scoped Commands
 | Task | Command |
 | --- | --- |
 | Lint one file | `pnpm exec eslint path/to/file.ts` |
-| Run one web unit test file | `pnpm --filter @unimatrix/web exec vitest run path/to/test.tsx` |
-| Run one API test file | `pnpm --filter @unimatrix/api exec node --import tsx --test path/to/test.ts` |
-| Typecheck one workspace | `pnpm --filter @unimatrix/web typecheck` or `pnpm --filter @unimatrix/api typecheck` |
+| Web unit test file | `pnpm --filter @unimatrix/web exec vitest run path/to/test.tsx` |
+| API test file | `pnpm --filter @unimatrix/api exec node --import tsx --test path/to/test.ts` |
+| Package test file | `pnpm --filter <workspace> exec vitest run path/to/test.ts` |
+| Web typecheck | `pnpm --filter @unimatrix/web typecheck` |
+| API typecheck | `pnpm --filter @unimatrix/api typecheck` |
 
-## Repo rules
-- Use TypeScript, strict typing, named exports, and small composable
-  modules.
-- Prefer stable package boundaries over app-local duplication.
-- Validate every external input boundary with Zod.
-- Keep API handlers thin and move business logic into service modules.
-- Preserve the frontend system: ShadCN UI, preset `aJMzyTw`, Geist Mono,
-  zero-radius styling, Remix Icons, ADHD-accessible UX, and a
-  desktop-first bias.
-- Keep content Git-backed and safe-rendered. Never execute raw HTML, MDX,
-  or generated code.
-- When adding `content/projects/*.md` or `content/blog/*.md`, update
-  `apps/web/src/features/content/site-content.ts` in the same change.
-- Treat `docs/` as repo-internal guidance and `content/` as public site
-  content.
+## Runtime And Bootstrap
+- `pnpm dev` starts only `@unimatrix/api` and `@unimatrix/web`
+- `pnpm dev` creates missing `apps/api/.env` and `apps/web/.env` from example files
+- `pnpm setup:local` only copies missing env files; it never overwrites existing local env
+- `pnpm setup:worktree` runs frozen install, env bootstrap, and default DB migrations; use it for fresh worktrees
+- API loads `apps/api/.env.local` first, then `apps/api/.env`; existing shell env wins
+- Web uses normal Vite `apps/web/.env*` behavior
+- CI uses the same root commands and installs Playwright Chromium for web smoke coverage
+
+## Boundaries
+- `apps/web`: keep route data in non-lazy route files and UI in paired `*.lazy.tsx`; `src/routes/routeTree.gen.ts` is generated
+- `apps/web`: prefer `@unimatrix/ui/public`; keep public-site compositions in `src/features/public-site`; keep site-only styling in `src/styles.css`
+- `apps/web`: safe markdown only; keep raw HTML and runtime MDX disabled
+- `apps/api`: keep `buildApp()` wiring in `src/app.ts`, cross-cutting setup in `src/plugins`, feature routes in `src/modules`, reusable HTTP helpers in `src/lib/http`
+- `packages/shared`: no transport code, UI code, or content-loading logic
+- `packages/api-client`: do not redefine endpoints or response shapes locally; consume `@unimatrix/shared`
+- `packages/content`: keep loaders synchronous and filesystem-based unless the package boundary intentionally changes
+- `packages/db`: schema under `src/schema`, migrations under `drizzle`, default DB at `packages/db/local/unimatrix.sqlite`
+
+## Key Conventions
+- TypeScript only; keep strict typing, named exports, and small composable modules
+- Keep package boundaries stable instead of duplicating logic app-locally
+- Validate every external input boundary with Zod
+- Shared request/response shapes belong in `@unimatrix/shared`; do not redefine them in apps or transport code
+- API routes should be contract-driven via `@unimatrix/shared`; keep handlers thin and error formatting centralized
+- Use explicit exported types at boundaries instead of anonymous inline shapes
+- Public-site UI preserves ShadCN UI, preset `aJMzyTw`, Geist Mono, zero-radius styling, Remix Icons, ADHD-accessible UX, and a desktop-first bias
+- Prefer app-local composition over widening shared packages unless multiple workspaces truly need the abstraction
+- Content stays Git-backed markdown with safe rendering only; never execute raw HTML, executable MDX, or generated code from `content/`
+- Adding `content/projects/*.md` or `content/blog/*.md` requires updating `apps/web/src/features/content/site-content.ts`
+- `docs/` is contributor/agent guidance, not public site content
 
 ## Validation
-- Minimum gate: `pnpm lint`, `pnpm typecheck`, `pnpm test`.
-- Use `pnpm verify` for cross-workspace or runtime-surface changes.
+- Run the narrowest relevant checks for the files you changed
+- Use `pnpm check` as the normal pre-review gate
+- Use `pnpm verify` when changes span multiple workspaces or affect runtime/build behavior
+- Web-specific deeper checks: `pnpm --filter @unimatrix/web test:unit`, `pnpm --filter @unimatrix/web test:smoke`
 
-## Ask first
-- Switching away from Vite, Fastify, pnpm, or Turborepo
-- Moving from SQLite to Postgres before a real need exists
-- Introducing a headless CMS
-- Making major package-boundary changes
+## Git And PR Rules
+- Keep PRs small and issue-aligned; avoid unrelated scaffolding or setup churn
+- Use one issue branch per scoped piece of work; prefer the Linear-suggested branch name when one exists
+- Use conventional commits
+- End PR bodies with `Closes LOC-<issue-key>` when applicable
 
-## Commit attribution
-- If you are a Codex agent and you create commits, add
-  `Co-Authored-By: Codex <noreply@openai.com>`.
-- If you are a Claude Code agent and you create commits, add
-  `Co-Authored-By: Claude <noreply@anthropic.com>`.
+## Commit Attribution
+AI commits MUST include:
+```
+Co-Authored-By: OpenCode <noreply@opencode.ai>
+```
