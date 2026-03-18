@@ -27,32 +27,24 @@ const navItems = [
     exact: true,
     icon: RiHome5Line,
     label: "Home",
-    routeCode: "01",
-    routeSummary: "Overview, featured work, and recent writing.",
     to: "/" as const,
   },
   {
     exact: false,
     icon: RiFolderLine,
     label: "Projects",
-    routeCode: "02",
-    routeSummary: "Selected builds, current status, and deeper project notes.",
     to: "/projects" as const,
   },
   {
     exact: false,
     icon: RiArticleLine,
     label: "Writing",
-    routeCode: "03",
-    routeSummary: "Posts, implementation notes, and longer-form thinking.",
     to: "/blog" as const,
   },
   {
     exact: false,
     icon: RiUserLine,
     label: "About",
-    routeCode: "04",
-    routeSummary: "Background, contact details, and a simple way to reach out.",
     to: "/about" as const,
   },
 ];
@@ -165,7 +157,7 @@ export function AppShell({ children }: AppShellProps) {
       </a>
 
       <header className="site-panel site-shell overflow-hidden" ref={headerRef}>
-        <div className="flex items-center justify-between gap-6 px-5 py-4 lg:px-8 lg:py-5">
+        <div className="flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6 lg:px-8 lg:py-5">
           <div className="space-y-1.5">
             <Breadcrumbs items={breadcrumbItems} />
             <p className="text-2xl leading-[0.94] font-medium tracking-[-0.06em] text-foreground lg:text-[2.4rem]">
@@ -173,7 +165,7 @@ export function AppShell({ children }: AppShellProps) {
             </p>
           </div>
 
-          <nav aria-label="Primary" className="hidden gap-2 sm:flex">
+          <nav aria-label="Primary" className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
             {navItems.map(({ icon: Icon, label, to, exact }) => {
               const active = isNavItemActive(pathname, exact, to);
 
@@ -181,7 +173,7 @@ export function AppShell({ children }: AppShellProps) {
                 <Link
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "inline-flex items-center gap-2 border px-3 py-1.5 text-sm font-medium transition-[border-color,background-color,color] duration-200 outline-none focus-visible:ring-2 focus-visible:ring-primary/45",
+                    "inline-flex w-full items-center justify-center gap-2 border px-3 py-1.5 text-sm font-medium transition-[border-color,background-color,color] duration-200 outline-none focus-visible:ring-2 focus-visible:ring-primary/45 sm:w-auto",
                     active
                       ? "border-primary/45 bg-primary/12 text-foreground"
                       : "border-border/70 bg-background/72 text-muted-foreground hover:border-primary/35 hover:text-foreground",
@@ -219,13 +211,13 @@ export function AppShell({ children }: AppShellProps) {
                   const active = isNavItemActive(pathname, exact, to);
 
                   return (
-                      <Link
-                        aria-current={active ? "page" : undefined}
-                        className={cn(
-                          "inline-flex w-full items-center justify-center gap-2 border px-3 py-1 text-sm font-medium transition-[border-color,background-color,color] duration-200 outline-none focus-visible:ring-2 focus-visible:ring-primary/45 lg:w-auto",
-                          active
-                            ? "border-primary/45 bg-primary/12 text-foreground"
-                            : "border-border/70 bg-background/72 text-muted-foreground hover:border-primary/35 hover:text-foreground",
+                    <Link
+                      aria-current={active ? "page" : undefined}
+                      className={cn(
+                        "inline-flex w-full items-center justify-center gap-2 border px-3 py-1 text-sm font-medium transition-[border-color,background-color,color] duration-200 outline-none focus-visible:ring-2 focus-visible:ring-primary/45 lg:w-auto",
+                        active
+                          ? "border-primary/45 bg-primary/12 text-foreground"
+                          : "border-border/70 bg-background/72 text-muted-foreground hover:border-primary/35 hover:text-foreground",
                       )}
                       key={to}
                       to={to}

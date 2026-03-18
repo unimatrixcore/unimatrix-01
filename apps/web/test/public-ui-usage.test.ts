@@ -151,7 +151,7 @@ describe("public UI package usage", () => {
     expect(appShellSource).toMatch(/@\/features\/public-site\/components/u);
     expect(appShellSource).toMatch(/@unimatrix\/ui\/public/u);
     expect(appShellSource).toMatch(/Gwenny Phalan/u);
-    expect(appShellSource).toMatch(/routeCode: "01"/u);
+    expect(appShellSource).toMatch(/grid-cols-2 gap-2 sm:flex/u);
     expect(appShellSource).toMatch(/aria-label="Primary"/u);
 
     expect(lazyMarkdownSource).toMatch(/lazy\(/u);
@@ -196,8 +196,7 @@ describe("public UI package usage", () => {
     expect(blogLazyRouteSource).toMatch(/renderLink/u);
 
     expect(aboutRouteSource).toMatch(/createFileRoute\("\/about"\)/u);
-    expect(aboutRouteSource).toMatch(/statusSnapshotQueryOptions/u);
-    expect(aboutRouteSource).not.toMatch(/Query cache prefetch/u);
+    expect(aboutRouteSource).not.toMatch(/statusSnapshotQueryOptions/u);
     expect(aboutLazyRouteSource).toMatch(/createLazyFileRoute\("\/about"\)/u);
     expect(aboutLazyRouteSource).toMatch(/@unimatrix\/ui\/public/u);
     expect(aboutLazyRouteSource).toMatch(/About/u);
