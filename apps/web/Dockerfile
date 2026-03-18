@@ -8,28 +8,11 @@ ENV PATH=${PNPM_HOME}:${PATH}
 WORKDIR /workspace
 RUN corepack enable
 
-FROM base AS deps
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .node-version ./
-COPY apps/web/package.json apps/web/package.json
-COPY packages/api-client/package.json packages/api-client/package.json
-COPY packages/config-eslint/package.json packages/config-eslint/package.json
-COPY packages/config-typescript/package.json packages/config-typescript/package.json
-COPY packages/content/package.json packages/content/package.json
-COPY packages/shared/package.json packages/shared/package.json
-COPY packages/ui/package.json packages/ui/package.json
-RUN pnpm install --frozen-lockfile
-
-FROM deps AS build
+FROM base AS build
 ARG VITE_API_BASE_URL=/api
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
-COPY apps/web apps/web
-COPY content content
-COPY packages/api-client packages/api-client
-COPY packages/config-eslint packages/config-eslint
-COPY packages/config-typescript packages/config-typescript
-COPY packages/content packages/content
-COPY packages/shared packages/shared
-COPY packages/ui packages/ui
+COPY . .
+RUN find . -name '*.tsbuildinfo' -delete && pnpm install --frozen-lockfile
 RUN pnpm --filter @unimatrix/web build
 
 FROM nginx:1.29-alpine AS runtime

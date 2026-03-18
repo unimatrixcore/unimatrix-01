@@ -8,22 +8,12 @@ ENV PATH=${PNPM_HOME}:${PATH}
 WORKDIR /workspace
 RUN corepack enable
 
-FROM base AS deps
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .node-version ./
-COPY apps/api/package.json apps/api/package.json
-COPY packages/config-eslint/package.json packages/config-eslint/package.json
-COPY packages/config-typescript/package.json packages/config-typescript/package.json
-COPY packages/shared/package.json packages/shared/package.json
-RUN pnpm install --frozen-lockfile
-
-FROM deps AS build
-COPY apps/api apps/api
-COPY packages/config-eslint packages/config-eslint
-COPY packages/config-typescript packages/config-typescript
-COPY packages/shared packages/shared
+FROM base AS build
+COPY . .
+RUN find . -name '*.tsbuildinfo' -delete && pnpm install --frozen-lockfile
 RUN pnpm --filter @unimatrix/shared build
 RUN pnpm --filter @unimatrix/api build
-RUN pnpm --filter @unimatrix/api --prod deploy /prod/api
+RUN pnpm --filter @unimatrix/api --prod deploy --legacy /prod/api
 
 FROM node:${NODE_VERSION}-alpine AS runtime
 WORKDIR /app
