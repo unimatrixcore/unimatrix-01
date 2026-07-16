@@ -158,7 +158,12 @@ export function AppShell({ children }: AppShellProps) {
 
       <header className="site-panel site-shell overflow-hidden" ref={headerRef}>
         <div className="flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6 lg:px-8 lg:py-5">
-          <Breadcrumbs items={breadcrumbItems} />
+          <div className="flex items-center gap-2.5">
+            <Link aria-label="Unimatrix-01 home" to="/">
+              <img alt="" className="size-6 shrink-0" src="/logo.png" />
+            </Link>
+            <Breadcrumbs items={breadcrumbItems} />
+          </div>
 
           <nav aria-label="Primary" className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
             {navItems.map(({ icon: Icon, label, to, exact }) => {
@@ -196,7 +201,12 @@ export function AppShell({ children }: AppShellProps) {
         <div className="mx-auto w-full max-w-[92rem] px-4 sm:px-6 lg:px-8 xl:px-10">
           <div className="site-panel site-shell overflow-hidden border-primary/45 shadow-[0_0_0_1px_color-mix(in_oklab,var(--primary)_35%,transparent),0_18px_48px_-32px_color-mix(in_oklab,var(--primary)_35%,transparent)] px-3 py-2 lg:px-4 lg:py-2">
             <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-              <Breadcrumbs items={breadcrumbItems} />
+              <div className="flex items-center gap-2.5">
+                <Link aria-label="Unimatrix-01 home" to="/">
+                  <img alt="" className="size-5 shrink-0" src="/logo.png" />
+                </Link>
+                <Breadcrumbs items={breadcrumbItems} />
+              </div>
 
               <nav
                 aria-label="Primary"

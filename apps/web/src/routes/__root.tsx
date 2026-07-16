@@ -1,4 +1,5 @@
 import {
+  HeadContent,
   Link,
   Outlet,
   createRootRouteWithContext,
@@ -11,12 +12,16 @@ import { Badge, Button, Card } from "@unimatrix/ui/public";
 
 export const Route = createRootRouteWithContext<AppRouterContext>()({
   component: RootComponent,
+  head: () => ({
+    meta: [{ title: "Unimatrix-01" }],
+  }),
   notFoundComponent: RootNotFound,
 });
 
 function RootComponent() {
   return (
     <AppShell>
+      <HeadContent />
       <Outlet />
     </AppShell>
   );

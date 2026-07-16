@@ -15,6 +15,9 @@ export const Route = createFileRoute("/blog_/$slug")({
 
     return entry;
   },
+  head: ({ loaderData }) => ({
+    meta: [{ title: `Unimatrix-01 - ${loaderData?.frontmatter.title ?? "Article"}` }],
+  }),
 });
 
 function createBlogNotFoundError(slug: string): Error {

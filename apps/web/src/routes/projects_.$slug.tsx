@@ -15,6 +15,9 @@ export const Route = createFileRoute("/projects_/$slug")({
 
     return project;
   },
+  head: ({ loaderData }) => ({
+    meta: [{ title: `Unimatrix-01 - ${loaderData?.frontmatter.title ?? "Project"}` }],
+  }),
 });
 
 function createProjectNotFoundError(slug: string): Error {

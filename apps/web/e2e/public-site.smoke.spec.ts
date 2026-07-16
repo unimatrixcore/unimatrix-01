@@ -27,7 +27,7 @@ test("homepage load", async ({ page }) => {
 
   await gotoRoute(page, "/");
 
-  await expect(main.getByRole("heading", { name: "Build systems that survive contact." })).toBeVisible();
+  await expect(main.getByRole("heading", { name: "Passionate developer who loves clean code and synergy." })).toBeVisible();
   await expect(main.getByRole("link", { name: "View all projects" })).toBeVisible();
   await expect(main.getByRole("link", { name: "View all blog posts" })).toBeVisible();
 

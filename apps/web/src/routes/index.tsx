@@ -8,4 +8,7 @@ export const Route = createFileRoute("/")({
     home: homeContent,
     projects: featuredProjects,
   }),
+  head: () => ({
+    meta: [{ title: "Unimatrix-01 - Home" }],
+  }),
 });
