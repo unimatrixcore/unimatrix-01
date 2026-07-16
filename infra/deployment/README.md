@@ -32,49 +32,54 @@ path for now.
 ## Dokploy service layout
 
 Create two Dokploy services from the same repository and the same `main`
-branch.
+branch, both using Dokploy's **Compose** application type (not the plain
+Dockerfile application type).
 
 ### Web service
 
-- build context: repo root
-- Dockerfile path: `apps/web/Dockerfile`
-- container port: `8080`
-- public domain: `site.example.com`
-- required build arg: `VITE_API_BASE_URL=https://api.example.com`
+- application type: Compose
+- compose path: `infra/docker/web-compose.yaml`
+- environment variable (set in Dokploy's UI, not in the file):
+  `VITE_API_BASE_URL=https://api.example.com`
+- Domains page: route `site.example.com` to the `web` service, container port
+  `8080`
 
-The web container is a static SPA container. Traefik should forward the site
-hostname to the web service and preserve SPA fallback behavior inside the web
-container.
+The web container is a static SPA container. Preserve SPA fallback behavior
+inside the web container regardless of routing.
 
 ### API service
 
-- build context: repo root
-- Dockerfile path: `apps/api/Dockerfile`
-- container port: `3001`
-- public domain: `api.example.com`
+- application type: Compose
+- compose path: `infra/docker/api-compose.yaml`
+- Domains page: route `api.example.com` to the `api` service, container port
+  `3001`
 - health endpoint: `/health`
 
-Required runtime environment:
+Required environment variable (set in Dokploy's UI):
 
 ```env
-HOST=0.0.0.0
-PORT=3001
-NODE_ENV=production
-LOG_LEVEL=info
-TRUST_PROXY=1
 CORS_ALLOWED_ORIGINS=https://site.example.com,https://www.site.example.com
 ```
 
+`HOST`, `PORT`, `NODE_ENV`, `LOG_LEVEL`, and `TRUST_PROXY=1` are already fixed
+in `infra/docker/api-compose.yaml` for this deployment shape and don't need to
+be set again in Dokploy.
+
 ## Traefik expectations
 
-Traefik is the public edge proxy in Dokploy. The repo does not ship a Traefik
-stack or Traefik labels as the source of truth, but production routing should
-follow these expectations:
+Traefik is the public edge proxy in Dokploy, and Dokploy's Domains page is the
+source of truth for routing — it configures Traefik itself once you point a
+service at a hostname and container port there. The repo does not ship
+Traefik labels or a Traefik stack, and the compose files intentionally leave
+Traefik config out for this reason.
 
-- route the public site hostname to the web service
-- route the API hostname to the API service
-- terminate TLS at Traefik
-- forward standard proxy headers so the API can run with `TRUST_PROXY=1`
+Production routing still needs to satisfy:
+
+- the public site hostname routes to the web service
+- the API hostname routes to the API service
+- TLS terminates at Traefik
+- standard proxy headers are forwarded so the API can run with
+  `TRUST_PROXY=1`
 
 Because separate-origin is the default deployment shape, Traefik does not need
 to rewrite `/api` paths in the primary production setup.

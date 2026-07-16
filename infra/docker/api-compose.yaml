@@ -1,0 +1,13 @@
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3001
+      NODE_ENV: production
+      LOG_LEVEL: info
+      TRUST_PROXY: "1"
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+    restart: unless-stopped

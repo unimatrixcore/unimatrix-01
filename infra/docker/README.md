@@ -15,7 +15,10 @@ validation path for containerized builds.
 - `apps/web/Dockerfile`: multi-stage web image build
 - `apps/web/nginx.conf`: static file server config with SPA fallback
 - `apps/api/Dockerfile`: multi-stage API image build
-- `infra/docker/compose.yaml`: manual two-service stack for `web` and `api`
+- `infra/docker/web-compose.yaml`: single-service `web` stack, used both for
+  local validation and as a Dokploy Compose deployment
+- `infra/docker/api-compose.yaml`: single-service `api` stack, used both for
+  local validation and as a Dokploy Compose deployment
 - `.dockerignore`: root build hygiene for repo-root Docker contexts
 
 ## Monorepo build rules
@@ -110,33 +113,33 @@ docker run --rm -p 3001:3001 \
 
 ## Compose workflow
 
-Use `infra/docker/compose.yaml` for the manual two-service stack.
-
-From the repo root:
-
-```bash
-docker compose -f infra/docker/compose.yaml up --build
-```
-
-The default manual stack assumes:
-
-- web at `http://localhost:8080`
-- api at `http://localhost:3001`
-- web build arg `VITE_API_BASE_URL=http://localhost:3001`
-- API CORS allowlist `http://localhost:8080`
-
-You can override those values without editing the file:
+`infra/docker/web-compose.yaml` and `infra/docker/api-compose.yaml` are each
+single-service files. Run them together from the repo root for local combined
+validation:
 
 ```bash
 VITE_API_BASE_URL=http://localhost:3001 \
 CORS_ALLOWED_ORIGINS=http://localhost:8080,http://127.0.0.1:8080 \
-docker compose -f infra/docker/compose.yaml up --build
+docker compose -f infra/docker/api-compose.yaml -f infra/docker/web-compose.yaml up --build
 ```
 
-To stop the stack:
+Neither file publishes host ports. That is intentional: the same files run
+unmodified as Dokploy Compose apps, where Dokploy's Domains page owns port
+exposure instead of a `ports:` block. Because of that, `curl`/browser checks
+against `localhost` need containers run directly instead of through compose:
 
 ```bash
-docker compose -f infra/docker/compose.yaml down
+docker build -f apps/api/Dockerfile -t unimatrix-api:local .
+docker run --rm -p 3001:3001 -e CORS_ALLOWED_ORIGINS=http://localhost:8080 unimatrix-api:local
+
+docker build -f apps/web/Dockerfile --build-arg VITE_API_BASE_URL=http://localhost:3001 -t unimatrix-web:local .
+docker run --rm -p 8080:8080 unimatrix-web:local
+```
+
+To stop the compose stack:
+
+```bash
+docker compose -f infra/docker/api-compose.yaml -f infra/docker/web-compose.yaml down
 ```
 
 ## Verification
@@ -170,6 +173,25 @@ If future API work adopts `@unimatrix/db`, update this directory to document:
 - a persistent volume for the SQLite database file
 - a one-off migration command or service
 - the single-writer caveat of SQLite for multi-instance deployments
+
+## Dokploy Compose deployment
+
+`infra/docker/web-compose.yaml` and `infra/docker/api-compose.yaml` are
+single-service compose files meant to be used as Dokploy's "Compose"
+application type, one Dokploy app per file. They intentionally have:
+
+- no `ports:` host publishing
+- no Traefik labels
+
+Dokploy's own Domains page handles routing: pick the service and the
+container port (`8080` for web, `3001` for api) there, and Dokploy wires
+Traefik itself. Don't hand-add Traefik labels to these files.
+
+Both files read their environment-dependent values (`VITE_API_BASE_URL`,
+`CORS_ALLOWED_ORIGINS`) from compose variable substitution, so set those in
+the Dokploy app's environment variables UI rather than editing the file.
+
+See `infra/deployment/README.md` for the full Dokploy service setup.
 
 ## Relationship to production deployment docs
 
