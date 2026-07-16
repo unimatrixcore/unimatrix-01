@@ -143,3 +143,62 @@
     @apply min-h-screen;
   }
 }
+
+@layer components {
+  .grid-backdrop {
+    position: relative;
+    overflow-x: hidden;
+    background-color: var(--background);
+    background-image:
+      radial-gradient(
+        circle at 12% 12%,
+        color-mix(in oklab, var(--primary) 18%, transparent) 0%,
+        transparent 28%
+      ),
+      radial-gradient(
+        circle at 88% 10%,
+        color-mix(in oklab, var(--chart-2) 12%, transparent) 0%,
+        transparent 20%
+      ),
+      linear-gradient(
+        0deg,
+        color-mix(in oklab, white 3%, transparent) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        90deg,
+        color-mix(in oklab, white 3%, transparent) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        180deg,
+        color-mix(in oklab, var(--background) 88%, black) 0%,
+        color-mix(in oklab, var(--background) 94%, var(--secondary)) 100%
+      );
+    background-size: 100% 100%, 100% 100%, 64px 64px, 64px 64px, 100% 100%;
+    background-attachment: fixed;
+  }
+
+  .grid-backdrop::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background:
+      linear-gradient(
+        180deg,
+        transparent 0%,
+        color-mix(in oklab, var(--primary) 5%, transparent) 50%,
+        transparent 100%
+      ),
+      linear-gradient(
+        180deg,
+        color-mix(in oklab, white 2%, transparent) 0,
+        transparent 3px,
+        transparent 8px,
+        color-mix(in oklab, white 1%, transparent) 9px
+      );
+    opacity: 0.16;
+    z-index: -1;
+  }
+}
