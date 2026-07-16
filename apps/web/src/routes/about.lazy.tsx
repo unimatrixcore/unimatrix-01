@@ -7,11 +7,12 @@ import {
 } from "@remixicon/react";
 
 import { homeContent } from "@/features/content/site-content";
+import {
+  emailAddress,
+  githubProfileUrl,
+  projectRepoUrl,
+} from "@/features/public-site/site-links";
 import { Button } from "@unimatrix/ui/public";
-
-const emailAddress = "gwen.phalan@gmail.com";
-const githubProfileUrl = "https://github.com/gwenphalan";
-const projectRepoUrl = "https://github.com/unimatrixcore/unimatrix-01";
 
 export const Route = createLazyFileRoute("/about")({
   component: AboutRoute,

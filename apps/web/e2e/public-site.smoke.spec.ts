@@ -29,7 +29,7 @@ test("homepage load", async ({ page }) => {
 
   await expect(main.getByRole("heading", { name: "Build systems that survive contact." })).toBeVisible();
   await expect(main.getByRole("link", { name: "View all projects" })).toBeVisible();
-  await expect(main.getByRole("link", { name: "View all writing" })).toBeVisible();
+  await expect(main.getByRole("link", { name: "View all blog posts" })).toBeVisible();
 
   expectNoPageErrors(pageErrors);
 });
@@ -76,11 +76,11 @@ test("project page render", async ({ page }) => {
 
   await expect(page.getByRole("heading", { name: "Project in progress" })).toBeVisible();
   await expect(
-    page.getByText("This project is in progress. Public details will be added when the work is ready to share.", {
+    page.getByText("This project is still in progress. Public details will be added when the work is ready to share.", {
       exact: false,
     }),
   ).toBeVisible();
-  await expect(page.getByText("This project entry is in standby", { exact: false })).toBeVisible();
+  await expect(page.getByText("This project entry is a placeholder while the work is still underway.", { exact: false })).toBeVisible();
   await expect(page.getByRole("link", { name: "Back to projects" })).toBeVisible();
 
   expectNoPageErrors(pageErrors);
@@ -92,9 +92,9 @@ test("blog page render", async ({ page }) => {
   await gotoRoute(page, "/blog/placeholder-post");
 
   await expect(page.getByRole("heading", { name: "Post in progress" })).toBeVisible();
-  await expect(page.getByText("This post is queued for writing. It will be published when it is ready to be useful.", { exact: false })).toBeVisible();
-  await expect(page.getByText("This post slot has been reserved but not yet populated.", { exact: false })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Back to writing" })).toBeVisible();
+  await expect(page.getByText("This post is still being drafted. It will be published when it is ready.", { exact: false })).toBeVisible();
+  await expect(page.getByText("This post is a placeholder while the draft is still in progress.", { exact: false })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Back to blog" })).toBeVisible();
 
   expectNoPageErrors(pageErrors);
 });

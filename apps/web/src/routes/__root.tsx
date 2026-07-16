@@ -35,7 +35,7 @@ function RootNotFound() {
             That page is not part of the current site.
           </h2>
           <p className="max-w-2xl text-sm leading-7 text-muted-foreground lg:text-base lg:leading-8">
-            Return home or jump straight to projects, writing, or the about page.
+            Return home or jump straight to projects, the blog, or the about page.
           </p>
         </div>
         <div className="flex flex-wrap gap-3">

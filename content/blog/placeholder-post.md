@@ -1,11 +1,11 @@
 ---
-title: Transmission Pending
+title: Post in progress
 slug: placeholder-post
 publishedAt: 2026-03-17
-summary: This log entry is queued for authoring. Content will materialize when the Collective deems it relevant.
+summary: This post is still being drafted. It will be published when it is ready.
 ---
-This transmission slot has been reserved but not yet populated. The signal is acknowledged; the authored payload is still being refined into a form worthy of deployment.
+This post is a placeholder while the draft is still in progress.
 
-When the channel opens, expect a concise field report: architecture, implementation tradeoffs, and whatever lessons survived first contact with reality.
+A full write-up will be published once the piece is complete and ready to share.
 
-For now, the buffer remains warm and the queue remains active.
+For now, this page is intentionally brief.

@@ -150,7 +150,7 @@ describe("public UI package usage", () => {
     expect(appShellSource).toMatch(/PublicPageContainer/u);
     expect(appShellSource).toMatch(/@\/features\/public-site\/components/u);
     expect(appShellSource).toMatch(/@unimatrix\/ui\/public/u);
-    expect(appShellSource).toMatch(/Gwenny Phalan/u);
+    expect(appShellSource).toMatch(/Unimatrix-01/u);
     expect(appShellSource).toMatch(/grid-cols-2 gap-2 sm:flex/u);
     expect(appShellSource).toMatch(/aria-label="Primary"/u);
 
@@ -170,6 +170,7 @@ describe("public UI package usage", () => {
     expect(homeLazyRouteSource).toMatch(/PublicTransmissionListItem/u);
     expect(homeLazyRouteSource).toMatch(/@\/features\/public-site\/components/u);
     expect(homeLazyRouteSource).toMatch(/View all projects/u);
+    expect(homeLazyRouteSource).toMatch(/xl:grid-cols-2 xl:items-stretch/u);
     expect(homeLazyRouteSource).toMatch(/to="\/projects\/\$slug"/u);
     const homeRouteRenderLinkCount = (homeLazyRouteSource.match(/renderLink/gu) ?? []).length;
     expect(homeRouteRenderLinkCount).toBeGreaterThanOrEqual(2);
@@ -189,7 +190,7 @@ describe("public UI package usage", () => {
     expect(blogRouteSource).toMatch(/createFileRoute\("\/blog"\)/u);
     expect(blogRouteSource).not.toMatch(/PublicTransmissionListItem/u);
     expect(blogLazyRouteSource).toMatch(/createLazyFileRoute\("\/blog"\)/u);
-    expect(blogLazyRouteSource).toMatch(/Writing archive/u);
+    expect(blogLazyRouteSource).toMatch(/Blog archive/u);
     expect(blogLazyRouteSource).toMatch(/PublicTransmissionListItem/u);
     expect(blogLazyRouteSource).toMatch(/@\/features\/public-site\/components/u);
     expect(blogLazyRouteSource).toMatch(/to="\/blog\/\$slug"/u);

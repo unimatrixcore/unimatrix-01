@@ -38,4 +38,14 @@ describe("site content registry", () => {
       getAuthoredCollectionFilePaths("blog"),
     );
   });
+
+  it("renders authored copy directly without runtime text normalization", () => {
+    const siteContentSource = readFileSync(
+      join(process.cwd(), "src", "features", "content", "site-content.ts"),
+      "utf8",
+    );
+
+    expect(siteContentSource).not.toMatch(/normalizePortfolioCopy/u);
+    expect(siteContentSource).not.toMatch(/features\/public-site\/copy/u);
+  });
 });

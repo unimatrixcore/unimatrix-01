@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import {
   RouterProvider,
   createMemoryHistory,
@@ -35,8 +35,11 @@ describe("about route", () => {
         "Draft an email",
       ),
     ).toBeInTheDocument();
+
+    const main = screen.getByRole("main");
+
     expect(
-      await screen.findByText("gwen.phalan@gmail.com"),
+      await within(main).findByText("gwen.phalan@unimatrix-01.dev"),
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /open email draft/i })).toBeInTheDocument();
   });

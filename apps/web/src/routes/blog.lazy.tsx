@@ -20,11 +20,11 @@ function BlogRoute() {
         badges={
           <Badge className="gap-1.5">
             <RiArticleLine aria-hidden="true" className="size-3.5" />
-            Writing
+            Blog
           </Badge>
         }
-        description="Notes, essays, and technical write-ups in chronological order."
-        title="Writing archive"
+        description="Posts, notes, and technical write-ups in chronological order."
+        title="Blog archive"
       />
 
       <div className="grid gap-3">

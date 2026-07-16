@@ -30,83 +30,83 @@ function IndexRoute() {
         </p>
       </section>
 
-      <section className="space-y-5">
-        <PublicSectionHeading
+      <div className="grid gap-8 xl:grid-cols-2 xl:items-stretch">
+        <section className="flex h-full flex-col gap-5">
+          <PublicSectionHeading
           badges={
             <Badge className="gap-1.5">
               <RiFolderLine aria-hidden="true" className="size-3.5" />
               Featured projects
             </Badge>
           }
-          title="Recent project work"
         />
 
-        <div className="grid gap-3">
-          {projects.map((project, index) => (
-            <PublicProjectLedgerItem
-              index={index + 1}
-              key={project.slug}
-              project={project}
-              renderLink={({ ariaLabel, children, className }) => (
-                <Link
-                  aria-label={ariaLabel}
-                  className={className}
-                  params={{ slug: project.slug }}
-                  to="/projects/$slug"
-                >
-                  {children}
-                </Link>
-              )}
-            />
-          ))}
-        </div>
+          <div className="grid flex-1 gap-3">
+            {projects.map((project, index) => (
+              <PublicProjectLedgerItem
+                index={index + 1}
+                key={project.slug}
+                project={project}
+                renderLink={({ ariaLabel, children, className }) => (
+                  <Link
+                    aria-label={ariaLabel}
+                    className={className}
+                    params={{ slug: project.slug }}
+                    to="/projects/$slug"
+                  >
+                    {children}
+                  </Link>
+                )}
+              />
+            ))}
+          </div>
 
-        <Button asChild className="w-fit gap-2" variant="outline">
-          <Link to="/projects">
-            View all projects
-            <RiArrowRightUpLine aria-hidden="true" className="size-4" />
-          </Link>
-        </Button>
-      </section>
+          <Button asChild className="w-fit gap-2" variant="outline">
+            <Link to="/projects">
+              View all projects
+              <RiArrowRightUpLine aria-hidden="true" className="size-4" />
+            </Link>
+          </Button>
+        </section>
 
-      <section className="space-y-5">
-        <PublicSectionHeading
+        <section className="flex h-full flex-col gap-5">
+          <PublicSectionHeading
           badges={
             <Badge className="gap-1.5">
               <RiArticleLine aria-hidden="true" className="size-3.5" />
-              Recent writing
+              Recent blog posts
             </Badge>
           }
-          title="Latest notes and articles"
         />
 
-        <div className="grid gap-3">
-          {blogEntries.map((entry, index) => (
-            <PublicTransmissionListItem
-              entry={entry}
-              index={index + 1}
-              key={entry.slug}
-              renderLink={({ ariaLabel, children, className }) => (
-                <Link
-                  aria-label={ariaLabel}
-                  className={className}
-                  params={{ slug: entry.slug }}
-                  to="/blog/$slug"
-                >
-                  {children}
-                </Link>
-              )}
-            />
-          ))}
-        </div>
+          <div className="grid flex-1 gap-3">
+            {blogEntries.map((entry, index) => (
+              <PublicTransmissionListItem
+                entry={entry}
+                index={index + 1}
+                key={entry.slug}
+                renderLink={({ ariaLabel, children, className }) => (
+                  <Link
+                    aria-label={ariaLabel}
+                    className={className}
+                    params={{ slug: entry.slug }}
+                    to="/blog/$slug"
+                  >
+                    {children}
+                  </Link>
+                )}
+              />
+            ))}
+          </div>
 
-        <Button asChild className="w-fit gap-2" variant="outline">
-          <Link to="/blog">
-            View all writing
-            <RiArrowRightUpLine aria-hidden="true" className="size-4" />
-          </Link>
-        </Button>
-      </section>
+          <Button asChild className="w-fit gap-2" variant="outline">
+            <Link to="/blog">
+              View all blog posts
+              <RiArrowRightUpLine aria-hidden="true" className="size-4" />
+            </Link>
+          </Button>
+        </section>
+      </div>
     </div>
   );
 }

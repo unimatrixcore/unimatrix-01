@@ -19,7 +19,7 @@ function BlogDetailRoute() {
         <Button asChild className="w-fit gap-2" variant="outline">
           <Link to="/blog">
             <RiArrowLeftLine aria-hidden="true" className="size-4" />
-            Back to writing
+            Back to blog
           </Link>
         </Button>
 
@@ -57,11 +57,11 @@ function BlogNotFound() {
             That post is not part of the current archive.
           </h2>
           <p className="max-w-2xl text-sm leading-7 text-muted-foreground lg:text-base lg:leading-8">
-            Return to the writing page to review the posts that are currently published.
+            Return to the blog page to review the posts that are currently published.
           </p>
         </div>
         <Button asChild className="w-fit">
-          <Link to="/blog">Browse writing</Link>
+          <Link to="/blog">Browse blog</Link>
         </Button>
       </div>
     </div>

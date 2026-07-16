@@ -1,6 +1,9 @@
 import type * as React from "react";
+import { RiGithubLine, RiMailLine } from "@remixicon/react";
 
 import { Badge, Card, cn } from "@unimatrix/ui/public";
+
+import { emailAddress, githubProfileUrl } from "./site-links";
 
 export function PublicPageContainer({
   className,
@@ -9,11 +12,44 @@ export function PublicPageContainer({
   return (
     <div
       className={cn(
-        "relative mx-auto flex min-h-screen w-full max-w-[108rem] flex-col gap-8 px-4 py-4 sm:px-6 lg:gap-10 lg:px-8 lg:py-6 xl:px-10",
+        "relative mx-auto flex min-h-[100dvh] w-full max-w-[92rem] flex-col gap-8 px-4 py-4 sm:px-6 lg:gap-10 lg:px-8 lg:py-6 xl:px-10",
         className,
       )}
       {...props}
     />
+  );
+}
+
+export function PublicSiteFooter() {
+  const year = new Date().getFullYear();
+
+  return (
+    <footer className="site-panel site-shell overflow-hidden px-5 py-5 lg:px-8 lg:py-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-xs text-muted-foreground">
+          © {year} Gwen Phalan.
+        </p>
+
+        <div className="flex flex-wrap items-center gap-4">
+          <a
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            href={`mailto:${emailAddress}`}
+          >
+            <RiMailLine aria-hidden="true" className="size-3.5" />
+            {emailAddress}
+          </a>
+          <a
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            href={githubProfileUrl}
+            rel="noreferrer"
+            target="_blank"
+          >
+            <RiGithubLine aria-hidden="true" className="size-3.5" />
+            github.com/gwenphalan
+          </a>
+        </div>
+      </div>
+    </footer>
   );
 }
 

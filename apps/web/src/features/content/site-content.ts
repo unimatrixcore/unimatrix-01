@@ -11,41 +11,23 @@ import {
   sortEntriesByPublishedAtDesc,
 } from "@unimatrix/content";
 
-import { normalizePortfolioCopy } from "@/features/public-site/copy";
 import { indexEntriesBySlug } from "./lookups";
 
 import homeSource from "../../../../../content/home/index.md?raw";
 import placeholderPostSource from "../../../../../content/blog/placeholder-post.md?raw";
 import placeholderProjectSource from "../../../../../content/projects/placeholder-project.md?raw";
 
-const parsedHomeContent = parseHomeContentFile(homeSource, "content/home/index.md");
-
-export const homeContent: HomePageContent = {
-  ...parsedHomeContent,
-  body: normalizePortfolioCopy(parsedHomeContent.body),
-  frontmatter: {
-    ...parsedHomeContent.frontmatter,
-    intro: normalizePortfolioCopy(parsedHomeContent.frontmatter.intro),
-    mission: normalizePortfolioCopy(parsedHomeContent.frontmatter.mission),
-    summary: normalizePortfolioCopy(parsedHomeContent.frontmatter.summary),
-  },
-};
+export const homeContent: HomePageContent = parseHomeContentFile(
+  homeSource,
+  "content/home/index.md",
+);
 
 const parsedProjectEntries = [
   parseProjectContentFile(placeholderProjectSource, "content/projects/placeholder-project.md"),
 ];
 
 export const projectEntries: ProjectEntry[] = sortEntriesByPublishedAtDesc([
-  ...parsedProjectEntries.map((entry) => ({
-    ...entry,
-    body: normalizePortfolioCopy(entry.body),
-    excerpt: normalizePortfolioCopy(entry.excerpt),
-    frontmatter: {
-      ...entry.frontmatter,
-      summary: normalizePortfolioCopy(entry.frontmatter.summary),
-      title: normalizePortfolioCopy(entry.frontmatter.title),
-    },
-  })),
+  ...parsedProjectEntries,
 ]);
 
 const parsedBlogEntries = [
@@ -53,19 +35,7 @@ const parsedBlogEntries = [
 ];
 
 export const blogEntries: BlogEntry[] = sortEntriesByPublishedAtDesc([
-  ...parsedBlogEntries.map((entry) => ({
-    ...entry,
-    body: normalizePortfolioCopy(entry.body),
-    excerpt: normalizePortfolioCopy(entry.excerpt),
-    frontmatter: {
-      ...entry.frontmatter,
-      description: normalizePortfolioCopy(
-        entry.frontmatter.description ?? entry.frontmatter.summary,
-      ),
-      summary: normalizePortfolioCopy(entry.frontmatter.summary),
-      title: normalizePortfolioCopy(entry.frontmatter.title),
-    },
-  })),
+  ...parsedBlogEntries,
 ]);
 
 export const siteContent: SiteContent = {
