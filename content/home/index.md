@@ -1,5 +1,5 @@
 ---
-title: Build systems that survive contact.
+title: Passionate developer who loves clean code and synergy.
 intro: Gwenny is a backend-leaning TypeScript and Node.js developer, cybersecurity student, open-source builder, and sci-fi worldbuilder.
 summary: This is a personal portfolio with projects, writing, and system design notes arranged to be useful, legible, and easy to browse.
 mission: Adopt strong patterns, expose the contract, keep the architecture legible, and leave every system easier for the next contributor to extend.
