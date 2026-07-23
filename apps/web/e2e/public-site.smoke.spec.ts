@@ -43,12 +43,12 @@ test("navigation smoke flow", async ({ page }) => {
   await main.getByRole("link", { name: "View all projects" }).click();
   await expect(page).toHaveURL(/\/projects$/u);
   await expect(
-    page.getByRole("link", { name: "Open project Project in progress" }),
+    page.getByRole("link", { name: "Open project Cube Trainer" }),
   ).toBeVisible();
 
-  await page.getByRole("link", { name: "Open project Project in progress" }).click();
-  await expect(page).toHaveURL(/\/projects\/placeholder-project$/u);
-  await expect(page.getByRole("heading", { name: "Project in progress" })).toBeVisible();
+  await page.getByRole("link", { name: "Open project Cube Trainer" }).click();
+  await expect(page).toHaveURL(/\/projects\/cube-trainer$/u);
+  await expect(page.getByRole("heading", { name: "Cube Trainer" })).toBeVisible();
 
   await page.getByRole("link", { name: "Back to projects" }).click();
   await expect(page).toHaveURL(/\/projects$/u);
@@ -72,15 +72,18 @@ test("navigation smoke flow", async ({ page }) => {
 test("project page render", async ({ page }) => {
   const pageErrors = collectPageErrors(page);
 
-  await gotoRoute(page, "/projects/placeholder-project");
+  await gotoRoute(page, "/projects/cube-trainer");
 
-  await expect(page.getByRole("heading", { name: "Project in progress" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Cube Trainer" })).toBeVisible();
   await expect(
-    page.getByText("This project is still in progress. Public details will be added when the work is ready to share.", {
+    page.getByText("A flashcard trainer for memorizing every 3x3 Rubik's Cube OLL and PLL algorithm.", {
       exact: false,
     }),
   ).toBeVisible();
-  await expect(page.getByText("This project entry is a placeholder while the work is still underway.", { exact: false })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Visit site" })).toHaveAttribute(
+    "href",
+    "https://cube.unimatrix-01.dev",
+  );
   await expect(page.getByRole("link", { name: "Back to projects" })).toBeVisible();
 
   expectNoPageErrors(pageErrors);

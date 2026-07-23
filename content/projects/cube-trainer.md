@@ -1,13 +1,14 @@
 ---
-title: Project in progress
-slug: placeholder-project
-publishedAt: 2026-03-17
-summary: This project is still in progress. Public details will be added when the work is ready to share.
-status: standby
+title: Cube Trainer
+slug: cube-trainer
+publishedAt: 2026-07-22
+summary: A flashcard trainer for memorizing every 3x3 Rubik's Cube OLL and PLL algorithm.
+status: active
 featured: true
+liveUrl: https://cube.unimatrix-01.dev
 ---
-This project entry is a placeholder while the work is still underway.
+Cube Trainer is a browser-based drill tool for the last-layer stage of the CFOP speedcubing method: 57 OLL cases for orienting the last layer, and 21 PLL cases for permuting it into place.
 
-More details will be published once the implementation is stable enough to document clearly.
+Each algorithm set has two modes. Browse mode lists every case grouped by shape or permutation type, with move notation and alternate algorithms. Trainer mode draws cases as flashcards, weighted by real-world case frequency, and tracks per-case status (new, learning, known) in the browser so progress persists between sessions without an account.
 
-For now, this page is intentionally brief.
+Algorithm data is sourced directly from [J Perm's algorithm trainer](https://jperm.net/algs), and the app is built on the same TanStack Router, Tailwind, and shadcn UI stack as the rest of this site.

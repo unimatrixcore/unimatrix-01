@@ -15,7 +15,7 @@ import { indexEntriesBySlug } from "./lookups";
 
 import homeSource from "../../../../../content/home/index.md?raw";
 import placeholderPostSource from "../../../../../content/blog/placeholder-post.md?raw";
-import placeholderProjectSource from "../../../../../content/projects/placeholder-project.md?raw";
+import cubeTrainerProjectSource from "../../../../../content/projects/cube-trainer.md?raw";
 
 export const homeContent: HomePageContent = parseHomeContentFile(
   homeSource,
@@ -23,7 +23,7 @@ export const homeContent: HomePageContent = parseHomeContentFile(
 );
 
 const parsedProjectEntries = [
-  parseProjectContentFile(placeholderProjectSource, "content/projects/placeholder-project.md"),
+  parseProjectContentFile(cubeTrainerProjectSource, "content/projects/cube-trainer.md"),
 ];
 
 export const projectEntries: ProjectEntry[] = sortEntriesByPublishedAtDesc([

@@ -48,6 +48,9 @@ Use `pnpm dev` to start the normal local runtime surface.
   files
 - Leaves existing local env files untouched
 - Starts only `@unimatrix/api` and `@unimatrix/web` through Turbo
+- Does not start `@unimatrix/cube-trainer`; run
+  `pnpm --filter @unimatrix/cube-trainer dev` separately. It has no `.env`
+  files and no backend dependency.
 
 ### `pnpm setup:local`
 
@@ -120,6 +123,10 @@ pnpm --filter @unimatrix/web test:smoke
 pnpm --filter @unimatrix/web test
 pnpm --filter @unimatrix/api dev
 pnpm --filter @unimatrix/api test
+pnpm --filter @unimatrix/cube-trainer dev
+pnpm --filter @unimatrix/cube-trainer test:unit
+pnpm --filter @unimatrix/cube-trainer test:smoke
+pnpm --filter @unimatrix/cube-trainer test
 pnpm --filter @unimatrix/content build
 pnpm --filter @unimatrix/content test
 pnpm --filter @unimatrix/db db:migrate
@@ -146,7 +153,7 @@ locally.
 - Sets up pnpm `10.30.3`
 - Reads Node from `.node-version`
 - Runs `pnpm install --frozen-lockfile`
-- Installs Playwright Chromium for `@unimatrix/web`
+- Installs Playwright Chromium for `@unimatrix/web` and `@unimatrix/cube-trainer`
 - Runs `pnpm build`
 - Runs `pnpm lint`
 - Runs `pnpm typecheck`

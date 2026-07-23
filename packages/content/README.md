@@ -42,7 +42,7 @@ This package stays intentionally small and focused on the current public-site do
 - `publishedAt`
 - `summary`
 - `status`
-- optional: `repoUrl`, `featured`
+- optional: `repoUrl`, `liveUrl`, `featured`
 
 ### Blog
 

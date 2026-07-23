@@ -20,6 +20,7 @@ export interface ProjectFrontmatter {
   summary: string;
   status: string;
   repoUrl?: string;
+  liveUrl?: string;
   featured: boolean;
 }
 

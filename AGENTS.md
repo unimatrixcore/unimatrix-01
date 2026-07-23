@@ -9,7 +9,7 @@
 
 ## Workspace
 - Monorepo: `apps/*` and `packages/*` from `pnpm-workspace.yaml`; root scripts fan out through Turbo
-- Live apps: `apps/web` (Vite + React + TanStack Router public site), `apps/api` (Fastify API)
+- Live apps: `apps/web` (Vite + React + TanStack Router public site), `apps/api` (Fastify API), `apps/cube-trainer` (Vite + React + TanStack Router OLL/PLL algorithm trainer, no backend dependency)
 - Live packages: `packages/ui`, `packages/shared`, `packages/api-client`, `packages/content`, `packages/db`, `packages/config-typescript`, `packages/config-eslint`
 - Live content: `content/home`, `content/projects`, `content/blog`
 - Repo-internal docs: `docs/`; infra/runtime helpers: `infra/scripts`, `infra/deployment`, `infra/docker`
@@ -20,6 +20,7 @@
 ## Workspace Responsibilities
 - `apps/web`: route-driven public site, public content rendering, app-owned public-site compositions
 - `apps/api`: runtime config validation, Fastify plugins, feature route modules, HTTP error normalization
+- `apps/cube-trainer`: OLL/PLL algorithm browse and flashcard-trainer UI, bundled algorithm data, `localStorage`-backed progress
 - `packages/ui`: shared shadcn primitives, shared styles, safe markdown rendering, `@unimatrix/ui/public`
 - `packages/shared`: framework-agnostic API contracts, Zod schemas, exported shared types only
 - `packages/api-client`: typed fetch transport consuming `@unimatrix/shared` contracts
@@ -35,21 +36,25 @@
 | Package test file | `pnpm --filter <workspace> exec vitest run path/to/test.ts` |
 | Web typecheck | `pnpm --filter @unimatrix/web typecheck` |
 | API typecheck | `pnpm --filter @unimatrix/api typecheck` |
+| Cube Trainer test file | `pnpm --filter @unimatrix/cube-trainer exec vitest run path/to/test.ts` |
+| Cube Trainer typecheck | `pnpm --filter @unimatrix/cube-trainer typecheck` |
 
 ## Runtime And Bootstrap
-- `pnpm dev` starts only `@unimatrix/api` and `@unimatrix/web`
+- `pnpm dev` starts only `@unimatrix/api` and `@unimatrix/web`; run `pnpm --filter @unimatrix/cube-trainer dev` separately for cube-trainer
 - `pnpm dev` creates missing `apps/api/.env` and `apps/web/.env` from example files
 - `pnpm setup:local` only copies missing env files; it never overwrites existing local env
 - `pnpm setup:worktree` runs frozen install, env bootstrap, and default DB migrations; use it for fresh worktrees
 - API loads `apps/api/.env.local` first, then `apps/api/.env`; existing shell env wins
 - Web uses normal Vite `apps/web/.env*` behavior
-- CI uses the same root commands and installs Playwright Chromium for web smoke coverage
+- cube-trainer has no `.env` files; it has no backend dependency
+- CI uses the same root commands and installs Playwright Chromium for web and cube-trainer smoke coverage
 
 ## Boundaries
 - `apps/web`: keep route data in non-lazy route files and UI in paired `*.lazy.tsx`; `src/routes/routeTree.gen.ts` is generated
 - `apps/web`: prefer `@unimatrix/ui/public`; keep public-site compositions in `src/features/public-site`; keep site-only styling in `src/styles.css`
 - `apps/web`: safe markdown only; keep raw HTML and runtime MDX disabled
 - `apps/api`: keep `buildApp()` wiring in `src/app.ts`, cross-cutting setup in `src/plugins`, feature routes in `src/modules`, reusable HTTP helpers in `src/lib/http`
+- `apps/cube-trainer`: keep the same non-lazy/`*.lazy.tsx` route split as `apps/web`; do not add `@unimatrix/api-client`, `@unimatrix/shared`, `@unimatrix/content`, or `@tanstack/react-query` dependencies unless a real server-backed feature is added
 - `packages/shared`: no transport code, UI code, or content-loading logic
 - `packages/api-client`: do not redefine endpoints or response shapes locally; consume `@unimatrix/shared`
 - `packages/content`: keep loaders synchronous and filesystem-based unless the package boundary intentionally changes
@@ -73,6 +78,7 @@
 - Use `pnpm check` as the normal pre-review gate
 - Use `pnpm verify` when changes span multiple workspaces or affect runtime/build behavior
 - Web-specific deeper checks: `pnpm --filter @unimatrix/web test:unit`, `pnpm --filter @unimatrix/web test:smoke`
+- Cube Trainer deeper checks: `pnpm --filter @unimatrix/cube-trainer test:unit`, `pnpm --filter @unimatrix/cube-trainer test:smoke`
 
 ## Git And PR Rules
 - Keep PRs small and issue-aligned; avoid unrelated scaffolding or setup churn

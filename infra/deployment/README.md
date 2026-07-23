@@ -9,9 +9,11 @@ production deployment.
 
 - Web static output: `apps/web/dist/`
 - API Node runtime entry: `apps/api/dist/server.js`
+- Cube Trainer static output: `apps/cube-trainer/dist/`
 
 `vite preview` is useful for local smoke testing of the built web app, but it
-is not the production web server for `apps/web/dist/`.
+is not the production web server for `apps/web/dist/` or
+`apps/cube-trainer/dist/`.
 
 ## Default production topology
 
@@ -19,11 +21,14 @@ The default production shape is separate-origin:
 
 - `https://site.example.com` -> web
 - `https://api.example.com` -> api
+- `https://cube.unimatrix-01.dev` -> cube-trainer
 
 In this shape:
 
 - the web image is built with `VITE_API_BASE_URL=https://api.example.com`
 - the API runtime allows the public web origin through `CORS_ALLOWED_ORIGINS`
+- the cube-trainer image needs no build-time or runtime env; it has no API
+  dependency
 - Traefik owns TLS termination and hostname routing
 
 Same-origin deployment remains supported, but it is not the primary documented
@@ -31,8 +36,8 @@ path for now.
 
 ## Dokploy service layout
 
-Create two Dokploy services from the same repository and the same `main`
-branch, both using Dokploy's **Compose** application type (not the plain
+Create three Dokploy services from the same repository and the same `main`
+branch, all using Dokploy's **Compose** application type (not the plain
 Dockerfile application type).
 
 ### Web service
@@ -65,6 +70,19 @@ CORS_ALLOWED_ORIGINS=https://site.example.com,https://www.site.example.com
 in `infra/docker/api-compose.yaml` for this deployment shape and don't need to
 be set again in Dokploy.
 
+### Cube Trainer service
+
+- application type: Compose
+- compose path: `infra/docker/cube-trainer-compose.yaml`
+- no environment variables required
+- Domains page: route `cube.unimatrix-01.dev` to the `cube-trainer` service,
+  container port `8080`
+
+The cube-trainer container is a static SPA container, same shape as the web
+service. Preserve SPA fallback behavior inside the container regardless of
+routing. It has no API dependency, so it does not need an entry in
+`CORS_ALLOWED_ORIGINS`.
+
 ## Traefik expectations
 
 Traefik is the public edge proxy in Dokploy, and Dokploy's Domains page is the
@@ -77,6 +95,7 @@ Production routing still needs to satisfy:
 
 - the public site hostname routes to the web service
 - the API hostname routes to the API service
+- the `cube.unimatrix-01.dev` hostname routes to the cube-trainer service
 - TLS terminates at Traefik
 - standard proxy headers are forwarded so the API can run with
   `TRUST_PROXY=1`
@@ -117,12 +136,13 @@ to rewrite `/api` paths in the primary production setup.
 ## Auto-updates from `main`
 
 For the current production target, enable automatic Dokploy redeploys from the
-repository `main` branch for both services.
+repository `main` branch for all three services.
 
 That means:
 
 - web rebuilds whenever `main` changes
 - api rebuilds whenever `main` changes
+- cube-trainer rebuilds whenever `main` changes
 - Traefik continues to route to the latest healthy service revision managed by
   Dokploy
 
@@ -135,9 +155,12 @@ Verify these URLs after each production rollout:
 - `https://site.example.com/blog`
 - `https://site.example.com/projects`
 - `https://api.example.com/health`
+- `https://cube.unimatrix-01.dev/`
+- `https://cube.unimatrix-01.dev/oll`
+- `https://cube.unimatrix-01.dev/pll`
 
-Also verify that refreshing a deep route on the public site still renders the
-SPA instead of returning a proxy or static-host 404.
+Also verify that refreshing a deep route on the public site or cube-trainer
+still renders the SPA instead of returning a proxy or static-host 404.
 
 ## SPA routing
 

@@ -37,7 +37,9 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install Playwright Chromium
-        run: pnpm --filter @unimatrix/web exec playwright install --with-deps chromium
+        run: |
+          pnpm --filter @unimatrix/web exec playwright install --with-deps chromium
+          pnpm --filter @unimatrix/cube-trainer exec playwright install --with-deps chromium
 
       - name: Build
         run: pnpm build

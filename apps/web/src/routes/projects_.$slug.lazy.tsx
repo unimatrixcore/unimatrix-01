@@ -36,14 +36,24 @@ function ProjectDetailRoute() {
             {project.frontmatter.summary}
           </p>
 
-          {project.frontmatter.repoUrl ? (
-            <Button asChild className="w-fit gap-2">
-              <a href={project.frontmatter.repoUrl} rel="noreferrer" target="_blank">
-                Open repository
-                <RiArrowRightUpLine aria-hidden="true" className="size-4" />
-              </a>
-            </Button>
-          ) : null}
+          <div className="flex flex-wrap gap-3">
+            {project.frontmatter.liveUrl ? (
+              <Button asChild className="w-fit gap-2">
+                <a href={project.frontmatter.liveUrl} rel="noreferrer" target="_blank">
+                  Visit site
+                  <RiArrowRightUpLine aria-hidden="true" className="size-4" />
+                </a>
+              </Button>
+            ) : null}
+            {project.frontmatter.repoUrl ? (
+              <Button asChild className="w-fit gap-2" variant="secondary">
+                <a href={project.frontmatter.repoUrl} rel="noreferrer" target="_blank">
+                  Open repository
+                  <RiArrowRightUpLine aria-hidden="true" className="size-4" />
+                </a>
+              </Button>
+            ) : null}
+          </div>
         </div>
       </header>
 

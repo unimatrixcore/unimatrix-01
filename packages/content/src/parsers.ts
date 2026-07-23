@@ -57,6 +57,7 @@ export function parseProjectContentFile(
       summary: requireString(frontmatter, "summary", filePath),
       title: requireString(frontmatter, "title", filePath),
       ...optionalProperty("repoUrl", optionalString(frontmatter, "repoUrl")),
+      ...optionalProperty("liveUrl", optionalString(frontmatter, "liveUrl")),
     } satisfies ProjectFrontmatter,
   };
 }

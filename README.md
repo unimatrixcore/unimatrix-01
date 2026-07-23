@@ -30,6 +30,8 @@ This repo keeps the current runtime surface narrow and explicit.
 
 - `apps/web` contains the Vite + React public site.
 - `apps/api` contains the Fastify API.
+- `apps/cube-trainer` contains the Vite + React OLL/PLL algorithm trainer
+  (no backend dependency).
 - `packages/` contains shared UI, content, database, config, and contract
   packages.
 - `content/` contains the public authored content rendered by the web app.

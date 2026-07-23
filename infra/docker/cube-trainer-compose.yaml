@@ -1,0 +1,6 @@
+services:
+  cube-trainer:
+    build:
+      context: ../..
+      dockerfile: apps/cube-trainer/Dockerfile
+    restart: unless-stopped

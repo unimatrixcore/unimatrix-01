@@ -37,6 +37,7 @@ summary: Project summary
 status: active
 featured: true
 repoUrl: https://github.com/gwenphalan/berrybot
+liveUrl: https://berrybot.unimatrix-01.dev
 ---
 BerryBot body.
 `,
@@ -56,6 +57,7 @@ Blog body.
     );
 
     expect(projectEntry.frontmatter.featured).toBe(true);
+    expect(projectEntry.frontmatter.liveUrl).toBe("https://berrybot.unimatrix-01.dev");
     expect(projectEntry.slug).toBe("berrybot");
     expect(blogEntry.frontmatter.description).toBe("Blog description");
   });
