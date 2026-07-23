@@ -1,6 +1,6 @@
 import { OLL_ALGORITHMS } from "./oll-algorithms.data";
 import { PLL_ALGORITHMS } from "./pll-algorithms.data";
-import type { AlgorithmSet, AlgorithmSetId } from "./types";
+import type { AlgorithmSet, AlgorithmSetId, CaseGroup } from "./types";
 
 const OLL_GROUP_ORDER = [
   "Dot",
@@ -45,9 +45,7 @@ export function getAlgorithmSet(id: AlgorithmSetId): AlgorithmSet {
   return ALGORITHM_SETS[id];
 }
 
-export function groupCasesByGroup(
-  set: AlgorithmSet,
-): { group: string; cases: AlgorithmSet["cases"] }[] {
+export function groupCasesByGroup(set: AlgorithmSet): CaseGroup[] {
   return set.groupOrder.map((group) => ({
     cases: set.cases.filter((algorithmCase) => algorithmCase.group === group),
     group,

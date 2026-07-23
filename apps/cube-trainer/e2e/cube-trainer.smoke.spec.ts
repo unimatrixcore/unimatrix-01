@@ -27,43 +27,47 @@ test("homepage load", async ({ page }) => {
 
   await gotoRoute(page, "/");
 
-  await expect(
-    main.getByRole("heading", { name: "Learn and train 3x3 last-layer algorithms." }),
-  ).toBeVisible();
-  await expect(main.getByRole("link", { name: /Train OLL/u })).toBeVisible();
-  await expect(main.getByRole("link", { name: /Train PLL/u })).toBeVisible();
+  await expect(main.getByRole("heading", { name: "Cube Trainer" })).toBeVisible();
+  await expect(main.getByRole("link", { name: "Learn" })).toBeVisible();
+  await expect(main.getByRole("link", { name: "Train" })).toBeVisible();
 
   expectNoPageErrors(pageErrors);
 });
 
-test("OLL trainer flow", async ({ page }) => {
+test("Train flow: drill and case picker", async ({ page }) => {
   const pageErrors = collectPageErrors(page);
   const main = page.locator("main");
 
-  await gotoRoute(page, "/oll");
+  await gotoRoute(page, "/train");
 
-  await expect(main.getByRole("heading", { name: "OLL", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Reveal algorithm" })).toBeVisible();
+  await expect(main.getByRole("heading", { name: "Training" })).toBeVisible();
+  await expect(main.getByText("Next case")).toBeVisible();
 
-  await page.getByRole("button", { name: "Reveal algorithm" }).click();
-  await expect(page.getByRole("button", { name: "Got it" })).toBeVisible();
+  await main.getByRole("button", { name: "Choose cases" }).click();
+  await expect(main.getByRole("heading", { name: "Choose cases" })).toBeVisible();
+  await expect(main.getByRole("button", { name: "OLL 1", exact: true })).toBeVisible();
 
-  await page.getByRole("button", { name: "Browse" }).click();
-  await expect(main.getByText("Dot", { exact: true }).first()).toBeVisible();
-  await expect(main.getByText("OLL 1", { exact: true })).toBeVisible();
+  await main.getByRole("group").getByRole("button", { name: "PLL" }).click();
+  await expect(main.getByRole("button", { name: "PLL Ua", exact: true })).toBeVisible();
 
   expectNoPageErrors(pageErrors);
 });
 
-test("PLL browse list renders all cases", async ({ page }) => {
+test("Learn flow: guided session and case picker", async ({ page }) => {
   const pageErrors = collectPageErrors(page);
   const main = page.locator("main");
 
-  await gotoRoute(page, "/pll");
-  await page.getByRole("button", { name: "Browse" }).click();
+  await gotoRoute(page, "/learn");
 
-  await expect(main.getByText("PLL Ua", { exact: true })).toBeVisible();
-  await expect(main.getByText("PLL Gd", { exact: true })).toBeVisible();
+  await expect(main.getByRole("heading", { name: "Learning" })).toBeVisible();
+  await expect(main.getByText("Mark learned")).toBeVisible();
+
+  await main.getByRole("button", { name: "Choose cases" }).click();
+  await expect(main.getByRole("heading", { name: "Choose cases" })).toBeVisible();
+  await expect(main.getByRole("button", { name: "OLL 1", exact: true })).toBeVisible();
+
+  await main.getByRole("group").getByRole("button", { name: "PLL" }).click();
+  await expect(main.getByRole("button", { name: "PLL Gd", exact: true })).toBeVisible();
 
   expectNoPageErrors(pageErrors);
 });

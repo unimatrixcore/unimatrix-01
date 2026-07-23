@@ -44,6 +44,6 @@
   }
 
   .alg-move-string {
-    @apply font-mono text-[0.95rem] leading-7 tracking-wide text-foreground;
+    @apply font-mono text-[1.05rem] leading-7 tracking-wide text-foreground;
   }
 }

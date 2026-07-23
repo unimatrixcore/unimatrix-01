@@ -1,67 +1,45 @@
 import { useCallback, useMemo, useState } from "react";
 
-import { useCaseProgress } from "@/features/algorithms/use-case-progress";
+import { deriveDiagramForSet } from "@/features/algorithms/derive-diagram";
 import type { AlgorithmCase, AlgorithmSetId } from "@/features/algorithms/types";
+import { useCasePool } from "@/features/algorithms/use-case-pool";
+import type { LastLayerDiagram } from "@/features/cube/last-layer-diagram";
+import { getCaseSetup } from "@/features/trainer/case-setup";
 import { pickNextCase } from "@/features/trainer/pick-next-case";
-import type { CaseProgress, CaseStatus } from "@/lib/progress-storage";
 
 export interface AlgorithmTrainerState {
   currentCase: AlgorithmCase | undefined;
-  isRevealed: boolean;
-  progress: CaseProgress;
-  sessionCount: number;
-  reveal: () => void;
-  markStatus: (status: CaseStatus) => void;
-  skip: () => void;
+  diagram: LastLayerDiagram | undefined;
+  setupMoves: string | undefined;
+  next: () => void;
 }
 
 export function useAlgorithmTrainer(
   setId: AlgorithmSetId,
   cases: AlgorithmCase[],
 ): AlgorithmTrainerState {
-  const { progress, updateStatus } = useCaseProgress(setId);
+  const { pool } = useCasePool(setId);
   const [currentCase, setCurrentCase] = useState<AlgorithmCase | undefined>(() =>
-    pickNextCase(cases, undefined),
-  );
-  const [isRevealed, setIsRevealed] = useState(false);
-  const [sessionCount, setSessionCount] = useState(0);
-
-  const advance = useCallback(() => {
-    setCurrentCase((previous) => pickNextCase(cases, previous?.id));
-    setIsRevealed(false);
-    setSessionCount((count) => count + 1);
-  }, [cases]);
-
-  const reveal = useCallback(() => {
-    setIsRevealed(true);
-  }, []);
-
-  const markStatus = useCallback(
-    (status: CaseStatus) => {
-      if (!currentCase) {
-        return;
-      }
-
-      updateStatus(currentCase.id, status);
-      advance();
-    },
-    [advance, currentCase, updateStatus],
+    pickNextCase(cases, pool, undefined),
   );
 
-  const skip = useCallback(() => {
-    advance();
-  }, [advance]);
+  const setup = useMemo(() => (currentCase ? getCaseSetup(currentCase) : undefined), [currentCase]);
+  const diagram = useMemo(() => {
+    if (!setup) return undefined;
+    return deriveDiagramForSet(setId, setup.cube);
+  }, [setId, setup]);
+
+  const next = useCallback(() => {
+    setCurrentCase((previous) => pickNextCase(cases, pool, previous?.id));
+  }, [cases, pool]);
 
   return useMemo(
     () => ({
       currentCase,
-      isRevealed,
-      markStatus,
-      progress,
-      reveal,
-      sessionCount,
-      skip,
+      diagram,
+      next,
+      setupMoves: setup?.setupMoves,
     }),
-    [currentCase, isRevealed, markStatus, progress, reveal, sessionCount, skip],
+    [currentCase, diagram, next, setup],
   );
 }

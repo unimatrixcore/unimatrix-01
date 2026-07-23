@@ -15,3 +15,8 @@ export interface AlgorithmSet {
   groupOrder: string[];
   cases: AlgorithmCase[];
 }
+
+export interface CaseGroup {
+  group: string;
+  cases: AlgorithmCase[];
+}
