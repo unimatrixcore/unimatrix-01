@@ -9,20 +9,20 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './__root'
-import { Route as PllRouteImport } from './pll'
-import { Route as OllRouteImport } from './oll'
+import { Route as TrainRouteImport } from './train'
+import { Route as LearnRouteImport } from './learn'
 import { Route as IndexRouteImport } from './index'
 
-const PllRoute = PllRouteImport.update({
-  id: '/pll',
-  path: '/pll',
+const TrainRoute = TrainRouteImport.update({
+  id: '/train',
+  path: '/train',
   getParentRoute: () => rootRouteImport,
-} as any).lazy(() => import('./pll.lazy').then((d) => d.Route))
-const OllRoute = OllRouteImport.update({
-  id: '/oll',
-  path: '/oll',
+} as any).lazy(() => import('./train.lazy').then((d) => d.Route))
+const LearnRoute = LearnRouteImport.update({
+  id: '/learn',
+  path: '/learn',
   getParentRoute: () => rootRouteImport,
-} as any).lazy(() => import('./oll.lazy').then((d) => d.Route))
+} as any).lazy(() => import('./learn.lazy').then((d) => d.Route))
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -31,48 +31,48 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/oll': typeof OllRoute
-  '/pll': typeof PllRoute
+  '/learn': typeof LearnRoute
+  '/train': typeof TrainRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/oll': typeof OllRoute
-  '/pll': typeof PllRoute
+  '/learn': typeof LearnRoute
+  '/train': typeof TrainRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/oll': typeof OllRoute
-  '/pll': typeof PllRoute
+  '/learn': typeof LearnRoute
+  '/train': typeof TrainRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/oll' | '/pll'
+  fullPaths: '/' | '/learn' | '/train'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/oll' | '/pll'
-  id: '__root__' | '/' | '/oll' | '/pll'
+  to: '/' | '/learn' | '/train'
+  id: '__root__' | '/' | '/learn' | '/train'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  OllRoute: typeof OllRoute
-  PllRoute: typeof PllRoute
+  LearnRoute: typeof LearnRoute
+  TrainRoute: typeof TrainRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/pll': {
-      id: '/pll'
-      path: '/pll'
-      fullPath: '/pll'
-      preLoaderRoute: typeof PllRouteImport
+    '/train': {
+      id: '/train'
+      path: '/train'
+      fullPath: '/train'
+      preLoaderRoute: typeof TrainRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/oll': {
-      id: '/oll'
-      path: '/oll'
-      fullPath: '/oll'
-      preLoaderRoute: typeof OllRouteImport
+    '/learn': {
+      id: '/learn'
+      path: '/learn'
+      fullPath: '/learn'
+      preLoaderRoute: typeof LearnRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -87,8 +87,8 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  OllRoute: OllRoute,
-  PllRoute: PllRoute,
+  LearnRoute: LearnRoute,
+  TrainRoute: TrainRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

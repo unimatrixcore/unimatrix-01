@@ -1,17 +1,20 @@
-import { AlgorithmCaseCard } from "@/features/algorithms/components/algorithm-case-card";
-import type { AlgorithmCase } from "@/features/algorithms/types";
-import type { CaseProgress, CaseStatus } from "@/lib/progress-storage";
+import { CasePreviewCard } from "@/features/algorithms/components/case-preview-card";
+import type { AlgorithmCase, AlgorithmSetId } from "@/features/algorithms/types";
+import type { CasePool } from "@/lib/pool-storage";
+import { isCaseEnabled } from "@/lib/pool-storage";
 
 export function AlgorithmGroupSection({
   cases,
   group,
-  onStatusChange,
-  progress,
+  onEnabledChange,
+  pool,
+  setId,
 }: {
   cases: AlgorithmCase[];
   group: string;
-  onStatusChange: (caseId: string, status: CaseStatus) => void;
-  progress: CaseProgress;
+  onEnabledChange: (caseId: string, enabled: boolean) => void;
+  pool: CasePool;
+  setId: AlgorithmSetId;
 }) {
   if (cases.length === 0) {
     return null;
@@ -22,17 +25,23 @@ export function AlgorithmGroupSection({
       <h3 className="text-xs font-medium tracking-[0.2em] text-muted-foreground uppercase">
         {group}
       </h3>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {cases.map((algorithmCase) => (
-          <AlgorithmCaseCard
-            algorithmCase={algorithmCase}
-            key={algorithmCase.id}
-            onStatusChange={(status) => {
-              onStatusChange(algorithmCase.id, status);
-            }}
-            status={progress[algorithmCase.id] ?? "new"}
-          />
-        ))}
+      <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+        {cases.map((algorithmCase) => {
+          const enabled = isCaseEnabled(pool, algorithmCase.id);
+
+          return (
+            <CasePreviewCard
+              algorithmCase={algorithmCase}
+              dimmed={!enabled}
+              key={algorithmCase.id}
+              onClick={() => {
+                onEnabledChange(algorithmCase.id, !enabled);
+              }}
+              pressed={enabled}
+              setId={setId}
+            />
+          );
+        })}
       </div>
     </section>
   );

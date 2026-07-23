@@ -34,7 +34,7 @@ function RootNotFound() {
             That page is not part of Cube Trainer.
           </h2>
           <p className="max-w-2xl text-sm leading-7 text-muted-foreground lg:text-base lg:leading-8">
-            Return home or jump straight to OLL or PLL training.
+            Return home, or jump straight to Learn or Train.
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
@@ -42,10 +42,10 @@ function RootNotFound() {
             <Link to="/">Go home</Link>
           </Button>
           <Button asChild variant="outline" className="w-fit">
-            <Link to="/oll">Train OLL</Link>
+            <Link to="/learn">Learn</Link>
           </Button>
           <Button asChild variant="secondary" className="w-fit">
-            <Link to="/pll">Train PLL</Link>
+            <Link to="/train">Train</Link>
           </Button>
         </div>
       </div>

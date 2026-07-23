@@ -1,13 +1,14 @@
 import type { AlgorithmCase } from "@/features/algorithms/types";
-import type { CaseProgress } from "@/lib/progress-storage";
+import type { CasePool } from "@/lib/pool-storage";
+import { isCaseEnabled } from "@/lib/pool-storage";
 
 export function pickNextCase(
   cases: AlgorithmCase[],
-  progress: CaseProgress,
+  pool: CasePool,
   excludeId: string | undefined,
 ): AlgorithmCase | undefined {
-  const unknown = cases.filter((c) => progress[c.id] !== "known");
-  const candidates = unknown.length > 1 ? unknown.filter((c) => c.id !== excludeId) : unknown;
+  const enabled = cases.filter((c) => isCaseEnabled(pool, c.id));
+  const candidates = enabled.length > 1 ? enabled.filter((c) => c.id !== excludeId) : enabled;
 
   if (candidates.length === 0) {
     return undefined;

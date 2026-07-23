@@ -1,3 +1,5 @@
+import type { AlgorithmSetId } from "@/features/algorithms/types";
+
 import { extractLastLayer } from "./model";
 import type { FaceLetter, FaceletCube } from "./model";
 
@@ -60,6 +62,11 @@ export function deriveOllDiagram(cube: FaceletCube): LastLayerDiagram {
 /** PLL never touches orientation (top is read the same way and will naturally show fully oriented) - side stickers show their actual color, since permutation is what a PLL diagram communicates. */
 export function derivePllDiagram(cube: FaceletCube): LastLayerDiagram {
   return buildDiagram(cube, colorSticker);
+}
+
+/** Picks the OLL- or PLL-appropriate derivation for a given set, so callers don't hand-roll the ternary. */
+export function deriveDiagramForSet(setId: AlgorithmSetId, cube: FaceletCube): LastLayerDiagram {
+  return setId === "oll" ? deriveOllDiagram(cube) : derivePllDiagram(cube);
 }
 
 export const DIAGRAM_PALETTE: Record<FaceLetter, string> = {
