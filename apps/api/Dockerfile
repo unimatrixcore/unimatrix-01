@@ -11,8 +11,12 @@ RUN corepack enable
 FROM base AS build
 COPY . .
 RUN find . -name '*.tsbuildinfo' -delete && pnpm install --frozen-lockfile
-RUN pnpm --filter @unimatrix/shared build
-RUN pnpm --filter @unimatrix/api build
+# Build the API together with its workspace dependencies (@unimatrix/shared,
+# @unimatrix/db, @unimatrix/auth) in topological order. apps/api compiles with
+# tsc and resolves these from their built dist (not source, unlike the Vite
+# apps), so they must be built first; the "..." selector keeps this correct as
+# the dependency set changes.
+RUN pnpm --filter "@unimatrix/api..." build
 RUN pnpm --filter @unimatrix/api --prod deploy --legacy /prod/api
 
 FROM node:${NODE_VERSION}-alpine AS runtime
