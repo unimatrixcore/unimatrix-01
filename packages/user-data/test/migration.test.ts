@@ -151,6 +151,31 @@ describe("migrateGuestDataToAccount", () => {
     await expect(guest.store.files.list()).resolves.toEqual([]);
   });
 
+  it("preserves skipped guest data when clearGuestAfter is true (skip-existing)", async () => {
+    const account = createFakeStore("account");
+    const guest = createFakeStore("guest");
+
+    // Account already holds "progress" — it will be skipped, not migrated.
+    await account.store.settings.set("progress", { streak: 99 });
+    await guest.store.settings.set("progress", { streak: 3 });
+    await guest.store.settings.set("nickname", "gwen");
+
+    const summary = await migrateGuestDataToAccount({
+      namespace: "test-ns",
+      account: account.store,
+      guest: guest.store,
+      options: { clearGuestAfter: true },
+    });
+
+    expect(summary).toMatchObject({ documentsMigrated: 1, documentsSkipped: 1 });
+    // Migrated key cleared; skipped key's guest copy must survive.
+    await expect(guest.store.settings.list()).resolves.toEqual([
+      { key: "progress", value: { streak: 3 } },
+    ]);
+    // Account keeps its own pre-existing value (never clobbered).
+    await expect(account.store.settings.get("progress")).resolves.toEqual({ streak: 99 });
+  });
+
   it("leaves guest data intact when clearGuestAfter is not set (default false)", async () => {
     const account = createFakeStore("account");
     const guest = createFakeStore("guest");

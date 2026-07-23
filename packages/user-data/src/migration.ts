@@ -58,6 +58,9 @@ export async function migrateGuestDataToAccount(
     filesSkipped: 0,
   };
 
+  const migratedDocumentKeys: string[] = [];
+  const migratedFileKeys: string[] = [];
+
   const guestDocuments = await guest.settings.list();
   const existingDocumentKeys =
     conflictPolicy === "skip-existing"
@@ -71,6 +74,7 @@ export async function migrateGuestDataToAccount(
     }
 
     await account.settings.set(document.key, document.value);
+    migratedDocumentKeys.push(document.key);
     summary.documentsMigrated += 1;
   }
 
@@ -94,16 +98,21 @@ export async function migrateGuestDataToAccount(
     }
 
     await account.files.upload(file.key, blob, { contentType: file.contentType });
+    migratedFileKeys.push(file.key);
     summary.filesMigrated += 1;
   }
 
   if (clearGuestAfter) {
-    for (const document of guestDocuments) {
-      await guest.settings.delete(document.key);
+    // Clear only what was actually migrated — never delete guest data that
+    // was skipped (e.g. under "skip-existing" because the account already
+    // held that key, or a file with no readable blob). The guest copy may be
+    // the only one reflecting the user's local changes.
+    for (const key of migratedDocumentKeys) {
+      await guest.settings.delete(key);
     }
 
-    for (const file of guestFiles) {
-      await guest.files.delete(file.key);
+    for (const key of migratedFileKeys) {
+      await guest.files.delete(key);
     }
   }
 
