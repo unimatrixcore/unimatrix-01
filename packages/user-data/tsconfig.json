@@ -1,0 +1,21 @@
+{
+  "extends": "@unimatrix/config-typescript/library.json",
+  "compilerOptions": {
+    "composite": false,
+    "jsx": "react-jsx",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "noEmit": true,
+    "paths": {
+      "@unimatrix/api-client": ["../api-client/src/index.ts"],
+      "@unimatrix/auth/react": ["../auth/src/react.tsx"],
+      "@unimatrix/shared": ["../shared/src/index.ts"]
+    }
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "test/**/*.ts",
+    "test/**/*.tsx",
+    "vitest.config.ts"
+  ]
+}
