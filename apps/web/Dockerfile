@@ -11,6 +11,14 @@ RUN corepack enable
 FROM base AS build
 ARG VITE_API_BASE_URL=/api
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
+# Clerk is optional on the public site: without VITE_CLERK_PUBLISHABLE_KEY the
+# app builds with no auth (no header sign-in affordance). Vite inlines these at
+# BUILD time, so they must be passed as build args here — setting them only in
+# the container's runtime env has no effect on the already-built bundle.
+ARG VITE_CLERK_PUBLISHABLE_KEY=
+ENV VITE_CLERK_PUBLISHABLE_KEY=${VITE_CLERK_PUBLISHABLE_KEY}
+ARG VITE_AUTH_APP_URL=https://auth.unimatrix-01.dev
+ENV VITE_AUTH_APP_URL=${VITE_AUTH_APP_URL}
 COPY . .
 RUN find . -name '*.tsbuildinfo' -delete && pnpm install --frozen-lockfile
 RUN pnpm --filter @unimatrix/web build

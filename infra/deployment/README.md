@@ -48,10 +48,21 @@ Dockerfile application type).
 
 - application type: Compose
 - compose path: `infra/docker/web-compose.yaml`
-- environment variable (set in Dokploy's UI, not in the file):
-  `VITE_API_BASE_URL=https://api.example.com`
+- environment variables (set in Dokploy's UI, not in the file):
+  - `VITE_API_BASE_URL=https://api.example.com`
+  - `VITE_CLERK_PUBLISHABLE_KEY=pk_live_...` (optional) — enables the header
+    sign-in affordance on the public site; leave unset to ship the site with no
+    auth UI
+  - `VITE_AUTH_APP_URL=https://auth.unimatrix-01.dev` (optional; this is the
+    default) — where the "Sign in" link points
 - Domains page: route `site.example.com` to the `web` service, container port
   `8080`
+
+These `VITE_*` values are inlined into the bundle at **build** time, so they
+must be present before the image builds (the compose file passes them as build
+args). Setting `VITE_CLERK_PUBLISHABLE_KEY` only after the container is running
+has no effect — the built bundle already decided whether auth is enabled, so a
+rebuild/redeploy is required for the sign-in button to appear.
 
 The web container is a static SPA container. Preserve SPA fallback behavior
 inside the web container regardless of routing.

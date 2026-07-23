@@ -80,10 +80,14 @@ the public edge proxy; Traefik stays the edge router in Dokploy.
 - container port: `8080`
 - build artifact: `apps/web/dist`
 - required SPA fallback: unknown application routes must serve `index.html`
-- build-time env: `VITE_API_BASE_URL`
+- build-time env: `VITE_API_BASE_URL`; optional `VITE_CLERK_PUBLISHABLE_KEY`
+  (enables the header sign-in affordance) and `VITE_AUTH_APP_URL` (sign-in link
+  target, defaults to `https://auth.unimatrix-01.dev`)
 
-`VITE_API_BASE_URL` is compiled into the frontend bundle. Change it at image
-build time, not after the container starts.
+These `VITE_*` values are compiled into the frontend bundle. Change them at
+image build time, not after the container starts — in particular, setting
+`VITE_CLERK_PUBLISHABLE_KEY` only in the runtime env will not enable the
+sign-in button, because the bundle already baked in whether auth is on.
 
 Example build:
 
