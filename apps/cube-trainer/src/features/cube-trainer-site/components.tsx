@@ -21,18 +21,17 @@ export function AppFooter() {
   const year = new Date().getFullYear();
 
   return (
-    <footer className="site-panel site-shell overflow-hidden px-5 py-4 lg:px-8 lg:py-5">
-      <p className="text-xs text-muted-foreground">
-        © {year} Gwen Phalan. Algorithm data sourced from{" "}
+    <footer className="py-1">
+      <p className="text-xs text-muted-foreground/70">
+        © {year} Gwen Phalan. Algorithm data from{" "}
         <a
-          className="text-primary underline decoration-primary/35 underline-offset-4 transition-colors hover:text-foreground"
+          className="underline decoration-muted-foreground/35 underline-offset-4 transition-colors hover:text-foreground"
           href="https://jperm.net/algs"
           rel="noreferrer"
           target="_blank"
         >
           jperm.net/algs
         </a>
-        .
       </p>
     </footer>
   );
