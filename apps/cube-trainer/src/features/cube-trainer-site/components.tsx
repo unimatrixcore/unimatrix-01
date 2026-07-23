@@ -23,7 +23,16 @@ export function AppFooter() {
   return (
     <footer className="py-1">
       <p className="text-xs text-muted-foreground/70">
-        © {year} Gwen Phalan. Algorithm data from{" "}
+        ©{" "}
+        <a
+          className="underline decoration-muted-foreground/35 underline-offset-4 transition-colors hover:text-foreground"
+          href="https://unimatrix-01.dev/"
+          rel="noreferrer"
+          target="_blank"
+        >
+          {year} Gwen Phalan
+        </a>
+        . Algorithm data from{" "}
         <a
           className="underline decoration-muted-foreground/35 underline-offset-4 transition-colors hover:text-foreground"
           href="https://jperm.net/algs"
