@@ -48,7 +48,7 @@ export function LearnPanel({ setId }: LearnPanelProps) {
 
   return (
     <Card className="site-panel site-panel-strong flex flex-col items-center gap-6 px-6 py-10 text-center">
-      <LastLayerDiagramView diagram={diagram} size={180} />
+      <LastLayerDiagramView diagram={diagram} label={currentCase.displayName} size={180} />
 
       <div className="space-y-1.5">
         <p className="text-[0.65rem] font-medium tracking-[0.25em] text-muted-foreground/70 uppercase">
