@@ -76,7 +76,7 @@ export function LearnPanel({ previewVisible, setId }: LearnPanelProps) {
         {alternateAlgorithms.length > 0 ? (
           <div>
             <button
-              className="text-xs text-muted-foreground underline decoration-primary/35 underline-offset-4 transition-colors hover:text-foreground"
+              className="cursor-pointer text-xs text-muted-foreground underline decoration-primary/35 underline-offset-4 transition-colors hover:text-foreground"
               onClick={() => {
                 setShowAlternates((previous) => !previous);
               }}
