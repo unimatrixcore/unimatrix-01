@@ -210,34 +210,36 @@ export function AppShell({ children }: AppShellProps) {
             <Breadcrumbs items={breadcrumbItems} />
           </div>
 
-          <nav aria-label="Primary" className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
-            {navItems.map(({ icon: Icon, label, to, exact }) => {
-              const active = isNavItemActive(pathname, exact, to);
+          <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center sm:gap-4">
+            <nav aria-label="Primary" className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+              {navItems.map(({ icon: Icon, label, to, exact }) => {
+                const active = isNavItemActive(pathname, exact, to);
 
-              return (
-                <Link
-                  aria-current={active ? "page" : undefined}
-                  className={cn(
-                    "inline-flex w-full items-center justify-center gap-2 border px-3 py-1.5 text-sm font-medium transition-[border-color,background-color,color] duration-200 outline-none focus-visible:ring-2 focus-visible:ring-primary/45 sm:w-auto",
-                    active
-                      ? "border-primary/45 bg-primary/12 text-foreground"
-                      : "border-border/70 bg-background/72 text-muted-foreground hover:border-primary/35 hover:text-foreground",
-                  )}
-                  key={to}
-                  to={to}
-                >
-                  <Icon aria-hidden="true" className="size-3.5" />
-                  <span>{label}</span>
-                </Link>
-              );
-            })}
-          </nav>
+                return (
+                  <Link
+                    aria-current={active ? "page" : undefined}
+                    className={cn(
+                      "inline-flex w-full items-center justify-center gap-2 border px-3 py-1.5 text-sm font-medium transition-[border-color,background-color,color] duration-200 outline-none focus-visible:ring-2 focus-visible:ring-primary/45 sm:w-auto",
+                      active
+                        ? "border-primary/45 bg-primary/12 text-foreground"
+                        : "border-border/70 bg-background/72 text-muted-foreground hover:border-primary/35 hover:text-foreground",
+                    )}
+                    key={to}
+                    to={to}
+                  >
+                    <Icon aria-hidden="true" className="size-3.5" />
+                    <span>{label}</span>
+                  </Link>
+                );
+              })}
+            </nav>
 
-          {authEnabled ? (
-            <div className="flex items-center justify-end gap-2">
-              <AuthHeaderAction />
-            </div>
-          ) : null}
+            {authEnabled ? (
+              <div className="flex items-center justify-end gap-2">
+                <AuthHeaderAction />
+              </div>
+            ) : null}
+          </div>
         </div>
       </header>
 
@@ -259,37 +261,39 @@ export function AppShell({ children }: AppShellProps) {
                 <Breadcrumbs items={breadcrumbItems} />
               </div>
 
-              <nav
-                aria-label="Primary"
-                className="grid grid-cols-2 gap-2 lg:flex lg:flex-wrap lg:justify-end"
-              >
-                {navItems.map(({ icon: Icon, label, to, exact }) => {
-                  const active = isNavItemActive(pathname, exact, to);
+              <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-4">
+                <nav
+                  aria-label="Primary"
+                  className="grid grid-cols-2 gap-2 lg:flex lg:flex-wrap lg:justify-end"
+                >
+                  {navItems.map(({ icon: Icon, label, to, exact }) => {
+                    const active = isNavItemActive(pathname, exact, to);
 
-                  return (
-                    <Link
-                      aria-current={active ? "page" : undefined}
-                      className={cn(
-                        "inline-flex w-full items-center justify-center gap-2 border px-3 py-1 text-sm font-medium transition-[border-color,background-color,color] duration-200 outline-none focus-visible:ring-2 focus-visible:ring-primary/45 lg:w-auto",
-                        active
-                          ? "border-primary/45 bg-primary/12 text-foreground"
-                          : "border-border/70 bg-background/72 text-muted-foreground hover:border-primary/35 hover:text-foreground",
-                      )}
-                      key={to}
-                      to={to}
-                    >
-                      <Icon aria-hidden="true" className="size-4" />
-                      <span>{label}</span>
-                    </Link>
-                  );
-                })}
-              </nav>
+                    return (
+                      <Link
+                        aria-current={active ? "page" : undefined}
+                        className={cn(
+                          "inline-flex w-full items-center justify-center gap-2 border px-3 py-1 text-sm font-medium transition-[border-color,background-color,color] duration-200 outline-none focus-visible:ring-2 focus-visible:ring-primary/45 lg:w-auto",
+                          active
+                            ? "border-primary/45 bg-primary/12 text-foreground"
+                            : "border-border/70 bg-background/72 text-muted-foreground hover:border-primary/35 hover:text-foreground",
+                        )}
+                        key={to}
+                        to={to}
+                      >
+                        <Icon aria-hidden="true" className="size-4" />
+                        <span>{label}</span>
+                      </Link>
+                    );
+                  })}
+                </nav>
 
-              {authEnabled ? (
-                <div className="flex items-center justify-end gap-2">
-                  <AuthHeaderAction />
-                </div>
-              ) : null}
+                {authEnabled ? (
+                  <div className="flex items-center justify-end gap-2">
+                    <AuthHeaderAction />
+                  </div>
+                ) : null}
+              </div>
             </div>
           </div>
         </div>
