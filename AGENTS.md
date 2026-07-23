@@ -9,7 +9,7 @@
 
 ## Workspace
 - Monorepo: `apps/*` and `packages/*` from `pnpm-workspace.yaml`; root scripts fan out through Turbo
-- Live apps: `apps/web` (Vite + React + TanStack Router public site), `apps/api` (Fastify API), `apps/cube-trainer` (Vite + React + TanStack Router OLL/PLL algorithm trainer, no backend dependency), `apps/auth` (package `@unimatrix/auth-app`; Vite + React + TanStack Router central auth hub for `auth.unimatrix-01.dev`: sign-in/up, account settings, admin panel)
+- Live apps: `apps/web` (Vite + React + TanStack Router public site), `apps/api` (Fastify API), `apps/cube-trainer` (Vite + React + TanStack Router OLL/PLL algorithm trainer, no backend dependency), `apps/auth` (package `@unimatrix/auth-app`; Vite + React + TanStack Router central auth hub for `auth.unimatrix-01.dev`: sign-in/up and account settings)
 - Live packages: `packages/ui`, `packages/shared`, `packages/api-client`, `packages/content`, `packages/db`, `packages/auth` (shared Clerk auth + permission scheme), `packages/user-data` (per-user account/guest data store), `packages/config-typescript`, `packages/config-eslint`
 - Live content: `content/home`, `content/projects`, `content/blog`
 - Repo-internal docs: `docs/`; infra/runtime helpers: `infra/scripts`, `infra/deployment`, `infra/docker`
@@ -21,7 +21,7 @@
 - `apps/web`: route-driven public site, public content rendering, app-owned public-site compositions
 - `apps/api`: runtime config validation, Fastify plugins, feature route modules, HTTP error normalization
 - `apps/cube-trainer`: OLL/PLL algorithm browse and flashcard-trainer UI, bundled algorithm data, `localStorage`-backed progress
-- `apps/auth`: central Clerk auth hub — sign-in/up, account settings (`UserProfile`), and an admin panel for managing users and their permissions; redirect target for other services' sign-in
+- `apps/auth`: central Clerk auth hub — sign-in/up and account settings (`UserProfile`); redirect target for other services' sign-in
 - `packages/ui`: shared shadcn primitives, shared styles, safe markdown rendering, `@unimatrix/ui/public`
 - `packages/shared`: framework-agnostic API contracts, Zod schemas, exported shared types only
 - `packages/api-client`: typed fetch transport consuming `@unimatrix/shared` contracts; pluggable `getAuthToken` provider
@@ -52,7 +52,7 @@
 - `pnpm setup:local` only copies missing env files; it never overwrites existing local env
 - `pnpm setup:worktree` runs frozen install, env bootstrap, and default DB migrations; use it for fresh worktrees
 - API loads `apps/api/.env.local` first, then `apps/api/.env`; existing shell env wins
-- API auth is opt-in: `CLERK_SECRET_KEY`/`CLERK_PUBLISHABLE_KEY`/`CLERK_JWT_KEY` are required in production but optional in dev/test (the API boots with auth + the admin/user-data routes disabled when they are absent); `MAX_UPLOAD_BYTES` defaults to 5 MiB
+- API auth is opt-in: `CLERK_SECRET_KEY`/`CLERK_PUBLISHABLE_KEY`/`CLERK_JWT_KEY` are required in production but optional in dev/test (the API boots with auth + the user-data routes disabled when they are absent); `MAX_UPLOAD_BYTES` defaults to 5 MiB
 - Web uses normal Vite `apps/web/.env*` behavior; Clerk is optional there (`VITE_CLERK_PUBLISHABLE_KEY` enables it, `VITE_AUTH_APP_URL` points at the auth hub)
 - auth app needs `VITE_CLERK_PUBLISHABLE_KEY` (required) and `VITE_API_BASE_URL` (default `/api`); cube-trainer has no `.env` files and no backend dependency
 - CI uses the same root commands and installs Playwright Chromium for web and cube-trainer smoke coverage (the auth app ships unit tests only — no smoke suite, since it needs live Clerk keys)
@@ -63,7 +63,7 @@
 - `apps/web`: safe markdown only; keep raw HTML and runtime MDX disabled
 - `apps/api`: keep `buildApp()` wiring in `src/app.ts`, cross-cutting setup in `src/plugins`, feature routes in `src/modules`, reusable HTTP helpers in `src/lib/http`; verify Clerk tokens networklessly via the `@unimatrix/auth/server` plugin/guards and read the acting user only from the verified session (`getAuthUserId`), never from client input
 - `apps/cube-trainer`: keep the same non-lazy/`*.lazy.tsx` route split as `apps/web`; do not add `@unimatrix/api-client`, `@unimatrix/shared`, `@unimatrix/content`, or `@tanstack/react-query` dependencies unless a real server-backed feature is added
-- `apps/auth`: same non-lazy/`*.lazy.tsx` route split as `apps/web`; consume Clerk only through `@unimatrix/auth/react` (never `@clerk/clerk-react` directly); admin user writes go through permission-gated `apps/api` endpoints, never the client; validate any inbound `redirect_url` against the same-family allowlist before use
+- `apps/auth`: same non-lazy/`*.lazy.tsx` route split as `apps/web`; consume Clerk only through `@unimatrix/auth/react` (never `@clerk/clerk-react` directly); validate any inbound `redirect_url` against the same-family allowlist before use
 - `packages/shared`: no transport code, UI code, or content-loading logic; `ApiContract` paths stay static (no path params) — use query/body schemas instead
 - `packages/api-client`: do not redefine endpoints or response shapes locally; consume `@unimatrix/shared`; stays auth-library-agnostic (the consumer supplies `getAuthToken`) and DOM/Node-lib-free
 - `packages/content`: keep loaders synchronous and filesystem-based unless the package boundary intentionally changes

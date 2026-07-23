@@ -168,8 +168,7 @@ docker build \
 
 The auth image builds `apps/auth/dist` and serves it from a small internal
 Nginx container, same pattern as the web and cube-trainer images. It is the
-central Clerk-backed accounts app (sign-in/sign-up, account management, and a
-permission admin panel).
+central Clerk-backed accounts app (sign-in/sign-up and account management).
 
 ### Auth build inputs
 
@@ -287,9 +286,9 @@ And these auth app routes:
 
 ## Current database posture
 
-`apps/api` depends on `@unimatrix/db` for the admin and user-data modules
-(per-user settings and files), so the API is not database-free. The container
-workflow persists that data:
+`apps/api` depends on `@unimatrix/db` for the user-data module (per-user
+settings and files), so the API is not database-free. The container workflow
+persists that data:
 
 - **SQLite volume**: the API Dockerfile defaults `DATABASE_URL` to
   `/data/unimatrix.sqlite` and creates `/data` owned by the non-root `node`

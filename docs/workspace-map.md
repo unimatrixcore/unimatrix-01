@@ -53,7 +53,7 @@ Use the table below to place work in the narrowest correct boundary.
 | `apps/web` | Vite + React public site, TanStack Router routes, and public content rendering | `apps/web/package.json` |
 | `apps/api` | Fastify API workspace with runtime config validation and request handling | `apps/api/package.json` |
 | `apps/cube-trainer` | Vite + React OLL/PLL algorithm trainer, no backend dependency | `apps/cube-trainer/AGENTS.md` |
-| `apps/auth` | Vite + React accounts app: the central Clerk-backed authentication hub (sign-in/sign-up, account management, permission admin) | `apps/auth/package.json` |
+| `apps/auth` | Vite + React accounts app: the central Clerk-backed authentication hub (sign-in/sign-up, account management) | `apps/auth/package.json` |
 | `packages/ui` | Shared ShadCN-based UI primitives and shared styles | `packages/ui/README.md` |
 | `packages/shared` | Framework-agnostic shared contracts, schemas, and types | `packages/shared/README.md` |
 | `packages/api-client` | Typed client helpers that consume shared contracts | `packages/api-client/README.md` |

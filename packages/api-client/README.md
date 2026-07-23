@@ -51,16 +51,6 @@ beyond `GET`:
 - Contracts with neither (e.g. `healthContract`) keep working with no
   second argument: `request(healthContract)`.
 
-## Admin convenience methods
-
-Typed wrappers over `request(...)` for the admin contracts in
-`@unimatrix/shared`:
-
-```ts
-client.listUsers(query: ListUsersQuery): Promise<ListUsersResponse>;
-client.updateUserPermissions(body: UpdateUserPermissionsBody): Promise<UpdateUserPermissionsResponse>;
-```
-
 ## Per-user data (JSON) convenience methods
 
 Typed wrappers over `request(...)` for the `/me/data` and `/me/files`

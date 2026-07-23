@@ -33,8 +33,7 @@ This repo keeps the current runtime surface narrow and explicit.
 - `apps/cube-trainer` contains the Vite + React OLL/PLL algorithm trainer
   (no backend dependency).
 - `apps/auth` contains the Vite + React accounts app: the central
-  Clerk-backed authentication hub for sign-in/sign-up, account management,
-  and permission administration.
+  Clerk-backed authentication hub for sign-in/sign-up and account management.
 - `packages/` contains shared UI, content, database, config, contract, auth,
   and user-data packages.
 - `content/` contains the public authored content rendered by the web app.
