@@ -8,6 +8,13 @@
       "when": 1773297210127,
       "tag": "0000_round_molly_hayes",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1784773377611,
+      "tag": "0001_sticky_jazinda",
+      "breakpoints": true
     }
   ]
 }
