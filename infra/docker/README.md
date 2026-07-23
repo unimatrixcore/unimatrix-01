@@ -6,6 +6,7 @@ surface:
 - `apps/web` as a static Vite SPA image
 - `apps/api` as a Fastify Node runtime image
 - `apps/cube-trainer` as a static Vite SPA image
+- `apps/auth` as a static Vite SPA image
 
 Dokploy plus Traefik is the primary production target for now. The Docker and
 Compose files here are the secondary, manual deployment path and the local
@@ -18,17 +19,21 @@ validation path for containerized builds.
 - `apps/api/Dockerfile`: multi-stage API image build
 - `apps/cube-trainer/Dockerfile`: multi-stage cube-trainer image build
 - `apps/cube-trainer/nginx.conf`: static file server config with SPA fallback
+- `apps/auth/Dockerfile`: multi-stage auth app image build
+- `apps/auth/nginx.conf`: static file server config with SPA fallback
 - `infra/docker/web-compose.yaml`: single-service `web` stack, used both for
   local validation and as a Dokploy Compose deployment
 - `infra/docker/api-compose.yaml`: single-service `api` stack, used both for
   local validation and as a Dokploy Compose deployment
 - `infra/docker/cube-trainer-compose.yaml`: single-service `cube-trainer`
   stack, used both for local validation and as a Dokploy Compose deployment
+- `infra/docker/auth-compose.yaml`: single-service `auth` stack, used both for
+  local validation and as a Dokploy Compose deployment
 - `.dockerignore`: root build hygiene for repo-root Docker contexts
 
 ## Monorepo build rules
 
-Build all three images from the repo root, not from an individual app
+Build all four images from the repo root, not from an individual app
 directory.
 
 That is required because:
@@ -40,6 +45,9 @@ That is required because:
   that package by workspace name at runtime
 - `apps/cube-trainer` resolves its `@unimatrix/ui` workspace source alias from
   `apps/cube-trainer/vite.config.ts` and `apps/cube-trainer/tsconfig.json`
+- `apps/auth` resolves its `@unimatrix/auth`, `@unimatrix/api-client`,
+  `@unimatrix/shared`, and `@unimatrix/ui` workspace source aliases from
+  `apps/auth/vite.config.ts` and `apps/auth/tsconfig.json`
 
 The checked-in images assume these repo-root build contexts:
 
@@ -47,6 +55,7 @@ The checked-in images assume these repo-root build contexts:
 docker build -f apps/web/Dockerfile .
 docker build -f apps/api/Dockerfile .
 docker build -f apps/cube-trainer/Dockerfile .
+docker build -f apps/auth/Dockerfile .
 ```
 
 ## Web image
@@ -151,19 +160,63 @@ docker build \
   .
 ```
 
+## Auth image
+
+The auth image builds `apps/auth/dist` and serves it from a small internal
+Nginx container, same pattern as the web and cube-trainer images. It is the
+central Clerk-backed accounts app (sign-in/sign-up, account management, and a
+permission admin panel).
+
+### Auth build inputs
+
+- `apps/auth`
+- `packages/ui`
+- `packages/api-client`
+- `packages/auth`
+- `packages/shared`
+- root workspace metadata such as `package.json`, `pnpm-lock.yaml`, and
+  `pnpm-workspace.yaml`
+
+### Auth runtime contract
+
+- container port: `8080`
+- build artifact: `apps/auth/dist`
+- required SPA fallback: unknown application routes must serve `index.html`
+- build-time env: `VITE_API_BASE_URL`, `VITE_CLERK_PUBLISHABLE_KEY`
+
+Both `VITE_API_BASE_URL` and `VITE_CLERK_PUBLISHABLE_KEY` are compiled into the
+frontend bundle. `VITE_CLERK_PUBLISHABLE_KEY` is a public key (safe to ship in
+a browser bundle), but it still must be set at build time to the real key for
+the target Clerk instance, since Vite inlines `import.meta.env.VITE_*` values
+at build time, not at container start.
+
+Example build:
+
+```bash
+docker build \
+  -f apps/auth/Dockerfile \
+  --build-arg VITE_API_BASE_URL=http://localhost:3001 \
+  --build-arg VITE_CLERK_PUBLISHABLE_KEY=pk_test_xxx \
+  -t unimatrix-auth:local \
+  .
+```
+
 ## Compose workflow
 
-`infra/docker/web-compose.yaml`, `infra/docker/api-compose.yaml`, and
-`infra/docker/cube-trainer-compose.yaml` are each single-service files. Run
-them together from the repo root for local combined validation:
+`infra/docker/web-compose.yaml`, `infra/docker/api-compose.yaml`,
+`infra/docker/cube-trainer-compose.yaml`, and `infra/docker/auth-compose.yaml`
+are each single-service files. Run them together from the repo root for local
+combined validation:
 
 ```bash
 VITE_API_BASE_URL=http://localhost:3001 \
+VITE_CLERK_PUBLISHABLE_KEY=pk_test_xxx \
 CORS_ALLOWED_ORIGINS=http://localhost:8080,http://127.0.0.1:8080 \
 docker compose \
   -f infra/docker/api-compose.yaml \
   -f infra/docker/web-compose.yaml \
   -f infra/docker/cube-trainer-compose.yaml \
+  -f infra/docker/auth-compose.yaml \
   up --build
 ```
 
@@ -181,6 +234,9 @@ docker run --rm -p 8080:8080 unimatrix-web:local
 
 docker build -f apps/cube-trainer/Dockerfile -t unimatrix-cube-trainer:local .
 docker run --rm -p 8081:8080 unimatrix-cube-trainer:local
+
+docker build -f apps/auth/Dockerfile --build-arg VITE_API_BASE_URL=http://localhost:3001 --build-arg VITE_CLERK_PUBLISHABLE_KEY=pk_test_xxx -t unimatrix-auth:local .
+docker run --rm -p 8082:8080 unimatrix-auth:local
 ```
 
 To stop the compose stack:
@@ -190,6 +246,7 @@ docker compose \
   -f infra/docker/api-compose.yaml \
   -f infra/docker/web-compose.yaml \
   -f infra/docker/cube-trainer-compose.yaml \
+  -f infra/docker/auth-compose.yaml \
   down
 ```
 
@@ -201,6 +258,7 @@ After startup, verify:
 curl http://localhost:3001/health
 curl -I http://localhost:8080/
 curl -I http://localhost:8081/
+curl -I http://localhost:8082/
 ```
 
 Then open these web routes in a browser and confirm they render after both a
@@ -217,16 +275,26 @@ And these cube-trainer routes:
 - `/oll`
 - `/pll`
 
+And these auth app routes:
+
+- `/`
+- `/sign-in`
+- `/account`
+
 ## Current database posture
 
-The current API implementation does not import `@unimatrix/db`, so this first
-container workflow does not add:
+`apps/api` now depends on `@unimatrix/db` for the admin and user-data modules
+(per-user settings and files), so the API is no longer database-free. This
+container workflow does not yet add:
 
 - SQLite volumes
 - migration services
-- Compose database setup
+- Compose database setup (`DATABASE_URL`)
 
-If future API work adopts `@unimatrix/db`, update this directory to document:
+The image and `api-compose.yaml` still run against `@unimatrix/db`'s default
+SQLite path baked into the container filesystem, so data does not persist
+across container recreation. If a future issue adopts persistent storage for
+this container workflow, update this directory to document:
 
 - a persistent volume for the SQLite database file
 - a one-off migration command or service
@@ -234,25 +302,27 @@ If future API work adopts `@unimatrix/db`, update this directory to document:
 
 ## Dokploy Compose deployment
 
-`infra/docker/web-compose.yaml`, `infra/docker/api-compose.yaml`, and
-`infra/docker/cube-trainer-compose.yaml` are single-service compose files
-meant to be used as Dokploy's "Compose" application type, one Dokploy app per
-file. They intentionally have:
+`infra/docker/web-compose.yaml`, `infra/docker/api-compose.yaml`,
+`infra/docker/cube-trainer-compose.yaml`, and `infra/docker/auth-compose.yaml`
+are single-service compose files meant to be used as Dokploy's "Compose"
+application type, one Dokploy app per file. They intentionally have:
 
 - no `ports:` host publishing
 - no Traefik labels
 
 Dokploy's own Domains page handles routing: pick the service and the
-container port (`8080` for web, `3001` for api, `8080` for cube-trainer)
-there, and Dokploy wires Traefik itself. Don't hand-add Traefik labels to
-these files. Point the cube-trainer Dokploy app's domain at
-`cube.unimatrix-01.dev`.
+container port (`8080` for web, `3001` for api, `8080` for cube-trainer,
+`8080` for auth) there, and Dokploy wires Traefik itself. Don't hand-add
+Traefik labels to these files. Point the cube-trainer Dokploy app's domain at
+`cube.unimatrix-01.dev` and the auth Dokploy app's domain at
+`auth.unimatrix-01.dev`.
 
 `web-compose.yaml` and `api-compose.yaml` read their environment-dependent
 values (`VITE_API_BASE_URL`, `CORS_ALLOWED_ORIGINS`) from compose variable
 substitution, so set those in the Dokploy app's environment variables UI
 rather than editing the file. `cube-trainer-compose.yaml` has no
-environment-dependent values to set.
+environment-dependent values to set. `auth-compose.yaml` reads
+`VITE_API_BASE_URL` and `VITE_CLERK_PUBLISHABLE_KEY` the same way.
 
 See `infra/deployment/README.md` for the full Dokploy service setup.
 

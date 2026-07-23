@@ -11,6 +11,10 @@ export const DEFAULT_API_CORS_ALLOWED_ORIGINS = [
   "http://127.0.0.1:5173",
   "http://localhost:4173",
   "http://127.0.0.1:4173",
+  "http://localhost:5175",
+  "http://127.0.0.1:5175",
+  "http://localhost:4175",
+  "http://127.0.0.1:4175",
 ] as const;
 
 export type ApiNodeEnv = (typeof API_NODE_ENVS)[number];
@@ -36,6 +40,16 @@ export interface ApiCorsConfig {
   allowedOrigins: ApiCorsOriginRule[];
 }
 
+/**
+ * Clerk configuration, present only when all three `CLERK_*` env vars are
+ * set. See {@link loadApiRuntimeConfig} for the required/optional rules.
+ */
+export interface ApiClerkConfig {
+  secretKey: string;
+  publishableKey: string;
+  jwtKey: string;
+}
+
 export interface ApiRuntimeConfig {
   host: string;
   port: number;
@@ -43,6 +57,8 @@ export interface ApiRuntimeConfig {
   logLevel: ApiLogLevel;
   trustProxy: ApiTrustProxy;
   cors: ApiCorsConfig;
+  clerk: ApiClerkConfig | null;
+  maxUploadBytes: number;
 }
 
 export interface ApiRuntimeEnv {
@@ -52,12 +68,17 @@ export interface ApiRuntimeEnv {
   LOG_LEVEL?: string | undefined;
   TRUST_PROXY?: string | undefined;
   CORS_ALLOWED_ORIGINS?: string | undefined;
+  CLERK_SECRET_KEY?: string | undefined;
+  CLERK_PUBLISHABLE_KEY?: string | undefined;
+  CLERK_JWT_KEY?: string | undefined;
+  MAX_UPLOAD_BYTES?: string | undefined;
 }
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_NODE_ENV: ApiNodeEnv = "development";
 const DEFAULT_PORT = 3001;
 const DEFAULT_TRUST_PROXY = false;
+const DEFAULT_MAX_UPLOAD_BYTES = 5_242_880;
 const WILDCARD_CORS_ALLOWED_ORIGIN_PATTERN = /^(https?):\/\/\*\.([^/?#:]+)(?::([0-9]+))?$/iu;
 const HOST_LABEL_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/iu;
 
@@ -117,6 +138,34 @@ function parsePort(value: string | undefined): number {
   }
 
   return port;
+}
+
+function parseMaxUploadBytes(value: string | undefined): number {
+  if (value === undefined) {
+    return DEFAULT_MAX_UPLOAD_BYTES;
+  }
+
+  const trimmedValue = value.trim();
+
+  if (trimmedValue.length === 0) {
+    throw createApiConfigError("MAX_UPLOAD_BYTES must not be empty when it is set.");
+  }
+
+  if (!/^[0-9]+$/u.test(trimmedValue)) {
+    throw createApiConfigError(
+      `MAX_UPLOAD_BYTES must be a positive integer. Received ${JSON.stringify(trimmedValue)}.`,
+    );
+  }
+
+  const maxUploadBytes = Number(trimmedValue);
+
+  if (!Number.isSafeInteger(maxUploadBytes) || maxUploadBytes < 1) {
+    throw createApiConfigError(
+      `MAX_UPLOAD_BYTES must be a positive integer. Received ${JSON.stringify(trimmedValue)}.`,
+    );
+  }
+
+  return maxUploadBytes;
 }
 
 function parseNodeEnv(value: string | undefined): ApiNodeEnv {
@@ -386,6 +435,55 @@ export function isApiCorsOriginAllowed(corsConfig: ApiCorsConfig, origin: string
   });
 }
 
+function readOptionalClerkValue(
+  variableName: keyof ApiRuntimeEnv,
+  value: string | undefined,
+): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const trimmedValue = value.trim();
+
+  if (trimmedValue.length === 0) {
+    throw createApiConfigError(`${variableName} must not be empty when it is set.`);
+  }
+
+  return trimmedValue;
+}
+
+/**
+ * Parses the `CLERK_*` env vars into an {@link ApiClerkConfig}, or `null`
+ * when Clerk is not configured. In production all three vars are
+ * required; outside production they must either all be present or all be
+ * absent (a partial set is treated as a misconfiguration and throws).
+ */
+function parseClerkConfig(env: ApiRuntimeEnv, nodeEnv: ApiNodeEnv): ApiClerkConfig | null {
+  const secretKey = readOptionalClerkValue("CLERK_SECRET_KEY", env.CLERK_SECRET_KEY);
+  const publishableKey = readOptionalClerkValue("CLERK_PUBLISHABLE_KEY", env.CLERK_PUBLISHABLE_KEY);
+  const jwtKey = readOptionalClerkValue("CLERK_JWT_KEY", env.CLERK_JWT_KEY);
+
+  if (secretKey !== undefined && publishableKey !== undefined && jwtKey !== undefined) {
+    return { secretKey, publishableKey, jwtKey };
+  }
+
+  const missingVariableNames = [
+    secretKey === undefined ? "CLERK_SECRET_KEY" : undefined,
+    publishableKey === undefined ? "CLERK_PUBLISHABLE_KEY" : undefined,
+    jwtKey === undefined ? "CLERK_JWT_KEY" : undefined,
+  ].filter((name): name is string => name !== undefined);
+
+  if (missingVariableNames.length === 3 && nodeEnv !== "production") {
+    return null;
+  }
+
+  throw createApiConfigError(
+    nodeEnv === "production"
+      ? `${missingVariableNames.join(", ")} must be set in production.`
+      : `${missingVariableNames.join(", ")} must be set together with the other CLERK_* variables, or CLERK_SECRET_KEY, CLERK_PUBLISHABLE_KEY, and CLERK_JWT_KEY must all be left unset outside production.`,
+  );
+}
+
 export function loadApiRuntimeConfig(env: ApiRuntimeEnv = process.env): ApiRuntimeConfig {
   const nodeEnv = parseNodeEnv(env.NODE_ENV);
 
@@ -396,5 +494,7 @@ export function loadApiRuntimeConfig(env: ApiRuntimeEnv = process.env): ApiRunti
     logLevel: parseLogLevel(env.LOG_LEVEL, nodeEnv),
     trustProxy: parseTrustProxy(env.TRUST_PROXY),
     cors: parseCorsAllowedOrigins(env.CORS_ALLOWED_ORIGINS),
+    clerk: parseClerkConfig(env, nodeEnv),
+    maxUploadBytes: parseMaxUploadBytes(env.MAX_UPLOAD_BYTES),
   };
 }

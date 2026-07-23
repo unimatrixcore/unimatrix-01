@@ -1,0 +1,61 @@
+{
+  "name": "@unimatrix/user-data",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Browser-side per-user data store (account + guest modes) for the Unimatrix monorepo.",
+  "license": "MIT",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "default": "./dist/react.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@unimatrix/api-client": "workspace:*",
+    "@unimatrix/shared": "workspace:*"
+  },
+  "peerDependencies": {
+    "@unimatrix/auth": "workspace:*",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "peerDependenciesMeta": {
+    "@unimatrix/auth": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.15",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@unimatrix/auth": "workspace:*",
+    "@unimatrix/config-eslint": "workspace:*",
+    "@unimatrix/config-typescript": "workspace:*",
+    "eslint": "^9.36.0",
+    "fake-indexeddb": "^6.2.5",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

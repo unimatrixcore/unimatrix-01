@@ -168,8 +168,13 @@ void test("OPTIONS /health returns the configured CORS preflight response", asyn
     assert.equal(response.statusCode, 204);
     assert.equal(response.body, "");
     assert.equal(response.headers["access-control-allow-origin"], "https://status.unimatrix-01.dev");
-    assert.match(String(response.headers["access-control-allow-methods"]), /\bGET\b/u);
-    assert.match(String(response.headers["access-control-allow-methods"]), /\bHEAD\b/u);
+    // Read and write methods must both be advertised: the user-data routes
+    // use PUT/POST/DELETE and the admin route uses PATCH, so a cross-origin
+    // browser preflight has to see them or every write is blocked.
+    const allowMethods = String(response.headers["access-control-allow-methods"]);
+    for (const method of ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]) {
+      assert.match(allowMethods, new RegExp(`\\b${method}\\b`, "u"));
+    }
     assert.equal(response.headers["access-control-allow-credentials"], undefined);
   } finally {
     await app.close();

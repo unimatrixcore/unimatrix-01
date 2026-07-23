@@ -23,11 +23,14 @@ These paths exist now and are part of normal contributor workflow.
 - `apps/web`
 - `apps/api`
 - `apps/cube-trainer`
+- `apps/auth`
 - `packages/ui`
 - `packages/shared`
 - `packages/api-client`
 - `packages/content`
 - `packages/db`
+- `packages/auth`
+- `packages/user-data`
 - `packages/config-typescript`
 - `packages/config-eslint`
 - `content/home`
@@ -74,6 +77,7 @@ For this repo, v1-ready means the following baseline remains true.
 - [x] `apps/web` is runnable as the canonical public web workspace.
 - [x] `apps/api` is runnable as the canonical API workspace.
 - [x] `apps/cube-trainer` is runnable as the canonical OLL/PLL trainer workspace.
+- [x] `apps/auth` is runnable as the canonical Clerk-backed accounts workspace.
 - [x] Root scripts are the canonical operating surface for local work and CI.
 - [x] The toolchain is pinned to Node `22.22.1` and pnpm `10.30.3`.
 - [x] Shared packages are typed and reusable across app boundaries.

@@ -1,3 +1,4 @@
+import { AuthError } from "@unimatrix/auth/server";
 import type { FastifyError } from "fastify";
 import { hasZodFastifySchemaValidationErrors } from "fastify-type-provider-zod";
 
@@ -5,6 +6,8 @@ export type ApiErrorCode =
   | "VALIDATION_ERROR"
   | "CLIENT_ERROR"
   | "NOT_FOUND"
+  | "UNAUTHORIZED"
+  | "FORBIDDEN"
   | "INTERNAL_ERROR";
 
 export interface ApiValidationIssue {
@@ -149,6 +152,19 @@ export function normalizeError(
       statusCode: error.statusCode,
       envelope: createApiErrorEnvelope(envelopeOptions),
       logLevel: getLogLevelForStatusCode(error.statusCode),
+    };
+  }
+
+  if (error instanceof AuthError) {
+    return {
+      statusCode: error.statusCode,
+      envelope: createApiErrorEnvelope({
+        requestId,
+        code: error.code,
+        message: error.message,
+        statusCode: error.statusCode,
+      }),
+      logLevel: "warn",
     };
   }
 

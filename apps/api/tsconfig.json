@@ -1,7 +1,12 @@
 {
   "extends": "@unimatrix/config-typescript/base.json",
   "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
     "paths": {
+      "@unimatrix/auth": ["../../packages/auth/src/index.ts"],
+      "@unimatrix/auth/server": ["../../packages/auth/src/server.ts"],
+      "@unimatrix/db": ["../../packages/db/src/index.ts"],
       "@unimatrix/shared": ["../../packages/shared/src/index.ts"]
     },
     "types": ["node"]

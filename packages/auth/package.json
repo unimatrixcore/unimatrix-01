@@ -1,0 +1,65 @@
+{
+  "name": "@unimatrix/auth",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared Clerk-backed authentication and permission scheme for the Unimatrix monorepo.",
+  "license": "MIT",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "default": "./dist/react.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@clerk/backend": "^3.12.0",
+    "@clerk/clerk-react": "^5.61.3",
+    "@clerk/fastify": "^3.1.54"
+  },
+  "peerDependencies": {
+    "fastify": "^5.0.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "peerDependenciesMeta": {
+    "fastify": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.15",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@unimatrix/config-eslint": "workspace:*",
+    "@unimatrix/config-typescript": "workspace:*",
+    "eslint": "^9.36.0",
+    "fastify": "^5.6.1",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

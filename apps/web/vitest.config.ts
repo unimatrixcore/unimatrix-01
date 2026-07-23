@@ -18,6 +18,18 @@ export default defineConfig({
         ),
       },
       {
+        find: /^@unimatrix\/auth\/react$/,
+        replacement: fileURLToPath(
+          new URL("../../packages/auth/src/react.tsx", import.meta.url),
+        ),
+      },
+      {
+        find: /^@unimatrix\/auth$/,
+        replacement: fileURLToPath(
+          new URL("../../packages/auth/src/index.ts", import.meta.url),
+        ),
+      },
+      {
         find: /^@unimatrix\/content$/,
         replacement: fileURLToPath(
           new URL("../../packages/content/src/index.ts", import.meta.url),

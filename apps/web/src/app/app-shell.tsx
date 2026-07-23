@@ -6,15 +6,25 @@ import {
   RiArrowRightSLine,
   RiFolderLine,
   RiHome5Line,
+  RiLoginBoxLine,
   RiUserLine,
 } from "@remixicon/react";
+import { SignedIn, SignedOut, UserButton } from "@unimatrix/auth/react";
 
 import {
   getBlogEntryBySlug,
   getProjectEntryBySlug,
 } from "@/features/content/site-content";
 import { PublicPageContainer, PublicSiteFooter } from "@/features/public-site/components";
+import { isAuthEnabled, loadWebRuntimeConfig } from "@/lib/config";
 import { cn } from "@unimatrix/ui/public";
+
+const runtimeConfig = loadWebRuntimeConfig({
+  VITE_API_BASE_URL: import.meta.env.VITE_API_BASE_URL,
+  VITE_AUTH_APP_URL: import.meta.env.VITE_AUTH_APP_URL,
+  VITE_CLERK_PUBLISHABLE_KEY: import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
+});
+const authEnabled = isAuthEnabled(runtimeConfig);
 
 type AppShellProps = {
   children: ReactNode;
@@ -78,6 +88,41 @@ function Breadcrumbs({ items }: { items: BreadcrumbItem[] }) {
         );
       })}
     </div>
+  );
+}
+
+function buildSignInHref(): string {
+  const redirectUrl = encodeURIComponent(window.location.href);
+
+  return `${runtimeConfig.authAppUrl}/sign-in?redirect_url=${redirectUrl}`;
+}
+
+/**
+ * Header sign-in affordance. Renders nothing when Clerk auth is disabled
+ * (the default for this public site) — `SignedIn`/`SignedOut` are Clerk
+ * components that require a mounted `AuthProvider`, so they must never be
+ * rendered when one isn't present.
+ */
+function AuthHeaderAction() {
+  if (!authEnabled) {
+    return null;
+  }
+
+  return (
+    <>
+      <SignedIn>
+        <UserButton afterSignOutUrl="/" />
+      </SignedIn>
+      <SignedOut>
+        <a
+          className="inline-flex items-center gap-2 border border-border/70 bg-background/72 px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary/35 hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/45 focus-visible:outline-none"
+          href={buildSignInHref()}
+        >
+          <RiLoginBoxLine aria-hidden="true" className="size-3.5" />
+          <span>Sign in</span>
+        </a>
+      </SignedOut>
+    </>
   );
 }
 
@@ -187,6 +232,12 @@ export function AppShell({ children }: AppShellProps) {
               );
             })}
           </nav>
+
+          {authEnabled ? (
+            <div className="flex items-center justify-end gap-2">
+              <AuthHeaderAction />
+            </div>
+          ) : null}
         </div>
       </header>
 
@@ -233,6 +284,12 @@ export function AppShell({ children }: AppShellProps) {
                   );
                 })}
               </nav>
+
+              {authEnabled ? (
+                <div className="flex items-center justify-end gap-2">
+                  <AuthHeaderAction />
+                </div>
+              ) : null}
             </div>
           </div>
         </div>

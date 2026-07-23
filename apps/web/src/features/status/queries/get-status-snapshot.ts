@@ -1,6 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
-
-import { apiClient } from "@/lib/api-client";
+import type { ApiClient } from "@unimatrix/api-client";
 
 const ROUTER_STATUS_MESSAGE = "TanStack Router file-based routing is active.";
 const SUCCESS_CLIENT_STATUS_MESSAGE =
@@ -16,7 +15,7 @@ export interface StatusSnapshot {
   status: string;
 }
 
-async function getStatusSnapshot(): Promise<StatusSnapshot> {
+export async function getStatusSnapshot(apiClient: ApiClient): Promise<StatusSnapshot> {
   const checkedAt = new Date().toLocaleTimeString();
 
   try {
@@ -43,9 +42,16 @@ async function getStatusSnapshot(): Promise<StatusSnapshot> {
   }
 }
 
-export function statusSnapshotQueryOptions() {
+/**
+ * Not currently wired to a route — kept as the reference example for
+ * fetching `GET /health` through `@unimatrix/api-client`. Callers should
+ * pass the client returned by `useApiClient()` (token-bearing when auth is
+ * enabled) rather than reaching for a client directly, so there is a single
+ * clear way to obtain one.
+ */
+export function statusSnapshotQueryOptions(apiClient: ApiClient) {
   return queryOptions({
-    queryFn: getStatusSnapshot,
+    queryFn: () => getStatusSnapshot(apiClient),
     queryKey: ["status-snapshot"],
     staleTime: 1000 * 60,
   });

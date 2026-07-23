@@ -51,6 +51,10 @@ Use `pnpm dev` to start the normal local runtime surface.
 - Does not start `@unimatrix/cube-trainer`; run
   `pnpm --filter @unimatrix/cube-trainer dev` separately. It has no `.env`
   files and no backend dependency.
+- Does not start `@unimatrix/auth-app`; run
+  `pnpm --filter @unimatrix/auth-app dev` separately. It serves on port
+  `5175` (preview `4175`) and needs `VITE_CLERK_PUBLISHABLE_KEY` set to sign
+  in against Clerk.
 
 ### `pnpm setup:local`
 
@@ -86,9 +90,12 @@ The app-local env contract is intentionally narrow and predictable.
 - Existing shell environment variables still win because the loader does not
   overwrite values already present in `process.env`.
 - The web app uses Vite's normal `apps/web/.env*` behavior for `VITE_`
-  variables.
+  variables. `apps/auth` follows the same Vite `.env*` behavior.
 - Deployment examples live in `apps/api/.env.production.example` and
   `apps/web/.env.production.example`.
+- The API's Clerk auth env (`CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`,
+  `CLERK_JWT_KEY`) is optional in development and test: the API boots with
+  auth disabled when they are unset, and is required only in production.
 
 Use [deployment docs](../infra/deployment/README.md) for deployment-specific
 environment rules instead of duplicating them here.
@@ -127,6 +134,12 @@ pnpm --filter @unimatrix/cube-trainer dev
 pnpm --filter @unimatrix/cube-trainer test:unit
 pnpm --filter @unimatrix/cube-trainer test:smoke
 pnpm --filter @unimatrix/cube-trainer test
+pnpm --filter @unimatrix/auth-app dev
+pnpm --filter @unimatrix/auth-app test
+pnpm --filter @unimatrix/auth typecheck
+pnpm --filter @unimatrix/auth test
+pnpm --filter @unimatrix/user-data typecheck
+pnpm --filter @unimatrix/user-data test
 pnpm --filter @unimatrix/content build
 pnpm --filter @unimatrix/content test
 pnpm --filter @unimatrix/db db:migrate
