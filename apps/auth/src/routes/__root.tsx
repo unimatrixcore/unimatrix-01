@@ -29,7 +29,7 @@ function RootComponent() {
 
 function RootNotFound() {
   return (
-    <Card className="site-panel max-w-3xl px-6 py-6 lg:px-8 lg:py-8">
+    <Card className="w-full max-w-md px-6 py-8">
       <div className="space-y-5">
         <Badge variant="destructive" className="gap-1.5">
           <RiAlertLine aria-hidden="true" className="size-3.5" />
@@ -39,8 +39,8 @@ function RootNotFound() {
           <h2 className="text-2xl leading-tight font-medium tracking-[-0.05em] text-foreground">
             That page is not part of Unimatrix Accounts.
           </h2>
-          <p className="max-w-2xl text-sm leading-7 text-muted-foreground">
-            Return to the dashboard or manage your account.
+          <p className="text-sm leading-7 text-muted-foreground">
+            Head back to sign in or manage your account.
           </p>
         </div>
         <div className="flex flex-wrap gap-3">

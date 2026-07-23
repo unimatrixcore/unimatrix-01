@@ -22,18 +22,4 @@
     );
     opacity: 0.55;
   }
-
-  .site-shell::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    background: linear-gradient(
-      90deg,
-      color-mix(in oklab, white 2%, transparent) 1px,
-      transparent 1px
-    );
-    background-size: 18rem 100%;
-    opacity: 0.08;
-  }
 }

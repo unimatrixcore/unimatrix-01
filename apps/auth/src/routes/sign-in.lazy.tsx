@@ -17,7 +17,7 @@ function SignInRoute() {
   const target = safeRedirectUrl(redirect_url);
 
   return (
-    <div className="flex justify-center">
+    <>
       {/*
        * Clerk's <SignIn /> needs to route its own internal sub-steps
        * (email code entry, MFA, etc). Two options integrate with
@@ -39,6 +39,6 @@ function SignInRoute() {
         routing="hash"
         signUpUrl={withRedirectParam("/sign-up", redirect_url)}
       />
-    </div>
+    </>
   );
 }

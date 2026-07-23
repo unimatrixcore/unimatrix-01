@@ -16,13 +16,11 @@ function SignUpRoute() {
   const target = safeRedirectUrl(redirect_url);
 
   return (
-    <div className="flex justify-center">
-      {/* See the comment in sign-in.lazy.tsx for why this uses routing="hash". */}
-      <SignUp
-        forceRedirectUrl={target}
-        routing="hash"
-        signInUrl={withRedirectParam("/sign-in", redirect_url)}
-      />
-    </div>
+    /* See the comment in sign-in.lazy.tsx for why this uses routing="hash". */
+    <SignUp
+      forceRedirectUrl={target}
+      routing="hash"
+      signInUrl={withRedirectParam("/sign-in", redirect_url)}
+    />
   );
 }
