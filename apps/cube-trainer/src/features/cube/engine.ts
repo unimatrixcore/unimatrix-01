@@ -1,5 +1,6 @@
 import {
   FACE_ORDER,
+  createSolvedCube,
   faceFromNormal,
   faceletIndex,
   faceNormal,
@@ -155,29 +156,37 @@ export function applyMoves(cube: FaceletCube, moves: Move[]): FaceletCube {
   return stickersToCube(stickers);
 }
 
-function isOriented(cube: FaceletCube): boolean {
-  return FACE_ORDER.every((face, i) => readFacelet(cube, i * 9 + 4) === face);
-}
-
 function centerSignature(cube: FaceletCube): string {
   return FACE_ORDER.map((_, i) => readFacelet(cube, i * 9 + 4)).join("");
 }
 
 // x, y, and z alone generate the cube's full 24-element rotation group, so repeatedly
-// applying them from the current (possibly misoriented) state and stopping at the first
-// state whose centers all read home is a correct-by-construction way to find the
-// corrective rotation, without hand-deriving a 24-entry orientation lookup table.
+// applying them from a starting state and stopping at the first state whose centers match
+// a target signature is a correct-by-construction way to find the needed rotation, without
+// hand-deriving a 24-entry orientation lookup table. All three turn counts (quarter, half,
+// reverse-quarter) are included as direct generators - with only quarter turns, a rotation
+// that's really a single x' would come out of the BFS as three separate x's (correct as a
+// transform, but a confusing "x x x" in the displayed setup-move text), and a half turn
+// would come out as two quarter turns instead of one x2/y2/z2.
 const ORIENTATION_GENERATORS: Move[] = [
   { face: "x", turns: 1 },
+  { face: "x", turns: 2 },
+  { face: "x", turns: 3 },
   { face: "y", turns: 1 },
+  { face: "y", turns: 2 },
+  { face: "y", turns: 3 },
   { face: "z", turns: 1 },
+  { face: "z", turns: 2 },
+  { face: "z", turns: 3 },
 ];
 
-export function normalizeOrientation(cube: FaceletCube): FaceletCube {
-  const start = applyMoves(cube, []);
-  if (isOriented(start)) return start;
+function findRotationToSignature(
+  start: FaceletCube,
+  targetSignature: string,
+): { cube: FaceletCube; moves: Move[] } {
+  if (centerSignature(start) === targetSignature) return { cube: start, moves: [] };
 
-  const queue: FaceletCube[] = [start];
+  const queue: { cube: FaceletCube; moves: Move[] }[] = [{ cube: start, moves: [] }];
   const visited = new Set<string>([centerSignature(start)]);
   let head = 0;
 
@@ -187,15 +196,36 @@ export function normalizeOrientation(cube: FaceletCube): FaceletCube {
     if (!current) break;
 
     for (const generator of ORIENTATION_GENERATORS) {
-      const next = applyMoves(current, [generator]);
+      const next = applyMoves(current.cube, [generator]);
       const signature = centerSignature(next);
       if (visited.has(signature)) continue;
 
       visited.add(signature);
-      if (isOriented(next)) return next;
-      queue.push(next);
+      const moves = [...current.moves, generator];
+      if (signature === targetSignature) return { cube: next, moves };
+      queue.push({ cube: next, moves });
     }
   }
 
   throw new Error("Unable to find a corrective orientation sequence");
+}
+
+export function normalizeOrientation(cube: FaceletCube): FaceletCube {
+  return findRotationToSignature(cube, FACE_ORDER.join("")).cube;
+}
+
+/**
+ * Finds the whole-cube rotation (as a move list, applied from a solved cube) whose net
+ * center-permutation matches what `algorithmMoves` produces. Algorithms that embed a
+ * leading/trailing x/y/z (common in PLL - e.g. Aa, Ab, E, Ja) carry this rotation, and
+ * undoing it *after* inverting the algorithm (post-hoc, via `normalizeOrientation` on the
+ * already-inverted state) gives a different, wrong permutation: the rotation doesn't
+ * commute with the algorithm's other moves, so correcting on the wrong side composes
+ * differently than correcting on the right side. The correct construction pre-rotates the
+ * solved cube by this same net rotation *before* inverting, so the two rotations cancel
+ * exactly instead of interacting with the moves in between (see `getCaseSetup`).
+ */
+export function netRotationFor(algorithmMoves: Move[]): Move[] {
+  const targetSignature = centerSignature(applyMoves(createSolvedCube(), algorithmMoves));
+  return findRotationToSignature(createSolvedCube(), targetSignature).moves;
 }
