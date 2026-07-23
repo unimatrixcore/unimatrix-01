@@ -1,10 +1,13 @@
 import type { AlgorithmCase } from "@/features/algorithms/types";
+import type { CaseProgress } from "@/lib/progress-storage";
 
 export function pickNextCase(
   cases: AlgorithmCase[],
+  progress: CaseProgress,
   excludeId: string | undefined,
 ): AlgorithmCase | undefined {
-  const candidates = cases.length > 1 ? cases.filter((c) => c.id !== excludeId) : cases;
+  const unknown = cases.filter((c) => progress[c.id] !== "known");
+  const candidates = unknown.length > 1 ? unknown.filter((c) => c.id !== excludeId) : unknown;
 
   if (candidates.length === 0) {
     return undefined;
