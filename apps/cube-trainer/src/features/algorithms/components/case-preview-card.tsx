@@ -40,6 +40,7 @@ export function CasePreviewCard({
       className={cn(
         "site-panel relative flex flex-col items-center gap-2 px-3 py-4 text-center transition-[opacity,background-color] hover:bg-primary/8",
         dimmed && "opacity-40 hover:opacity-70",
+        learned && "border-primary/60",
       )}
       onClick={onClick}
       type="button"
