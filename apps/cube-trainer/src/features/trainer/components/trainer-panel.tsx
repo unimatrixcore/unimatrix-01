@@ -16,7 +16,7 @@ export function TrainerPanel({
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (event.repeat || event.code !== "Space" || event.target instanceof HTMLButtonElement) return;
+      if (event.repeat || event.code !== "Space") return;
       event.preventDefault();
       next();
     }

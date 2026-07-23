@@ -16,7 +16,7 @@ export function LearnPanel({ setId }: LearnPanelProps) {
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (event.repeat || event.target instanceof HTMLButtonElement) return;
+      if (event.repeat) return;
 
       if (event.code === "ArrowLeft") {
         event.preventDefault();
