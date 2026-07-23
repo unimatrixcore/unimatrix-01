@@ -224,6 +224,23 @@ The production web host must fall back to `index.html` for unknown application
 routes so the client-side router can resolve SPA paths after the initial
 request.
 
+## Troubleshooting
+
+- **`Nixpacks build failed` / `Failed to read app source directory / Not a directory`**:
+  the Dokploy service was created as the default **Application** type, which
+  auto-detects a builder (Nixpacks) and cannot build this pnpm monorepo. Every
+  service here must be a **Compose** application pointing at its
+  `infra/docker/*-compose.yaml` file (see the per-service sections above), which
+  builds the app's `Dockerfile` with the repo root as the build context. Recreate
+  the service as a Compose application rather than editing the Nixpacks one.
+- **Build args resolve to empty** (e.g. a blank `VITE_CLERK_PUBLISHABLE_KEY` or
+  `VITE_API_BASE_URL` baked into the bundle): the compose files pass these through
+  as `${VAR}` build args, so they must be set in the Dokploy service's environment
+  before the build runs — Vite inlines them at build time, not runtime.
+- **New service has no compose file / app on the deploy branch**: `apps/auth` and
+  `infra/docker/auth-compose.yaml` only exist once the auth feature branch is
+  merged to `main`. Point the service at the feature branch to deploy before merge.
+
 ## Related docs
 
 - `infra/docker/README.md`: Dockerfiles, Compose, and manual container workflow
