@@ -32,7 +32,7 @@ Permissions are stored in Clerk `user.publicMetadata` under a single `permission
 - Roles: `"viewer"`, `"editor"`, `"admin"` (see `Role`).
 - The platform-wide administrator role is `auth: ["admin"]` — `isAdmin(perms)` is shorthand for `hasPermission(perms, "auth", "admin")`.
 
-`publicMetadata` can only be written from the Backend API (`@clerk/backend`, added in a later phase), never from the client. There is intentionally no public "become admin" flow.
+`publicMetadata` can only be written server-side — in the Clerk Dashboard or via the Clerk Backend API — never from the client. There is intentionally no public "become admin" flow.
 
 ## Session token customization
 
@@ -79,7 +79,7 @@ There is no public "become admin" endpoint or flow. To grant the first platform 
 - **Preferred**: in the Clerk Dashboard, open the user's profile and set `publicMetadata` to `{ "permissions": { "auth": ["admin"] } }`.
 - **Alternative**: use a one-off script against `@clerk/backend`'s `clerkClient.users.updateUserMetadata(userId, { publicMetadata: { permissions: { auth: ["admin"] } } })` (this requires `CLERK_SECRET_KEY`; such a script belongs to a later phase's tooling, not to this package).
 
-Once a user holds `auth: ["admin"]`, later phases can build an admin UI (in a future `apps/auth`) that lets them manage other users' permissions through the Backend API.
+Once a user holds `auth: ["admin"]`, manage other users and their permission metadata directly in the Clerk Dashboard (the app ships no bespoke admin UI). This permission scheme still gates access across apps via `requirePermission` (server) and `usePermissions`/`isAdmin` (react).
 
 ## Usage sketch
 

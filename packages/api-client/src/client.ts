@@ -5,9 +5,7 @@ import {
   healthContract,
   listDocumentsContract,
   listFilesContract,
-  listUsersContract,
   putDocumentContract,
-  updateUserPermissionsContract,
   type ApiContract,
   type ApiContractBody,
   type ApiContractQuery,
@@ -21,11 +19,7 @@ import {
   type ListDocumentsResponse,
   type ListFilesQuery,
   type ListFilesResponse,
-  type ListUsersQuery,
-  type ListUsersResponse,
   type PutDocumentBody,
-  type UpdateUserPermissionsBody,
-  type UpdateUserPermissionsResponse,
   type UserDocument,
 } from "@unimatrix/shared";
 
@@ -55,8 +49,6 @@ type RequiresRequestOptions<TContract extends ApiContract> =
 
 export interface ApiClient {
   getHealth(): Promise<HealthResponse>;
-  listUsers(query: ListUsersQuery): Promise<ListUsersResponse>;
-  updateUserPermissions(body: UpdateUserPermissionsBody): Promise<UpdateUserPermissionsResponse>;
   getDocument(query: GetDocumentQuery): Promise<UserDocument>;
   putDocument(body: PutDocumentBody): Promise<UserDocument>;
   deleteDocument(body: DeleteDocumentBody): Promise<DeleteResult>;
@@ -273,10 +265,6 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
 
   return {
     getHealth: () => request(healthContract),
-    listUsers: (query: ListUsersQuery) =>
-      request<typeof listUsersContract>(listUsersContract, { query }),
-    updateUserPermissions: (body: UpdateUserPermissionsBody) =>
-      request<typeof updateUserPermissionsContract>(updateUserPermissionsContract, { body }),
     getDocument: (query: GetDocumentQuery) =>
       request<typeof getDocumentContract>(getDocumentContract, { query }),
     putDocument: (body: PutDocumentBody) =>

@@ -4,15 +4,6 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { AppSlug, Role, SessionPermissionsClaim } from "./permissions.js";
 import { hasPermission } from "./permissions.js";
 
-export type {
-  CreateUserManagementClientOptions,
-  ListUsersOptions,
-  ListUsersResult,
-  UserManagementClient,
-  UserSummaryData,
-} from "./admin.js";
-export { createUserManagementClient, normalizePermissionsMetadata } from "./admin.js";
-
 /**
  * The kinds of failures `requireAuth()` and `requirePermission()` can
  * raise. `"unauthorized"` means there is no authenticated Clerk session at

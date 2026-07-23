@@ -124,8 +124,9 @@ routing. It has no API dependency, so it does not need an entry in
 The auth container is a static SPA container, same shape as the web and
 cube-trainer services. Preserve SPA fallback behavior inside the container
 regardless of routing. It is the central Clerk-backed accounts app (landing,
-sign-in/sign-up, account management, and the permission admin panel), so it
-needs `CORS_ALLOWED_ORIGINS` on the API service to include
+sign-in/sign-up, and account management; user/permission management is done in
+the Clerk Dashboard), so it needs `CORS_ALLOWED_ORIGINS` on the API service to
+include
 `https://auth.unimatrix-01.dev` if it calls the API directly from the browser.
 
 ## Traefik expectations
@@ -200,7 +201,7 @@ scheme.
 - if `CORS_ALLOWED_ORIGINS` is set, it fully replaces those defaults
 - API CORS stays intentionally narrow: no credentials; browser methods are
   `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, and `DELETE` (the writes are needed by
-  the admin and user-data endpoints); the `authorization` header is allowed
+  the user-data endpoints); the `authorization` header is allowed
   (needed for Clerk-authenticated requests); and `x-request-id` is exposed to
   browser clients
 
@@ -233,7 +234,6 @@ Verify these URLs after each production rollout:
 - `https://auth.unimatrix-01.dev/`
 - `https://auth.unimatrix-01.dev/sign-in`
 - `https://auth.unimatrix-01.dev/account`
-- `https://auth.unimatrix-01.dev/admin`
 
 Also verify that refreshing a deep route on the public site, cube-trainer, or
 the auth app still renders the SPA instead of returning a proxy or
