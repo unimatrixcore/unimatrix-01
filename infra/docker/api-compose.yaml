@@ -10,4 +10,13 @@ services:
       LOG_LEVEL: info
       TRUST_PROXY: "1"
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+      # Apply pending Drizzle migrations against the mounted volume at startup
+      # (idempotent). The DB file defaults to /data/unimatrix.sqlite (set in the
+      # Dockerfile); the api-data volume below persists it across redeploys.
+      DB_MIGRATE_ON_START: "true"
+    volumes:
+      - api-data:/data
     restart: unless-stopped
+
+volumes:
+  api-data:

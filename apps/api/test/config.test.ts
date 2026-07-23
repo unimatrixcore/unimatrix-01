@@ -38,6 +38,7 @@ void test("loadApiRuntimeConfig uses documented defaults", () => {
     },
     clerk: null,
     maxUploadBytes: 5_242_880,
+    runDatabaseMigrations: false,
   });
 });
 
@@ -91,6 +92,7 @@ void test("loadApiRuntimeConfig trims and validates explicit values", () => {
         jwtKey: "jwt_key_123",
       },
       maxUploadBytes: 5_242_880,
+      runDatabaseMigrations: false,
     },
   );
 });
@@ -314,6 +316,24 @@ void test("loadApiRuntimeConfig rejects blank CLERK_* values", () => {
 
 void test("loadApiRuntimeConfig defaults maxUploadBytes to 5 MiB", () => {
   assert.equal(loadApiRuntimeConfig({}).maxUploadBytes, 5_242_880);
+});
+
+void test("loadApiRuntimeConfig defaults runDatabaseMigrations to false", () => {
+  assert.equal(loadApiRuntimeConfig({}).runDatabaseMigrations, false);
+});
+
+void test("loadApiRuntimeConfig parses DB_MIGRATE_ON_START truthy/falsy values", () => {
+  assert.equal(loadApiRuntimeConfig({ DB_MIGRATE_ON_START: "true" }).runDatabaseMigrations, true);
+  assert.equal(loadApiRuntimeConfig({ DB_MIGRATE_ON_START: " 1 " }).runDatabaseMigrations, true);
+  assert.equal(loadApiRuntimeConfig({ DB_MIGRATE_ON_START: "false" }).runDatabaseMigrations, false);
+  assert.equal(loadApiRuntimeConfig({ DB_MIGRATE_ON_START: "0" }).runDatabaseMigrations, false);
+});
+
+void test("loadApiRuntimeConfig rejects an invalid DB_MIGRATE_ON_START", () => {
+  assert.throws(
+    () => loadApiRuntimeConfig({ DB_MIGRATE_ON_START: "yes" }),
+    /DB_MIGRATE_ON_START must be one of true, 1, false, 0/,
+  );
 });
 
 void test("loadApiRuntimeConfig parses an explicit MAX_UPLOAD_BYTES", () => {
