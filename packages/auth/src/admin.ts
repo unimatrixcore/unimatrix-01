@@ -1,6 +1,7 @@
 import { createClerkClient } from "@clerk/backend";
 import type { User } from "@clerk/backend";
 
+import { APP_SLUGS } from "./permissions.js";
 import type { AppSlug, Role, UserPermissionsMetadata } from "./permissions.js";
 
 /**
@@ -52,10 +53,14 @@ export function normalizePermissionsMetadata(
     return {};
   }
 
+  const knownAppSlugs = new Set<string>(APP_SLUGS);
   const normalized: Partial<Record<AppSlug, Role[]>> = {};
 
   for (const [appSlug, roles] of Object.entries(permissions as Record<string, unknown>)) {
-    if (isRoleArray(roles)) {
+    // Drop unknown app slugs: the shared `permissionsMapSchema` used for the
+    // /admin/users response rejects keys outside APP_SLUGS, so passing one
+    // through here would fail response serialization and break the admin list.
+    if (knownAppSlugs.has(appSlug) && isRoleArray(roles)) {
       normalized[appSlug as AppSlug] = roles;
     }
   }

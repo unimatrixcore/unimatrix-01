@@ -36,12 +36,13 @@ describe("normalizePermissionsMetadata", () => {
     ).toEqual({ web: ["viewer"] });
   });
 
-  it("keeps unknown app slug keys whose role list is well-formed", () => {
-    // Unknown app slugs pass through the shape guard; downstream permission
-    // checks (hasPermission) will simply never match them.
-    expect(normalizePermissionsMetadata({ permissions: { unknown: ["admin"] } })).toEqual({
-      unknown: ["admin"],
-    });
+  it("drops unknown app slug keys, keeping only known slugs", () => {
+    // Unknown app slugs are dropped: the shared `permissionsMapSchema` used
+    // for the /admin/users response rejects keys outside APP_SLUGS, so
+    // passing one through would fail response serialization.
+    expect(
+      normalizePermissionsMetadata({ permissions: { unknown: ["admin"], web: ["viewer"] } }),
+    ).toEqual({ web: ["viewer"] });
   });
 
   it("drops unknown role strings within an otherwise valid role list", () => {
