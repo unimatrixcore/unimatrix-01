@@ -1,8 +1,10 @@
 import type * as React from "react";
-import { RiGithubLine, RiMailLine } from "@remixicon/react";
+import { useQuery } from "@tanstack/react-query";
+import { RiGithubLine, RiLoaderLine, RiMailLine } from "@remixicon/react";
 
 import { Badge, Card, cn } from "@unimatrix/ui/public";
 
+import { projectLiveStatusQueryOptions } from "./queries/check-project-live-status";
 import { emailAddress, githubProfileUrl } from "./site-links";
 
 export function PublicPageContainer({
@@ -206,6 +208,7 @@ export function PublicDecisionCard({
 type PublicProjectCardData = {
   excerpt: string;
   frontmatter: {
+    liveUrl?: string;
     publishedAt: string;
     repoUrl?: string;
     status: string;
@@ -226,6 +229,52 @@ function getProjectStatusClassName(status: string) {
     default:
       return "border-border/70 bg-background/60 text-foreground";
   }
+}
+
+export function ProjectStatusBadge({
+  frontmatter,
+}: {
+  frontmatter: Pick<PublicProjectCardData["frontmatter"], "liveUrl" | "status">;
+}) {
+  const { liveUrl, status } = frontmatter;
+  const liveStatusQuery = useQuery({
+    ...projectLiveStatusQueryOptions(liveUrl ?? ""),
+    enabled: liveUrl !== undefined,
+  });
+
+  if (liveUrl === undefined) {
+    return (
+      <Badge className={cn("border", getProjectStatusClassName(status))}>{status}</Badge>
+    );
+  }
+
+  if (liveStatusQuery.isPending) {
+    return (
+      <Badge className="gap-1.5" variant="outline">
+        <RiLoaderLine aria-hidden="true" className="size-3 animate-spin" />
+        Checking
+      </Badge>
+    );
+  }
+
+  const isLive = liveStatusQuery.data === "live";
+
+  return (
+    <Badge
+      className={cn(
+        "gap-1.5 border",
+        isLive
+          ? "border-primary/35 bg-primary/16 text-foreground"
+          : "border-destructive/40 bg-destructive/10 text-destructive",
+      )}
+    >
+      <span
+        aria-hidden="true"
+        className={cn("size-1.5 rounded-full", isLive ? "bg-primary" : "bg-destructive")}
+      />
+      {isLive ? "Live" : "Offline"}
+    </Badge>
+  );
 }
 
 export function PublicProjectLedgerItem({
@@ -255,9 +304,7 @@ export function PublicProjectLedgerItem({
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
         <div className="space-y-2.5">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge className={cn("border", getProjectStatusClassName(project.frontmatter.status))}>
-              {project.frontmatter.status}
-            </Badge>
+            <ProjectStatusBadge frontmatter={project.frontmatter} />
             <span className="text-xs text-muted-foreground">{project.frontmatter.publishedAt}</span>
           </div>
           <h3 className="text-xl leading-tight font-medium tracking-[-0.04em] text-foreground lg:text-[1.5rem]">

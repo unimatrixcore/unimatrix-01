@@ -3,6 +3,7 @@ import { Link, createLazyFileRoute } from "@tanstack/react-router";
 
 import { LazyPublicMarkdown } from "@/features/content/lazy-public-markdown";
 import { renderPublicMarkdownInternalLink } from "@/features/content/markdown";
+import { ProjectStatusBadge } from "@/features/public-site/components";
 import { Badge, Button } from "@unimatrix/ui/public";
 
 export const Route = createLazyFileRoute("/projects_/$slug")({
@@ -25,7 +26,7 @@ function ProjectDetailRoute() {
 
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline">{project.frontmatter.status}</Badge>
+            <ProjectStatusBadge frontmatter={project.frontmatter} />
             <Badge variant="secondary">{project.frontmatter.publishedAt}</Badge>
           </div>
 

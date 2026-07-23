@@ -85,6 +85,7 @@ test("project page render", async ({ page }) => {
     "https://cube.unimatrix-01.dev",
   );
   await expect(page.getByRole("link", { name: "Back to projects" })).toBeVisible();
+  await expect(page.getByText(/^(Checking|Live|Offline)$/u)).toBeVisible();
 
   expectNoPageErrors(pageErrors);
 });
