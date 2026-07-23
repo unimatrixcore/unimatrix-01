@@ -30,8 +30,14 @@ void test("loadApiRuntimeConfig uses documented defaults", () => {
         { kind: "exact", origin: "http://127.0.0.1:5173" },
         { kind: "exact", origin: "http://localhost:4173" },
         { kind: "exact", origin: "http://127.0.0.1:4173" },
+        { kind: "exact", origin: "http://localhost:5175" },
+        { kind: "exact", origin: "http://127.0.0.1:5175" },
+        { kind: "exact", origin: "http://localhost:4175" },
+        { kind: "exact", origin: "http://127.0.0.1:4175" },
       ],
     },
+    clerk: null,
+    maxUploadBytes: 5_242_880,
   });
 });
 
@@ -43,6 +49,9 @@ void test("loadApiRuntimeConfig trims and validates explicit values", () => {
       NODE_ENV: "production",
       PORT: "4000",
       TRUST_PROXY: " true ",
+      CLERK_SECRET_KEY: " sk_test_123 ",
+      CLERK_PUBLISHABLE_KEY: " pk_test_123 ",
+      CLERK_JWT_KEY: " jwt_key_123 ",
     }),
     {
       host: "0.0.0.0",
@@ -70,8 +79,18 @@ void test("loadApiRuntimeConfig trims and validates explicit values", () => {
           { kind: "exact", origin: "http://127.0.0.1:5173" },
           { kind: "exact", origin: "http://localhost:4173" },
           { kind: "exact", origin: "http://127.0.0.1:4173" },
+          { kind: "exact", origin: "http://localhost:5175" },
+          { kind: "exact", origin: "http://127.0.0.1:5175" },
+          { kind: "exact", origin: "http://localhost:4175" },
+          { kind: "exact", origin: "http://127.0.0.1:4175" },
         ],
       },
+      clerk: {
+        secretKey: "sk_test_123",
+        publishableKey: "pk_test_123",
+        jwtKey: "jwt_key_123",
+      },
+      maxUploadBytes: 5_242_880,
     },
   );
 });
@@ -148,7 +167,15 @@ void test("loadApiRuntimeConfig parses omnimatrix wildcard cors origins", () => 
 
 void test("loadApiRuntimeConfig defaults LOG_LEVEL to info outside development", () => {
   assert.equal(loadApiRuntimeConfig({ NODE_ENV: "test" }).logLevel, "info");
-  assert.equal(loadApiRuntimeConfig({ NODE_ENV: "production" }).logLevel, "info");
+  assert.equal(
+    loadApiRuntimeConfig({
+      NODE_ENV: "production",
+      CLERK_SECRET_KEY: "sk_test_123",
+      CLERK_PUBLISHABLE_KEY: "pk_test_123",
+      CLERK_JWT_KEY: "jwt_key_123",
+    }).logLevel,
+    "info",
+  );
 });
 
 void test("loadApiRuntimeConfig rejects invalid PORT values", () => {
@@ -217,4 +244,106 @@ void test("loadApiRuntimeConfig rejects malformed CORS_ALLOWED_ORIGINS values", 
       /CORS_ALLOWED_ORIGINS/u,
     );
   }
+});
+
+void test("loadApiRuntimeConfig defaults clerk to null when all CLERK_* vars are absent outside production", () => {
+  assert.equal(loadApiRuntimeConfig({ NODE_ENV: "development" }).clerk, null);
+  assert.equal(loadApiRuntimeConfig({ NODE_ENV: "test" }).clerk, null);
+});
+
+void test("loadApiRuntimeConfig populates clerk when all CLERK_* vars are present", () => {
+  assert.deepEqual(
+    loadApiRuntimeConfig({
+      NODE_ENV: "development",
+      CLERK_SECRET_KEY: "sk_test_123",
+      CLERK_PUBLISHABLE_KEY: "pk_test_123",
+      CLERK_JWT_KEY: "jwt_key_123",
+    }).clerk,
+    {
+      secretKey: "sk_test_123",
+      publishableKey: "pk_test_123",
+      jwtKey: "jwt_key_123",
+    },
+  );
+});
+
+void test("loadApiRuntimeConfig throws in production when any CLERK_* var is missing", () => {
+  assert.throws(
+    () => loadApiRuntimeConfig({ NODE_ENV: "production" }),
+    /CLERK_SECRET_KEY, CLERK_PUBLISHABLE_KEY, CLERK_JWT_KEY must be set in production/,
+  );
+
+  assert.throws(
+    () =>
+      loadApiRuntimeConfig({
+        NODE_ENV: "production",
+        CLERK_SECRET_KEY: "sk_test_123",
+        CLERK_PUBLISHABLE_KEY: "pk_test_123",
+      }),
+    /CLERK_JWT_KEY must be set in production/,
+  );
+});
+
+void test("loadApiRuntimeConfig throws outside production when only some CLERK_* vars are set", () => {
+  assert.throws(
+    () =>
+      loadApiRuntimeConfig({
+        NODE_ENV: "development",
+        CLERK_SECRET_KEY: "sk_test_123",
+      }),
+    /CLERK_PUBLISHABLE_KEY, CLERK_JWT_KEY must be set together with the other CLERK_\* variables/,
+  );
+
+  assert.throws(
+    () =>
+      loadApiRuntimeConfig({
+        NODE_ENV: "test",
+        CLERK_SECRET_KEY: "sk_test_123",
+        CLERK_PUBLISHABLE_KEY: "pk_test_123",
+      }),
+    /CLERK_JWT_KEY must be set together with the other CLERK_\* variables/,
+  );
+});
+
+void test("loadApiRuntimeConfig rejects blank CLERK_* values", () => {
+  assert.throws(
+    () => loadApiRuntimeConfig({ CLERK_SECRET_KEY: "   " }),
+    /CLERK_SECRET_KEY must not be empty when it is set/,
+  );
+});
+
+void test("loadApiRuntimeConfig defaults maxUploadBytes to 5 MiB", () => {
+  assert.equal(loadApiRuntimeConfig({}).maxUploadBytes, 5_242_880);
+});
+
+void test("loadApiRuntimeConfig parses an explicit MAX_UPLOAD_BYTES", () => {
+  assert.equal(loadApiRuntimeConfig({ MAX_UPLOAD_BYTES: " 1048576 " }).maxUploadBytes, 1_048_576);
+});
+
+void test("loadApiRuntimeConfig rejects a zero MAX_UPLOAD_BYTES", () => {
+  assert.throws(
+    () => loadApiRuntimeConfig({ MAX_UPLOAD_BYTES: "0" }),
+    /MAX_UPLOAD_BYTES must be a positive integer/,
+  );
+});
+
+void test("loadApiRuntimeConfig rejects a non-integer MAX_UPLOAD_BYTES", () => {
+  assert.throws(
+    () => loadApiRuntimeConfig({ MAX_UPLOAD_BYTES: "1.5" }),
+    /MAX_UPLOAD_BYTES must be a positive integer/,
+  );
+});
+
+void test("loadApiRuntimeConfig rejects a negative MAX_UPLOAD_BYTES", () => {
+  assert.throws(
+    () => loadApiRuntimeConfig({ MAX_UPLOAD_BYTES: "-5" }),
+    /MAX_UPLOAD_BYTES must be a positive integer/,
+  );
+});
+
+void test("loadApiRuntimeConfig rejects a blank MAX_UPLOAD_BYTES", () => {
+  assert.throws(
+    () => loadApiRuntimeConfig({ MAX_UPLOAD_BYTES: "   " }),
+    /MAX_UPLOAD_BYTES must not be empty when it is set/,
+  );
 });

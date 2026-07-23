@@ -1,3 +1,4 @@
+import type { DatabaseInstance } from "@unimatrix/db";
 import Fastify, {
   type FastifyInstance,
   type FastifyServerOptions,
@@ -16,6 +17,7 @@ import { setupCorePlugins } from "./plugins/index.js";
 declare module "fastify" {
   interface FastifyInstance {
     runtimeConfig: ApiRuntimeConfig;
+    db: DatabaseInstance["db"];
   }
 }
 
