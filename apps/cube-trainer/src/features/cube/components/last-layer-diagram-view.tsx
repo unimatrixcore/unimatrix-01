@@ -1,3 +1,4 @@
+import { RiEyeOffLine } from "@remixicon/react";
 import { cn } from "@unimatrix/ui/public";
 
 import { diagramStickerColor } from "@/features/cube/last-layer-diagram";
@@ -67,6 +68,8 @@ export interface LastLayerDiagramViewProps {
   /** Accessible name for the diagram, e.g. a case's display name. Omit to keep the diagram decorative (`aria-hidden`) when the case is being tested rather than shown. */
   label?: string;
   size?: number;
+  /** When false, renders a same-sized placeholder instead of the diagram, so the preview can be hidden without shifting layout. */
+  visible?: boolean;
 }
 
 export function LastLayerDiagramView({
@@ -74,8 +77,26 @@ export function LastLayerDiagramView({
   diagram,
   label,
   size = 160,
+  visible = true,
 }: LastLayerDiagramViewProps) {
   const strokeColor = "#0f172a";
+
+  if (!visible) {
+    return (
+      <div
+        aria-label={label ? `${label} (preview hidden)` : "Preview hidden"}
+        className={cn(
+          "flex shrink-0 items-center justify-center gap-1.5 border border-dashed border-border/70 text-xs text-muted-foreground",
+          className,
+        )}
+        role={label ? "img" : undefined}
+        style={{ height: size, width: size }}
+      >
+        <RiEyeOffLine aria-hidden="true" className="size-4" />
+        Hidden
+      </div>
+    );
+  }
 
   const renderTop = () =>
     diagram.top.map((sticker, index) => {

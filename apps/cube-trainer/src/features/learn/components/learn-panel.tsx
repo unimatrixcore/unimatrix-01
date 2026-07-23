@@ -7,10 +7,11 @@ import { LastLayerDiagramView } from "@/features/cube/components/last-layer-diag
 import { useLearnSession } from "@/features/learn/use-learn-session";
 
 export interface LearnPanelProps {
+  previewVisible: boolean;
   setId: AlgorithmSetId;
 }
 
-export function LearnPanel({ setId }: LearnPanelProps) {
+export function LearnPanel({ previewVisible, setId }: LearnPanelProps) {
   const { back, currentCase, diagram, markLearned, next, setupMoves } = useLearnSession(setId);
   const [showAlternates, setShowAlternates] = useState(false);
 
@@ -48,7 +49,12 @@ export function LearnPanel({ setId }: LearnPanelProps) {
 
   return (
     <Card className="site-panel site-panel-strong flex flex-col items-center gap-6 px-6 py-10 text-center">
-      <LastLayerDiagramView diagram={diagram} label={currentCase.displayName} size={180} />
+      <LastLayerDiagramView
+        diagram={diagram}
+        label={currentCase.displayName}
+        size={180}
+        visible={previewVisible}
+      />
 
       <div className="space-y-1.5">
         <p className="text-[0.65rem] font-medium tracking-[0.25em] text-muted-foreground/70 uppercase">

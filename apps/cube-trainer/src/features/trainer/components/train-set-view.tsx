@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { RiArrowLeftLine } from "@remixicon/react";
+import { RiArrowLeftLine, RiEyeLine, RiEyeOffLine } from "@remixicon/react";
 import { Button } from "@unimatrix/ui/public";
 
 import { getAlgorithmSet } from "@/features/algorithms/algorithm-sets";
@@ -14,6 +14,7 @@ type ViewMode = "drill" | "cases";
 export function TrainSetView() {
   const [setId, setSetId] = useState<AlgorithmSetId>("oll");
   const [mode, setMode] = useState<ViewMode>("drill");
+  const [previewVisible, setPreviewVisible] = useState(true);
   const algorithmSet = getAlgorithmSet(setId);
 
   if (mode === "cases") {
@@ -52,20 +53,41 @@ export function TrainSetView() {
           </Button>
           <h1 className="text-xl font-medium tracking-[-0.03em] text-foreground">Training</h1>
         </div>
-        <div className="flex items-center gap-3">
-          <AlgorithmSetToggle onChange={setSetId} setId={setId} />
-          <Button
-            onClick={() => {
-              setMode("cases");
-            }}
-            variant="outline"
-          >
-            Choose cases
-          </Button>
-        </div>
+        <Button
+          onClick={() => {
+            setMode("cases");
+          }}
+          variant="outline"
+        >
+          Choose cases
+        </Button>
       </div>
 
-      <TrainerPanel cases={algorithmSet.cases} key={setId} setId={setId} />
+      <TrainerPanel
+        cases={algorithmSet.cases}
+        key={setId}
+        previewVisible={previewVisible}
+        setId={setId}
+      />
+
+      <div className="flex items-center justify-between gap-4">
+        <AlgorithmSetToggle onChange={setSetId} setId={setId} />
+        <Button
+          aria-label={previewVisible ? "Hide cube preview" : "Show cube preview"}
+          aria-pressed={previewVisible}
+          onClick={() => {
+            setPreviewVisible((visible) => !visible);
+          }}
+          size="icon"
+          variant="outline"
+        >
+          {previewVisible ? (
+            <RiEyeLine aria-hidden="true" className="size-4" />
+          ) : (
+            <RiEyeOffLine aria-hidden="true" className="size-4" />
+          )}
+        </Button>
+      </div>
     </div>
   );
 }

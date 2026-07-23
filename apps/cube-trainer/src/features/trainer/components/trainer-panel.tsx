@@ -7,9 +7,11 @@ import { Card, Kbd } from "@unimatrix/ui/public";
 
 export function TrainerPanel({
   cases,
+  previewVisible,
   setId,
 }: {
   cases: AlgorithmCase[];
+  previewVisible: boolean;
   setId: AlgorithmSetId;
 }) {
   const { currentCase, diagram, next, setupMoves } = useAlgorithmTrainer(setId, cases);
@@ -31,7 +33,12 @@ export function TrainerPanel({
     <Card className="site-panel site-panel-strong flex min-h-96 flex-col items-center justify-center gap-6 px-6 py-10 text-center">
       {currentCase && diagram ? (
         <>
-          <LastLayerDiagramView diagram={diagram} label={currentCase.displayName} size={180} />
+          <LastLayerDiagramView
+            diagram={diagram}
+            label={currentCase.displayName}
+            size={180}
+            visible={previewVisible}
+          />
 
           {setupMoves ? <p className="alg-move-string break-words">{setupMoves}</p> : null}
 
