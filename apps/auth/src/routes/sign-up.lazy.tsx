@@ -16,10 +16,14 @@ function SignUpRoute() {
   const target = safeRedirectUrl(redirect_url);
 
   return (
-    /* See the comment in sign-in.lazy.tsx for why this uses routing="hash". */
+    /* See the comment in sign-in.lazy.tsx for why this uses routing="hash",
+     * and why signInForceRedirectUrl mirrors forceRedirectUrl (the symmetric
+     * OAuth-transfer case: signing up with a provider that already has an
+     * account completes as a sign-in). */
     <SignUp
       forceRedirectUrl={target}
       routing="hash"
+      signInForceRedirectUrl={target}
       signInUrl={withRedirectParam("/sign-in", redirect_url)}
     />
   );

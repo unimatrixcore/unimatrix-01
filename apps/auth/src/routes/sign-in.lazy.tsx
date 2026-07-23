@@ -33,10 +33,16 @@ function SignInRoute() {
        * that linked here after a successful sign-in; `signUpUrl` carries
        * the same (unvalidated) redirect_url so switching to sign-up keeps
        * the destination.
+       *
+       * `signUpForceRedirectUrl={target}` covers the OAuth "transfer" case:
+       * signing in with a provider whose identity has no existing account
+       * creates one, which Clerk completes as a *sign-up* — without this it
+       * would ignore forceRedirectUrl and fall back to the auth app landing.
        */}
       <SignIn
         forceRedirectUrl={target}
         routing="hash"
+        signUpForceRedirectUrl={target}
         signUpUrl={withRedirectParam("/sign-up", redirect_url)}
       />
     </>
