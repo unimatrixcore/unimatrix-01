@@ -1,6 +1,7 @@
+import { cn } from "@unimatrix/ui/public";
+
 import { diagramStickerColor } from "@/features/cube/last-layer-diagram";
 import type { DiagramSticker, LastLayerDiagram } from "@/features/cube/last-layer-diagram";
-import { cn } from "@unimatrix/ui/public";
 
 const CELL = 40;
 const GRID_START = 40;
@@ -60,15 +61,20 @@ function flapPoints(side: Side, index: number): string {
   return points.map(([x, y]) => `${x},${y}`).join(" ");
 }
 
+export interface LastLayerDiagramViewProps {
+  className?: string;
+  diagram: LastLayerDiagram;
+  /** Accessible name for the diagram, e.g. a case's display name. Omit to keep the diagram decorative (`aria-hidden`) when the case is being tested rather than shown. */
+  label?: string;
+  size?: number;
+}
+
 export function LastLayerDiagramView({
   className,
   diagram,
+  label,
   size = 160,
-}: {
-  className?: string;
-  diagram: LastLayerDiagram;
-  size?: number;
-}) {
+}: LastLayerDiagramViewProps) {
   const strokeColor = "#0f172a";
 
   const renderTop = () =>
@@ -105,9 +111,11 @@ export function LastLayerDiagramView({
 
   return (
     <svg
-      aria-hidden="true"
+      aria-hidden={label ? undefined : "true"}
+      aria-label={label}
       className={cn("shrink-0", className)}
       height={size}
+      role={label ? "img" : undefined}
       viewBox={`0 0 ${VIEWBOX} ${VIEWBOX}`}
       width={size}
     >

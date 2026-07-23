@@ -1,18 +1,22 @@
 import { useEffect, useState } from "react";
 import { RiArrowLeftLine, RiArrowRightLine } from "@remixicon/react";
+import { Card, Kbd } from "@unimatrix/ui/public";
 
 import type { AlgorithmSetId } from "@/features/algorithms/types";
 import { LastLayerDiagramView } from "@/features/cube/components/last-layer-diagram-view";
 import { useLearnSession } from "@/features/learn/use-learn-session";
-import { Card, Kbd } from "@unimatrix/ui/public";
 
-export function LearnPanel({ setId }: { setId: AlgorithmSetId }) {
+export interface LearnPanelProps {
+  setId: AlgorithmSetId;
+}
+
+export function LearnPanel({ setId }: LearnPanelProps) {
   const { back, currentCase, diagram, markLearned, next, setupMoves } = useLearnSession(setId);
   const [showAlternates, setShowAlternates] = useState(false);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (event.target instanceof HTMLButtonElement) return;
+      if (event.repeat || event.target instanceof HTMLButtonElement) return;
 
       if (event.code === "ArrowLeft") {
         event.preventDefault();
@@ -35,7 +39,7 @@ export function LearnPanel({ setId }: { setId: AlgorithmSetId }) {
   if (!currentCase || !diagram) {
     return (
       <Card className="site-panel site-panel-strong flex min-h-96 flex-col items-center justify-center gap-3 px-6 py-10 text-center">
-        <p className="text-sm text-muted-foreground">Every enabled case in this set is known.</p>
+        <p className="text-sm text-muted-foreground">Every case in this set is known.</p>
       </Card>
     );
   }

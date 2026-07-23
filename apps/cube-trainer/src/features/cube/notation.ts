@@ -12,12 +12,10 @@ export function parseAlgorithm(alg: string): Move[] {
 
   for (const token of tokens) {
     const match = MOVE_TOKEN.exec(token);
-    if (!match) continue;
+    if (!match) throw new Error(`Unrecognized move token: "${token}"`);
 
-    const face = match[1];
+    const face = match[1] as string;
     const modifier = match[2];
-    if (!face) continue;
-
     const turns = modifier === "'" || modifier === "3" ? 3 : modifier === "2" ? 2 : 1;
     moves.push({ face, turns });
   }

@@ -1,20 +1,18 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { RiArrowLeftLine } from "@remixicon/react";
+import { Button } from "@unimatrix/ui/public";
 
-import { getAlgorithmSet } from "@/features/algorithms/algorithm-sets";
 import { AlgorithmSetToggle } from "@/features/algorithms/components/algorithm-set-toggle";
 import type { AlgorithmSetId } from "@/features/algorithms/types";
 import { LearnCasesGrid } from "@/features/learn/components/learn-cases-grid";
 import { LearnPanel } from "@/features/learn/components/learn-panel";
-import { Button } from "@unimatrix/ui/public";
 
 type ViewMode = "session" | "cases";
 
 export function LearnSetView() {
   const [setId, setSetId] = useState<AlgorithmSetId>("oll");
   const [mode, setMode] = useState<ViewMode>("session");
-  const algorithmSet = getAlgorithmSet(setId);
 
   if (mode === "cases") {
     return (
@@ -22,7 +20,7 @@ export function LearnSetView() {
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <Button
-              aria-label={algorithmSet.label}
+              aria-label="Back to learning"
               onClick={() => {
                 setMode("session");
               }}

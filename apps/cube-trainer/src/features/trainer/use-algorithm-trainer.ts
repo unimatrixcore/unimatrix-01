@@ -1,8 +1,8 @@
 import { useCallback, useMemo, useState } from "react";
 
+import { deriveDiagramForSet } from "@/features/algorithms/derive-diagram";
 import type { AlgorithmCase, AlgorithmSetId } from "@/features/algorithms/types";
 import { useCasePool } from "@/features/algorithms/use-case-pool";
-import { deriveDiagramForSet } from "@/features/cube/last-layer-diagram";
 import type { LastLayerDiagram } from "@/features/cube/last-layer-diagram";
 import { getCaseSetup } from "@/features/trainer/case-setup";
 import { pickNextCase } from "@/features/trainer/pick-next-case";

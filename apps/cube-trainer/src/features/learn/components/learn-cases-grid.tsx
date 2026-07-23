@@ -3,7 +3,11 @@ import { CasePreviewCard } from "@/features/algorithms/components/case-preview-c
 import type { AlgorithmSetId } from "@/features/algorithms/types";
 import { useCaseProgress } from "@/features/algorithms/use-case-progress";
 
-export function LearnCasesGrid({ setId }: { setId: AlgorithmSetId }) {
+export interface LearnCasesGridProps {
+  setId: AlgorithmSetId;
+}
+
+export function LearnCasesGrid({ setId }: LearnCasesGridProps) {
   const algorithmSet = getAlgorithmSet(setId);
   const groupedCases = groupCasesByGroup(algorithmSet);
   const { progress, updateStatus } = useCaseProgress(setId);

@@ -1,9 +1,9 @@
 import { useCallback, useMemo, useState } from "react";
 
 import { getAlgorithmSet, groupCasesByGroup } from "@/features/algorithms/algorithm-sets";
+import { deriveDiagramForSet } from "@/features/algorithms/derive-diagram";
 import type { AlgorithmCase, AlgorithmSetId } from "@/features/algorithms/types";
 import { useCaseProgress } from "@/features/algorithms/use-case-progress";
-import { deriveDiagramForSet } from "@/features/cube/last-layer-diagram";
 import type { LastLayerDiagram } from "@/features/cube/last-layer-diagram";
 import { orderedLearnCases } from "@/features/learn/learn-case-order";
 import { getCaseSetup } from "@/features/trainer/case-setup";

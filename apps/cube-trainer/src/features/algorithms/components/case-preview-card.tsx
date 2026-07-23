@@ -1,9 +1,9 @@
 import { useMemo } from "react";
 import { RiCheckLine } from "@remixicon/react";
 
+import { deriveDiagramForSet } from "@/features/algorithms/derive-diagram";
 import type { AlgorithmCase, AlgorithmSetId } from "@/features/algorithms/types";
 import { LastLayerDiagramView } from "@/features/cube/components/last-layer-diagram-view";
-import { deriveDiagramForSet } from "@/features/cube/last-layer-diagram";
 import { getCaseSetup } from "@/features/trainer/case-setup";
 import { cn } from "@unimatrix/ui/public";
 
@@ -50,7 +50,7 @@ export function CasePreviewCard({
           Learned
         </span>
       ) : null}
-      <LastLayerDiagramView diagram={diagram} size={64} />
+      <LastLayerDiagramView diagram={diagram} label={algorithmCase.displayName} size={64} />
       <span className="text-xs font-medium text-foreground">{algorithmCase.displayName}</span>
     </button>
   );

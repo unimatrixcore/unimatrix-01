@@ -1,20 +1,19 @@
 import { RiShapeLine, RiShapesLine } from "@remixicon/react";
+import { cn } from "@unimatrix/ui/public";
 
 import type { AlgorithmSetId } from "@/features/algorithms/types";
-import { cn } from "@unimatrix/ui/public";
 
 const SET_OPTIONS: { icon: typeof RiShapeLine; id: AlgorithmSetId; label: string }[] = [
   { icon: RiShapeLine, id: "oll", label: "OLL" },
   { icon: RiShapesLine, id: "pll", label: "PLL" },
 ];
 
-export function AlgorithmSetToggle({
-  onChange,
-  setId,
-}: {
+export interface AlgorithmSetToggleProps {
   onChange: (setId: AlgorithmSetId) => void;
   setId: AlgorithmSetId;
-}) {
+}
+
+export function AlgorithmSetToggle({ onChange, setId }: AlgorithmSetToggleProps) {
   const activeIndex = SET_OPTIONS.findIndex((option) => option.id === setId);
 
   return (

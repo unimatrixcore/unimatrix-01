@@ -1,4 +1,4 @@
-import type { AlgorithmCase } from "@/features/algorithms/types";
+import type { AlgorithmCase, CaseGroup } from "@/features/algorithms/types";
 import type { CaseProgress } from "@/lib/progress-storage";
 
 /**
@@ -8,7 +8,7 @@ import type { CaseProgress } from "@/lib/progress-storage";
  * one "Mark learned" removes the current case from.
  */
 export function orderedLearnCases(
-  groupedCases: { group: string; cases: AlgorithmCase[] }[],
+  groupedCases: CaseGroup[],
   progress: CaseProgress,
 ): AlgorithmCase[] {
   const result: AlgorithmCase[] = [];
