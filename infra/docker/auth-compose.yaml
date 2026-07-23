@@ -1,0 +1,9 @@
+services:
+  auth:
+    build:
+      context: ../..
+      dockerfile: apps/auth/Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL}
+        VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY}
+    restart: unless-stopped
