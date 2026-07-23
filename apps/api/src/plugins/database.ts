@@ -1,4 +1,4 @@
-import { createDatabase, type DatabaseInstance } from "@unimatrix/db";
+import { createDatabase, migrateDatabase, type DatabaseInstance } from "@unimatrix/db";
 import type { FastifyInstance } from "fastify";
 
 /**
@@ -8,17 +8,24 @@ import type { FastifyInstance } from "fastify";
  * back to `packages/db/local/unimatrix.sqlite`) — this plugin does not
  * reinvent path handling.
  *
- * This plugin does NOT run migrations at startup: migrations are applied
- * out-of-band via `pnpm db:migrate` (part of `pnpm setup:worktree`), keeping
- * `@unimatrix/db`'s migration workflow as the single place schema changes
- * are applied, consistent with its README/AGENTS.md.
+ * Migrations are applied out-of-band by default (`pnpm db:migrate`, part of
+ * `pnpm setup:worktree`). In environments without that step — notably a
+ * container backed by a persistent volume — set `DB_MIGRATE_ON_START=true`
+ * (`runDatabaseMigrations`) to apply any pending migrations here at startup;
+ * `migrateDatabase()` is idempotent, so it is a no-op once the schema is
+ * current.
  */
 export function setupDatabase(app: FastifyInstance): void {
-  const { client, db }: DatabaseInstance = createDatabase();
+  const instance: DatabaseInstance = createDatabase();
 
-  app.decorate("db", db);
+  if (app.runtimeConfig.runDatabaseMigrations) {
+    migrateDatabase(instance);
+    app.log.info("Applied database migrations at startup (DB_MIGRATE_ON_START).");
+  }
+
+  app.decorate("db", instance.db);
 
   app.addHook("onClose", () => {
-    client.close();
+    instance.client.close();
   });
 }

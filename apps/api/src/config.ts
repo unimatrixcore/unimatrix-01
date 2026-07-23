@@ -59,6 +59,7 @@ export interface ApiRuntimeConfig {
   cors: ApiCorsConfig;
   clerk: ApiClerkConfig | null;
   maxUploadBytes: number;
+  runDatabaseMigrations: boolean;
 }
 
 export interface ApiRuntimeEnv {
@@ -72,6 +73,7 @@ export interface ApiRuntimeEnv {
   CLERK_PUBLISHABLE_KEY?: string | undefined;
   CLERK_JWT_KEY?: string | undefined;
   MAX_UPLOAD_BYTES?: string | undefined;
+  DB_MIGRATE_ON_START?: string | undefined;
 }
 
 const DEFAULT_HOST = "127.0.0.1";
@@ -166,6 +168,30 @@ function parseMaxUploadBytes(value: string | undefined): number {
   }
 
   return maxUploadBytes;
+}
+
+function parseRunDatabaseMigrations(value: string | undefined): boolean {
+  if (value === undefined) {
+    return false;
+  }
+
+  const trimmedValue = value.trim();
+
+  if (trimmedValue.length === 0) {
+    throw createApiConfigError("DB_MIGRATE_ON_START must not be empty when it is set.");
+  }
+
+  if (trimmedValue === "true" || trimmedValue === "1") {
+    return true;
+  }
+
+  if (trimmedValue === "false" || trimmedValue === "0") {
+    return false;
+  }
+
+  throw createApiConfigError(
+    `DB_MIGRATE_ON_START must be one of true, 1, false, 0. Received ${JSON.stringify(trimmedValue)}.`,
+  );
 }
 
 function parseNodeEnv(value: string | undefined): ApiNodeEnv {
@@ -496,5 +522,6 @@ export function loadApiRuntimeConfig(env: ApiRuntimeEnv = process.env): ApiRunti
     cors: parseCorsAllowedOrigins(env.CORS_ALLOWED_ORIGINS),
     clerk: parseClerkConfig(env, nodeEnv),
     maxUploadBytes: parseMaxUploadBytes(env.MAX_UPLOAD_BYTES),
+    runDatabaseMigrations: parseRunDatabaseMigrations(env.DB_MIGRATE_ON_START),
   };
 }

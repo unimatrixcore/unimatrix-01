@@ -74,6 +74,15 @@ CORS_ALLOWED_ORIGINS=https://site.example.com,https://www.site.example.com
 in `infra/docker/api-compose.yaml` for this deployment shape and don't need to
 be set again in Dokploy.
 
+**Persistent storage:** user settings and uploaded files are stored in SQLite,
+so the API needs a durable volume or all user data is lost on redeploy.
+`api-compose.yaml` already declares an `api-data` volume mounted at `/data`
+(where the DB defaults to `/data/unimatrix.sqlite`) and sets
+`DB_MIGRATE_ON_START=true`, so pending migrations are applied against that
+volume automatically at container startup — no manual `db:migrate` step is
+required in production. In Dokploy, confirm the volume is attached and mapped to
+persistent host storage (Advanced → Volumes) so it survives redeploys.
+
 Clerk auth is required in production: set `CLERK_SECRET_KEY`,
 `CLERK_PUBLISHABLE_KEY`, and `CLERK_JWT_KEY` in Dokploy's UI (all three, never
 just some). See "Clerk setup" below.
@@ -178,10 +187,11 @@ scheme.
   - `http://localhost:4173`
   - `http://127.0.0.1:4173`
 - if `CORS_ALLOWED_ORIGINS` is set, it fully replaces those defaults
-- API CORS stays intentionally narrow: no credentials, browser methods limited
-  to `GET`, `HEAD`, and `PATCH`, the `authorization` header is allowed (needed
-  for Clerk-authenticated requests), and `x-request-id` is exposed to browser
-  clients
+- API CORS stays intentionally narrow: no credentials; browser methods are
+  `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, and `DELETE` (the writes are needed by
+  the admin and user-data endpoints); the `authorization` header is allowed
+  (needed for Clerk-authenticated requests); and `x-request-id` is exposed to
+  browser clients
 
 ## Auto-updates from `main`
 
