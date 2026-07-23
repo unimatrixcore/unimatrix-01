@@ -168,8 +168,7 @@ docker build \
 
 The auth image builds `apps/auth/dist` and serves it from a small internal
 Nginx container, same pattern as the web and cube-trainer images. It is the
-central Clerk-backed accounts app (sign-in/sign-up and account management;
-user/permission management is handled in the Clerk Dashboard).
+central Clerk-backed accounts app (sign-in/sign-up and account management).
 
 ### Auth build inputs
 

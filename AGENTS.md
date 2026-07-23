@@ -9,7 +9,7 @@
 
 ## Workspace
 - Monorepo: `apps/*` and `packages/*` from `pnpm-workspace.yaml`; root scripts fan out through Turbo
-- Live apps: `apps/web` (Vite + React + TanStack Router public site), `apps/api` (Fastify API), `apps/cube-trainer` (Vite + React + TanStack Router OLL/PLL algorithm trainer, no backend dependency), `apps/auth` (package `@unimatrix/auth-app`; Vite + React + TanStack Router central auth hub for `auth.unimatrix-01.dev`: sign-in/up and account settings; user/permission management is done in the Clerk Dashboard, not in-app)
+- Live apps: `apps/web` (Vite + React + TanStack Router public site), `apps/api` (Fastify API), `apps/cube-trainer` (Vite + React + TanStack Router OLL/PLL algorithm trainer, no backend dependency), `apps/auth` (package `@unimatrix/auth-app`; Vite + React + TanStack Router central auth hub for `auth.unimatrix-01.dev`: sign-in/up and account settings)
 - Live packages: `packages/ui`, `packages/shared`, `packages/api-client`, `packages/content`, `packages/db`, `packages/auth` (shared Clerk auth + permission scheme), `packages/user-data` (per-user account/guest data store), `packages/config-typescript`, `packages/config-eslint`
 - Live content: `content/home`, `content/projects`, `content/blog`
 - Repo-internal docs: `docs/`; infra/runtime helpers: `infra/scripts`, `infra/deployment`, `infra/docker`
@@ -21,7 +21,7 @@
 - `apps/web`: route-driven public site, public content rendering, app-owned public-site compositions
 - `apps/api`: runtime config validation, Fastify plugins, feature route modules, HTTP error normalization
 - `apps/cube-trainer`: OLL/PLL algorithm browse and flashcard-trainer UI, bundled algorithm data, `localStorage`-backed progress
-- `apps/auth`: central Clerk auth hub — sign-in/up and account settings (`UserProfile`); redirect target for other services' sign-in. User/permission management lives in the Clerk Dashboard, so the app ships no admin panel (the `packages/auth` permission scheme still gates other apps)
+- `apps/auth`: central Clerk auth hub — sign-in/up and account settings (`UserProfile`); redirect target for other services' sign-in
 - `packages/ui`: shared shadcn primitives, shared styles, safe markdown rendering, `@unimatrix/ui/public`
 - `packages/shared`: framework-agnostic API contracts, Zod schemas, exported shared types only
 - `packages/api-client`: typed fetch transport consuming `@unimatrix/shared` contracts; pluggable `getAuthToken` provider

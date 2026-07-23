@@ -1,7 +1,7 @@
 # AGENTS.md
 
 ## 1. Overview
-`apps/auth` (package `@unimatrix/auth-app`) is the Vite + React + TanStack Router SPA that serves the central authentication hub at `auth.unimatrix-01.dev`. It hosts sign-in/sign-up and account settings only; user/permission management is handled in the Clerk Dashboard, so it ships no admin panel of its own. Other services (e.g. `apps/web`) redirect unauthenticated users here and are returned afterward. Clerk sessions are shared automatically across `*.unimatrix-01.dev` subdomains, so there is no token passing — the auth app only establishes the session.
+`apps/auth` (package `@unimatrix/auth-app`) is the Vite + React + TanStack Router SPA that serves the central authentication hub at `auth.unimatrix-01.dev`. It hosts sign-in/sign-up and account settings. Other services (e.g. `apps/web`) redirect unauthenticated users here and are returned afterward. Clerk sessions are shared automatically across `*.unimatrix-01.dev` subdomains, so there is no token passing — the auth app only establishes the session.
 
 ## 2. Folder Structure
 - `src/app`: `AuthProvider`/query providers, router creation, and the minimal app shell — a full-height container that just centers each route's Clerk widget or card. No header, nav, or `UserButton`; the `UserButton` lives on the services, not here.
