@@ -283,22 +283,23 @@ And these auth app routes:
 
 ## Current database posture
 
-`apps/api` now depends on `@unimatrix/db` for the admin and user-data modules
-(per-user settings and files), so the API is no longer database-free. This
-container workflow does not yet add:
+`apps/api` depends on `@unimatrix/db` for the admin and user-data modules
+(per-user settings and files), so the API is not database-free. The container
+workflow persists that data:
 
-- SQLite volumes
-- migration services
-- Compose database setup (`DATABASE_URL`)
+- **SQLite volume**: the API Dockerfile defaults `DATABASE_URL` to
+  `/data/unimatrix.sqlite` and creates `/data` owned by the non-root `node`
+  user; `api-compose.yaml` mounts a named `api-data` volume there, so data
+  survives container recreation once the volume is mapped to durable host
+  storage.
+- **Migrations**: `api-compose.yaml` sets `DB_MIGRATE_ON_START=true`, so the
+  API applies any pending Drizzle migrations against the volume at startup
+  (idempotent — a no-op when the schema is current). No separate migration
+  service or one-off command is required in this workflow.
 
-The image and `api-compose.yaml` still run against `@unimatrix/db`'s default
-SQLite path baked into the container filesystem, so data does not persist
-across container recreation. If a future issue adopts persistent storage for
-this container workflow, update this directory to document:
-
-- a persistent volume for the SQLite database file
-- a one-off migration command or service
-- the single-writer caveat of SQLite for multi-instance deployments
+Remaining caveat: SQLite is single-writer, so this shape assumes a single API
+instance. Horizontal scaling would need a different database or a shared
+storage strategy — document that here if it is ever adopted.
 
 ## Dokploy Compose deployment
 
