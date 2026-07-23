@@ -147,6 +147,28 @@ describe("putDocumentBodySchema", () => {
     ).toBe(false);
   });
 
+  it("rejects a missing or undefined value (would persist non-JSON into a NOT NULL column)", () => {
+    expect(
+      putDocumentBodySchema.safeParse({ namespace: "cube-trainer", key: "settings" }).success,
+    ).toBe(false);
+    expect(
+      putDocumentBodySchema.safeParse({
+        namespace: "cube-trainer",
+        key: "settings",
+        value: undefined,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("accepts defined falsy JSON values (null, false, 0, empty string)", () => {
+    for (const value of [null, false, 0, ""]) {
+      expect(
+        putDocumentBodySchema.safeParse({ namespace: "cube-trainer", key: "settings", value })
+          .success,
+      ).toBe(true);
+    }
+  });
+
   it("rejects a missing key field", () => {
     expect(
       putDocumentBodySchema.safeParse({

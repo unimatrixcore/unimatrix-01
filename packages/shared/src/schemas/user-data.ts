@@ -16,8 +16,17 @@ export const dataKeySchema = z.string().min(1).max(128).regex(/^[A-Za-z0-9._-]+$
 
 export type DataKey = z.output<typeof dataKeySchema>;
 
-/** Arbitrary JSON document value. */
-export const documentValueSchema = z.unknown();
+/**
+ * A document's JSON value. Rejects `undefined` — and a missing `value`
+ * property, since this is not `z.unknown()`/`z.any()` (which Zod treats as
+ * optional) — at the external boundary, so the API returns a validation
+ * error instead of persisting `JSON.stringify(undefined)` into a NOT NULL
+ * column. The output type stays `unknown` so callers can store any JSON
+ * value without friction.
+ */
+export const documentValueSchema = z.custom<unknown>((value) => value !== undefined, {
+  message: "value is required and must be a defined JSON value.",
+});
 
 export type DocumentValue = z.output<typeof documentValueSchema>;
 
