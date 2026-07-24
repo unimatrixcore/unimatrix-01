@@ -58,6 +58,22 @@ docker build -f apps/cube-trainer/Dockerfile .
 docker build -f apps/auth/Dockerfile .
 ```
 
+## Dokploy watch-path convention
+
+Dokploy services should watch only the repository paths that can affect their
+image, rather than rebuilding every service for every `main` branch change.
+Each live app README is the canonical service-specific list:
+
+- `apps/web/README.md`
+- `apps/api/README.md`
+- `apps/cube-trainer/README.md`
+- `apps/auth/README.md`
+
+Every list includes the service directory, workspace source imported by its
+build, root pnpm manifests, `.dockerignore`, and the service-specific Compose
+file. Update the list and the matching Dokploy watch-path configuration when a
+Docker build gains a workspace dependency or another repository input.
+
 ## Web image
 
 The web image builds `apps/web/dist` and serves it from a small internal Nginx

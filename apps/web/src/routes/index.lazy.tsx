@@ -25,9 +25,6 @@ function IndexRoute() {
         <h1 className="text-3xl leading-[0.92] font-medium tracking-[-0.06em] text-foreground sm:text-4xl lg:text-[3.2rem]">
           {home.frontmatter.title}
         </h1>
-        <p className="max-w-2xl text-[0.95rem] leading-7 text-foreground/86">
-          {home.frontmatter.intro}
-        </p>
       </section>
 
       <div className="grid gap-8 xl:grid-cols-2 xl:items-stretch">

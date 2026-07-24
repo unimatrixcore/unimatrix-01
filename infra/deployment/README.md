@@ -206,17 +206,26 @@ scheme.
 
 ## Auto-updates from `main`
 
-For the current production target, enable automatic Dokploy redeploys from the
-repository `main` branch for all four services.
+Enable automatic Dokploy redeploys from the repository `main` branch for all
+four services, using service-specific watch paths. This avoids rebuilding every
+service for an unrelated monorepo change while still rebuilding when its image
+inputs change.
 
-That means:
+Each live app owns the canonical list for its Dokploy service:
 
-- web rebuilds whenever `main` changes
-- api rebuilds whenever `main` changes
-- cube-trainer rebuilds whenever `main` changes
-- auth rebuilds whenever `main` changes
-- Traefik continues to route to the latest healthy service revision managed by
-  Dokploy
+- `apps/web/README.md`
+- `apps/api/README.md`
+- `apps/cube-trainer/README.md`
+- `apps/auth/README.md`
+
+Copy each list exactly into that service's Dokploy watch-path configuration.
+The lists include the app directory, directly imported workspace packages,
+shared root pnpm manifests, and the service-specific Compose file. When an app
+adds a workspace dependency, new bundled content, or another Docker build
+input, update its README and Dokploy configuration in the same change.
+
+Traefik continues to route to the latest healthy service revision managed by
+Dokploy.
 
 ## Verification after deploy
 
