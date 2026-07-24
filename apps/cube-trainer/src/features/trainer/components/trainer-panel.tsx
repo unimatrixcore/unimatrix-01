@@ -49,7 +49,7 @@ export function TrainerPanel({
         </>
       ) : (
         <p className="text-sm text-muted-foreground">
-          No cases enabled — choose some cases to start training.
+          No cases enabled — choose some cases to start drilling.
         </p>
       )}
     </Card>

@@ -29,18 +29,18 @@ test("homepage load", async ({ page }) => {
 
   await expect(main.getByRole("heading", { name: "Cube Trainer" })).toBeVisible();
   await expect(main.getByRole("link", { name: "Learn" })).toBeVisible();
-  await expect(main.getByRole("link", { name: "Train" })).toBeVisible();
+  await expect(main.getByRole("link", { name: "Drill" })).toBeVisible();
 
   expectNoPageErrors(pageErrors);
 });
 
-test("Train flow: drill and case picker", async ({ page }) => {
+test("Drill flow: drill and case picker", async ({ page }) => {
   const pageErrors = collectPageErrors(page);
   const main = page.locator("main");
 
-  await gotoRoute(page, "/train");
+  await gotoRoute(page, "/drill");
 
-  await expect(main.getByRole("heading", { name: "Training" })).toBeVisible();
+  await expect(main.getByRole("heading", { name: "Drilling" })).toBeVisible();
   await expect(main.getByText("Next case")).toBeVisible();
 
   await main.getByRole("button", { name: "Choose cases" }).click();

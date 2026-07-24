@@ -8,12 +8,12 @@ import { AlgorithmSetToggle } from "@/features/algorithms/components/algorithm-s
 import type { CaseFilterMode } from "@/features/algorithms/components/case-category-filter";
 import { CaseCategoryFilter } from "@/features/algorithms/components/case-category-filter";
 import type { AlgorithmSetId } from "@/features/algorithms/types";
-import { TrainCasesGrid } from "@/features/trainer/components/train-cases-grid";
+import { DrillCasesGrid } from "@/features/trainer/components/drill-cases-grid";
 import { TrainerPanel } from "@/features/trainer/components/trainer-panel";
 
 type ViewMode = "drill" | "cases";
 
-export function TrainSetView() {
+export function DrillSetView() {
   const [setId, setSetId] = useState<AlgorithmSetId>("oll");
   const [mode, setMode] = useState<ViewMode>("drill");
   const [previewVisible, setPreviewVisible] = useState(true);
@@ -32,7 +32,7 @@ export function TrainSetView() {
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <Button
-              aria-label="Back to training"
+              aria-label="Back to drilling"
               onClick={() => {
                 setMode("drill");
               }}
@@ -52,7 +52,7 @@ export function TrainSetView() {
           />
         </div>
 
-        <TrainCasesGrid
+        <DrillCasesGrid
           key={setId}
           mode={caseFilterMode}
           selectedGroups={selectedGroups}
@@ -71,7 +71,7 @@ export function TrainSetView() {
               <RiArrowLeftLine aria-hidden="true" className="size-4" />
             </Link>
           </Button>
-          <h1 className="text-xl font-medium tracking-[-0.03em] text-foreground">Training</h1>
+          <h1 className="text-xl font-medium tracking-[-0.03em] text-foreground">Drilling</h1>
         </div>
         <Button
           onClick={() => {

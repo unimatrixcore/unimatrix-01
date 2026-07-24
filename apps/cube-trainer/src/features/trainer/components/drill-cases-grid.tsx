@@ -7,7 +7,7 @@ import type { AlgorithmSetId } from "@/features/algorithms/types";
 import { useCasePool } from "@/features/algorithms/use-case-pool";
 import { useCaseProgress } from "@/features/algorithms/use-case-progress";
 
-export function TrainCasesGrid({
+export function DrillCasesGrid({
   mode,
   selectedGroups,
   setId,

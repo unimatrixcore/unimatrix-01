@@ -9,20 +9,20 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './__root'
-import { Route as TrainRouteImport } from './train'
 import { Route as LearnRouteImport } from './learn'
+import { Route as DrillRouteImport } from './drill'
 import { Route as IndexRouteImport } from './index'
 
-const TrainRoute = TrainRouteImport.update({
-  id: '/train',
-  path: '/train',
-  getParentRoute: () => rootRouteImport,
-} as any).lazy(() => import('./train.lazy').then((d) => d.Route))
 const LearnRoute = LearnRouteImport.update({
   id: '/learn',
   path: '/learn',
   getParentRoute: () => rootRouteImport,
 } as any).lazy(() => import('./learn.lazy').then((d) => d.Route))
+const DrillRoute = DrillRouteImport.update({
+  id: '/drill',
+  path: '/drill',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() => import('./drill.lazy').then((d) => d.Route))
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -31,48 +31,48 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/drill': typeof DrillRoute
   '/learn': typeof LearnRoute
-  '/train': typeof TrainRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/drill': typeof DrillRoute
   '/learn': typeof LearnRoute
-  '/train': typeof TrainRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/drill': typeof DrillRoute
   '/learn': typeof LearnRoute
-  '/train': typeof TrainRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/learn' | '/train'
+  fullPaths: '/' | '/drill' | '/learn'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/learn' | '/train'
-  id: '__root__' | '/' | '/learn' | '/train'
+  to: '/' | '/drill' | '/learn'
+  id: '__root__' | '/' | '/drill' | '/learn'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  DrillRoute: typeof DrillRoute
   LearnRoute: typeof LearnRoute
-  TrainRoute: typeof TrainRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/train': {
-      id: '/train'
-      path: '/train'
-      fullPath: '/train'
-      preLoaderRoute: typeof TrainRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/learn': {
       id: '/learn'
       path: '/learn'
       fullPath: '/learn'
       preLoaderRoute: typeof LearnRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/drill': {
+      id: '/drill'
+      path: '/drill'
+      fullPath: '/drill'
+      preLoaderRoute: typeof DrillRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -87,8 +87,8 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  DrillRoute: DrillRoute,
   LearnRoute: LearnRoute,
-  TrainRoute: TrainRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

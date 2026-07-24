@@ -20,7 +20,7 @@
 ## Workspace Responsibilities
 - `apps/web`: route-driven public site, public content rendering, app-owned public-site compositions
 - `apps/api`: runtime config validation, Fastify plugins, feature route modules, HTTP error normalization
-- `apps/cube-trainer`: OLL/PLL Learn (guided teaching order) and Train (keyboard-driven flashcard drill) UI, bundled algorithm data, `localStorage`-backed progress and training pool
+- `apps/cube-trainer`: OLL/PLL Learn (guided teaching order) and Drill (keyboard-driven flashcard drill) UI, bundled algorithm data, `localStorage`-backed progress and training pool
 - `apps/auth`: central Clerk auth hub — sign-in/up and account settings (`UserProfile`); redirect target for other services' sign-in
 - `packages/ui`: shared shadcn primitives, shared styles, safe markdown rendering, `@unimatrix/ui/public`
 - `packages/shared`: framework-agnostic API contracts, Zod schemas, exported shared types only

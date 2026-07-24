@@ -7,7 +7,7 @@ export const Route = createLazyFileRoute("/")({
 
 const MODES = [
   { icon: RiBookOpenLine, label: "Learn", to: "/learn" as const },
-  { icon: RiFlashlightLine, label: "Train", to: "/train" as const },
+  { icon: RiFlashlightLine, label: "Drill", to: "/drill" as const },
 ];
 
 function IndexRoute() {
