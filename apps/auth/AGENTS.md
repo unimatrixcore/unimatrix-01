@@ -5,7 +5,7 @@
 
 ## 2. Folder Structure
 - `src/app`: `AuthProvider`/query providers, router creation, and the minimal app shell — a full-height container that just centers each route's Clerk widget or card. No header, nav, or `UserButton`; the `UserButton` lives on the services, not here.
-- `src/lib`: `config.ts` (runtime env validation — requires `VITE_CLERK_PUBLISHABLE_KEY`), `query-client.ts`, and `api-client.ts` (the `useApiClient()` hook that wires Clerk's session `getToken()` into `@unimatrix/api-client`).
+- `src/lib`: `config.ts` (runtime env validation — requires `VITE_CLERK_PUBLISHABLE_KEY`; `VITE_API_BASE_URL` defaults to `/api`; dev-only `VITE_API_TARGET` defaults to `http://127.0.0.1:3001` and is used by `vite.config.ts` to proxy `/api` during `pnpm --filter @unimatrix/auth-app dev`), `query-client.ts`, and `api-client.ts` (the `useApiClient()` hook that wires Clerk's session `getToken()` into `@unimatrix/api-client`).
 - `src/features/auth`: `safe-redirect.ts` — the open-redirect allowlist for the inbound `redirect_url` param.
 - `src/routes`: file-based routes with paired `*.tsx` (route data / `validateSearch`) and `*.lazy.tsx` (components): `index` (sign-in/up card, or redirect to `/account` when signed in), `sign-in`, `sign-up`, `account`. `routeTree.gen.ts` is generated — never hand-edit it.
 - `src/styles.css`: app presentation layered on `@unimatrix/ui/styles.css`.

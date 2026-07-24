@@ -27,4 +27,4 @@ Minimal persistence boundary for the Unimatrix monorepo.
   - `file:` URL
   - `:memory:`
 
-LOC-40 keeps this package intentionally small so later persistence work can build forward without moving the boundary.
+This package stays SQLite-first; new tables belong in `src/schema` behind the shared barrel rather than as ad hoc, package-local connections.

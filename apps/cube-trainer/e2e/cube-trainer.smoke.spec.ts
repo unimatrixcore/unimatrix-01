@@ -43,11 +43,10 @@ test("Drill flow: drill and case picker", async ({ page }) => {
   await expect(main.getByRole("heading", { name: "Drilling" })).toBeVisible();
   await expect(main.getByText("Next case")).toBeVisible();
 
+  await main.getByRole("group").getByRole("radio", { name: "PLL" }).click();
+
   await main.getByRole("button", { name: "Choose cases" }).click();
   await expect(main.getByRole("heading", { name: "Choose cases" })).toBeVisible();
-  await expect(main.getByRole("button", { name: "OLL 1", exact: true })).toBeVisible();
-
-  await main.getByRole("group").getByRole("button", { name: "PLL" }).click();
   await expect(main.getByRole("button", { name: "PLL Ua", exact: true })).toBeVisible();
 
   expectNoPageErrors(pageErrors);
@@ -62,11 +61,10 @@ test("Learn flow: guided session and case picker", async ({ page }) => {
   await expect(main.getByRole("heading", { name: "Learning" })).toBeVisible();
   await expect(main.getByText("Mark learned")).toBeVisible();
 
+  await main.getByRole("group").getByRole("radio", { name: "PLL" }).click();
+
   await main.getByRole("button", { name: "Choose cases" }).click();
   await expect(main.getByRole("heading", { name: "Choose cases" })).toBeVisible();
-  await expect(main.getByRole("button", { name: "OLL 1", exact: true })).toBeVisible();
-
-  await main.getByRole("group").getByRole("button", { name: "PLL" }).click();
   await expect(main.getByRole("button", { name: "PLL Gd", exact: true })).toBeVisible();
 
   expectNoPageErrors(pageErrors);

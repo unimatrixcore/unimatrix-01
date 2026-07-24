@@ -82,14 +82,8 @@ the public edge proxy; Traefik stays the edge router in Dokploy.
 
 ### Web build inputs
 
-- `apps/web`
-- `packages/ui`
-- `packages/api-client`
-- `packages/shared`
-- `packages/content`
-- `content/`
-- root workspace metadata such as `package.json`, `pnpm-lock.yaml`, and
-  `pnpm-workspace.yaml`
+See [`apps/web/README.md`](../../apps/web/README.md) for the canonical,
+up-to-date list of build inputs and Dokploy watch paths.
 
 ### Web runtime contract
 
@@ -120,6 +114,11 @@ docker build \
 The API image builds `@unimatrix/shared`, compiles `apps/api`, then uses
 `pnpm deploy` to package the runtime with production dependencies.
 
+### API build inputs
+
+See [`apps/api/README.md`](../../apps/api/README.md) for the canonical,
+up-to-date list of build inputs and Dokploy watch paths.
+
 ### API runtime contract
 
 - entrypoint: `node dist/server.js`
@@ -134,6 +133,10 @@ The API image builds `@unimatrix/shared`, compiles `apps/api`, then uses
   - `CORS_ALLOWED_ORIGINS`
 
 The image defaults `HOST=0.0.0.0`, `PORT=3001`, and `NODE_ENV=production`.
+Optional runtime env: `MAX_UPLOAD_BYTES` (per-request file upload size limit
+for the user-data file endpoints; defaults to 5 MiB), plus the Clerk
+variables (`CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`, `CLERK_JWT_KEY`),
+required together in production.
 
 Example build:
 
@@ -159,10 +162,8 @@ build-time or runtime env to configure.
 
 ### Cube Trainer build inputs
 
-- `apps/cube-trainer`
-- `packages/ui`
-- root workspace metadata such as `package.json`, `pnpm-lock.yaml`, and
-  `pnpm-workspace.yaml`
+See [`apps/cube-trainer/README.md`](../../apps/cube-trainer/README.md) for the
+canonical, up-to-date list of build inputs and Dokploy watch paths.
 
 ### Cube Trainer runtime contract
 
@@ -188,13 +189,8 @@ central Clerk-backed accounts app (sign-in/sign-up and account management).
 
 ### Auth build inputs
 
-- `apps/auth`
-- `packages/ui`
-- `packages/api-client`
-- `packages/auth`
-- `packages/shared`
-- root workspace metadata such as `package.json`, `pnpm-lock.yaml`, and
-  `pnpm-workspace.yaml`
+See [`apps/auth/README.md`](../../apps/auth/README.md) for the canonical,
+up-to-date list of build inputs and Dokploy watch paths.
 
 ### Auth runtime contract
 
@@ -291,8 +287,8 @@ normal navigation and a refresh:
 And these cube-trainer routes:
 
 - `/`
-- `/oll`
-- `/pll`
+- `/learn`
+- `/drill`
 
 And these auth app routes:
 

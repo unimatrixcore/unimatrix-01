@@ -203,6 +203,9 @@ scheme.
   the user-data endpoints); the `authorization` header is allowed
   (needed for Clerk-authenticated requests); and `x-request-id` is exposed to
   browser clients
+- `apps/api/.env.production.example` shows the checked-in production env
+  template, including `MAX_UPLOAD_BYTES` (per-request file upload size limit
+  for the user-data file endpoints; defaults to 5 MiB when unset)
 
 ## Auto-updates from `main`
 
@@ -237,8 +240,8 @@ Verify these URLs after each production rollout:
 - `https://site.example.com/projects`
 - `https://api.example.com/health`
 - `https://cube.unimatrix-01.dev/`
-- `https://cube.unimatrix-01.dev/oll`
-- `https://cube.unimatrix-01.dev/pll`
+- `https://cube.unimatrix-01.dev/learn`
+- `https://cube.unimatrix-01.dev/drill`
 - `https://auth.unimatrix-01.dev/`
 - `https://auth.unimatrix-01.dev/sign-in`
 - `https://auth.unimatrix-01.dev/account`

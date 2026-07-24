@@ -8,7 +8,7 @@
 - `src/server.ts`: process startup, signal handling, and server listen/shutdown flow.
 - `src/config.ts` and `src/env.ts`: runtime config loading and local env-file support.
 - `src/plugins`: cross-cutting Fastify setup for validation, observability, security, and CORS.
-- `src/modules`: route modules grouped by feature; `index.ts` registers the active modules.
+- `src/modules`: route modules grouped by feature (`health`, `user-data`); `index.ts` registers the active modules.
 - `src/lib/http`: shared HTTP-layer helpers such as logging, validation, and error normalization.
 - `test`: Node test runner coverage for app construction, config, and env loading.
 
@@ -18,6 +18,8 @@
 - **Contract-driven routes**: Route modules import contracts and Zod schemas from `@unimatrix/shared`, then register handlers through `app.withTypeProvider<ZodTypeProvider>().route(...)`. Response schemas and query validation live with the shared contract definitions, not ad hoc in handlers.
 - **Normalized error envelopes**: `src/lib/http/errors.ts` converts validation errors, custom API errors, Fastify client errors, and unexpected failures into a consistent envelope plus log level. Keep new handler code compatible with that normalization path instead of formatting responses inline.
 - **Module boundary**: `src/modules/*/index.ts` exports `FastifyPluginAsync` modules, and `src/modules/index.ts` owns registration. Keep handlers inside feature modules and avoid growing `app.ts` into a route registry.
+- **Conditional module registration**: `src/modules/index.ts` only registers `userDataModule` when `app.runtimeConfig.clerk !== null`, i.e. when Clerk env vars are configured. In dev/test without Clerk keys, the user-data routes are simply absent — check runtime config before assuming a route is missing due to a bug.
+- **Auth boundary**: Route handlers must read the acting user only via `getAuthUserId` (from `@unimatrix/auth/server`, backed by a verified Clerk session) — never from client-supplied ids or body fields. Every route in `user-data` is gated by `requireAuth()` first and then reads the id through the module-local `getRequiredAuthUserId()` wrapper, which normalizes the defensive `null` case to a `401`; call that wrapper rather than `getAuthUserId()` directly in handler bodies.
 
 ## 4. Conventions
 - **Naming**: Use `setup*`, `register*`, `load*`, and `build*` verbs for framework assembly helpers. Shared API types use `Api*` prefixes, and route modules export `*Module`.

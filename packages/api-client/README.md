@@ -14,7 +14,7 @@ Typed transport boundary for API client code in the monorepo.
 - server-only route logic
 - content loading concerns
 
-LOC-35 keeps this package intentionally minimal so LOC-41 can add real contract-aware client behavior without restructuring.
+This package stays a thin, contract-aware transport boundary: it consumes `@unimatrix/shared` contracts (bodies, queries, responses) and never redefines endpoint shapes locally.
 
 ## Auth token provider
 
