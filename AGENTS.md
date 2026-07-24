@@ -100,7 +100,4 @@
 - End PR bodies with `Closes LOC-<issue-key>` when applicable
 
 ## Commit Attribution
-AI commits MUST include:
-```
-Co-Authored-By: Claude <noreply@anthropic.com>
-```
+AI commits MUST include attribution matching the acting AI agent or model identity in the `Co-Authored-By` header (e.g. `Co-Authored-By: Antigravity <noreply@google.com>` or `Co-Authored-By: Gemini <noreply@google.com>`).
