@@ -32,7 +32,6 @@ export function LearnSetView() {
             </Button>
             <h1 className="text-xl font-medium tracking-[-0.03em] text-foreground">Choose cases</h1>
           </div>
-          <AlgorithmSetToggle onChange={setSetId} setId={setId} />
         </div>
 
         <LearnCasesGrid key={setId} setId={setId} />

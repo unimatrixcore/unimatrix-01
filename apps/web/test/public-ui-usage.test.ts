@@ -49,6 +49,7 @@ describe("public UI package usage", () => {
       'export { Badge } from "./components/ui/badge.js";',
       'export { Button } from "./components/ui/button.js";',
       'export { Card } from "./components/ui/card.js";',
+      'export { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from "./components/ui/dropdown-menu.js";',
       'export { Kbd, KbdGroup } from "./components/ui/kbd.js";',
       'export { Separator } from "./components/ui/separator.js";',
       'export { Switch } from "./components/ui/switch.js";',
