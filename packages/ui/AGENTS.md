@@ -16,7 +16,7 @@
 ## 3. Core Behaviors & Patterns
 - **Shared primitive surface**: Keep broadly reusable primitives in `src/components/ui/*` and export them through the package barrels. App-specific compositions belong in the consuming app, not here.
 - **Two export surfaces**: `src/index.ts` exposes the broader shared package API, while `src/public.ts` exposes a smaller public-safe surface for `apps/web`. Add to `public.ts` only when the export should be safe and stable for the public-site app.
-- **Safe markdown rendering**: `PublicMarkdown` sanitizes links, skips raw HTML, applies `remark-gfm`, and renders internal links through an injected callback. Markdown behavior changes should preserve that safe-rendering contract.
+- **Safe markdown rendering**: `PublicMarkdown` sanitizes links, skips raw HTML, applies `remark-gfm`, and renders internal links through an injected callback. It also syntax-highlights fenced code blocks via `prism-react-renderer` with a custom theme and language-alias resolution. Markdown behavior changes should preserve that safe-rendering contract.
 - **Shared styling**: `src/styles.css` carries shared tokens and base presentation; consuming apps layer their own styling on top instead of modifying shared styles to fit a single route.
 
 ## 4. Conventions

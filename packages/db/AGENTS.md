@@ -7,7 +7,8 @@
 - `src/config.ts`: database path resolution and runtime config helpers.
 - `src/client.ts`: SQLite client creation, Drizzle database creation, and pragma setup.
 - `src/schema`: schema tables and the schema barrel export.
-- `src/index.ts`: package barrel for config, client, and schema exports.
+- `src/migrate.ts`: `migrateDatabase` and `DEFAULT_MIGRATIONS_FOLDER` for idempotent startup migrations against the `drizzle` output directory.
+- `src/index.ts`: package barrel for config, client, schema, and migration exports.
 - `drizzle.config.ts`: Drizzle Kit configuration pointing at the schema barrel and migration output directory.
 - `drizzle`: generated migration SQL and metadata.
 - `local`: default local SQLite file location.
