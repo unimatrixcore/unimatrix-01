@@ -30,9 +30,9 @@ export function parseHomeContentFile(
     slug: "home",
     frontmatter: {
       intro: requireString(frontmatter, "intro", filePath),
-      mission: requireString(frontmatter, "mission", filePath),
       summary: requireString(frontmatter, "summary", filePath),
       title: requireString(frontmatter, "title", filePath),
+      ...optionalProperty("mission", optionalString(frontmatter, "mission")),
     } satisfies HomePageFrontmatter,
   };
 }

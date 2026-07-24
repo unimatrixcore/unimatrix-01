@@ -194,7 +194,7 @@ describe("public UI package usage", () => {
     expect(blogRouteSource).toMatch(/createFileRoute\("\/blog"\)/u);
     expect(blogRouteSource).not.toMatch(/PublicTransmissionListItem/u);
     expect(blogLazyRouteSource).toMatch(/createLazyFileRoute\("\/blog"\)/u);
-    expect(blogLazyRouteSource).toMatch(/Blog archive/u);
+    expect(blogLazyRouteSource).toMatch(/title="Blog"/u);
     expect(blogLazyRouteSource).toMatch(/PublicTransmissionListItem/u);
     expect(blogLazyRouteSource).toMatch(/@\/features\/public-site\/components/u);
     expect(blogLazyRouteSource).toMatch(/to="\/blog\/\$slug"/u);

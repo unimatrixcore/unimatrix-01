@@ -10,7 +10,7 @@ export interface HomePageFrontmatter {
   title: string;
   intro: string;
   summary: string;
-  mission: string;
+  mission?: string;
 }
 
 export interface ProjectFrontmatter {

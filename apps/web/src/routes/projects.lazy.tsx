@@ -1,11 +1,11 @@
 import { Link, createLazyFileRoute } from "@tanstack/react-router";
-import { RiArrowRightUpLine, RiFolderLine } from "@remixicon/react";
+import { RiArrowRightUpLine } from "@remixicon/react";
 
 import {
   PublicProjectLedgerItem,
   PublicSectionHeading,
 } from "@/features/public-site/components";
-import { Badge, Button } from "@unimatrix/ui/public";
+import { Button } from "@unimatrix/ui/public";
 
 export const Route = createLazyFileRoute("/projects")({
   component: ProjectsRoute,
@@ -17,14 +17,7 @@ function ProjectsRoute() {
   return (
     <div className="space-y-5">
       <PublicSectionHeading
-        badges={
-          <Badge className="gap-1.5">
-            <RiFolderLine aria-hidden="true" className="size-3.5" />
-            Projects
-          </Badge>
-        }
-        description="Selected builds and experiments, with enough context to decide where to dive deeper."
-        title="Project work"
+        title="Projects"
       />
 
       <div className="grid gap-3">

@@ -1,8 +1,7 @@
 ---
-title: Passionate developer who loves clean code and synergy.
-intro: Gwenny is a backend-leaning TypeScript and Node.js developer, cybersecurity student, open-source builder, and sci-fi worldbuilder.
-summary: This is a personal portfolio with projects, writing, and system design notes arranged to be useful, legible, and easy to browse.
-mission: Adopt strong patterns, expose the contract, keep the architecture legible, and leave every system easier for the next contributor to extend.
+title: Projects I need and no one wants.
+intro: I'm Gwenny, a jack of all trades who mostly develops TypeScript and Node.js apps, occasionally edits videos, attempts a Godot game every now and then, and spends too much time solving Rubik's Cubes.
+summary: A collection of projects, experiments, and the occasional blog post.
 ---
 I build software with clear internal structure, reliable interfaces, and enough transparency that another engineer can step in without guessing how things work. Most of my work starts in TypeScript and Node.js, then branches into API design, typed contracts, automation, and the security questions that keep distributed systems honest.
 

@@ -14,7 +14,6 @@ describe("content parsers", () => {
 title: Home title
 intro: Intro copy
 summary: Summary copy
-mission: Mission copy
 ---
 Paragraph one.
 
@@ -24,6 +23,7 @@ Paragraph two.
     );
 
     expect(homeContent.frontmatter.title).toBe("Home title");
+    expect(homeContent.frontmatter.mission).toBeUndefined();
     expect(homeContent.excerpt).toBe("Paragraph one.");
   });
 

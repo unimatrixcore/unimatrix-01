@@ -43,11 +43,6 @@ function AboutRoute() {
         <p className="text-[0.95rem] leading-7 text-foreground/86">
           {homeContent.frontmatter.intro}
         </p>
-        <p className="text-sm leading-7 text-muted-foreground">
-          Backend-leaning TypeScript developer, cybersecurity student, open-source builder, and
-          systems-focused writer. Best fit: API design, typed contracts, platform work,
-          security-minded engineering, and clear documentation.
-        </p>
       </header>
 
       <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,26rem)]">

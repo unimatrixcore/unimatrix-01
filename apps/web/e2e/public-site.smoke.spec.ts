@@ -27,7 +27,7 @@ test("homepage load", async ({ page }) => {
 
   await gotoRoute(page, "/");
 
-  await expect(main.getByRole("heading", { name: "Passionate developer who loves clean code and synergy." })).toBeVisible();
+  await expect(main.getByRole("heading", { name: "Projects I need and no one wants." })).toBeVisible();
   await expect(main.getByRole("link", { name: "View all projects" })).toBeVisible();
   await expect(main.getByRole("link", { name: "View all blog posts" })).toBeVisible();
 
@@ -57,7 +57,7 @@ test("navigation smoke flow", async ({ page }) => {
   await expect(page).toHaveURL(/\/blog$/u);
   await expect(
     page.getByRole("link", {
-      name: "Open blog entry Post in progress",
+      name: "Open blog entry Placeholder blog",
     }),
   ).toBeVisible();
 
@@ -95,9 +95,9 @@ test("blog page render", async ({ page }) => {
 
   await gotoRoute(page, "/blog/placeholder-post");
 
-  await expect(page.getByRole("heading", { name: "Post in progress" })).toBeVisible();
-  await expect(page.getByText("This post is still being drafted. It will be published when it is ready.", { exact: false })).toBeVisible();
-  await expect(page.getByText("This post is a placeholder while the draft is still in progress.", { exact: false })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Placeholder blog" })).toBeVisible();
+  await expect(page.getByText("This is explicitly a placeholder blog post. A real post will replace it later.", { exact: false })).toBeVisible();
+  await expect(page.getByText("This is a placeholder blog post while I figure out what belongs here.", { exact: false })).toBeVisible();
   await expect(page.getByRole("link", { name: "Back to blog" })).toBeVisible();
 
   expectNoPageErrors(pageErrors);

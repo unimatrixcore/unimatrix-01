@@ -33,7 +33,6 @@ This package stays intentionally small and focused on the current public-site do
 - `title`
 - `intro`
 - `summary`
-- `mission`
 
 ### Projects
 
