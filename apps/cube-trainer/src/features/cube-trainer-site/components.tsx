@@ -23,7 +23,15 @@ export function AppFooter() {
   return (
     <footer className="py-1">
       <p className="text-xs text-muted-foreground/70">
-        ©{" "}
+        <a
+          className="underline decoration-muted-foreground/35 underline-offset-4 transition-colors hover:text-foreground"
+          href="https://github.com/unimatrixcore/unimatrix-01/tree/main/apps/cube-trainer"
+          rel="noreferrer"
+          target="_blank"
+        >
+          GitHub source
+        </a>{" "}
+        · ©{" "}
         <a
           className="underline decoration-muted-foreground/35 underline-offset-4 transition-colors hover:text-foreground"
           href="https://unimatrix-01.dev/"
