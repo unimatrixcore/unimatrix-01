@@ -20,14 +20,14 @@
   "devDependencies": {
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",
-    "@tanstack/react-router": "^1.170.29",
+    "@tanstack/react-router": "^1.170.32",
     "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.4",
+    "@types/react-dom": "^19.2.5",
     "@unimatrix/config-eslint": "workspace:*",
     "@unimatrix/config-typescript": "workspace:*",
     "@unimatrix/config-vitest": "workspace:*",
     "@vitest/coverage-v8": "^4.1.11",
-    "eslint": "^10.8.1",
+    "eslint": "^10.9.0",
     "jsdom": "^29.1.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
@@ -39,7 +39,7 @@
     "@unimatrix/ui": "workspace:*"
   },
   "peerDependencies": {
-    "@tanstack/react-router": "^1.170.29",
+    "@tanstack/react-router": "^1.170.32",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   }
