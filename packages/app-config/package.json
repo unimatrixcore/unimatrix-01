@@ -14,14 +14,14 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "zod": "^4.3.6"
+    "zod": "^4.6.1"
   },
   "devDependencies": {
     "@unimatrix/config-eslint": "workspace:*",
     "@unimatrix/config-typescript": "workspace:*",
     "@unimatrix/config-vitest": "workspace:*",
     "@vitest/coverage-v8": "^4.1.11",
-    "eslint": "^10.8.1",
+    "eslint": "^10.10.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.11"
   }
