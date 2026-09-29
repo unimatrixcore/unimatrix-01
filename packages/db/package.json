@@ -33,7 +33,7 @@
     "@unimatrix/config-eslint": "workspace:*",
     "@unimatrix/config-typescript": "workspace:*",
     "@unimatrix/config-vitest": "workspace:*",
-    "@vitest/coverage-v8": "^4.1.11",
+    "@vitest/coverage-v8": "^5.0.0",
     "drizzle-kit": "^0.31.9",
     "eslint": "^10.8.1",
     "tsx": "^4.23.12",
