@@ -27,7 +27,7 @@
     "@unimatrix/config-vitest": "workspace:*",
     "@unimatrix/deploy-config": "workspace:*",
     "@vitejs/plugin-react": "^6.0.5",
-    "@vitest/coverage-v8": "^4.1.11",
+    "@vitest/coverage-v8": "^5.0.1",
     "eslint": "^10.8.1",
     "jsdom": "^29.1.1",
     "tailwindcss": "^4.2.1",
