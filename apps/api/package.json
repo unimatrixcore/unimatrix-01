@@ -24,7 +24,7 @@
     "@unimatrix/secrets": "workspace:*",
     "@unimatrix/shared": "workspace:*",
     "drizzle-orm": "^0.45.1",
-    "fastify": "^5.12.0",
+    "fastify": "^5.12.1",
     "fastify-type-provider-zod": "^7.0.0",
     "zod": "^4.3.6"
   },
