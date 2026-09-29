@@ -28,7 +28,7 @@
     "@vitest/coverage-v8": "^4.1.11",
     "eslint": "^10.8.1",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.11"
+    "vitest": "^5.0.1"
   },
   "dependencies": {
     "zod": "^4.3.6"
