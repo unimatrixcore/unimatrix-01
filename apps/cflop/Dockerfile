@@ -21,7 +21,7 @@ RUN pnpm install --frozen-lockfile
 COPY --from=prune /workspace/out/full/ .
 RUN pnpm --filter @unimatrix/cflop build
 
-FROM nginxinc/nginx-unprivileged:1.31-alpine@sha256:a6c3ec0c0d249d68b0682df854d4a9e222b90fb607dc3fcf2f1d2fcbc85d347e AS runtime
+FROM nginxinc/nginx-unprivileged:1.31-alpine@sha256:d9083fe47768377ef55dedafd67d4da7c2f2bc2bece7554954f29359deb0dce9 AS runtime
 COPY apps/cflop/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /workspace/apps/cflop/dist /usr/share/nginx/html
 EXPOSE 8080
