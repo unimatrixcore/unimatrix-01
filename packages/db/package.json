@@ -29,14 +29,14 @@
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "^24.13.3",
+    "@types/node": "^24.13.5",
     "@unimatrix/config-eslint": "workspace:*",
     "@unimatrix/config-typescript": "workspace:*",
     "@unimatrix/config-vitest": "workspace:*",
     "@vitest/coverage-v8": "^4.1.11",
     "drizzle-kit": "^0.31.9",
-    "eslint": "^10.8.1",
-    "tsx": "^4.23.12",
+    "eslint": "^10.10.0",
+    "tsx": "^4.23.13",
     "typescript": "^6.0.3",
     "vitest": "^4.1.11"
   }
