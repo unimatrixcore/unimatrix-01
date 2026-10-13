@@ -1,12 +1,14 @@
 /* Unimatrix-TV UX pass: readable film typography, compact navigation,
    native playback transparency, restrained motion, and responsive shelves. */
+@font-face{font-family:'Geist Mono Variable';src:url('/UnimatrixTV/assets/geist-mono.woff2') format('woff2');font-style:normal;font-weight:100 900;font-display:swap}
 @font-face{font-family:Manrope;src:url('/UnimatrixTV/assets/manrope.ttf') format('truetype');font-weight:200 800;font-style:normal;font-display:swap}
-:root{--utv-font:Manrope,sans-serif;--utv-mono:'Geist Mono Variable',monospace;--utv-ease:cubic-bezier(.22,1,.36,1);--utv-radius:7px;--utv-ink:#101114;--utv-panel:#1b1d22;--headerColor:rgba(16,17,20,.9);--darkerGradientPoint:var(--utv-ink);--darkerGradientPointAlpha:rgba(16,17,20,.96);--lighterGradientPoint:var(--utv-panel);--ef12-appBarHeight:72px;--largeRadius:var(--utv-radius);--smallRadius:5px;--cardWidth:190px}
+:root{--utv-font:'Geist Mono Variable',monospace;--utv-mono:'Geist Mono Variable',monospace;--utv-ease:cubic-bezier(.22,1,.36,1);--utv-radius:8px;--utv-ink:#101114;--utv-panel:#1b1d20;--utv-mint:#8fdeaa;--headerColor:rgba(16,17,20,.9);--darkerGradientPoint:var(--utv-ink);--darkerGradientPointAlpha:rgba(16,17,20,.96);--lighterGradientPoint:var(--utv-panel);--ef12-appBarHeight:72px;--largeRadius:var(--utv-radius);--smallRadius:6px;--cardWidth:190px}
 html{background:var(--utv-ink)!important}
 body,.mainAnimatedPage{background-color:transparent!important}
 .backgroundContainer.withBackdrop,.backgroundContainer-transparent{background-color:transparent!important}
 html.transparentDocument,html.transparentDocument body,html.transparentDocument .mainAnimatedPage,#videoOsdPage{background:transparent!important}
-body,input,textarea,select,button,.MuiTypography-root,.MuiButton-root,.MuiInputBase-root,.MuiMenuItem-root{font-family:var(--utv-font)!important}
+body,input,textarea,select,button,.MuiTypography-root,.MuiButton-root,.MuiInputBase-root,.MuiMenuItem-root,.cardText,.sectionTitle,.itemName,h1,h2,h3,h4,h5,h6{font-family:var(--utv-font)!important}
+.material-icons,[class*="material-icons"],.MuiSvgIcon-root{font-family:'Material Icons',var(--iconPack,Material Icons)!important}
 .MuiAppBar-root{box-shadow:0 1px 0 rgba(255,255,255,.08)!important;border:0!important}
 .MuiAppBar-root .MuiToolbar-root:first-child{min-height:72px!important;gap:18px}
 .MuiAppBar-root .MuiStack-root:has(.utv-main-nav){flex:1;flex-direction:row!important;align-items:center;gap:34px}
@@ -51,6 +53,74 @@ body,input,textarea,select,button,.MuiTypography-root,.MuiButton-root,.MuiInputB
 .section0:has(.card[data-type="CollectionFolder"]),
 .utv-home-active .homeSectionsContainer:has(#utv-featured,#utv-empty,#utv-home-loading)>.verticalSection:has(.card[data-type='CollectionFolder']){display:none!important}
 
+/* ==========================================================================
+   Zero-Gap Apple TV Billboard Hero & Frosted Nav Bar Integration
+   ========================================================================== */
+body.utv-home-active .MuiAppBar-root.MuiAppBar-positionFixed + div[aria-hidden="true"] {
+  display: none !important;
+  min-height: 0 !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+body.utv-home-active #indexPage {
+  padding-top: 0 !important;
+  margin-top: 0 !important;
+}
+
+body.utv-home-active #homeTab,
+body.utv-home-active #homeTab > .sections,
+body.utv-home-active #homeTab .homeSectionsContainer {
+  padding-top: 0 !important;
+  margin-top: 0 !important;
+}
+
+body.utv-home-active .MuiAppBar-root {
+  background: rgba(16, 17, 20, 0.75) !important;
+  backdrop-filter: blur(20px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+body.utv-home-active #utv-featured,
+body.utv-home-active #utv-home-loading {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+  height: clamp(520px, 78svh, 820px) !important;
+  min-height: 520px !important;
+  max-height: 820px !important;
+}
+
+/* ==========================================================================
+   Disable Glinty / Sheen Card Animations
+   ========================================================================== */
+:root {
+  --cardHoverEffect: none !important;
+  --hoverGradientV: none !important;
+  --hoverGradientH: none !important;
+  --cardHoverBorderColor: rgba(255, 255, 255, 0.15) !important;
+}
+
+.cardOverlayContainer::after,
+.cardOverlayContainer::before,
+.card-hoverable .cardOverlayContainer::after,
+.card-hoverable .cardOverlayContainer::before,
+.card-hoverable:hover .cardOverlayContainer::after,
+.card-hoverable:hover .cardOverlayContainer::before,
+.backdropCard.card-hoverable .cardOverlayContainer::after,
+.backdropCard.card-hoverable:hover .cardOverlayContainer::after,
+.overflowBackdropCard.card-hoverable .cardOverlayContainer::after,
+.overflowBackdropCard.card-hoverable:hover .cardOverlayContainer::after {
+  display: none !important;
+  content: none !important;
+  opacity: 0 !important;
+  transform: none !important;
+  transition: none !important;
+  animation: none !important;
+  background: none !important;
+}
+
 /* Jellyseerr-style Movie & TV Cards */
 .cardScalable {
   border-radius: 12px !important;
@@ -75,6 +145,11 @@ body,input,textarea,select,button,.MuiTypography-root,.MuiButton-root,.MuiInputB
   background-position: center !important;
   box-shadow: 0 4px 20px rgba(0,0,0,.2);
   transition: box-shadow 350ms var(--utv-ease);
+  transform: none !important;
+}
+
+.card-hoverable:hover .cardImageContainer {
+  transform: none !important;
 }
 
 .cardOverlayContainer, .cardContent {
@@ -270,8 +345,8 @@ body,input,textarea,select,button,.MuiTypography-root,.MuiButton-root,.MuiInputB
 .utv-main-nav a{font-size:14px;min-height:42px;padding:0 10px}
 .utv-main-nav a[aria-current='page']::after{left:10px;right:10px;bottom:0}
 .utv-main-nav .utv-request-link{border:0;margin-left:0}
-.utv-home-active #indexPage{padding-top:0!important;background:#1b1d20!important}
-.utv-home-active #homeTab{background:#1b1d20!important}
+.utv-home-active #indexPage{padding-top:0!important;background:var(--utv-ink)!important}
+.utv-home-active #homeTab{background:var(--utv-ink)!important}
 #utv-featured,#utv-home-loading{height:calc(100svh - 56px);min-height:560px;max-height:1000px;margin-bottom:0}
 #utv-featured .utv-featured-art{background-position:center center}
 #utv-featured::before{background:linear-gradient(0deg,rgba(12,14,16,.9),rgba(12,14,16,.22) 37%,transparent 70%),linear-gradient(90deg,rgba(12,14,16,.64),transparent 58%)}
@@ -411,12 +486,12 @@ body.utv-home-active #homeTab .verticalSection .card{padding:0!important}
 }
 /* Reserve the home presentation before Jellyfin initializes its native shelves. */
 html.utv-home-pending #homeTab{visibility:hidden!important}
-html.utv-home-pending body:after{content:'Loading your library';position:fixed;inset:64px 0 0;z-index:40;display:grid;place-content:center;color:#a4a8ac;font:500 13px Manrope,system-ui;background:#101114;pointer-events:none;animation:utv-pending-fade .3s ease both}
+html.utv-home-pending body:after{content:'Loading your library';position:fixed;inset:64px 0 0;z-index:40;display:grid;place-content:center;color:#a4a8ac;font:500 13px var(--utv-font);background:#101114;pointer-events:none;animation:utv-pending-fade .3s ease both}
 @keyframes utv-pending-fade{from{opacity:0}to{opacity:1}}
 @media(prefers-reduced-motion:reduce){html.utv-home-pending body:after{animation:none}}
 /* Round 1: stable load gate, usable carousel buttons and common presentation tokens. */
 html.utv-home-pending body:after{display:none!important}
-#utv-page-loading{position:fixed;inset:56px 0 0;z-index:40;display:grid;place-content:center;color:#a4a8ac;font:500 13px Manrope,system-ui;background:#101114;pointer-events:none}
+#utv-page-loading{position:fixed;inset:56px 0 0;z-index:40;display:grid;place-content:center;color:#a4a8ac;font:500 13px var(--utv-font);background:#101114;pointer-events:none}
 #utv-featured,#utv-home-loading{height:clamp(440px,72svh,740px);min-height:0;max-height:740px}
 .utv-featured-tabs button[aria-pressed=true]::before{background:var(--utv-mint);transform:scale(1.15)}
 .cardImageContainer,.cardBox{border-radius:10px!important}
@@ -539,21 +614,51 @@ body.utv-home-active #homeTab .verticalSection .sectionTitleContainer h2.section
 body.utv-home-active #homeTab .verticalSection .sectionTitleTextButton{min-height:24px!important;padding:0!important;gap:8px;line-height:24px}
 body.utv-home-active #homeTab .verticalSection>.emby-scroller{padding:4px 0 8px!important}
 body.utv-home-active #homeTab .verticalSection .itemsContainer{padding:0!important}
-body.utv-home-active #homeTab .homeSectionsContainer .verticalSection .utv-stream-card{width:clamp(240px,26vw,360px)!important;padding:0!important;vertical-align:top}
-body.utv-home-active #homeTab .utv-stream-card .cardPadder{padding-bottom:56.25%!important}
-body.utv-home-active #homeTab .utv-stream-card .cardBox{margin:0 18px 0 0!important;padding-bottom:0!important}
-body.utv-home-active #homeTab .utv-stream-card .cardImageContainer{background-size:cover!important;background-position:center!important;background-color:#101114}
-body.utv-home-active #homeTab .utv-stream-card[data-utv-art=portrait] .cardImageContainer{background-size:contain!important}
-body.utv-home-active #homeTab .utv-stream-card .cardText{text-align:left!important;padding-left:0!important;padding-right:0!important;font-family:var(--utv-font)!important;line-height:1.45!important}
-body.utv-home-active #homeTab .utv-stream-card .cardText-first{margin-top:8px!important}
-body.utv-home-active #homeTab .utv-stream-card .cardText-secondary{font:400 12px/1.45 var(--utv-font)!important;color:#a4a8ae!important}
-@media(max-width:600px){body.utv-home-active #homeTab .homeSectionsContainer{--utv-shelf-gutter:20px}body.utv-home-active #homeTab .homeSectionsContainer .verticalSection .utv-stream-card{width:min(78vw,320px)!important}}
+body.utv-home-active #homeTab .homeSectionsContainer .verticalSection .card {
+  padding: 0 !important;
+  vertical-align: top;
+}
+body.utv-home-active #homeTab .verticalSection .card.overflowPortraitCard {
+  width: clamp(148px, 12.5vw, 190px) !important;
+}
+body.utv-home-active #homeTab .verticalSection .card.overflowBackdropCard {
+  width: clamp(260px, 24vw, 340px) !important;
+}
+body.utv-home-active #homeTab .verticalSection .cardBox {
+  margin: 0 16px 0 0 !important;
+  padding-bottom: 0 !important;
+}
+body.utv-home-active #homeTab .card .cardText {
+  text-align: left !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  font-family: var(--utv-font) !important;
+  line-height: 1.45 !important;
+}
+body.utv-home-active #homeTab .card .cardText-first {
+  margin-top: 8px !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  color: #f3f3f5 !important;
+}
+body.utv-home-active #homeTab .card .cardText-secondary {
+  font: 400 12px/1.45 var(--utv-font) !important;
+  color: #9ca3af !important;
+}
+@media(max-width:600px){
+  body.utv-home-active #homeTab .homeSectionsContainer { --utv-shelf-gutter: 20px; }
+  body.utv-home-active #homeTab .verticalSection .card.overflowPortraitCard { width: 140px !important; }
+  body.utv-home-active #homeTab .verticalSection .card.overflowBackdropCard { width: 240px !important; }
+}
 
-body.utv-home-active #homeTab .utv-stream-card .cardImageContainer[style*="--utv-shelf-art"]{background-image:var(--utv-shelf-art)!important}
-body.utv-home-active #homeTab .homeSectionsContainer .verticalSection{padding-top:20px!important;padding-bottom:8px!important}
-body.utv-home-active #homeTab .verticalSection .sectionTitleTextButton{margin:0!important;height:24px!important}
-body.utv-home-active #homeTab .utv-stream-card .cardText-first{font-size:15px!important;font-weight:550!important}
-@media(max-width:600px){body.utv-home-active #homeTab .utv-stream-card .cardText-first{font-size:14px!important}}
+body.utv-home-active #homeTab .homeSectionsContainer .verticalSection {
+  padding-top: 20px !important;
+  padding-bottom: 8px !important;
+}
+body.utv-home-active #homeTab .verticalSection .sectionTitleTextButton {
+  margin: 0 !important;
+  height: 24px !important;
+}
 /* ==========================================================================
    Unimatrix-TV Detail Page & Video Player Styles (Native Jellyfin Integration)
    ========================================================================== */

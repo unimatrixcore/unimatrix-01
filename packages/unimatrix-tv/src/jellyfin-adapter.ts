@@ -683,25 +683,6 @@ export function installJellyfinAdapter(gate: BootGate): void {
     }
   }
 
-  function applyArt(card: HTMLElement, item: Item | null | undefined, api: JellyfinClient): void {
-    const image = card.querySelector<HTMLElement>('.cardImageContainer');
-    if (!item || !image || !card.isConnected) return;
-    const type = item.Type === 'Episode' && item.ImageTags?.Primary
-      ? 'Primary'
-      : item.ImageTags?.Primary && ['Movie', 'Series'].includes(item.Type)
-        ? 'Primary'
-        : item.BackdropImageTags?.length
-          ? 'Backdrop'
-          : item.ImageTags?.Thumb
-            ? 'Thumb'
-            : item.ImageTags?.Primary
-              ? 'Primary'
-              : undefined;
-    if (!type) return;
-    const tag = type === 'Backdrop' ? item.BackdropImageTags?.[0] : item.ImageTags?.[type];
-    image.style.setProperty('--utv-shelf-art', 'url(' + JSON.stringify(api.getImageUrl(item.Id, { type, index: 0, maxWidth: 780, quality: 90, ...(tag ? { tag } : {}) })) + ')');
-    card.dataset.utvArt = type === 'Primary' && item.Type !== 'Episode' ? 'portrait' : 'landscape';
-  }
 
   function decorateCard(card: HTMLElement, item?: Item | null): void {
     const container = card.querySelector<HTMLElement>('.cardImageContainer');
@@ -825,8 +806,6 @@ export function installJellyfinAdapter(gate: BootGate): void {
     const missing = new Set<string>();
 
     for (const card of cards) {
-      card.classList.add('utv-stream-card');
-      if (!card.dataset.utvArt) card.dataset.utvArt = card.dataset.type === 'Episode' ? 'landscape' : 'portrait';
       if (card.dataset.type === 'Episode' && card.classList.contains('overflowPortraitCard')) {
         card.classList.replace('overflowPortraitCard', 'overflowBackdropCard');
         card.querySelector('.cardPadder')?.classList.replace('cardPadder-overflowPortrait', 'cardPadder-overflowBackdrop');
@@ -835,10 +814,7 @@ export function installJellyfinAdapter(gate: BootGate): void {
       const item = id ? images.get(id) : undefined;
       decorateCard(card, item);
 
-      if (!id) continue;
-      if (images.has(id)) {
-        applyArt(card, item, api);
-      } else {
+      if (id && !images.has(id)) {
         missing.add(id);
       }
     }
@@ -860,7 +836,6 @@ export function installJellyfinAdapter(gate: BootGate): void {
       }
       for (const card of cards) {
         const item = images.get(card.dataset.id ?? '');
-        applyArt(card, item, api);
         decorateCard(card, item);
       }
     }).catch(() => {
