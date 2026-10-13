@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Unimatrix TV</title>
+</head>
+<body>
+    <div data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox">
+        <div data-role="content">
+            <div class="content-primary">
+                <h1>Unimatrix TV Presentation</h1>
+                <p>Custom presentation layer, Apple TV-inspired library browsing, and seamless boot loading gate.</p>
+                <div class="checkboxContainer">
+                    <label>
+                        <input is="emby-checkbox" type="checkbox" id="chkEnabled" checked />
+                        <span>Enable Unimatrix-TV enhancements</span>
+                    </label>
+                </div>
+                <div class="checkboxContainer">
+                    <label>
+                        <input is="emby-checkbox" type="checkbox" id="chkBootGate" checked />
+                        <span>Enable full-screen boot loading gate</span>
+                    </label>
+                </div>
+                <div class="inputContainer">
+                    <label class="inputLabel" for="txtRequestsUrl">Unimatrix Requests URL</label>
+                    <input is="emby-input" type="text" id="txtRequestsUrl" value="https://requests.unimatrix-01.dev/" />
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
