@@ -17,8 +17,10 @@
   "scripts": {
     "build:client": "node ./scripts/build-client.mjs",
     "build:plugin": "dotnet build ./dotnet/UnimatrixTV.csproj -c Release",
+    "build:requests": "node ./scripts/build-requests.mjs",
     "package": "node ./scripts/package-plugin.mjs",
-    "build": "pnpm build:client && pnpm build:plugin && pnpm package",
+    "build": "pnpm build:client && pnpm build:plugin && pnpm build:requests && pnpm package",
+    "deploy:live": "node ./scripts/deploy.mjs",
     "lint": "eslint .",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json"

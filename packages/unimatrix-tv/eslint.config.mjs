@@ -5,6 +5,9 @@ export default [
     tsconfigRootDir: import.meta.dirname,
   }),
   {
+    ignores: ["dist/**", "requests/**"],
+  },
+  {
     files: ["scripts/**/*.mjs"],
     languageOptions: {
       globals: {

@@ -45,14 +45,180 @@ body,input,textarea,select,button,.MuiTypography-root,.MuiButton-root,.MuiInputB
 .utv-home-active .card.overflowBackdropCard{width:304px!important}
 .utv-home-active .card.overflowPortraitCard{width:186px!important}
 .Mui-disabled{opacity:.35!important}
+
+/* Hide stock "My Media" folder row */
+.verticalSection:has(.card[data-type="CollectionFolder"]),
+.section0:has(.card[data-type="CollectionFolder"]),
 .utv-home-active .homeSectionsContainer:has(#utv-featured,#utv-empty,#utv-home-loading)>.verticalSection:has(.card[data-type='CollectionFolder']){display:none!important}
-.cardImageContainer,.cardOverlayContainer,.cardContent{border-radius:var(--utv-radius)!important}
-.card{transition:transform 350ms var(--utv-ease);transform-origin:50% 55%}
-.cardText{font:500 14px/1.6 var(--utv-font)!important;letter-spacing:-.02em}
-.cardText-secondary{font:400 11px/1.5 var(--utv-mono)!important;color:#969baa}
-.cardImageContainer{box-shadow:0 4px 20px rgba(0,0,0,.2);transition:box-shadow 350ms var(--utv-ease)}
-@media(hover:hover){.card:hover{transform:translateY(-4px)}.card:hover .cardImageContainer{box-shadow:0 12px 24px rgba(0,0,0,.35)}.cardOverlayContainer{transition:opacity 220ms ease!important}}
-.cardOverlayFab-primary,.btnPlay{background:var(--utv-mint)!important;color:#101b13!important;box-shadow:none!important}
+
+/* Jellyseerr-style Movie & TV Cards */
+.cardScalable {
+  border-radius: 12px !important;
+  overflow: hidden !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+  transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 300ms cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+@media (hover: hover) {
+  .card:hover .cardScalable,
+  .card:focus-visible .cardScalable {
+    transform: translateY(-4px) scale(1.02);
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6) !important;
+  }
+}
+
+.cardImageContainer {
+  border-radius: 12px !important;
+  position: relative !important;
+  overflow: hidden !important;
+  background-size: cover !important;
+  background-position: center !important;
+  box-shadow: 0 4px 20px rgba(0,0,0,.2);
+  transition: box-shadow 350ms var(--utv-ease);
+}
+
+.cardOverlayContainer, .cardContent {
+  border-radius: var(--utv-radius) !important;
+}
+
+.card {
+  transition: transform 350ms var(--utv-ease);
+  transform-origin: 50% 55%;
+}
+
+.cardText {
+  font: 500 14px/1.6 var(--utv-font) !important;
+  letter-spacing: -0.02em;
+}
+
+.cardText-secondary {
+  font: 400 11px/1.5 var(--utv-mono) !important;
+  color: #969baa;
+}
+
+/* Jellyseerr Badges across top of poster */
+.utv-card-badges {
+  position: absolute !important;
+  top: 8px !important;
+  left: 8px !important;
+  right: 8px !important;
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  pointer-events: none !important;
+  z-index: 6 !important;
+}
+
+.utv-card-type-badge {
+  font-family: var(--utv-font) !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.05em !important;
+  text-transform: uppercase !important;
+  padding: 3px 8px !important;
+  border-radius: 9999px !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35) !important;
+  line-height: 1.2 !important;
+}
+
+.utv-badge-movie {
+  background: #2563eb !important;
+}
+
+.utv-badge-series {
+  background: #7c3aed !important;
+}
+
+.utv-badge-episode {
+  background: #0284c7 !important;
+}
+
+.utv-card-status-badge {
+  width: 20px !important;
+  height: 20px !important;
+  border-radius: 50% !important;
+  background: #10b981 !important;
+  color: #ffffff !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35) !important;
+}
+
+.utv-card-status-badge svg {
+  width: 12px !important;
+  height: 12px !important;
+}
+
+/* Jellyseerr Hover Overlay with synopsis */
+.utv-card-hover-overlay {
+  position: absolute !important;
+  inset: 0 !important;
+  border-radius: 12px !important;
+  pointer-events: none !important;
+  z-index: 5 !important;
+  opacity: 0 !important;
+  transition: opacity 220ms ease !important;
+  background: linear-gradient(0deg, rgba(16, 17, 20, 0.96) 0%, rgba(16, 17, 20, 0.8) 50%, rgba(16, 17, 20, 0.2) 80%, transparent 100%) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: flex-end !important;
+  padding: 12px !important;
+  box-sizing: border-box !important;
+}
+
+.card:hover .utv-card-hover-overlay,
+.card:focus-within .utv-card-hover-overlay {
+  opacity: 1 !important;
+}
+
+.utv-card-year {
+  font-family: var(--utv-font) !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: #cbd5e1 !important;
+  margin-bottom: 2px !important;
+}
+
+.utv-card-title {
+  font-family: var(--utv-font) !important;
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  line-height: 1.2 !important;
+  color: #ffffff !important;
+  letter-spacing: -0.02em !important;
+  margin-bottom: 6px !important;
+  display: -webkit-box !important;
+  -webkit-line-clamp: 2 !important;
+  -webkit-box-orient: vertical !important;
+  overflow: hidden !important;
+  word-break: break-word !important;
+}
+
+.utv-card-overview {
+  font-family: var(--utv-mono), monospace !important;
+  font-size: 11px !important;
+  line-height: 1.4 !important;
+  color: #d1d5db !important;
+  display: -webkit-box !important;
+  -webkit-line-clamp: 4 !important;
+  -webkit-box-orient: vertical !important;
+  overflow: hidden !important;
+  word-break: break-word !important;
+}
+
+/* Eliminate Jellyfin's ugly play circle, seekbar, and action bar plastered over cards */
+.cardOverlayFab,
+.cardOverlayFab-primary,
+.cardOverlayButton,
+.cardOverlayContainer .cardProgress,
+.cardOverlayContainer .itemProgressBar,
+.cardIndicators {
+  display: none !important;
+}
+
+.btnPlay{background:var(--utv-mint)!important;color:#101b13!important;box-shadow:none!important}
 .MuiButton-textPrimary,.Mui-selected{color:var(--utv-mint)!important;background:rgba(143,222,170,.08)!important}
 .MuiToolbar-root .MuiButton-contained{background:rgba(143,222,170,.08)!important;color:var(--utv-mint)!important;box-shadow:none!important;border:1px solid rgba(143,222,170,.2)}
 #itemDetailPage{background:transparent!important}
@@ -352,7 +518,7 @@ input[type=range].osdVolumeSlider {
 }
 @media(max-width:360px){.MuiAppBar-root .utv-mobile-brand{left:50px;right:102px;transform:none;max-width:none;font-size:13px;justify-content:center}.MuiAppBar-root .utv-mobile-brand img{width:20px;height:20px}}
 .utv-home-active .verticalSection>.emby-scroller{padding-left:0!important;padding-right:0!important}
-#itemDetailPage .cardOverlayButton,#itemDetailPage .cardOverlayFab,#itemDetailPage .cardOverlayFab-primary{background-color:#8fdeaa!important;color:#101114!important}
+#itemDetailPage .cardOverlayButton,#itemDetailPage .cardOverlayFab,#itemDetailPage .cardOverlayFab-primary{display:none!important}
 #itemDetailPage .itemName,#itemDetailPage .nameContainer h1{font-weight:700!important;letter-spacing:-.04em}
 @media(max-width:600px){.utv-header-requests{width:44px;min-height:44px!important}}
 
