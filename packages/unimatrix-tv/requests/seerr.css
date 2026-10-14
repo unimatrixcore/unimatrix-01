@@ -1084,14 +1084,51 @@ html.um-seerr-pending .um-catalog {
 }
 #um-page-loading {
   position: fixed;
-  inset: 56px 0 0;
-  z-index: 50;
+  inset: 0;
+  z-index: 999999;
   display: grid;
-  place-content: center;
+  place-items: center;
   background: #101114;
-  color: #a4a8ac;
-  font-size: 13px;
+  color: #fafafa;
+  font:
+    450 13px/1.5 "Geist Mono Variable",
+    monospace;
   pointer-events: none;
+}
+.utv-boot-card {
+  display: grid;
+  justify-items: center;
+  gap: 20px;
+  padding: 24px;
+}
+.utv-boot-logo {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+}
+.utv-boot-spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid #ffffff20;
+  border-top-color: #8fdeaa;
+  border-radius: 50%;
+  animation: utv-spin 900ms linear infinite;
+}
+.utv-boot-text {
+  color: #a1a1aa;
+}
+@keyframes utv-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .utv-boot-spinner {
+    animation: none;
+  }
+  #um-page-loading {
+    transition: none !important;
+  }
 }
 @media (max-width: 600px) {
   .um-header-main {
@@ -1282,13 +1319,7 @@ body > div.fixed:has(.slideover) {
   place-items: center;
 }
 .um-native-card-caption {
-  font-size: 13px;
-  font-weight: 550;
-  color: #e4e5e8;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  overflow: hidden;
-  padding: 8px 1px 2px;
+  display: none !important;
 }
 body:not(.um-seerr-ready) #__next:has(main) {
   visibility: hidden;

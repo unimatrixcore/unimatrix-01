@@ -305,7 +305,7 @@ body.utv-home-active .MuiAppBar-root.MuiAppBar-positionFixed + div[aria-hidden="
 }
 
 body.utv-home-active #indexPage {
-  padding-top: 0 !important;
+  padding-top: 56px !important;
   margin-top: 0 !important;
 }
 
@@ -407,14 +407,20 @@ body.utv-home-active #utv-home-loading {
   transform-origin: 50% 55%;
 }
 
-.cardText {
-  font: 500 14px/1.6 var(--utv-font) !important;
-  letter-spacing: -0.02em;
+.card .cardText,
+.card .cardText-first,
+.card .cardText-secondary {
+  display: none !important;
 }
 
-.cardText-secondary {
-  font: 400 11px/1.5 var(--utv-mono) !important;
-  color: #969baa;
+.cardBox {
+  margin-bottom: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+[data-utv-shelf="movies"] .utv-card-type-badge,
+[data-utv-shelf="series"] .utv-card-type-badge {
+  display: none !important;
 }
 
 /* Jellyseerr Badges across top of poster */
@@ -456,23 +462,43 @@ body.utv-home-active #utv-home-loading {
 }
 
 .utv-card-status-badge {
-  width: 20px !important;
-  height: 20px !important;
-  border-radius: 50% !important;
-  background: #10b981 !important;
-  color: #ffffff !important;
+  display: none !important;
+}
+
+.utv-card-favorite-btn {
+  width: 28px !important;
+  height: 28px !important;
+  border-radius: 6px !important;
+  background: rgba(16, 17, 20, 0.6) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  color: #e2e8f0 !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35) !important;
+  cursor: pointer !important;
+  pointer-events: auto !important;
+  padding: 0 !important;
+  transition: all 150ms ease !important;
 }
 
-.utv-card-status-badge svg {
-  width: 12px !important;
-  height: 12px !important;
+.utv-card-favorite-btn:hover {
+  background: rgba(30, 32, 38, 0.85) !important;
+  border-color: rgba(255, 255, 255, 0.3) !important;
+  color: #fff !important;
 }
 
-/* Jellyseerr Hover Overlay with synopsis */
+.utv-card-favorite-btn.is-favorite {
+  color: #f59e0b !important;
+}
+
+.utv-card-favorite-btn svg {
+  width: 15px !important;
+  height: 15px !important;
+}
+
+/* Jellyseerr Hover Overlay with synopsis & actions */
 .utv-card-hover-overlay {
   position: absolute !important;
   inset: 0 !important;
@@ -483,16 +509,17 @@ body.utv-home-active #utv-home-loading {
   transition: opacity 220ms ease !important;
   background: linear-gradient(
     0deg,
-    rgba(16, 17, 20, 0.96) 0%,
-    rgba(16, 17, 20, 0.8) 50%,
-    rgba(16, 17, 20, 0.2) 80%,
-    transparent 100%
+    rgba(16, 17, 20, 0.98) 0%,
+    rgba(16, 17, 20, 0.9) 55%,
+    rgba(16, 17, 20, 0.4) 80%,
+    rgba(16, 17, 20, 0.1) 100%
   ) !important;
   display: flex !important;
   flex-direction: column !important;
   justify-content: flex-end !important;
   padding: 12px !important;
   box-sizing: border-box !important;
+  white-space: normal !important;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -506,37 +533,105 @@ body.utv-home-active #utv-home-loading {
 
 .utv-card-year {
   font-family: var(--utv-font) !important;
-  font-size: 12px !important;
+  font-size: 11px !important;
   font-weight: 600 !important;
-  color: #cbd5e1 !important;
+  color: #94a3b8 !important;
   margin-bottom: 2px !important;
+  white-space: normal !important;
 }
 
 .utv-card-title {
   font-family: var(--utv-font) !important;
-  font-size: 15px !important;
+  font-size: 13px !important;
   font-weight: 700 !important;
-  line-height: 1.2 !important;
+  line-height: 1.25 !important;
   color: #ffffff !important;
   letter-spacing: -0.02em !important;
-  margin-bottom: 6px !important;
+  margin-bottom: 4px !important;
   display: -webkit-box !important;
   -webkit-line-clamp: 2 !important;
   -webkit-box-orient: vertical !important;
   overflow: hidden !important;
   word-break: break-word !important;
+  white-space: normal !important;
 }
 
 .utv-card-overview {
   font-family: var(--utv-mono), monospace !important;
-  font-size: 11px !important;
-  line-height: 1.4 !important;
-  color: #d1d5db !important;
+  font-size: 10.5px !important;
+  line-height: 1.35 !important;
+  color: #94a3b8 !important;
   display: -webkit-box !important;
-  -webkit-line-clamp: 4 !important;
+  -webkit-line-clamp: 3 !important;
   -webkit-box-orient: vertical !important;
   overflow: hidden !important;
   word-break: break-word !important;
+  margin-bottom: 10px !important;
+  white-space: normal !important;
+}
+
+.utv-card-actions {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  width: 100% !important;
+  pointer-events: auto !important;
+}
+
+.utv-card-play-btn {
+  flex: 1 !important;
+  min-width: 0 !important;
+  height: 30px !important;
+  border-radius: 6px !important;
+  background: var(--utv-mint, #8fdeaa) !important;
+  color: #101114 !important;
+  font-family: var(--utv-font) !important;
+  font-size: 12px !important;
+  font-weight: 650 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 5px !important;
+  border: none !important;
+  cursor: pointer !important;
+  padding: 0 8px !important;
+  transition: filter 150ms ease !important;
+}
+
+.utv-card-play-btn:hover {
+  filter: brightness(1.08) !important;
+}
+
+.utv-card-play-btn svg {
+  width: 13px !important;
+  height: 13px !important;
+  fill: currentColor !important;
+}
+
+.utv-card-info-btn {
+  width: 30px !important;
+  height: 30px !important;
+  flex-shrink: 0 !important;
+  border-radius: 6px !important;
+  background: rgba(255, 255, 255, 0.12) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  color: #cbd5e1 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  padding: 0 !important;
+  transition: all 150ms ease !important;
+}
+
+.utv-card-info-btn:hover {
+  background: rgba(255, 255, 255, 0.22) !important;
+  color: #ffffff !important;
+}
+
+.utv-card-info-btn svg {
+  width: 14px !important;
+  height: 14px !important;
 }
 
 /* Eliminate Jellyfin's ugly play circle, seekbar, and action bar plastered over cards */
@@ -847,7 +942,7 @@ body.utv-home-active #utv-home-loading {
     border: 0;
   }
   .utv-home-active #indexPage {
-    padding-top: 0 !important;
+    padding-top: 56px !important;
   }
   #utv-featured {
     height: 480px;
@@ -1018,7 +1113,7 @@ body.utv-home-active #utv-home-loading {
   margin-left: 0;
 }
 .utv-home-active #indexPage {
-  padding-top: 0 !important;
+  padding-top: 56px !important;
   background: var(--utv-ink) !important;
 }
 .utv-home-active #homeTab {
@@ -1032,7 +1127,7 @@ body.utv-home-active #utv-home-loading {
   margin-bottom: 0;
 }
 #utv-featured .utv-featured-art {
-  background-position: center center;
+  background-position: center top !important;
 }
 #utv-featured::before {
   background:
@@ -2004,22 +2099,10 @@ body.utv-home-active #homeTab .verticalSection .cardBox {
   margin: 0 16px 0 0 !important;
   padding-bottom: 0 !important;
 }
-body.utv-home-active #homeTab .card .cardText {
-  text-align: left !important;
-  padding-left: 0 !important;
-  padding-right: 0 !important;
-  font-family: var(--utv-font) !important;
-  line-height: 1.45 !important;
-}
-body.utv-home-active #homeTab .card .cardText-first {
-  margin-top: 8px !important;
-  font-size: 14px !important;
-  font-weight: 600 !important;
-  color: #f3f3f5 !important;
-}
+body.utv-home-active #homeTab .card .cardText,
+body.utv-home-active #homeTab .card .cardText-first,
 body.utv-home-active #homeTab .card .cardText-secondary {
-  font: 400 12px/1.45 var(--utv-font) !important;
-  color: #9ca3af !important;
+  display: none !important;
 }
 @media (max-width: 600px) {
   body.utv-home-active #homeTab .homeSectionsContainer {

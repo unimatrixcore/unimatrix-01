@@ -179,3 +179,42 @@ test("search retires discover immediately and keeps its native query editable ac
     f.close();
   }
 });
+
+test("home loading screen mounts matching boot gate with logo and spinner", async () => {
+  const f = fixture(
+    '<!doctype html><html><head></head><body><div id="__next"><main></main></div></body></html>',
+    "https://requests.example/",
+  );
+  try {
+    f.window.eval(source);
+    const gate = f.window.document.getElementById("um-page-loading");
+    assert.ok(gate, "um-page-loading should exist");
+    assert.equal(gate.getAttribute("role"), "status");
+    assert.equal(gate.getAttribute("aria-live"), "polite");
+    const logo = gate.querySelector(".utv-boot-logo");
+    assert.ok(logo, "utv-boot-logo should exist");
+    assert.equal(logo.getAttribute("src"), "/unimatrix-theme/logo.png");
+    const spinner = gate.querySelector(".utv-boot-spinner");
+    assert.ok(spinner, "utv-boot-spinner should exist");
+    const text = gate.querySelector(".utv-boot-text");
+    assert.equal(text?.textContent, "Loading");
+  } finally {
+    f.close();
+  }
+});
+
+test("cards do not render captions beneath poster", async () => {
+  const f = fixture(
+    '<!doctype html><html><head></head><body><div id="__next"><main><div data-testid="title-card"><div role="link"><img src="/poster.jpg"></div><div data-testid="title-card-title">Test Movie</div></div></main></div></body></html>',
+    "https://requests.example/movies",
+  );
+  try {
+    f.window.eval(source);
+    const card = f.window.document.querySelector('[data-testid="title-card"]');
+    assert.ok(card);
+    const caption = card.querySelector(".um-native-card-caption");
+    assert.equal(caption, null, "captions should not be created under cards");
+  } finally {
+    f.close();
+  }
+});

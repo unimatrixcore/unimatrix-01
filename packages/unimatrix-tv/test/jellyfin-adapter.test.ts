@@ -62,6 +62,7 @@ function api(items: unknown[] = [movie]) {
       }),
     ),
     getImageUrl: (id: string) => "/images/" + id,
+    updateFavoriteStatus: vi.fn(() => Promise.resolve()),
   };
   host.ApiClient = result;
   return result;
@@ -254,9 +255,11 @@ describe("Jellyfin adapter behavior", () => {
     page.append(native);
     await settle();
     expect(native.querySelector(".utv-card-overview")?.textContent).toBe("First synopsis");
-    expect(native.querySelector(".utv-card-status-badge")?.getAttribute("aria-label")).toBe(
-      "Available",
+    expect(native.querySelector(".utv-card-favorite-btn")?.getAttribute("aria-label")).toBe(
+      "Favorite",
     );
+    expect(native.querySelector(".utv-card-play-btn span")?.textContent).toBe("Resume");
+    expect(native.querySelector(".utv-card-info-btn")?.getAttribute("aria-label")).toBe("Details");
     native.dataset.id = "missing";
     native
       .querySelector(".cardText-first")
@@ -287,8 +290,6 @@ describe("Jellyfin adapter behavior", () => {
     await settle();
     expect(document.querySelector("#utv-featured h1")?.textContent).toBe("Series");
     expect(document.querySelector("#utv-featured")?.textContent).not.toContain("Unavailable");
-    expect(s.querySelector(".utv-card-status-badge")).not.toBeNull();
-    expect(v.querySelector(".utv-card-status-badge")).toBeNull();
   });
 
   it("preserves keyboard focus through featured selection", async () => {
@@ -616,8 +617,6 @@ describe("Jellyfin adapter behavior", () => {
     expect(gate.fail).not.toHaveBeenCalled();
     expect(gate.ready).toHaveBeenCalled();
     expect(document.querySelector("#utv-featured h1")?.textContent).toBe("First movie");
-    expect(native.querySelector(".utv-card-status-badge")).not.toBeNull();
-    expect(s.querySelector(".utv-card-status-badge")).toBeNull();
   });
 
   it("bounds the complete title-and-episode pipeline with one deadline", async () => {
@@ -637,5 +636,89 @@ describe("Jellyfin adapter behavior", () => {
     episodes.resolve({ Items: [episode] });
     await settle();
     expect(document.querySelector("#utv-featured")).toBeNull();
+  });
+
+  it("handles card favorite button toggle and failure recovery", async () => {
+    const page = markup();
+    const native = card();
+    page.querySelector(".sections")?.append(native);
+    const client = api();
+    install();
+    await settle();
+
+    const fav = native.querySelector<HTMLButtonElement>(".utv-card-favorite-btn");
+    expect(fav).not.toBeNull();
+    expect(fav?.classList.contains("is-favorite")).toBe(false);
+
+    // Toggle favorite on
+    fav?.click();
+    expect(fav?.classList.contains("is-favorite")).toBe(true);
+    expect(client.updateFavoriteStatus).toHaveBeenCalledWith("u1", "m1", true);
+
+    // Failure rolls back state
+    client.updateFavoriteStatus.mockRejectedValueOnce(new Error("Network failed"));
+    fav?.click();
+    await settle();
+    expect(fav?.classList.contains("is-favorite")).toBe(true);
+  });
+
+  it("handles card play and details info button clicks", async () => {
+    const page = markup();
+    const native = card();
+    page.querySelector(".sections")?.append(native);
+    api();
+    install();
+    await settle();
+
+    const nativeBtn = native.querySelector<HTMLButtonElement>("button[data-action=resume]");
+    const nativeClick = vi.fn();
+    if (nativeBtn) nativeBtn.click = nativeClick;
+
+    const play = native.querySelector<HTMLButtonElement>(".utv-card-play-btn");
+    play?.click();
+    expect(nativeClick).toHaveBeenCalledTimes(1);
+
+    const info = native.querySelector<HTMLButtonElement>(".utv-card-info-btn");
+    info?.click();
+    expect(location.hash).toContain("m1");
+  });
+
+  it("hides type badges on homogeneous shelves and shows on mixed shelves", async () => {
+    const page = markup();
+    const section = document.createElement("div");
+    section.className = "verticalSection";
+    section.dataset.utvShelf = "movies";
+    const h2 = document.createElement("h2");
+    h2.className = "sectionTitle";
+    h2.textContent = "Movies";
+    section.append(h2);
+
+    const c1 = card("m1", "Movie", "Movie 1");
+    c1.querySelector(".itemProgressBar")?.remove();
+    section.append(c1);
+    page.querySelector(".sections")?.append(section);
+
+    api();
+    install();
+    await settle();
+
+    const pill = c1.querySelector<HTMLElement>(".utv-card-type-badge");
+    expect(pill?.style.display).toBe("none");
+    expect(c1.querySelector(".utv-card-play-btn span")?.textContent).toBe("Play");
+
+    const mixed = document.createElement("div");
+    mixed.className = "verticalSection";
+    mixed.dataset.utvShelf = "mixed";
+    const h2Mixed = document.createElement("h2");
+    h2Mixed.className = "sectionTitle";
+    h2Mixed.textContent = "Continue Watching";
+    mixed.append(h2Mixed);
+    const c2 = card("m2", "Movie", "Movie 2");
+    mixed.append(c2);
+    page.querySelector(".sections")?.append(mixed);
+    await settle();
+
+    const pillMixed = c2.querySelector<HTMLElement>(".utv-card-type-badge");
+    expect(pillMixed?.style.display).toBe("");
   });
 });

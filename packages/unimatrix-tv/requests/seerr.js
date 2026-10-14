@@ -41,15 +41,54 @@
   function finishPending() {
     clearTimeout(pendingDeadline);
     document.documentElement.classList.remove("um-seerr-pending");
-    document.getElementById("um-page-loading")?.remove();
+    const gate = document.getElementById("um-page-loading");
+    if (!gate) return;
+    gate.style.transition = "opacity 250ms ease-out";
+    gate.style.opacity = "0";
+    gate.style.pointerEvents = "none";
+    setTimeout(() => gate.remove(), 250);
   }
   if (location.pathname === "/") {
     document.documentElement.classList.add("um-seerr-pending");
     const gate = document.createElement("div");
     gate.id = "um-page-loading";
     gate.setAttribute("role", "status");
-    gate.textContent = "Loading titles";
-    document.body?.append(gate);
+    gate.setAttribute("aria-live", "polite");
+
+    const card = document.createElement("div");
+    card.className = "utv-boot-card";
+
+    const logo = document.createElement("img");
+    logo.className = "utv-boot-logo";
+    logo.src = "/unimatrix-theme/logo.png";
+    logo.alt = "Unimatrix-TV";
+
+    const spinner = document.createElement("div");
+    spinner.className = "utv-boot-spinner";
+    spinner.setAttribute("aria-hidden", "true");
+
+    const text = document.createElement("div");
+    text.className = "utv-boot-text";
+    text.textContent = "Loading";
+
+    card.append(logo, spinner, text);
+    gate.append(card);
+
+    function attach() {
+      if (document.body && !gate.isConnected) {
+        document.body.prepend(gate);
+      }
+    }
+    if (document.body) attach();
+    else {
+      const obs = new MutationObserver(() => {
+        if (document.body) {
+          attach();
+          obs.disconnect();
+        }
+      });
+      obs.observe(document.documentElement, { childList: true });
+    }
     pendingDeadline = setTimeout(finishPending, 19000);
   }
   const $ = (s, r = document) => r.querySelector(s);
@@ -287,13 +326,8 @@
       const entry = card.querySelector("[role=link]");
       if (name) {
         entry?.setAttribute("aria-label", name);
-        let caption = card.querySelector(".um-native-card-caption");
-        if (!caption) {
-          caption = node("div", "um-native-card-caption");
-          card.append(caption);
-        }
-        if (caption.textContent !== name) caption.textContent = name;
       } else entry?.setAttribute("aria-label", "View title details");
+      card.querySelector(".um-native-card-caption")?.remove();
       card.querySelectorAll("button").forEach((b) => {
         if (!b.textContent.trim() && !b.getAttribute("aria-label")) {
           const paths = [...b.querySelectorAll("path")]

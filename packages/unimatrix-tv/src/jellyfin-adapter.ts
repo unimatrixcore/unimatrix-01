@@ -48,6 +48,7 @@ const itemSchema = z.object({
     .object({
       PlaybackPositionTicks: z.number().optional(),
       Played: z.boolean().optional(),
+      IsFavorite: z.boolean().optional(),
     })
     .optional(),
   People: z.array(z.object({ Id: z.string(), Name: z.string(), Type: z.string() })).optional(),
@@ -632,6 +633,13 @@ export function installJellyfinAdapter(gate: BootGate): () => void {
     ).find((node) => !node.closest(".hide,[hidden]"));
   }
 
+  function isPartiallyPlayed(item: Item, card?: HTMLElement | null): boolean {
+    if (item.UserData?.PlaybackPositionTicks && item.UserData.PlaybackPositionTicks > 0)
+      return true;
+    if (card?.querySelector(".itemProgressBar")) return true;
+    return false;
+  }
+
   async function renderHero(shell: HTMLElement, api: JellyfinClient, stamp: number): Promise<void> {
     const item = heroItems[currentHero];
     if (!item) return;
@@ -695,7 +703,7 @@ export function installJellyfinAdapter(gate: BootGate): () => void {
         "span",
         "",
         native
-          ? native.dataset.action === "resume" || item.UserData?.PlaybackPositionTicks
+          ? isPartiallyPlayed(item, native.closest(".card"))
             ? "Resume"
             : "Play"
           : "View title",
@@ -822,7 +830,7 @@ export function installJellyfinAdapter(gate: BootGate): () => void {
       if (item && play) {
         const native = nativePlay(item);
         const text = native
-          ? native.dataset.action === "resume" || item.UserData?.PlaybackPositionTicks
+          ? isPartiallyPlayed(item, native.closest(".card"))
             ? "Resume"
             : "Play"
           : "View title";
@@ -983,7 +991,7 @@ export function installJellyfinAdapter(gate: BootGate): () => void {
       return;
     }
 
-    // 1. Jellyseerr Badges: Top-left pill + top-right available check
+    // 1. Jellyseerr Badges: Top-left pill (if mixed) + top-right favorite star
     let badges = container.querySelector<HTMLElement>(".utv-card-badges");
     if (!badges) {
       badges = document.createElement("div");
@@ -994,35 +1002,92 @@ export function installJellyfinAdapter(gate: BootGate): () => void {
       pill.className = "utv-card-type-badge";
       badges.appendChild(pill);
 
+      const fav = document.createElement("button");
+      fav.type = "button";
+      fav.className = "utv-card-favorite-btn";
+      fav.setAttribute("aria-label", "Favorite");
+      fav.innerHTML =
+        '<svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+        '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>' +
+        "</svg>";
+      fav.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const currentApi = client();
+        const user = currentApi?.getCurrentUserId();
+        const id = card.dataset.id;
+        if (!currentApi || !user || !id) return;
+        const target = images.get(id) || item;
+        const currentFav = Boolean(target?.UserData?.IsFavorite);
+        const nextFav = !currentFav;
+        if (target) {
+          const ud = target.UserData ?? (target.UserData = {});
+          ud.IsFavorite = nextFav;
+        }
+        fav.classList.toggle("is-favorite", nextFav);
+        fav.querySelector("svg")?.setAttribute("fill", nextFav ? "currentColor" : "none");
+        const rawApi = (
+          window as Window & {
+            ApiClient?: {
+              updateFavoriteStatus?: (u: string, i: string, f: boolean) => Promise<unknown>;
+            };
+          }
+        ).ApiClient;
+        if (typeof rawApi?.updateFavoriteStatus === "function") {
+          rawApi.updateFavoriteStatus(user, id, nextFav).catch(() => {
+            if (target?.UserData) target.UserData.IsFavorite = currentFav;
+            fav.classList.toggle("is-favorite", currentFav);
+            fav.querySelector("svg")?.setAttribute("fill", currentFav ? "currentColor" : "none");
+          });
+        }
+      });
+      badges.appendChild(fav);
+
       container.appendChild(badges);
     }
 
-    let status = badges.querySelector<HTMLElement>(".utv-card-status-badge");
-    const available = Boolean(item && (hasMedia(item) || availableSeries.has(item.Id)));
-    if (!available) status?.remove();
-    else if (!status) {
-      status = element("span", "utv-card-status-badge");
-      status.setAttribute("title", "Available");
-      status.setAttribute("aria-label", "Available");
-      status.append(icon("check"));
-      badges.append(status);
+    // Remove legacy checkmark badge if present
+    badges.querySelector(".utv-card-status-badge")?.remove();
+
+    // Update favorite button state
+    const favBtn = badges.querySelector<HTMLElement>(".utv-card-favorite-btn");
+    if (favBtn) {
+      const isFav = Boolean(item?.UserData?.IsFavorite);
+      favBtn.classList.toggle("is-favorite", isFav);
+      favBtn.querySelector("svg")?.setAttribute("fill", isFav ? "currentColor" : "none");
     }
+
+    // Check if section is homogeneous (only movies or only series)
+    const section = card.closest<HTMLElement>(".verticalSection");
+    const shelf = section?.dataset.utvShelf;
+    const heading = section?.querySelector("h2.sectionTitle")?.textContent?.trim();
+    const isHomogeneous =
+      shelf === "movies" ||
+      shelf === "series" ||
+      heading === "Movies" ||
+      heading === "Series" ||
+      heading === "TV Shows";
 
     const pill = badges.querySelector<HTMLElement>(".utv-card-type-badge");
     if (pill) {
-      if (rawType === "Movie") {
-        pill.textContent = "MOVIE";
-        pill.className = "utv-card-type-badge utv-badge-movie";
-      } else if (rawType === "Series") {
-        pill.textContent = "SERIES";
-        pill.className = "utv-card-type-badge utv-badge-series";
+      if (isHomogeneous) {
+        pill.style.display = "none";
       } else {
-        pill.textContent = "EPISODE";
-        pill.className = "utv-card-type-badge utv-badge-episode";
+        pill.style.display = "";
+        if (rawType === "Movie") {
+          pill.textContent = "MOVIE";
+          pill.className = "utv-card-type-badge utv-badge-movie";
+        } else if (rawType === "Series") {
+          pill.textContent = "SERIES";
+          pill.className = "utv-card-type-badge utv-badge-series";
+        } else {
+          pill.textContent = "EPISODE";
+          pill.className = "utv-card-type-badge utv-badge-episode";
+        }
       }
     }
 
-    // 2. Jellyseerr Hover Overlay with Year, Title, Overview
+    // 2. Jellyseerr Hover Overlay with Year, Title, Overview, Play/Resume, Info
     let overlay = container.querySelector<HTMLElement>(".utv-card-hover-overlay");
     if (!overlay) {
       overlay = document.createElement("div");
@@ -1038,13 +1103,58 @@ export function installJellyfinAdapter(gate: BootGate): () => void {
       const overviewEl = document.createElement("div");
       overviewEl.className = "utv-card-overview";
 
-      overlay.append(yearEl, titleEl, overviewEl);
+      const actions = document.createElement("div");
+      actions.className = "utv-card-actions";
+
+      const playBtn = document.createElement("button");
+      playBtn.type = "button";
+      playBtn.className = "utv-card-play-btn";
+      playBtn.innerHTML =
+        '<svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg><span>Play</span>';
+      playBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const targetItem = card.dataset.id ? images.get(card.dataset.id) || item : item;
+        if (targetItem) {
+          const target = nativePlay(targetItem);
+          if (target) target.click();
+          else {
+            const api = client();
+            if (api) location.hash = itemHref(targetItem, api).slice(1);
+          }
+        }
+      });
+
+      const infoBtn = document.createElement("button");
+      infoBtn.type = "button";
+      infoBtn.className = "utv-card-info-btn";
+      infoBtn.setAttribute("aria-label", "Details");
+      infoBtn.innerHTML =
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+        '<circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line>' +
+        "</svg>";
+      infoBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const targetItem = card.dataset.id ? images.get(card.dataset.id) || item : item;
+        const api = client();
+        if (targetItem && api) {
+          location.hash = itemHref(targetItem, api).slice(1);
+        } else if (card.dataset.id) {
+          const srv = card.dataset.serverid || api?.serverId();
+          location.hash = `#!/details?id=${card.dataset.id}&serverId=${srv || ""}`;
+        }
+      });
+
+      actions.append(playBtn, infoBtn);
+      overlay.append(yearEl, titleEl, overviewEl, actions);
       container.appendChild(overlay);
     }
 
     const yearEl = overlay.querySelector<HTMLElement>(".utv-card-year");
     const titleEl = overlay.querySelector<HTMLElement>(".utv-card-title");
     const overviewEl = overlay.querySelector<HTMLElement>(".utv-card-overview");
+    const playText = overlay.querySelector<HTMLElement>(".utv-card-play-btn span");
 
     const yearText = item?.ProductionYear
       ? String(item.ProductionYear)
@@ -1057,6 +1167,10 @@ export function installJellyfinAdapter(gate: BootGate): () => void {
     if (titleEl && titleEl.textContent !== titleText) titleEl.textContent = titleText;
     if (overviewEl && overviewEl.textContent !== overviewText)
       overviewEl.textContent = overviewText;
+    if (playText && item) {
+      const partially = isPartiallyPlayed(item, card);
+      playText.textContent = partially ? "Resume" : "Play";
+    }
   }
 
   function decorateAllCards(): void {
