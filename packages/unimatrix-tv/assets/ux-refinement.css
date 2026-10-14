@@ -1,57 +1,297 @@
 /* Unimatrix-TV UX pass: readable film typography, compact navigation,
    native playback transparency, restrained motion, and responsive shelves. */
-@font-face{font-family:'Geist Mono Variable';src:url('/UnimatrixTV/assets/geist-mono.woff2') format('woff2');font-style:normal;font-weight:100 900;font-display:swap}
-@font-face{font-family:Manrope;src:url('/UnimatrixTV/assets/manrope.ttf') format('truetype');font-weight:200 800;font-style:normal;font-display:swap}
-:root{--utv-font:'Geist Mono Variable',monospace;--utv-mono:'Geist Mono Variable',monospace;--utv-ease:cubic-bezier(.22,1,.36,1);--utv-radius:8px;--utv-ink:#101114;--utv-panel:#1b1d20;--utv-mint:#8fdeaa;--headerColor:rgba(16,17,20,.9);--darkerGradientPoint:var(--utv-ink);--darkerGradientPointAlpha:rgba(16,17,20,.96);--lighterGradientPoint:var(--utv-panel);--ef12-appBarHeight:72px;--largeRadius:var(--utv-radius);--smallRadius:6px;--cardWidth:190px}
-html{background:var(--utv-ink)!important}
-body,.mainAnimatedPage{background-color:transparent!important}
-.backgroundContainer.withBackdrop,.backgroundContainer-transparent{background-color:transparent!important}
-html.transparentDocument,html.transparentDocument body,html.transparentDocument .mainAnimatedPage,#videoOsdPage{background:transparent!important}
-body,input,textarea,select,button,.MuiTypography-root,.MuiButton-root,.MuiInputBase-root,.MuiMenuItem-root,.cardText,.sectionTitle,.itemName,h1,h2,h3,h4,h5,h6{font-family:var(--utv-font)!important}
-.material-icons,[class*="material-icons"],.MuiSvgIcon-root{font-family:'Material Icons',var(--iconPack,Material Icons)!important}
-.MuiAppBar-root{box-shadow:0 1px 0 rgba(255,255,255,.08)!important;border:0!important}
-.MuiAppBar-root .MuiToolbar-root:first-child{min-height:72px!important;gap:18px}
-.MuiAppBar-root .MuiStack-root:has(.utv-main-nav){flex:1;flex-direction:row!important;align-items:center;gap:34px}
-.MuiAppBar-root .MuiStack-root:has(.utv-main-nav)>a:not([href='#/']):not(.utv-main-nav){display:none!important}
-.MuiAppBar-root .MuiStack-root>a[href='#/']{padding:0!important;white-space:nowrap;font-size:18px!important;font-weight:650!important;letter-spacing:-.055em!important;background:none!important;box-shadow:none!important;border:0!important}
-.MuiAppBar-root .MuiButton-startIcon img{max-height:none!important;max-width:none!important;width:28px;height:28px}
-.utv-main-nav{display:flex;align-items:center;gap:4px;min-width:0}
-.utv-main-nav a{position:relative;display:inline-flex;align-items:center;min-height:44px;box-sizing:border-box;padding:0 14px;text-decoration:none!important;font:550 14px var(--utv-font);color:#adafb9!important;white-space:nowrap;border-radius:5px;transition:color 180ms ease,background 180ms ease}
-.utv-main-nav a:hover{color:#fff!important;background:rgba(255,255,255,.045)}
-.utv-main-nav a[aria-current='page']{color:#fafafa!important}
-.utv-main-nav a[aria-current='page']::after{content:'';position:absolute;left:14px;right:14px;bottom:4px;height:2px;background:var(--utv-mint);border-radius:2px;animation:utv-line 260ms var(--utv-ease)}
-.utv-main-nav .utv-request-link{margin-left:10px;border-left:1px solid rgba(255,255,255,.12);border-radius:0;color:var(--utv-mint)!important;font-weight:500}
-.MuiAvatar-root{background:#262d2a!important;color:var(--utv-mint)!important;border:1px solid rgba(143,222,170,.25)}
-.MuiIconButton-root{transition:color 180ms ease,background 180ms ease!important}
-.utv-library-shortcuts{display:none!important}
-#utv-featured{height:clamp(420px,55vh,620px);min-height:0;margin-bottom:30px;border-bottom:0}
-#utv-featured .utv-featured-art{opacity:0;transform:scale(1.025);transition:opacity 650ms var(--utv-ease),transform 1.1s var(--utv-ease);background-position:center 32%}
-#utv-featured .utv-featured-art.is-loaded{opacity:1;transform:scale(1)}
-#utv-featured::before{background:linear-gradient(90deg,rgba(16,17,20,.93) 0%,rgba(16,17,20,.63) 36%,rgba(16,17,20,.04) 78%),linear-gradient(0deg,var(--utv-ink) 0%,transparent 50%)}
-#utv-featured .utv-featured-copy{left:4.5%;bottom:13%;max-width:min(530px,48%);animation:utv-copy-in 550ms var(--utv-ease) both}
-#utv-featured .utv-eyebrow{display:none}
-#utv-featured h1{font:700 clamp(32px,3.8vw,56px)/1.06 var(--utv-font);letter-spacing:-.035em;word-spacing:.06em;max-width:520px;margin-bottom:16px}
-.utv-meta{font:450 11px var(--utv-mono);color:#c2c5ce;gap:12px;margin-bottom:17px;letter-spacing:0}
-.utv-summary{font:450 15px/1.65 var(--utv-font);max-width:460px;color:#d9dae0;-webkit-line-clamp:2;margin-bottom:24px}
-.utv-actions{gap:10px}
-.utv-action{min-height:46px;padding:0 24px;font:650 14px var(--utv-font);border-radius:6px;letter-spacing:0;transition:background 180ms ease,transform 250ms var(--utv-ease),box-shadow 250ms var(--utv-ease)}
-.utv-action.secondary{background:rgba(26,29,33,.4);border-color:rgba(255,255,255,.22)}
-.utv-action:active{transform:scale(.97)}
-.utv-featured-bottom{bottom:24px;justify-content:flex-end}
-.utv-featured-controls button{width:44px;height:44px;border-radius:50%;backdrop-filter:blur(8px);font-family:var(--utv-font);transition:background 160ms ease,transform 250ms var(--utv-ease)}
-.utv-featured-controls button:active{transform:scale(.94)}
-.sectionTitle{font:650 clamp(19px,1.6vw,23px)/1.25 var(--utv-font)!important;letter-spacing:-.035em!important}
-.utv-home-active #homeTab>.sections>.verticalSection{margin-top:0!important;margin-bottom:30px!important;padding-left:4.5%!important;padding-right:4.5%!important}
-.utv-home-active .verticalSection .sectionTitleContainer{margin:0 0 14px!important;padding-top:0!important}
-.utv-home-active .verticalSection .sectionTitleContainer{padding-left:0!important;padding-right:0!important}
-.utv-home-active .card.overflowBackdropCard{width:304px!important}
-.utv-home-active .card.overflowPortraitCard{width:186px!important}
-.Mui-disabled{opacity:.35!important}
+@font-face {
+  font-family: "Geist Mono Variable";
+  src: url("/UnimatrixTV/assets/geist-mono.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+:root {
+  --utv-font: "Geist Mono Variable", monospace;
+  --utv-mono: "Geist Mono Variable", monospace;
+  --utv-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --utv-radius: 8px;
+  --utv-ink: #101114;
+  --utv-panel: #1b1d20;
+  --utv-mint: #8fdeaa;
+  --headerColor: rgba(16, 17, 20, 0.9);
+  --darkerGradientPoint: var(--utv-ink);
+  --darkerGradientPointAlpha: rgba(16, 17, 20, 0.96);
+  --lighterGradientPoint: var(--utv-panel);
+  --ef12-appBarHeight: 72px;
+  --largeRadius: var(--utv-radius);
+  --smallRadius: 6px;
+  --cardWidth: 190px;
+}
+html {
+  background: var(--utv-ink) !important;
+}
+body,
+.mainAnimatedPage {
+  background-color: transparent !important;
+}
+.backgroundContainer.withBackdrop,
+.backgroundContainer-transparent {
+  background-color: transparent !important;
+}
+html.transparentDocument,
+html.transparentDocument body,
+html.transparentDocument .mainAnimatedPage,
+#videoOsdPage {
+  background: transparent !important;
+}
+body,
+input,
+textarea,
+select,
+button,
+.MuiTypography-root,
+.MuiButton-root,
+.MuiInputBase-root,
+.MuiMenuItem-root,
+.cardText,
+.sectionTitle,
+.itemName,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--utv-font) !important;
+}
+.material-icons,
+[class*="material-icons"],
+.MuiSvgIcon-root {
+  font-family: "Material Icons", var(--iconPack, Material Icons) !important;
+}
+.MuiAppBar-root {
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+  border: 0 !important;
+}
+.MuiAppBar-root .MuiToolbar-root:first-child {
+  min-height: 72px !important;
+  gap: 18px;
+}
+.MuiAppBar-root .MuiStack-root:has(.utv-main-nav) {
+  flex: 1;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 34px;
+}
+.MuiAppBar-root .MuiStack-root:has(.utv-main-nav) > a:not([href="#/"]):not(.utv-main-nav) {
+  display: none !important;
+}
+.MuiAppBar-root .MuiStack-root > a[href="#/"] {
+  padding: 0 !important;
+  white-space: nowrap;
+  font-size: 18px !important;
+  font-weight: 650 !important;
+  letter-spacing: -0.055em !important;
+  background: none !important;
+  box-shadow: none !important;
+  border: 0 !important;
+}
+.MuiAppBar-root .MuiButton-startIcon img {
+  max-height: none !important;
+  max-width: none !important;
+  width: 28px;
+  height: 28px;
+}
+.utv-main-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.utv-main-nav a {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  box-sizing: border-box;
+  padding: 0 14px;
+  text-decoration: none !important;
+  font: 550 14px var(--utv-font);
+  color: #adafb9 !important;
+  white-space: nowrap;
+  border-radius: 5px;
+  transition:
+    color 180ms ease,
+    background 180ms ease;
+}
+.utv-main-nav a:hover {
+  color: #fff !important;
+  background: rgba(255, 255, 255, 0.045);
+}
+.utv-main-nav a[aria-current="page"] {
+  color: #fafafa !important;
+}
+.utv-main-nav a[aria-current="page"]::after {
+  content: "";
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 4px;
+  height: 2px;
+  background: var(--utv-mint);
+  border-radius: 2px;
+  animation: utv-line 260ms var(--utv-ease);
+}
+.utv-main-nav .utv-request-link {
+  margin-left: 10px;
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0;
+  color: var(--utv-mint) !important;
+  font-weight: 500;
+}
+.MuiAvatar-root {
+  background: #262d2a !important;
+  color: var(--utv-mint) !important;
+  border: 1px solid rgba(143, 222, 170, 0.25);
+}
+.MuiIconButton-root {
+  transition:
+    color 180ms ease,
+    background 180ms ease !important;
+}
+.utv-library-shortcuts {
+  display: none !important;
+}
+#utv-featured {
+  height: clamp(420px, 55vh, 620px);
+  min-height: 0;
+  margin-bottom: 30px;
+  border-bottom: 0;
+}
+#utv-featured .utv-featured-art {
+  opacity: 0;
+  transform: scale(1.025);
+  transition:
+    opacity 650ms var(--utv-ease),
+    transform 1.1s var(--utv-ease);
+  background-position: center 32%;
+}
+#utv-featured .utv-featured-art.is-loaded {
+  opacity: 1;
+  transform: scale(1);
+}
+#utv-featured::before {
+  background:
+    linear-gradient(
+      90deg,
+      rgba(16, 17, 20, 0.93) 0%,
+      rgba(16, 17, 20, 0.63) 36%,
+      rgba(16, 17, 20, 0.04) 78%
+    ),
+    linear-gradient(0deg, var(--utv-ink) 0%, transparent 50%);
+}
+#utv-featured .utv-featured-copy {
+  left: 4.5%;
+  bottom: 13%;
+  max-width: min(530px, 48%);
+  animation: utv-copy-in 550ms var(--utv-ease) both;
+}
+#utv-featured .utv-eyebrow {
+  display: none;
+}
+#utv-featured h1 {
+  font: 700 clamp(32px, 3.8vw, 56px)/1.06 var(--utv-font);
+  letter-spacing: -0.035em;
+  word-spacing: 0.06em;
+  max-width: 520px;
+  margin-bottom: 16px;
+}
+.utv-meta {
+  font: 450 11px var(--utv-mono);
+  color: #c2c5ce;
+  gap: 12px;
+  margin-bottom: 17px;
+  letter-spacing: 0;
+}
+.utv-summary {
+  font: 450 15px/1.65 var(--utv-font);
+  max-width: 460px;
+  color: #d9dae0;
+  -webkit-line-clamp: 2;
+  margin-bottom: 24px;
+}
+.utv-actions {
+  gap: 10px;
+}
+.utv-action {
+  min-height: 46px;
+  padding: 0 24px;
+  font: 650 14px var(--utv-font);
+  border-radius: 6px;
+  letter-spacing: 0;
+  transition:
+    background 180ms ease,
+    transform 250ms var(--utv-ease),
+    box-shadow 250ms var(--utv-ease);
+}
+.utv-action.secondary {
+  background: rgba(26, 29, 33, 0.4);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+.utv-action:active {
+  transform: scale(0.97);
+}
+.utv-featured-bottom {
+  bottom: 24px;
+  justify-content: flex-end;
+}
+.utv-featured-controls button {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  backdrop-filter: blur(8px);
+  font-family: var(--utv-font);
+  transition:
+    background 160ms ease,
+    transform 250ms var(--utv-ease);
+}
+.utv-featured-controls button:active {
+  transform: scale(0.94);
+}
+.sectionTitle {
+  font: 650 clamp(19px, 1.6vw, 23px)/1.25 var(--utv-font) !important;
+  letter-spacing: -0.035em !important;
+}
+.utv-home-active #homeTab > .sections > .verticalSection {
+  margin-top: 0 !important;
+  margin-bottom: 30px !important;
+  padding-left: 4.5% !important;
+  padding-right: 4.5% !important;
+}
+.utv-home-active .verticalSection .sectionTitleContainer {
+  margin: 0 0 14px !important;
+  padding-top: 0 !important;
+}
+.utv-home-active .verticalSection .sectionTitleContainer {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+.utv-home-active .card.overflowBackdropCard {
+  width: 304px !important;
+}
+.utv-home-active .card.overflowPortraitCard {
+  width: 186px !important;
+}
+.Mui-disabled {
+  opacity: 0.35 !important;
+}
 
 /* Hide stock "My Media" folder row */
 .verticalSection:has(.card[data-type="CollectionFolder"]),
 .section0:has(.card[data-type="CollectionFolder"]),
-.utv-home-active .homeSectionsContainer:has(#utv-featured,#utv-empty,#utv-home-loading)>.verticalSection:has(.card[data-type='CollectionFolder']){display:none!important}
+.utv-home-active
+  .homeSectionsContainer:has(#utv-featured, #utv-empty, #utv-home-loading)
+  > .verticalSection:has(.card[data-type="CollectionFolder"]) {
+  display: none !important;
+}
 
 /* ==========================================================================
    Zero-Gap Apple TV Billboard Hero & Frosted Nav Bar Integration
@@ -126,7 +366,9 @@ body.utv-home-active #utv-home-loading {
   border-radius: 12px !important;
   overflow: hidden !important;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
-  transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 300ms cubic-bezier(0.16, 1, 0.3, 1) !important;
+  transition:
+    transform 300ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 300ms cubic-bezier(0.16, 1, 0.3, 1) !important;
 }
 
 @media (hover: hover) {
@@ -139,11 +381,14 @@ body.utv-home-active #utv-home-loading {
 
 .cardImageContainer {
   border-radius: 12px !important;
-  position: relative !important;
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
   overflow: hidden !important;
   background-size: cover !important;
   background-position: center !important;
-  box-shadow: 0 4px 20px rgba(0,0,0,.2);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
   transition: box-shadow 350ms var(--utv-ease);
   transform: none !important;
 }
@@ -152,7 +397,8 @@ body.utv-home-active #utv-home-loading {
   transform: none !important;
 }
 
-.cardOverlayContainer, .cardContent {
+.cardOverlayContainer,
+.cardContent {
   border-radius: var(--utv-radius) !important;
 }
 
@@ -235,7 +481,13 @@ body.utv-home-active #utv-home-loading {
   z-index: 5 !important;
   opacity: 0 !important;
   transition: opacity 220ms ease !important;
-  background: linear-gradient(0deg, rgba(16, 17, 20, 0.96) 0%, rgba(16, 17, 20, 0.8) 50%, rgba(16, 17, 20, 0.2) 80%, transparent 100%) !important;
+  background: linear-gradient(
+    0deg,
+    rgba(16, 17, 20, 0.96) 0%,
+    rgba(16, 17, 20, 0.8) 50%,
+    rgba(16, 17, 20, 0.2) 80%,
+    transparent 100%
+  ) !important;
   display: flex !important;
   flex-direction: column !important;
   justify-content: flex-end !important;
@@ -243,7 +495,11 @@ body.utv-home-active #utv-home-loading {
   box-sizing: border-box !important;
 }
 
-.card:hover .utv-card-hover-overlay,
+@media (hover: hover) and (pointer: fine) {
+  .card:hover .utv-card-hover-overlay {
+    opacity: 1 !important;
+  }
+}
 .card:focus-within .utv-card-hover-overlay {
   opacity: 1 !important;
 }
@@ -287,221 +543,1260 @@ body.utv-home-active #utv-home-loading {
 .cardOverlayFab,
 .cardOverlayFab-primary,
 .cardOverlayButton,
-.cardOverlayContainer .cardProgress,
-.cardOverlayContainer .itemProgressBar,
-.cardIndicators {
+.cardOverlayButton {
   display: none !important;
 }
 
-.btnPlay{background:var(--utv-mint)!important;color:#101b13!important;box-shadow:none!important}
-.MuiButton-textPrimary,.Mui-selected{color:var(--utv-mint)!important;background:rgba(143,222,170,.08)!important}
-.MuiToolbar-root .MuiButton-contained{background:rgba(143,222,170,.08)!important;color:var(--utv-mint)!important;box-shadow:none!important;border:1px solid rgba(143,222,170,.2)}
-#itemDetailPage{background:transparent!important}
-#itemDetailPage .detailPageWrapperContainer{background:linear-gradient(180deg,transparent 0%,rgba(16,17,20,.78) 140px,var(--utv-ink) 340px)!important}
-#itemDetailPage .detailRibbon{background:transparent!important;backdrop-filter:none!important}
-#itemDetailPage .detailLogo{max-width:460px;max-height:150px;filter:drop-shadow(0 4px 14px rgba(0,0,0,.25))}
-#itemDetailPage .overview{font-size:16px!important;line-height:1.8!important;max-width:780px}
-#itemDetailPage .detailPageSecondaryContainer{padding-top:24px!important;background:var(--utv-ink)!important}
-#itemDetailPage .mediaInfoPrimary{font-family:var(--utv-mono);font-size:12px}
-#itemDetailPage .btnPlay{border-radius:6px!important;min-height:46px;padding:0 24px!important}
-.mainAnimatedPage:not(#videoOsdPage):not(.hide){animation:utv-page-in 340ms var(--utv-ease)}
-.MuiPaper-root[role='menu'],.MuiDialog-paper{animation:utv-menu-in 200ms var(--utv-ease);border:1px solid rgba(255,255,255,.1);background:#1b1d22!important;border-radius:8px!important}
-.MuiTouchRipple-root{display:none}
-.utv-login-active #loginPage{display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:26px;padding:32px 24px!important;min-height:calc(100svh - 72px)!important;background:var(--utv-ink)!important}
-.utv-login-active #loginPage::before{background:radial-gradient(ellipse at 50% 25%,rgba(143,222,170,.035),transparent 65%);mask-image:none}
-#utv-login-scene{position:relative!important;left:auto!important;top:auto!important;transform:none!important;display:flex;align-items:center;justify-content:center;gap:12px;width:auto!important;padding:0!important}
-#utv-login-scene img{width:36px!important;height:36px!important;margin:0!important}
-#utv-login-scene h2{font:650 24px var(--utv-font)!important;letter-spacing:-.055em!important;margin:0!important}
-.utv-login-active #loginPage>.padded-left{width:100%!important;max-width:410px!important;padding:32px!important;border-radius:10px!important;background:#17191d!important;box-shadow:0 12px 45px rgba(0,0,0,.18)!important;animation:utv-copy-in 420ms var(--utv-ease)}
-.utv-login-active #loginPage .emby-input{font:450 16px var(--utv-font)!important;border-radius:5px!important;min-height:48px}
-.utv-login-active #loginPage .inputLabel{font:550 13px var(--utv-font)!important;color:#b9bdc7!important}
-.utv-login-active #loginPage .button-submit{font-size:14px!important;border-radius:5px!important}
-.utv-login-active #loginPage .checkboxContainer,.utv-login-active #loginPage .btnQuickConnect,.utv-login-active #loginPage .btnForgotPassword{font-size:13px!important}
-.utv-login-active #loginPage .disclaimerContainer{font-size:12px!important}
-#utv-home-loading{height:clamp(420px,55vh,620px);box-sizing:border-box;padding:110px 4.5% 44px;background:linear-gradient(100deg,#181b20,#101114);display:flex;flex-direction:column;justify-content:flex-end;gap:18px;animation:utv-loading 1.6s ease-in-out infinite alternate}
-#utv-home-loading div{background:#252932;border-radius:5px;max-width:430px;height:14px}
-#utv-home-loading div:first-child{height:48px;max-width:330px}
-#utv-home-loading div:last-child{height:46px;max-width:220px;margin-top:12px}
-:where(.utv-main-nav a,.utv-action,.utv-featured-controls button):focus-visible{outline:2px solid var(--utv-mint);outline-offset:3px}
-@keyframes utv-page-in{from{opacity:.25;transform:translateY(6px)}to{opacity:1;transform:none}}
-@keyframes utv-copy-in{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
-@keyframes utv-menu-in{from{opacity:0;transform:translateY(4px) scale(.98)}to{opacity:1;transform:none}}
-@keyframes utv-line{from{opacity:0;transform:scaleX(.6)}to{opacity:1;transform:scaleX(1)}}
-@keyframes utv-loading{from{opacity:.65}to{opacity:1}}
-@media(max-width:1100px){.MuiAppBar-root .MuiStack-root:has(.utv-main-nav){gap:16px}.utv-main-nav a{padding:0 10px;font-size:13px}.utv-main-nav .utv-request-link{margin-left:4px}}
-@media(max-width:800px){.MuiAppBar-root .MuiToolbar-root:first-child{min-height:64px!important;gap:6px}.MuiAppBar-root .MuiStack-root:has(.utv-main-nav){gap:8px}.MuiAppBar-root .MuiStack-root>a[href='#/']{font-size:15px!important}.utv-main-nav a{font-size:12px;padding:0 8px}.MuiAppBar-root button[aria-label='SyncPlay']{display:none}#utv-featured .utv-featured-copy{max-width:65%}}
-@media(max-width:600px){:root{--ef12-appBarHeight:112px;--cardWidth:142px}.MuiAppBar-root .MuiToolbar-root:first-child{display:flex;flex-wrap:wrap;padding:12px 18px 0!important;min-height:112px!important;align-content:flex-start;align-items:center;position:relative}.MuiAppBar-root .MuiStack-root:has(.utv-main-nav){display:contents!important}.MuiAppBar-root .MuiStack-root>a[href='#/']{font-size:17px!important;margin-right:auto}.MuiAppBar-root .MuiToolbar-root:first-child>.MuiBox-root{margin-left:0!important}.MuiAppBar-root button[aria-label='Cast to Device']{display:none}.utv-main-nav{order:20;flex:0 0 100%;justify-content:space-between;gap:0;margin-top:6px}.utv-main-nav a{font-size:13px;min-height:44px;padding:0 9px}.utv-main-nav a:first-child{padding-left:0}.utv-main-nav a[aria-current='page']::after{left:9px;right:9px}.utv-main-nav a:first-child[aria-current='page']::after{left:0}.utv-main-nav .utv-request-link{padding-right:0;margin-left:0;border:0}.utv-home-active #indexPage{padding-top:0!important}#utv-featured{height:480px;margin-bottom:26px}#utv-featured .utv-featured-art{background-position:60% center}#utv-featured::before{background:linear-gradient(0deg,var(--utv-ink) 0%,rgba(16,17,20,.86) 30%,rgba(16,17,20,.05) 85%)}#utv-featured .utv-featured-copy{max-width:92%;left:5%;right:5%;bottom:32px;padding:0}#utv-featured h1{font-size:34px;margin-bottom:14px}.utv-meta{font-size:10px;margin-bottom:13px}.utv-summary{font-size:14px;line-height:1.6;margin-bottom:20px}.utv-action{min-height:46px;padding:0 20px;font-size:13px}.utv-featured-bottom{right:5%;bottom:auto;top:22px}.utv-home-active #homeTab>.sections>.verticalSection{padding-left:5%!important;padding-right:5%!important;margin-bottom:28px!important}.sectionTitle{font-size:20px!important}.cardText{font-size:13px!important}#utv-home-loading{height:480px}#itemDetailPage .detailLogo{max-width:85vw;max-height:120px}.utv-login-active #loginPage{min-height:calc(100svh - 64px)!important;padding:24px 20px!important}.utv-login-active #loginPage>.padded-left{padding:26px!important}}
-@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}#utv-featured .utv-featured-art{transform:none!important}}
-.utv-mobile-brand{display:flex;align-items:center;gap:8px;color:#fafafa!important;text-decoration:none!important;font:650 17px var(--utv-font);letter-spacing:-.04em;margin-right:auto}
-.utv-mobile-brand img{width:24px;height:24px;object-fit:contain}
-@media(max-width:600px){.MuiAppBar-root .MuiToolbar-root:first-child:has(>.utv-main-nav){column-gap:2px;padding-left:12px!important;padding-right:12px!important}.MuiAppBar-root .MuiToolbar-root:first-child:has(>.utv-main-nav)>button[aria-label='Open Menu']{width:36px;padding:6px}.MuiAppBar-root .MuiToolbar-root:first-child:has(>.utv-main-nav)>.MuiBox-root{flex-grow:0!important}.MuiAppBar-root .MuiToolbar-root:first-child:has(>.utv-main-nav) .MuiIconButton-root{padding:8px!important}.MuiAppBar-root .utv-mobile-brand+.MuiBox-root{margin-left:0!important}}
-@media(max-width:600px){.utv-home-active .card.overflowBackdropCard{width:246px!important}.utv-home-active .card.overflowPortraitCard{width:150px!important}}
+.btnPlay {
+  background: var(--utv-mint) !important;
+  color: #101b13 !important;
+  box-shadow: none !important;
+}
+.MuiButton-textPrimary,
+.Mui-selected {
+  color: var(--utv-mint) !important;
+  background: rgba(143, 222, 170, 0.08) !important;
+}
+.MuiToolbar-root .MuiButton-contained {
+  background: rgba(143, 222, 170, 0.08) !important;
+  color: var(--utv-mint) !important;
+  box-shadow: none !important;
+  border: 1px solid rgba(143, 222, 170, 0.2);
+}
+#itemDetailPage {
+  background: transparent !important;
+}
+#itemDetailPage .detailPageWrapperContainer {
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(16, 17, 20, 0.78) 140px,
+    var(--utv-ink) 340px
+  ) !important;
+}
+#itemDetailPage .detailRibbon {
+  background: transparent !important;
+  backdrop-filter: none !important;
+}
+#itemDetailPage .detailLogo {
+  max-width: 460px;
+  max-height: 150px;
+  filter: drop-shadow(0 4px 14px rgba(0, 0, 0, 0.25));
+}
+#itemDetailPage .overview {
+  font-size: 16px !important;
+  line-height: 1.8 !important;
+  max-width: 780px;
+}
+#itemDetailPage .detailPageSecondaryContainer {
+  padding-top: 24px !important;
+  background: var(--utv-ink) !important;
+}
+#itemDetailPage .mediaInfoPrimary {
+  font-family: var(--utv-mono);
+  font-size: 12px;
+}
+#itemDetailPage .btnPlay {
+  border-radius: 6px !important;
+  min-height: 46px;
+  padding: 0 24px !important;
+}
+.mainAnimatedPage:not(#videoOsdPage):not(.hide) {
+  animation: utv-page-in 340ms var(--utv-ease);
+}
+.MuiPaper-root[role="menu"],
+.MuiDialog-paper {
+  animation: utv-menu-in 200ms var(--utv-ease);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #1b1d22 !important;
+  border-radius: 8px !important;
+}
+.MuiTouchRipple-root {
+  display: none;
+}
+.utv-login-active #loginPage {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 26px;
+  padding: 32px 24px !important;
+  min-height: calc(100svh - 72px) !important;
+  background: var(--utv-ink) !important;
+}
+.utv-login-active #loginPage::before {
+  background: radial-gradient(ellipse at 50% 25%, rgba(143, 222, 170, 0.035), transparent 65%);
+  mask-image: none;
+}
+#utv-login-scene {
+  position: relative !important;
+  left: auto !important;
+  top: auto !important;
+  transform: none !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: auto !important;
+  padding: 0 !important;
+}
+#utv-login-scene img {
+  width: 36px !important;
+  height: 36px !important;
+  margin: 0 !important;
+}
+#utv-login-scene h2 {
+  font: 650 24px var(--utv-font) !important;
+  letter-spacing: -0.055em !important;
+  margin: 0 !important;
+}
+.utv-login-active #loginPage > .padded-left {
+  width: 100% !important;
+  max-width: 410px !important;
+  padding: 32px !important;
+  border-radius: 10px !important;
+  background: #17191d !important;
+  box-shadow: 0 12px 45px rgba(0, 0, 0, 0.18) !important;
+  animation: utv-copy-in 420ms var(--utv-ease);
+}
+.utv-login-active #loginPage .emby-input {
+  font: 450 16px var(--utv-font) !important;
+  border-radius: 5px !important;
+  min-height: 48px;
+}
+.utv-login-active #loginPage .inputLabel {
+  font: 550 13px var(--utv-font) !important;
+  color: #b9bdc7 !important;
+}
+.utv-login-active #loginPage .button-submit {
+  font-size: 14px !important;
+  border-radius: 5px !important;
+}
+.utv-login-active #loginPage .checkboxContainer,
+.utv-login-active #loginPage .btnQuickConnect,
+.utv-login-active #loginPage .btnForgotPassword {
+  font-size: 13px !important;
+}
+.utv-login-active #loginPage .disclaimerContainer {
+  font-size: 12px !important;
+}
+#utv-home-loading {
+  height: clamp(420px, 55vh, 620px);
+  box-sizing: border-box;
+  padding: 110px 4.5% 44px;
+  background: linear-gradient(100deg, #181b20, #101114);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 18px;
+  animation: utv-loading 1.6s ease-in-out infinite alternate;
+}
+#utv-home-loading div {
+  background: #252932;
+  border-radius: 5px;
+  max-width: 430px;
+  height: 14px;
+}
+#utv-home-loading div:first-child {
+  height: 48px;
+  max-width: 330px;
+}
+#utv-home-loading div:last-child {
+  height: 46px;
+  max-width: 220px;
+  margin-top: 12px;
+}
+:where(.utv-main-nav a, .utv-action, .utv-featured-controls button):focus-visible {
+  outline: 2px solid var(--utv-mint);
+  outline-offset: 3px;
+}
+@keyframes utv-page-in {
+  from {
+    opacity: 0.25;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes utv-copy-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes utv-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes utv-line {
+  from {
+    opacity: 0;
+    transform: scaleX(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+@keyframes utv-loading {
+  from {
+    opacity: 0.65;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (max-width: 1100px) {
+  .MuiAppBar-root .MuiStack-root:has(.utv-main-nav) {
+    gap: 16px;
+  }
+  .utv-main-nav a {
+    padding: 0 10px;
+    font-size: 13px;
+  }
+  .utv-main-nav .utv-request-link {
+    margin-left: 4px;
+  }
+}
+@media (max-width: 800px) {
+  .MuiAppBar-root .MuiToolbar-root:first-child {
+    min-height: 64px !important;
+    gap: 6px;
+  }
+  .MuiAppBar-root .MuiStack-root:has(.utv-main-nav) {
+    gap: 8px;
+  }
+  .MuiAppBar-root .MuiStack-root > a[href="#/"] {
+    font-size: 15px !important;
+  }
+  .utv-main-nav a {
+    font-size: 12px;
+    padding: 0 8px;
+  }
+  .MuiAppBar-root button[aria-label="SyncPlay"] {
+    display: none;
+  }
+  #utv-featured .utv-featured-copy {
+    max-width: 65%;
+  }
+}
+@media (max-width: 600px) {
+  :root {
+    --ef12-appBarHeight: 112px;
+    --cardWidth: 142px;
+  }
+  .MuiAppBar-root .MuiToolbar-root:first-child {
+    display: flex;
+    flex-wrap: wrap;
+    padding: 12px 18px 0 !important;
+    min-height: 112px !important;
+    align-content: flex-start;
+    align-items: center;
+    position: relative;
+  }
+  .MuiAppBar-root .MuiStack-root:has(.utv-main-nav) {
+    display: contents !important;
+  }
+  .MuiAppBar-root .MuiStack-root > a[href="#/"] {
+    font-size: 17px !important;
+    margin-right: auto;
+  }
+  .MuiAppBar-root .MuiToolbar-root:first-child > .MuiBox-root {
+    margin-left: 0 !important;
+  }
+  .MuiAppBar-root button[aria-label="Cast to Device"] {
+    display: none;
+  }
+  .utv-main-nav {
+    order: 20;
+    flex: 0 0 100%;
+    justify-content: space-between;
+    gap: 0;
+    margin-top: 6px;
+  }
+  .utv-main-nav a {
+    font-size: 13px;
+    min-height: 44px;
+    padding: 0 9px;
+  }
+  .utv-main-nav a:first-child {
+    padding-left: 0;
+  }
+  .utv-main-nav a[aria-current="page"]::after {
+    left: 9px;
+    right: 9px;
+  }
+  .utv-main-nav a:first-child[aria-current="page"]::after {
+    left: 0;
+  }
+  .utv-main-nav .utv-request-link {
+    padding-right: 0;
+    margin-left: 0;
+    border: 0;
+  }
+  .utv-home-active #indexPage {
+    padding-top: 0 !important;
+  }
+  #utv-featured {
+    height: 480px;
+    margin-bottom: 26px;
+  }
+  #utv-featured .utv-featured-art {
+    background-position: 60% center;
+  }
+  #utv-featured::before {
+    background: linear-gradient(
+      0deg,
+      var(--utv-ink) 0%,
+      rgba(16, 17, 20, 0.86) 30%,
+      rgba(16, 17, 20, 0.05) 85%
+    );
+  }
+  #utv-featured .utv-featured-copy {
+    max-width: 92%;
+    left: 5%;
+    right: 5%;
+    bottom: 32px;
+    padding: 0;
+  }
+  #utv-featured h1 {
+    font-size: 34px;
+    margin-bottom: 14px;
+  }
+  .utv-meta {
+    font-size: 10px;
+    margin-bottom: 13px;
+  }
+  .utv-summary {
+    font-size: 14px;
+    line-height: 1.6;
+    margin-bottom: 20px;
+  }
+  .utv-action {
+    min-height: 46px;
+    padding: 0 20px;
+    font-size: 13px;
+  }
+  .utv-featured-bottom {
+    right: 5%;
+    bottom: auto;
+    top: 22px;
+  }
+  .utv-home-active #homeTab > .sections > .verticalSection {
+    padding-left: 5% !important;
+    padding-right: 5% !important;
+    margin-bottom: 28px !important;
+  }
+  .sectionTitle {
+    font-size: 20px !important;
+  }
+  .cardText {
+    font-size: 13px !important;
+  }
+  #utv-home-loading {
+    height: 480px;
+  }
+  #itemDetailPage .detailLogo {
+    max-width: 85vw;
+    max-height: 120px;
+  }
+  .utv-login-active #loginPage {
+    min-height: calc(100svh - 64px) !important;
+    padding: 24px 20px !important;
+  }
+  .utv-login-active #loginPage > .padded-left {
+    padding: 26px !important;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+  #utv-featured .utv-featured-art {
+    transform: none !important;
+  }
+}
+.utv-mobile-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #fafafa !important;
+  text-decoration: none !important;
+  font: 650 17px var(--utv-font);
+  letter-spacing: -0.04em;
+  margin-right: auto;
+}
+.utv-mobile-brand img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+@media (max-width: 600px) {
+  .MuiAppBar-root .MuiToolbar-root:first-child:has(> .utv-main-nav) {
+    column-gap: 2px;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+  .MuiAppBar-root
+    .MuiToolbar-root:first-child:has(> .utv-main-nav)
+    > button[aria-label="Open Menu"] {
+    width: 36px;
+    padding: 6px;
+  }
+  .MuiAppBar-root .MuiToolbar-root:first-child:has(> .utv-main-nav) > .MuiBox-root {
+    flex-grow: 0 !important;
+  }
+  .MuiAppBar-root .MuiToolbar-root:first-child:has(> .utv-main-nav) .MuiIconButton-root {
+    padding: 8px !important;
+  }
+  .MuiAppBar-root .utv-mobile-brand + .MuiBox-root {
+    margin-left: 0 !important;
+  }
+}
+@media (max-width: 600px) {
+  .utv-home-active .card.overflowBackdropCard {
+    width: 246px !important;
+  }
+  .utv-home-active .card.overflowPortraitCard {
+    width: 150px !important;
+  }
+}
 /* Apple TV reference: centered navigation, full-width hero and dense native shelves. */
-:root{--ef12-appBarHeight:56px;--headerColor:rgba(12,14,16,.94);--utv-radius:10px}
-.MuiAppBar-root .MuiToolbar-root:first-child{min-height:56px!important;padding-left:40px!important;padding-right:40px!important;gap:12px}
-.MuiAppBar-root .MuiStack-root:has(.utv-main-nav){gap:0!important}
-.MuiAppBar-root .MuiStack-root>a[href='#/']{font-size:17px!important;letter-spacing:-.035em!important;border-right:0!important}
-.MuiAppBar-root .utv-main-nav{position:absolute;left:50%;transform:translateX(-50%);gap:8px}
-.utv-main-nav a{font-size:14px;min-height:42px;padding:0 10px}
-.utv-main-nav a[aria-current='page']::after{left:10px;right:10px;bottom:0}
-.utv-main-nav .utv-request-link{border:0;margin-left:0}
-.utv-home-active #indexPage{padding-top:0!important;background:var(--utv-ink)!important}
-.utv-home-active #homeTab{background:var(--utv-ink)!important}
-#utv-featured,#utv-home-loading{height:calc(100svh - 56px);min-height:560px;max-height:1000px;margin-bottom:0}
-#utv-featured .utv-featured-art{background-position:center center}
-#utv-featured::before{background:linear-gradient(0deg,rgba(12,14,16,.9),rgba(12,14,16,.22) 37%,transparent 70%),linear-gradient(90deg,rgba(12,14,16,.64),transparent 58%)}
-#utv-featured .utv-featured-copy{left:40px;bottom:64px;max-width:460px;padding:0}
-#utv-featured h1{font-size:clamp(38px,4vw,60px);line-height:1.04;letter-spacing:-.04em;margin-bottom:16px}
-.utv-title-logo{display:none;width:auto;max-width:360px;max-height:160px;object-fit:contain;object-position:left bottom;margin:0 0 18px;filter:drop-shadow(0 3px 12px rgba(0,0,0,.35))}
-.utv-title-logo.is-loaded{display:block;animation:utv-copy-in 450ms var(--utv-ease)}
-.utv-visually-hidden{position:absolute!important;width:1px!important;height:1px!important;overflow:hidden!important;clip-path:inset(50%)!important;white-space:nowrap!important}
-.utv-meta{font:550 13px var(--utv-font);gap:10px;margin-bottom:14px;color:#d7d8dd}
-.utv-summary{font-size:15px;line-height:1.45;color:#c5c6cd;max-width:400px;margin-bottom:18px}
-.utv-action{border-radius:24px;min-height:42px;padding:0 23px}
-.utv-action.secondary{border:0;background:rgba(255,255,255,.12)}
-.utv-featured-bottom{left:40px;right:40px;bottom:10px;height:36px;justify-content:center}
-.utv-featured-tabs{display:flex;align-items:center;gap:4px}
-.utv-featured-tabs button{position:relative;width:24px;height:32px;padding:0;background:transparent;border:0;cursor:pointer;color:#fff;border-radius:5px}
-.utv-featured-tabs button::before{content:'';display:block;width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.35);margin:auto;transition:background 250ms ease,transform 350ms var(--utv-ease)}
-.utv-featured-tabs button[aria-selected='true']::before{background:var(--utv-mint);transform:scale(1.15)}
-.utv-featured-tabs button:focus-visible{outline:2px solid var(--utv-mint);outline-offset:0}
-.utv-featured-controls{position:absolute;right:0;gap:8px;opacity:0;transition:opacity 200ms ease}
-#utv-featured:hover .utv-featured-controls,#utv-featured:focus-within .utv-featured-controls{opacity:1}
-.utv-featured-controls button{width:34px;height:34px;border:0;background:rgba(255,255,255,.15)}
-.utv-home-active #homeTab>.sections>.verticalSection{padding-left:40px!important;padding-right:40px!important;margin:0!important;padding-top:28px!important;padding-bottom:8px!important}
-.utv-home-active .sectionTitle{font-size:18px!important;letter-spacing:-.02em!important}
-.utv-home-active .card.overflowBackdropCard{width:clamp(240px,19vw,310px)!important}
-.utv-home-active .card.overflowPortraitCard{width:clamp(142px,11.9vw,186px)!important}
-.utv-home-active .cardBox{margin-left:0!important;margin-right:20px!important}
-.utv-home-active .cardText{font-size:13px!important}
-.utv-home-active .sectionTitleContainer{margin-bottom:12px!important}
-.utv-home-active .sectionTitleTextButton{padding:0!important}
+:root {
+  --ef12-appBarHeight: 56px;
+  --headerColor: rgba(12, 14, 16, 0.94);
+  --utv-radius: 10px;
+}
+.MuiAppBar-root .MuiToolbar-root:first-child {
+  min-height: 56px !important;
+  padding-left: 40px !important;
+  padding-right: 40px !important;
+  gap: 12px;
+}
+.MuiAppBar-root .MuiStack-root:has(.utv-main-nav) {
+  gap: 0 !important;
+}
+.MuiAppBar-root .MuiStack-root > a[href="#/"] {
+  font-size: 17px !important;
+  letter-spacing: -0.035em !important;
+  border-right: 0 !important;
+}
+.MuiAppBar-root .utv-main-nav {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  gap: 8px;
+}
+.utv-main-nav a {
+  font-size: 14px;
+  min-height: 42px;
+  padding: 0 10px;
+}
+.utv-main-nav a[aria-current="page"]::after {
+  left: 10px;
+  right: 10px;
+  bottom: 0;
+}
+.utv-main-nav .utv-request-link {
+  border: 0;
+  margin-left: 0;
+}
+.utv-home-active #indexPage {
+  padding-top: 0 !important;
+  background: var(--utv-ink) !important;
+}
+.utv-home-active #homeTab {
+  background: var(--utv-ink) !important;
+}
+#utv-featured,
+#utv-home-loading {
+  height: calc(100svh - 56px);
+  min-height: 560px;
+  max-height: 1000px;
+  margin-bottom: 0;
+}
+#utv-featured .utv-featured-art {
+  background-position: center center;
+}
+#utv-featured::before {
+  background:
+    linear-gradient(0deg, rgba(12, 14, 16, 0.9), rgba(12, 14, 16, 0.22) 37%, transparent 70%),
+    linear-gradient(90deg, rgba(12, 14, 16, 0.64), transparent 58%);
+}
+#utv-featured .utv-featured-copy {
+  left: 40px;
+  bottom: 64px;
+  max-width: 460px;
+  padding: 0;
+}
+#utv-featured h1 {
+  font-size: clamp(38px, 4vw, 60px);
+  line-height: 1.04;
+  letter-spacing: -0.04em;
+  margin-bottom: 16px;
+}
+.utv-title-logo {
+  display: none;
+  width: auto;
+  max-width: 360px;
+  max-height: 160px;
+  object-fit: contain;
+  object-position: left bottom;
+  margin: 0 0 18px;
+  filter: drop-shadow(0 3px 12px rgba(0, 0, 0, 0.35));
+}
+.utv-title-logo.is-loaded {
+  display: block;
+  animation: utv-copy-in 450ms var(--utv-ease);
+}
+.utv-visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+}
+.utv-meta {
+  font: 550 13px var(--utv-font);
+  gap: 10px;
+  margin-bottom: 14px;
+  color: #d7d8dd;
+}
+.utv-summary {
+  font-size: 15px;
+  line-height: 1.45;
+  color: #c5c6cd;
+  max-width: 400px;
+  margin-bottom: 18px;
+}
+.utv-action {
+  border-radius: 24px;
+  min-height: 42px;
+  padding: 0 23px;
+}
+.utv-action.secondary {
+  border: 0;
+  background: rgba(255, 255, 255, 0.12);
+}
+.utv-featured-bottom {
+  left: 40px;
+  right: 40px;
+  bottom: 10px;
+  height: 36px;
+  justify-content: center;
+}
+.utv-featured-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.utv-featured-tabs button {
+  position: relative;
+  width: 24px;
+  height: 32px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  color: #fff;
+  border-radius: 5px;
+}
+.utv-featured-tabs button::before {
+  content: "";
+  display: block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.35);
+  margin: auto;
+  transition:
+    background 250ms ease,
+    transform 350ms var(--utv-ease);
+}
+.utv-featured-tabs button[aria-selected="true"]::before {
+  background: var(--utv-mint);
+  transform: scale(1.15);
+}
+.utv-featured-tabs button:focus-visible {
+  outline: 2px solid var(--utv-mint);
+  outline-offset: 0;
+}
+.utv-featured-controls {
+  position: absolute;
+  right: 0;
+  gap: 8px;
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+#utv-featured:hover .utv-featured-controls,
+#utv-featured:focus-within .utv-featured-controls {
+  opacity: 1;
+}
+.utv-featured-controls button {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  background: rgba(255, 255, 255, 0.15);
+}
+.utv-home-active #homeTab > .sections > .verticalSection {
+  padding-left: 40px !important;
+  padding-right: 40px !important;
+  margin: 0 !important;
+  padding-top: 28px !important;
+  padding-bottom: 8px !important;
+}
+.utv-home-active .sectionTitle {
+  font-size: 18px !important;
+  letter-spacing: -0.02em !important;
+}
+.utv-home-active .card.overflowBackdropCard {
+  width: clamp(240px, 19vw, 310px) !important;
+}
+.utv-home-active .card.overflowPortraitCard {
+  width: clamp(142px, 11.9vw, 186px) !important;
+}
+.utv-home-active .cardBox {
+  margin-left: 0 !important;
+  margin-right: 20px !important;
+}
+.utv-home-active .cardText {
+  font-size: 13px !important;
+}
+.utv-home-active .sectionTitleContainer {
+  margin-bottom: 12px !important;
+}
+.utv-home-active .sectionTitleTextButton {
+  padding: 0 !important;
+}
 /* Authentication is a compact form, with no promotional copy. */
-.utv-login-active .MuiAppBar-root{display:none!important}
-.utv-login-active #loginPage{min-height:100svh!important;height:auto!important;padding:40px 20px!important;gap:26px!important;overflow:auto!important}
-.utv-login-active #loginPage::before{display:none!important}
-.utv-login-active #utv-login-scene{position:static!important;transform:none!important;flex:none!important;gap:12px!important;padding:0!important}
-.utv-login-active #loginPage>.padded-left{padding:28px 32px!important;margin:0!important;max-width:400px!important;width:100%!important}
-.utv-login-active .manualLoginForm>div:first-child{position:static!important;min-height:0!important;height:auto!important;margin:0 0 24px!important;padding:0!important;display:block!important}
-.utv-login-active #loginPage h1.sectionTitle{position:static!important;top:auto!important;left:auto!important;transform:none!important;margin:0!important;text-align:left!important;font-size:24px!important}
-.utv-login-active #loginPage .inputContainer{margin-bottom:20px!important}
-.utv-login-active #loginPage .checkboxContainer{margin:0 0 18px!important}
-.utv-login-active #loginPage .button-submit{margin-bottom:8px!important}
-.utv-login-active #loginPage .btnQuickConnect,.utv-login-active #loginPage .btnForgotPassword{min-height:38px!important;margin:0!important}
-.utv-login-active #loginPage .checkboxIcon,.utv-login-active #loginPage .emby-checkbox:checked+.checkboxOutline{background:var(--utv-mint)!important;color:#101b13!important;border-color:var(--utv-mint)!important}
-@media(max-width:1100px){.MuiAppBar-root .utv-main-nav{position:static;transform:none;margin-left:28px;gap:2px}.MuiAppBar-root .MuiToolbar-root:first-child{padding-left:24px!important;padding-right:24px!important}.utv-main-nav a{padding:0 8px}.MuiAppBar-root button[aria-label='SyncPlay'],.MuiAppBar-root button[aria-label='Cast to Device']{display:none}}
-@media(max-width:600px){:root{--ef12-appBarHeight:112px}.MuiAppBar-root .MuiToolbar-root:first-child{min-height:112px!important;padding:12px 16px 0!important}.MuiAppBar-root .utv-main-nav{position:static;transform:none;margin:6px 0 0;gap:0}.utv-main-nav a{font-size:13px;padding:0 8px;min-height:44px}#utv-featured,#utv-home-loading{height:calc(88svh - 112px);min-height:520px;max-height:740px}#utv-featured .utv-featured-copy{left:20px;right:20px;bottom:64px;max-width:none}#utv-featured h1{font-size:38px}.utv-title-logo{max-width:270px;max-height:130px}#utv-featured::before{background:linear-gradient(0deg,rgba(12,14,16,.98),rgba(12,14,16,.4) 48%,transparent 80%)}.utv-featured-bottom{top:auto;bottom:10px;left:20px;right:20px}.utv-featured-controls{display:none}.utv-home-active #homeTab>.sections>.verticalSection{padding-left:20px!important;padding-right:20px!important;padding-top:24px!important}.utv-home-active .card.overflowBackdropCard{width:260px!important}.utv-home-active .card.overflowPortraitCard{width:156px!important}.utv-home-active .cardBox{margin-right:16px!important}.utv-login-active #loginPage{padding:28px 20px!important}}
+.utv-login-active .MuiAppBar-root {
+  display: none !important;
+}
+.utv-login-active #loginPage {
+  min-height: 100svh !important;
+  height: auto !important;
+  padding: 40px 20px !important;
+  gap: 26px !important;
+  overflow: auto !important;
+}
+.utv-login-active #loginPage::before {
+  display: none !important;
+}
+.utv-login-active #utv-login-scene {
+  position: static !important;
+  transform: none !important;
+  flex: none !important;
+  gap: 12px !important;
+  padding: 0 !important;
+}
+.utv-login-active #loginPage > .padded-left {
+  padding: 28px 32px !important;
+  margin: 0 !important;
+  max-width: 400px !important;
+  width: 100% !important;
+}
+.utv-login-active .manualLoginForm > div:first-child {
+  position: static !important;
+  min-height: 0 !important;
+  height: auto !important;
+  margin: 0 0 24px !important;
+  padding: 0 !important;
+  display: block !important;
+}
+.utv-login-active #loginPage h1.sectionTitle {
+  position: static !important;
+  top: auto !important;
+  left: auto !important;
+  transform: none !important;
+  margin: 0 !important;
+  text-align: left !important;
+  font-size: 24px !important;
+}
+.utv-login-active #loginPage .inputContainer {
+  margin-bottom: 20px !important;
+}
+.utv-login-active #loginPage .checkboxContainer {
+  margin: 0 0 18px !important;
+}
+.utv-login-active #loginPage .button-submit {
+  margin-bottom: 8px !important;
+}
+.utv-login-active #loginPage .btnQuickConnect,
+.utv-login-active #loginPage .btnForgotPassword {
+  min-height: 38px !important;
+  margin: 0 !important;
+}
+.utv-login-active #loginPage .checkboxIcon,
+.utv-login-active #loginPage .emby-checkbox:checked + .checkboxOutline {
+  background: var(--utv-mint) !important;
+  color: #101b13 !important;
+  border-color: var(--utv-mint) !important;
+}
+@media (max-width: 1100px) {
+  .MuiAppBar-root .utv-main-nav {
+    position: static;
+    transform: none;
+    margin-left: 28px;
+    gap: 2px;
+  }
+  .MuiAppBar-root .MuiToolbar-root:first-child {
+    padding-left: 24px !important;
+    padding-right: 24px !important;
+  }
+  .utv-main-nav a {
+    padding: 0 8px;
+  }
+  .MuiAppBar-root button[aria-label="SyncPlay"],
+  .MuiAppBar-root button[aria-label="Cast to Device"] {
+    display: none;
+  }
+}
+@media (max-width: 600px) {
+  :root {
+    --ef12-appBarHeight: 112px;
+  }
+  .MuiAppBar-root .MuiToolbar-root:first-child {
+    min-height: 112px !important;
+    padding: 12px 16px 0 !important;
+  }
+  .MuiAppBar-root .utv-main-nav {
+    position: static;
+    transform: none;
+    margin: 6px 0 0;
+    gap: 0;
+  }
+  .utv-main-nav a {
+    font-size: 13px;
+    padding: 0 8px;
+    min-height: 44px;
+  }
+  #utv-featured,
+  #utv-home-loading {
+    height: calc(88svh - 112px);
+    min-height: 520px;
+    max-height: 740px;
+  }
+  #utv-featured .utv-featured-copy {
+    left: 20px;
+    right: 20px;
+    bottom: 64px;
+    max-width: none;
+  }
+  #utv-featured h1 {
+    font-size: 38px;
+  }
+  .utv-title-logo {
+    max-width: 270px;
+    max-height: 130px;
+  }
+  #utv-featured::before {
+    background: linear-gradient(
+      0deg,
+      rgba(12, 14, 16, 0.98),
+      rgba(12, 14, 16, 0.4) 48%,
+      transparent 80%
+    );
+  }
+  .utv-featured-bottom {
+    top: auto;
+    bottom: 10px;
+    left: 20px;
+    right: 20px;
+  }
+  .utv-featured-controls {
+    display: none;
+  }
+  .utv-home-active #homeTab > .sections > .verticalSection {
+    padding-left: 20px !important;
+    padding-right: 20px !important;
+    padding-top: 24px !important;
+  }
+  .utv-home-active .card.overflowBackdropCard {
+    width: 260px !important;
+  }
+  .utv-home-active .card.overflowPortraitCard {
+    width: 156px !important;
+  }
+  .utv-home-active .cardBox {
+    margin-right: 16px !important;
+  }
+  .utv-login-active #loginPage {
+    padding: 28px 20px !important;
+  }
+}
 /* Requests is a utility; the viewing navigation stays centered. */
-.MuiAppBar-root .utv-main-nav .utv-request-link{display:none}
-.utv-header-requests{font:500 13px var(--utv-font);color:var(--utv-mint)!important;text-decoration:none!important;white-space:nowrap;display:flex;align-items:center;min-height:44px;padding:0 12px;margin-left:auto}
-.utv-header-requests:hover{color:#fff!important}
-.utv-header-requests:focus-visible{outline:2px solid var(--utv-mint);outline-offset:0}
-.MuiAppBar-root .MuiStack-root>a[href='#/']{border:0!important}
-@media(max-width:600px){
- :root{--ef12-appBarHeight:56px}
- .MuiAppBar-root .MuiToolbar-root:first-child{min-height:56px!important;flex-wrap:nowrap!important;padding:0 12px!important;align-content:center;gap:0}
- .MuiAppBar-root .utv-mobile-brand{position:absolute;left:50%;transform:translateX(-50%);font-size:16px;margin:0;white-space:nowrap}
- .utv-mobile-brand img{width:22px;height:22px}
- .MuiAppBar-root .MuiToolbar-root:first-child:has(>.utv-main-nav)>.MuiBox-root{margin-left:auto!important}
- .MuiAppBar-root .MuiToolbar-root:first-child:has(>.utv-main-nav)>.MuiBox-root:last-child{margin-left:0!important}
- .MuiAppBar-root .MuiAvatar-root{width:28px;height:28px}
- .MuiAppBar-root .utv-main-nav{display:none;position:absolute;left:0;right:0;top:56px;margin:0;transform:none;padding:14px 24px 20px;background:#0e1013;box-shadow:0 16px 25px rgba(0,0,0,.3);border-top:1px solid rgba(255,255,255,.08);flex-direction:column;align-items:stretch;gap:4px;animation:utv-menu-in 220ms var(--utv-ease)}
- .utv-mobile-menu-open .MuiAppBar-root .utv-main-nav{display:flex}
- .MuiAppBar-root .utv-main-nav a{padding:0 14px!important;font-size:16px;min-height:46px;border-radius:6px}
- .MuiAppBar-root .utv-main-nav a[aria-current='page']{background:rgba(143,222,170,.08)}
- .utv-main-nav a[aria-current='page']::after{display:none}
- .MuiAppBar-root .utv-main-nav .utv-request-link{display:flex;border-top:1px solid rgba(255,255,255,.13);margin-top:8px;padding-top:8px!important;border-radius:0}
- .utv-header-requests{display:none}
- #utv-featured,#utv-home-loading{height:calc(85svh - 56px);min-height:600px;max-height:780px;touch-action:pan-y}
- #utv-featured .utv-featured-copy{bottom:76px;left:24px;right:24px;text-align:center}
- #utv-featured h1{font-size:40px;text-wrap:balance}
- .utv-title-logo{margin-left:auto;margin-right:auto;object-position:center bottom}
- .utv-meta,.utv-actions{justify-content:center}
- .utv-summary{margin-left:auto;margin-right:auto;-webkit-line-clamp:3;font-size:15px;line-height:1.45}
- .utv-featured-bottom{bottom:22px}
- .utv-home-active .card.overflowBackdropCard{width:210px!important}
- .utv-home-active .card.overflowPortraitCard{width:145px!important}
- .utv-home-active #homeTab>.sections>.verticalSection{padding:30px 24px 4px!important}
+.MuiAppBar-root .utv-main-nav .utv-request-link {
+  display: none;
 }
-.MuiAppBar-root .MuiToolbar-root>.MuiBox-root:has(a[aria-label='Search']){flex:0 0 auto!important}
-@media(max-width:600px){
- .MuiAppBar-root .MuiToolbar-root>.MuiBox-root:has(a[aria-label='Search']){margin-left:auto!important}
- .MuiAppBar-root .MuiToolbar-root>.MuiBox-root:has(button[aria-label='User Menu']){margin-left:0!important;flex:0 0 auto!important}
+.utv-header-requests {
+  font: 500 13px var(--utv-font);
+  color: var(--utv-mint) !important;
+  text-decoration: none !important;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 12px;
+  margin-left: auto;
 }
-.utv-header-requests{width:40px;min-height:40px;box-sizing:border-box;justify-content:center;padding:0!important;border-radius:50%}
-.utv-header-requests svg{width:20px;height:20px}
-.utv-header-requests:hover{background:rgba(143,222,170,.08)}
-.MuiAppBar-root .utv-main-nav a[href='#/search']{display:none}
-.utv-login-active #loginPage .manualLoginForm::before{display:none!important;content:none!important}
-.utv-login-active #loginPage h1.sectionTitle{display:block!important}
-.utv-login-active #loginPage .manualLoginForm{transform:none!important;padding:0!important}
-.utv-login-active #loginPage .disclaimerContainer{margin:16px 0 0!important;line-height:1.5!important}
-.utv-login-active #loginPage .readOnlyContent{padding-bottom:0!important}
-.utv-login-active #loginPage .emby-input:focus,.utv-login-active #loginPage .button-submit:focus{outline:2px solid var(--utv-mint)!important;outline-offset:2px!important;box-shadow:none!important}
-@media(max-width:600px){
- .utv-header-requests{display:flex;flex:0 0 36px;width:36px;margin-left:auto!important;margin-right:0}
- .MuiAppBar-root .MuiToolbar-root>.MuiBox-root:has(a[aria-label='Search']){display:none!important}
- .MuiAppBar-root .utv-main-nav a[href='#/search']{display:flex}
- .MuiAppBar-root .utv-main-nav .utv-request-link{display:none}
- .utv-login-active #loginPage>.padded-left{padding:24px!important}
+.utv-header-requests:hover {
+  color: #fff !important;
 }
-body.utv-login-active #loginPage{margin:0!important;gap:26px!important;justify-content:center!important}
-body.utv-login-active #loginPage>.padded-left.padded-right.padded-bottom-page.margin-auto-y{padding:28px 32px!important;max-width:400px!important;transform:none!important;margin:0!important}
-body.utv-login-active #loginPage .manualLoginForm>div.padded-left.padded-right{margin:0 0 24px!important;transform:none!important}
-body.utv-login-active #loginPage .readOnlyContent{display:flex!important;flex-direction:column;gap:4px;margin:0!important;padding:0!important}
-body.utv-login-active #loginPage .readOnlyContent button.btnQuick,body.utv-login-active #loginPage .readOnlyContent button.btnForgotPassword{min-height:40px!important;padding:8px 12px!important;margin:0!important;font-size:13px!important;border-radius:5px!important}
-body.utv-login-active #loginPage .loginDisclaimerContainer{margin:18px 0 0!important;padding:0!important;text-align:center;font-size:12px;line-height:1.5}
-body.utv-login-active #loginPage .loginDisclaimer{margin:0!important}
-body.utv-login-active #loginPage .emby-input:focus{outline:none!important;box-shadow:0 0 0 3px rgba(143,222,170,.14)!important;border-color:var(--utv-mint)!important}
-body.utv-login-active #loginPage .button-submit{outline:none!important}
-body.utv-login-active #loginPage .button-submit:focus-visible{outline:2px solid var(--utv-mint)!important;outline-offset:3px!important}
-@media(max-width:600px){body.utv-login-active #loginPage>.padded-left.padded-right.padded-bottom-page.margin-auto-y{padding:24px!important}}
-body.utv-login-active #loginPage{position:fixed!important;inset:0!important;z-index:1!important}
-body.utv-login-active #loginPage .loginDisclaimer a{color:var(--utv-mint)!important;text-decoration:none!important}
-body.utv-login-active #loginPage .checkboxOutline{border-color:var(--utv-mint)!important;outline:0!important;box-shadow:none!important}
-@media(max-width:600px){
- .MuiAppBar-root .MuiToolbar-root:first-child:has(>.utv-main-nav)>.MuiBox-root:has(button[aria-label='User Menu']){margin-left:auto!important}
- .MuiAppBar-root .utv-header-requests{position:absolute;right:64px;top:8px;margin:0!important}
- .MuiAppBar-root button[aria-label='User Menu']{width:44px;height:44px;padding:8px!important}
+.utv-header-requests:focus-visible {
+  outline: 2px solid var(--utv-mint);
+  outline-offset: 0;
 }
-@media(max-width:600px){
- .libraryPage .alphaPicker-fixed-right{display:none!important}
- .libraryPage .itemsContainer.vertical-wrap:has(.portraitCard){display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px 16px;padding:20px 24px!important;box-sizing:border-box}
- .libraryPage .itemsContainer.vertical-wrap .portraitCard{width:100%!important;margin:0!important;padding:0!important}
- .libraryPage .itemsContainer.vertical-wrap .portraitCard .cardBox{margin:0!important}
- .libraryPage .itemsContainer.vertical-wrap .portraitCard .cardText{font-size:14px!important;line-height:1.5!important;white-space:normal}
- .libraryPage .itemsContainer.vertical-wrap .portraitCard .cardText-secondary{font-size:11px!important}
+.MuiAppBar-root .MuiStack-root > a[href="#/"] {
+  border: 0 !important;
 }
-.MuiAppBar-root button[aria-label='Open Menu']{background:transparent!important;color:#c8cbd0!important}
-.MuiAppBar-root button[aria-label='Open Menu']:focus-visible{outline:2px solid var(--utv-mint);outline-offset:0}
-.MuiToolbar-root .MuiButton-containedPrimary{background:rgba(143,222,170,.1)!important;color:var(--utv-mint)!important;box-shadow:none!important}
-.utv-featured-tabs button{width:36px;height:44px}
-#utv-featured .utv-title-logo{filter:drop-shadow(0 3px 12px rgba(0,0,0,.25))}
-body.utv-home-active #homeTab .verticalSection>.sectionTitle{padding-left:0!important;padding-right:0!important}
-body.utv-home-active #homeTab .verticalSection .itemsContainer{padding-left:0!important;padding-right:0!important}
-body.utv-home-active #homeTab .verticalSection .card{padding:0!important}
-@media(max-width:600px){
- body.utv-home-active #homeTab .verticalSection .card.overflowBackdropCard{width:226px!important}
- body.utv-home-active #homeTab .verticalSection .card.overflowPortraitCard{width:158px!important}
+@media (max-width: 600px) {
+  :root {
+    --ef12-appBarHeight: 56px;
+  }
+  .MuiAppBar-root .MuiToolbar-root:first-child {
+    min-height: 56px !important;
+    flex-wrap: nowrap !important;
+    padding: 0 12px !important;
+    align-content: center;
+    gap: 0;
+  }
+  .MuiAppBar-root .utv-mobile-brand {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 16px;
+    margin: 0;
+    white-space: nowrap;
+  }
+  .utv-mobile-brand img {
+    width: 22px;
+    height: 22px;
+  }
+  .MuiAppBar-root .MuiToolbar-root:first-child:has(> .utv-main-nav) > .MuiBox-root {
+    margin-left: auto !important;
+  }
+  .MuiAppBar-root .MuiToolbar-root:first-child:has(> .utv-main-nav) > .MuiBox-root:last-child {
+    margin-left: 0 !important;
+  }
+  .MuiAppBar-root .MuiAvatar-root {
+    width: 28px;
+    height: 28px;
+  }
+  .MuiAppBar-root .utv-main-nav {
+    display: none;
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 56px;
+    margin: 0;
+    transform: none;
+    padding: 14px 24px 20px;
+    background: #0e1013;
+    box-shadow: 0 16px 25px rgba(0, 0, 0, 0.3);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    animation: utv-menu-in 220ms var(--utv-ease);
+  }
+  .utv-mobile-menu-open .MuiAppBar-root .utv-main-nav {
+    display: flex;
+  }
+  .MuiAppBar-root .utv-main-nav a {
+    padding: 0 14px !important;
+    font-size: 16px;
+    min-height: 46px;
+    border-radius: 6px;
+  }
+  .MuiAppBar-root .utv-main-nav a[aria-current="page"] {
+    background: rgba(143, 222, 170, 0.08);
+  }
+  .utv-main-nav a[aria-current="page"]::after {
+    display: none;
+  }
+  .MuiAppBar-root .utv-main-nav .utv-request-link {
+    display: flex;
+    border-top: 1px solid rgba(255, 255, 255, 0.13);
+    margin-top: 8px;
+    padding-top: 8px !important;
+    border-radius: 0;
+  }
+  .utv-header-requests {
+    display: none;
+  }
+  #utv-featured,
+  #utv-home-loading {
+    height: calc(85svh - 56px);
+    min-height: 600px;
+    max-height: 780px;
+    touch-action: pan-y;
+  }
+  #utv-featured .utv-featured-copy {
+    bottom: 76px;
+    left: 24px;
+    right: 24px;
+    text-align: center;
+  }
+  #utv-featured h1 {
+    font-size: 40px;
+    text-wrap: balance;
+  }
+  .utv-title-logo {
+    margin-left: auto;
+    margin-right: auto;
+    object-position: center bottom;
+  }
+  .utv-meta,
+  .utv-actions {
+    justify-content: center;
+  }
+  .utv-summary {
+    margin-left: auto;
+    margin-right: auto;
+    -webkit-line-clamp: 3;
+    font-size: 15px;
+    line-height: 1.45;
+  }
+  .utv-featured-bottom {
+    bottom: 22px;
+  }
+  .utv-home-active .card.overflowBackdropCard {
+    width: 210px !important;
+  }
+  .utv-home-active .card.overflowPortraitCard {
+    width: 145px !important;
+  }
+  .utv-home-active #homeTab > .sections > .verticalSection {
+    padding: 30px 24px 4px !important;
+  }
 }
-/* Reserve the home presentation before Jellyfin initializes its native shelves. */
-html.utv-home-pending #homeTab{visibility:hidden!important}
-html.utv-home-pending body:after{content:'Loading your library';position:fixed;inset:64px 0 0;z-index:40;display:grid;place-content:center;color:#a4a8ac;font:500 13px var(--utv-font);background:#101114;pointer-events:none;animation:utv-pending-fade .3s ease both}
-@keyframes utv-pending-fade{from{opacity:0}to{opacity:1}}
-@media(prefers-reduced-motion:reduce){html.utv-home-pending body:after{animation:none}}
-/* Round 1: stable load gate, usable carousel buttons and common presentation tokens. */
-html.utv-home-pending body:after{display:none!important}
-#utv-page-loading{position:fixed;inset:56px 0 0;z-index:40;display:grid;place-content:center;color:#a4a8ac;font:500 13px var(--utv-font);background:#101114;pointer-events:none}
-#utv-featured,#utv-home-loading{height:clamp(440px,72svh,740px);min-height:0;max-height:740px}
-.utv-featured-tabs button[aria-pressed=true]::before{background:var(--utv-mint);transform:scale(1.15)}
-.cardImageContainer,.cardBox{border-radius:10px!important}
-@media(max-width:600px){#utv-featured,#utv-home-loading{height:clamp(430px,65svh,570px);min-height:0;max-height:570px}#utv-featured .utv-featured-copy{bottom:66px}#utv-featured::before{background:linear-gradient(0deg,#101114 0%,#101114bf 36%,#10111418 80%)}#utv-featured .utv-summary{-webkit-line-clamp:2;display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden;font-size:13px}#utv-featured .utv-featured-art{background-position:50% 20%}}
-@media(max-width:360px){.MuiAppBar-root .utv-mobile-brand{max-width:160px;font-size:14px;gap:5px}.utv-mobile-brand span{overflow:hidden;text-overflow:ellipsis}.MuiAppBar-root .utv-mobile-brand img{width:20px;height:20px}.MuiAppBar-root .utv-header-requests{right:54px}}
-.utv-home-active .itemsContainer>.card:first-child{margin-left:0!important}
+.MuiAppBar-root .MuiToolbar-root > .MuiBox-root:has(a[aria-label="Search"]) {
+  flex: 0 0 auto !important;
+}
+@media (max-width: 600px) {
+  .MuiAppBar-root .MuiToolbar-root > .MuiBox-root:has(a[aria-label="Search"]) {
+    margin-left: auto !important;
+  }
+  .MuiAppBar-root .MuiToolbar-root > .MuiBox-root:has(button[aria-label="User Menu"]) {
+    margin-left: 0 !important;
+    flex: 0 0 auto !important;
+  }
+}
+.utv-header-requests {
+  width: 40px;
+  min-height: 40px;
+  box-sizing: border-box;
+  justify-content: center;
+  padding: 0 !important;
+  border-radius: 50%;
+}
+.utv-header-requests svg {
+  width: 20px;
+  height: 20px;
+}
+.utv-header-requests:hover {
+  background: rgba(143, 222, 170, 0.08);
+}
+.MuiAppBar-root .utv-main-nav a[href="#/search"] {
+  display: none;
+}
+.utv-login-active #loginPage .manualLoginForm::before {
+  display: none !important;
+  content: none !important;
+}
+.utv-login-active #loginPage h1.sectionTitle {
+  display: block !important;
+}
+.utv-login-active #loginPage .manualLoginForm {
+  transform: none !important;
+  padding: 0 !important;
+}
+.utv-login-active #loginPage .disclaimerContainer {
+  margin: 16px 0 0 !important;
+  line-height: 1.5 !important;
+}
+.utv-login-active #loginPage .readOnlyContent {
+  padding-bottom: 0 !important;
+}
+.utv-login-active #loginPage .emby-input:focus,
+.utv-login-active #loginPage .button-submit:focus {
+  outline: 2px solid var(--utv-mint) !important;
+  outline-offset: 2px !important;
+  box-shadow: none !important;
+}
+@media (max-width: 600px) {
+  .utv-header-requests {
+    display: flex;
+    flex: 0 0 36px;
+    width: 36px;
+    margin-left: auto !important;
+    margin-right: 0;
+  }
+  .MuiAppBar-root .MuiToolbar-root > .MuiBox-root:has(a[aria-label="Search"]) {
+    display: none !important;
+  }
+  .MuiAppBar-root .utv-main-nav a[href="#/search"] {
+    display: flex;
+  }
+  .MuiAppBar-root .utv-main-nav .utv-request-link {
+    display: none;
+  }
+  .utv-login-active #loginPage > .padded-left {
+    padding: 24px !important;
+  }
+}
+body.utv-login-active #loginPage {
+  margin: 0 !important;
+  gap: 26px !important;
+  justify-content: center !important;
+}
+body.utv-login-active #loginPage > .padded-left.padded-right.padded-bottom-page.margin-auto-y {
+  padding: 28px 32px !important;
+  max-width: 400px !important;
+  transform: none !important;
+  margin: 0 !important;
+}
+body.utv-login-active #loginPage .manualLoginForm > div.padded-left.padded-right {
+  margin: 0 0 24px !important;
+  transform: none !important;
+}
+body.utv-login-active #loginPage .readOnlyContent {
+  display: flex !important;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+body.utv-login-active #loginPage .readOnlyContent button.btnQuick,
+body.utv-login-active #loginPage .readOnlyContent button.btnForgotPassword {
+  min-height: 40px !important;
+  padding: 8px 12px !important;
+  margin: 0 !important;
+  font-size: 13px !important;
+  border-radius: 5px !important;
+}
+body.utv-login-active #loginPage .loginDisclaimerContainer {
+  margin: 18px 0 0 !important;
+  padding: 0 !important;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.5;
+}
+body.utv-login-active #loginPage .loginDisclaimer {
+  margin: 0 !important;
+}
+body.utv-login-active #loginPage .emby-input:focus {
+  outline: none !important;
+  box-shadow: 0 0 0 3px rgba(143, 222, 170, 0.14) !important;
+  border-color: var(--utv-mint) !important;
+}
+body.utv-login-active #loginPage .button-submit {
+  outline: none !important;
+}
+body.utv-login-active #loginPage .button-submit:focus-visible {
+  outline: 2px solid var(--utv-mint) !important;
+  outline-offset: 3px !important;
+}
+@media (max-width: 600px) {
+  body.utv-login-active #loginPage > .padded-left.padded-right.padded-bottom-page.margin-auto-y {
+    padding: 24px !important;
+  }
+}
+body.utv-login-active #loginPage {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 1 !important;
+}
+body.utv-login-active #loginPage .loginDisclaimer a {
+  color: var(--utv-mint) !important;
+  text-decoration: none !important;
+}
+body.utv-login-active #loginPage .checkboxOutline {
+  border-color: var(--utv-mint) !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+}
+@media (max-width: 600px) {
+  .MuiAppBar-root
+    .MuiToolbar-root:first-child:has(> .utv-main-nav)
+    > .MuiBox-root:has(button[aria-label="User Menu"]) {
+    margin-left: auto !important;
+  }
+  .MuiAppBar-root .utv-header-requests {
+    position: absolute;
+    right: 64px;
+    top: 8px;
+    margin: 0 !important;
+  }
+  .MuiAppBar-root button[aria-label="User Menu"] {
+    width: 44px;
+    height: 44px;
+    padding: 8px !important;
+  }
+}
+@media (max-width: 600px) {
+  .libraryPage .alphaPicker-fixed-right {
+    display: none !important;
+  }
+  .libraryPage .itemsContainer.vertical-wrap:has(.portraitCard) {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px 16px;
+    padding: 20px 24px !important;
+    box-sizing: border-box;
+  }
+  .libraryPage .itemsContainer.vertical-wrap .portraitCard {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  .libraryPage .itemsContainer.vertical-wrap .portraitCard .cardBox {
+    margin: 0 !important;
+  }
+  .libraryPage .itemsContainer.vertical-wrap .portraitCard .cardText {
+    font-size: 14px !important;
+    line-height: 1.5 !important;
+    white-space: normal;
+  }
+  .libraryPage .itemsContainer.vertical-wrap .portraitCard .cardText-secondary {
+    font-size: 11px !important;
+  }
+}
+.MuiAppBar-root button[aria-label="Open Menu"] {
+  background: transparent !important;
+  color: #c8cbd0 !important;
+}
+.MuiAppBar-root button[aria-label="Open Menu"]:focus-visible {
+  outline: 2px solid var(--utv-mint);
+  outline-offset: 0;
+}
+.MuiToolbar-root .MuiButton-containedPrimary {
+  background: rgba(143, 222, 170, 0.1) !important;
+  color: var(--utv-mint) !important;
+  box-shadow: none !important;
+}
+.utv-featured-tabs button {
+  width: 36px;
+  height: 44px;
+}
+#utv-featured .utv-title-logo {
+  filter: drop-shadow(0 3px 12px rgba(0, 0, 0, 0.25));
+}
+body.utv-home-active #homeTab .verticalSection > .sectionTitle {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+body.utv-home-active #homeTab .verticalSection .itemsContainer {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+body.utv-home-active #homeTab .verticalSection .card {
+  padding: 0 !important;
+}
+@media (max-width: 600px) {
+  body.utv-home-active #homeTab .verticalSection .card.overflowBackdropCard {
+    width: 226px !important;
+  }
+  body.utv-home-active #homeTab .verticalSection .card.overflowPortraitCard {
+    width: 158px !important;
+  }
+}
+
+#utv-featured,
+#utv-home-loading {
+  height: clamp(440px, 72svh, 740px);
+  min-height: 0;
+  max-height: 740px;
+}
+.utv-featured-tabs button[aria-pressed="true"]::before {
+  background: var(--utv-mint);
+  transform: scale(1.15);
+}
+.cardImageContainer,
+.cardBox {
+  border-radius: 10px !important;
+}
+@media (max-width: 600px) {
+  #utv-featured,
+  #utv-home-loading {
+    height: clamp(430px, 65svh, 570px);
+    min-height: 0;
+    max-height: 570px;
+  }
+  #utv-featured .utv-featured-copy {
+    bottom: 66px;
+  }
+  #utv-featured::before {
+    background: linear-gradient(0deg, #101114 0%, #101114bf 36%, #10111418 80%);
+  }
+  #utv-featured .utv-summary {
+    -webkit-line-clamp: 2;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-size: 13px;
+  }
+  #utv-featured .utv-featured-art {
+    background-position: 50% 20%;
+  }
+}
+@media (max-width: 360px) {
+  .MuiAppBar-root .utv-mobile-brand {
+    max-width: 160px;
+    font-size: 14px;
+    gap: 5px;
+  }
+  .utv-mobile-brand span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .MuiAppBar-root .utv-mobile-brand img {
+    width: 20px;
+    height: 20px;
+  }
+  .MuiAppBar-root .utv-header-requests {
+    right: 54px;
+  }
+}
+.utv-home-active .itemsContainer > .card:first-child {
+  margin-left: 0 !important;
+}
 /* Shared native controls and focused search/player accent. */
-#itemDetailPage .btnPlay{border-radius:24px!important;min-height:42px!important}
-.MuiPaper-root.MuiMenu-paper,.actionSheet{background:#1b1d20!important;border:1px solid #ffffff20!important;border-radius:12px!important}
-#searchTextInput:focus,#searchTextInput:focus-visible,.emby-input:focus{border-color:#8fdeaa!important;box-shadow:none!important;outline:2px solid #8fdeaa!important;outline-offset:2px}
+#itemDetailPage .btnPlay {
+  border-radius: 24px !important;
+  min-height: 42px !important;
+}
+.MuiPaper-root.MuiMenu-paper,
+.actionSheet {
+  background: #1b1d20 !important;
+  border: 1px solid #ffffff20 !important;
+  border-radius: 12px !important;
+}
+#searchTextInput:focus,
+#searchTextInput:focus-visible,
+.emby-input:focus {
+  border-color: #8fdeaa !important;
+  box-shadow: none !important;
+  outline: 2px solid #8fdeaa !important;
+  outline-offset: 2px;
+}
 /* Video OSD & Sliders: Comprehensive Unimatrix Mint Accent for Track & Thumb */
 .mdl-slider-background-lower,
 .mdl-slider-background-lower-withtransform,
@@ -530,10 +1825,10 @@ html.utv-home-pending body:after{display:none!important}
 .mdl-slider::-webkit-slider-thumb,
 .mdl-slider-hoverthumb:hover::-webkit-slider-thumb,
 .mdl-slider.show-focus:focus::-webkit-slider-thumb,
-input[type=range]::-webkit-slider-thumb,
-input[type=range].emby-slider::-webkit-slider-thumb,
-input[type=range].osdPositionSlider::-webkit-slider-thumb,
-input[type=range].osdVolumeSlider::-webkit-slider-thumb,
+input[type="range"]::-webkit-slider-thumb,
+input[type="range"].emby-slider::-webkit-slider-thumb,
+input[type="range"].osdPositionSlider::-webkit-slider-thumb,
+input[type="range"].osdVolumeSlider::-webkit-slider-thumb,
 .osdPositionSlider::-webkit-slider-thumb,
 .osdVolumeSlider::-webkit-slider-thumb {
   -webkit-appearance: none !important;
@@ -550,10 +1845,10 @@ input[type=range].osdVolumeSlider::-webkit-slider-thumb,
 .mdl-slider::-moz-range-thumb,
 .mdl-slider-hoverthumb:hover::-moz-range-thumb,
 .mdl-slider.show-focus:focus::-moz-range-thumb,
-input[type=range]::-moz-range-thumb,
-input[type=range].emby-slider::-moz-range-thumb,
-input[type=range].osdPositionSlider::-moz-range-thumb,
-input[type=range].osdVolumeSlider::-moz-range-thumb,
+input[type="range"]::-moz-range-thumb,
+input[type="range"].emby-slider::-moz-range-thumb,
+input[type="range"].osdPositionSlider::-moz-range-thumb,
+input[type="range"].osdVolumeSlider::-moz-range-thumb,
 .osdPositionSlider::-moz-range-thumb,
 .osdVolumeSlider::-moz-range-thumb {
   appearance: none !important;
@@ -570,10 +1865,10 @@ input[type=range].osdVolumeSlider::-moz-range-thumb,
 .mdl-slider::-ms-thumb,
 .mdl-slider-hoverthumb:hover::-ms-thumb,
 .mdl-slider.show-focus:focus::-ms-thumb,
-input[type=range]::-ms-thumb,
-input[type=range].emby-slider::-ms-thumb,
-input[type=range].osdPositionSlider::-ms-thumb,
-input[type=range].osdVolumeSlider::-ms-thumb,
+input[type="range"]::-ms-thumb,
+input[type="range"].emby-slider::-ms-thumb,
+input[type="range"].osdPositionSlider::-ms-thumb,
+input[type="range"].osdVolumeSlider::-ms-thumb,
 .osdPositionSlider::-ms-thumb,
 .osdVolumeSlider::-ms-thumb {
   appearance: none !important;
@@ -584,36 +1879,117 @@ input[type=range].osdVolumeSlider::-ms-thumb,
 }
 
 .mdl-slider,
-input[type=range],
-input[type=range].emby-slider,
-input[type=range].osdPositionSlider,
-input[type=range].osdVolumeSlider {
+input[type="range"],
+input[type="range"].emby-slider,
+input[type="range"].osdPositionSlider,
+input[type="range"].osdVolumeSlider {
   color: #8fdeaa !important;
   accent-color: #8fdeaa !important;
 }
-@media(max-width:360px){.MuiAppBar-root .utv-mobile-brand{left:50px;right:102px;transform:none;max-width:none;font-size:13px;justify-content:center}.MuiAppBar-root .utv-mobile-brand img{width:20px;height:20px}}
-.utv-home-active .verticalSection>.emby-scroller{padding-left:0!important;padding-right:0!important}
-#itemDetailPage .cardOverlayButton,#itemDetailPage .cardOverlayFab,#itemDetailPage .cardOverlayFab-primary{display:none!important}
-#itemDetailPage .itemName,#itemDetailPage .nameContainer h1{font-weight:700!important;letter-spacing:-.04em}
-@media(max-width:600px){.utv-header-requests{width:44px;min-height:44px!important}}
+@media (max-width: 360px) {
+  .MuiAppBar-root .utv-mobile-brand {
+    left: 50px;
+    right: 102px;
+    transform: none;
+    max-width: none;
+    font-size: 13px;
+    justify-content: center;
+  }
+  .MuiAppBar-root .utv-mobile-brand img {
+    width: 20px;
+    height: 20px;
+  }
+}
+.utv-home-active .verticalSection > .emby-scroller {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+#itemDetailPage .cardOverlayButton,
+#itemDetailPage .cardOverlayFab,
+#itemDetailPage .cardOverlayFab-primary {
+  display: none !important;
+}
+#itemDetailPage .itemName,
+#itemDetailPage .nameContainer h1 {
+  font-weight: 700 !important;
+  letter-spacing: -0.04em;
+}
+@media (max-width: 600px) {
+  .utv-header-requests {
+    width: 44px;
+    min-height: 44px !important;
+  }
+}
 
 /* Shared shelf geometry and reachable sign-in on short screens. */
-.utv-featured-controls button{width:44px;height:44px}
-body.utv-login-active #loginPage{justify-content:safe center!important;min-height:0!important;height:100dvh!important;overflow-y:auto!important}
-@media(max-height:650px){body.utv-login-active #loginPage{justify-content:flex-start!important;padding-top:24px!important}}
+.utv-featured-controls button {
+  width: 44px;
+  height: 44px;
+}
+body.utv-login-active #loginPage {
+  justify-content: safe center !important;
+  min-height: 0 !important;
+  height: 100dvh !important;
+  overflow-y: auto !important;
+}
+@media (max-height: 650px) {
+  body.utv-login-active #loginPage {
+    justify-content: flex-start !important;
+    padding-top: 24px !important;
+  }
+}
 /* Keep both phone shelf gutters consistent after the final review. */
-@media(max-width:600px){body.utv-home-active #homeTab>.sections>.verticalSection{padding-left:20px!important;padding-right:20px!important}}
+@media (max-width: 600px) {
+  body.utv-home-active #homeTab > .sections > .verticalSection {
+    padding-left: 20px !important;
+    padding-right: 20px !important;
+  }
+}
 
 /* Every native home row uses one gutter, including nested library shelves. */
-body.utv-home-active #homeTab .homeSectionsContainer{--utv-shelf-gutter:40px}
-body.utv-home-active #homeTab .homeSectionsContainer .verticalSection{box-sizing:border-box;margin:0!important;padding:24px var(--utv-shelf-gutter) 12px!important}
-body.utv-home-active #homeTab .homeSectionsContainer .verticalSection:not(:has(.card)):not(:has(.verticalSection)){display:none!important}
-body.utv-home-active #homeTab .verticalSection>h2.sectionTitle{margin:0 0 12px!important;padding:0!important;line-height:24px!important}
-body.utv-home-active #homeTab .verticalSection .sectionTitleContainer{margin:0 0 12px!important;padding:0!important;min-height:24px;display:flex;align-items:center}
-body.utv-home-active #homeTab .verticalSection .sectionTitleContainer h2.sectionTitle{margin:0!important;padding:0!important;line-height:24px!important}
-body.utv-home-active #homeTab .verticalSection .sectionTitleTextButton{min-height:24px!important;padding:0!important;gap:8px;line-height:24px}
-body.utv-home-active #homeTab .verticalSection>.emby-scroller{padding:4px 0 8px!important}
-body.utv-home-active #homeTab .verticalSection .itemsContainer{padding:0!important}
+body.utv-home-active #homeTab .homeSectionsContainer {
+  --utv-shelf-gutter: 40px;
+}
+body.utv-home-active #homeTab .homeSectionsContainer .verticalSection {
+  box-sizing: border-box;
+  margin: 0 !important;
+  padding: 24px var(--utv-shelf-gutter) 12px !important;
+}
+body.utv-home-active
+  #homeTab
+  .homeSectionsContainer
+  .verticalSection:not(:has(.card)):not(:has(.verticalSection)) {
+  display: none !important;
+}
+body.utv-home-active #homeTab .verticalSection > h2.sectionTitle {
+  margin: 0 0 12px !important;
+  padding: 0 !important;
+  line-height: 24px !important;
+}
+body.utv-home-active #homeTab .verticalSection .sectionTitleContainer {
+  margin: 0 0 12px !important;
+  padding: 0 !important;
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+}
+body.utv-home-active #homeTab .verticalSection .sectionTitleContainer h2.sectionTitle {
+  margin: 0 !important;
+  padding: 0 !important;
+  line-height: 24px !important;
+}
+body.utv-home-active #homeTab .verticalSection .sectionTitleTextButton {
+  min-height: 24px !important;
+  padding: 0 !important;
+  gap: 8px;
+  line-height: 24px;
+}
+body.utv-home-active #homeTab .verticalSection > .emby-scroller {
+  padding: 4px 0 8px !important;
+}
+body.utv-home-active #homeTab .verticalSection .itemsContainer {
+  padding: 0 !important;
+}
 body.utv-home-active #homeTab .homeSectionsContainer .verticalSection .card {
   padding: 0 !important;
   vertical-align: top;
@@ -645,10 +2021,16 @@ body.utv-home-active #homeTab .card .cardText-secondary {
   font: 400 12px/1.45 var(--utv-font) !important;
   color: #9ca3af !important;
 }
-@media(max-width:600px){
-  body.utv-home-active #homeTab .homeSectionsContainer { --utv-shelf-gutter: 20px; }
-  body.utv-home-active #homeTab .verticalSection .card.overflowPortraitCard { width: 140px !important; }
-  body.utv-home-active #homeTab .verticalSection .card.overflowBackdropCard { width: 240px !important; }
+@media (max-width: 600px) {
+  body.utv-home-active #homeTab .homeSectionsContainer {
+    --utv-shelf-gutter: 20px;
+  }
+  body.utv-home-active #homeTab .verticalSection .card.overflowPortraitCard {
+    width: 140px !important;
+  }
+  body.utv-home-active #homeTab .verticalSection .card.overflowBackdropCard {
+    width: 240px !important;
+  }
 }
 
 body.utv-home-active #homeTab .homeSectionsContainer .verticalSection {
@@ -659,260 +2041,6 @@ body.utv-home-active #homeTab .verticalSection .sectionTitleTextButton {
   margin: 0 !important;
   height: 24px !important;
 }
-/* ==========================================================================
-   Unimatrix-TV Detail Page & Video Player Styles (Native Jellyfin Integration)
-   ========================================================================== */
-
-#itemDetailPage {
-  background: transparent !important;
-  contain: none !important;
-  content-visibility: visible !important;
-}
-
-body:has(#itemDetailPage:not(.hide)):not(.hide-scroll) .backdropContainer {
-  opacity: 0.85 !important;
-}
-
-#itemDetailPage .detailPageWrapperContainer {
-  background: transparent !important;
-}
-
-#itemDetailPage .detailRibbon {
-  background: transparent !important;
-  backdrop-filter: none !important;
-}
-
-#itemDetailPage .detailLogo {
-  max-width: 460px;
-  max-height: 150px;
-  filter: drop-shadow(0 4px 14px rgba(0, 0, 0, 0.45));
-}
-
-#itemDetailPage .itemName,
-#itemDetailPage .nameContainer h1 {
-  font-weight: 700 !important;
-  letter-spacing: -0.04em !important;
-}
-
-#itemDetailPage .overview {
-  font: 400 15px/1.65 var(--utv-font) !important;
-  color: #c6c9cd !important;
-  max-width: 780px !important;
-}
-
-#itemDetailPage .itemMiscInfo-primary {
-  display: flex !important;
-  align-items: center !important;
-  gap: 10px !important;
-  font: 500 12px/1.5 var(--utv-font) !important;
-  color: #c3c7cc !important;
-  margin: 10px 0 14px !important;
-}
-
-#itemDetailPage .mediaInfoItem {
-  margin: 0 !important;
-}
-
-#itemDetailPage .mainDetailButtons {
-  display: flex !important;
-  align-items: center !important;
-  gap: 12px !important;
-  flex-wrap: wrap !important;
-  padding: 0 !important;
-  margin: 14px 0 !important;
-}
-
-#itemDetailPage .mainDetailButtons .detailButton {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  height: 40px !important;
-  min-width: 40px !important;
-  margin: 0 !important;
-  padding: 0 14px !important;
-  border: 0 !important;
-  border-radius: 50% !important;
-  background: rgba(255, 255, 255, 0.12) !important;
-  color: #f4f4f6 !important;
-  transition: background 180ms ease, transform 180ms ease !important;
-}
-
-#itemDetailPage .mainDetailButtons .detailButton:hover {
-  background: rgba(255, 255, 255, 0.22) !important;
-}
-
-#itemDetailPage .mainDetailButtons .detailButton:focus-visible {
-  outline: 2px solid #8fdeaa !important;
-  outline-offset: 3px;
-}
-
-#itemDetailPage .mainDetailButtons .btnPlay,
-.btnPlay {
-  width: auto !important;
-  min-width: 110px !important;
-  padding: 0 20px !important;
-  gap: 6px !important;
-  background: #8fdeaa !important;
-  background-color: #8fdeaa !important;
-  color: #101114 !important;
-  border-radius: 24px !important;
-  font-weight: 600 !important;
-}
-
-#itemDetailPage .mainDetailButtons .btnPlay:hover,
-.btnPlay:hover {
-  background: #a3e8b9 !important;
-  background-color: #a3e8b9 !important;
-  color: #101114 !important;
-}
-
-#itemDetailPage .itemDetailsGroup {
-  background: none !important;
-  background-color: transparent !important;
-  border: 0 !important;
-  border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
-  border-radius: 0 !important;
-  padding: 24px 0 32px !important;
-  box-shadow: none !important;
-  outline: none !important;
-}
-
-#itemDetailPage .itemDetailsGroup::before {
-  content: 'Information';
-  display: block;
-  font: 650 18px/1.4 var(--utv-font);
-  margin-bottom: 16px;
-  color: #f3f3f5;
-}
-
-#itemDetailPage .detailsGroupItem {
-  padding: 8px 0 !important;
-  border: 0 !important;
-  align-items: baseline !important;
-  gap: 20px !important;
-}
-
-#itemDetailPage .detailsGroupItem .label {
-  font: 450 12px/1.5 var(--utv-font) !important;
-  color: #91959d !important;
-  margin: 0 !important;
-  min-width: 95px;
-}
-
-#itemDetailPage .detailsGroupItem a {
-  font: 450 12px/1.5 var(--utv-font) !important;
-  color: #d8dce1 !important;
-}
-
-#itemDetailPage .trackSelections {
-  background: none !important;
-  background-color: transparent !important;
-  border: 0 !important;
-  border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
-  border-radius: 0 !important;
-  padding: 24px 0 32px !important;
-  box-shadow: none !important;
-  outline: none !important;
-}
-
-#itemDetailPage .trackSelections::before {
-  content: 'Playback';
-  display: block;
-  font: 650 18px/1.4 var(--utv-font);
-  margin-bottom: 16px;
-  color: #f3f3f5;
-}
-
-#itemDetailPage .trackSelections .selectContainer {
-  margin: 0 0 12px !important;
-}
-
-#itemDetailPage .trackSelections select {
-  font: 450 12px/1.5 var(--utv-font) !important;
-}
-
-#itemDetailPage .detailPageSecondaryContainer {
-  background: transparent !important;
-  background-color: transparent !important;
-  gap: 32px !important;
-  padding: 0 0 28px !important;
-  box-shadow: none !important;
-}
-
-#itemDetailPage .detailVerticalSection {
-  margin: 0 !important;
-  padding: 0 !important;
-  width: 100% !important;
-  min-width: 0;
-}
-
-#itemDetailPage .detailVerticalSection > .emby-scroller {
-  margin: 0 !important;
-  padding: 4px 0 12px !important;
-  width: 100% !important;
-}
-
-#itemDetailPage #castCollapsible .card {
-  width: 160px !important;
-  padding: 0 !important;
-}
-
-#itemDetailPage #castCollapsible .cardBox {
-  margin: 0 20px 0 0 !important;
-}
-
-#itemDetailPage #castCollapsible .cardScalable {
-  box-shadow: none !important;
-  border: 0 !important;
-}
-
-#itemDetailPage #castCollapsible .cardText {
-  font: 450 12px/1.5 var(--utv-font) !important;
-  white-space: normal !important;
-}
-
-#itemDetailPage #castCollapsible .cardText-secondary {
-  font-size: 11px !important;
-  color: #91959d !important;
-}
-
-#itemDetailPage #similarCollapsible .card {
-  width: 196px !important;
-  padding: 0 !important;
-}
-
-#itemDetailPage #similarCollapsible .cardBox {
-  margin: 0 18px 0 0 !important;
-}
-
-#itemDetailPage #similarCollapsible .cardScalable {
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  box-shadow: none !important;
-  border-radius: 10px !important;
-}
-
-#itemDetailPage #similarCollapsible .cardText {
-  font: 450 12px/1.5 var(--utv-font) !important;
-  text-align: left !important;
-  white-space: normal !important;
-}
-
-@media (max-width: 700px) {
-  #itemDetailPage #castCollapsible .card {
-    width: 120px !important;
-  }
-  #itemDetailPage #castCollapsible .cardBox {
-    margin-right: 16px !important;
-  }
-  #itemDetailPage #similarCollapsible .card {
-    width: 152px !important;
-  }
-}
-
-html.transparentDocument #itemDetailPage {
-  background: transparent !important;
-}
-
 /* Video Player Controls (Video OSD) */
 #videoOsdPage .buttons,
 .videoOsdBottom .buttons {

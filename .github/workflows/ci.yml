@@ -113,6 +113,11 @@ jobs:
           shellcheck --version
           git ls-files -z -- '*.sh' | xargs -0 -r shellcheck --
 
+      - name: Set up .NET for the Jellyfin plugin
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 

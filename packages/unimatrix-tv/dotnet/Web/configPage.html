@@ -1,33 +1,88 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="utf-8">
-    <title>Unimatrix TV</title>
-</head>
-<body>
-    <div data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox">
-        <div data-role="content">
-            <div class="content-primary">
-                <h1>Unimatrix TV Presentation</h1>
-                <p>Custom presentation layer, Apple TV-inspired library browsing, and seamless boot loading gate.</p>
-                <div class="checkboxContainer">
-                    <label>
-                        <input is="emby-checkbox" type="checkbox" id="chkEnabled" checked />
-                        <span>Enable Unimatrix-TV enhancements</span>
-                    </label>
-                </div>
-                <div class="checkboxContainer">
-                    <label>
-                        <input is="emby-checkbox" type="checkbox" id="chkBootGate" checked />
-                        <span>Enable full-screen boot loading gate</span>
-                    </label>
-                </div>
-                <div class="inputContainer">
-                    <label class="inputLabel" for="txtRequestsUrl">Unimatrix Requests URL</label>
-                    <input is="emby-input" type="text" id="txtRequestsUrl" value="https://requests.unimatrix-01.dev/" />
-                </div>
+  <head>
+    <meta charset="utf-8" />
+    <title>Unimatrix-TV</title>
+  </head>
+  <body>
+    <div
+      id="UnimatrixTVConfigPage"
+      data-role="page"
+      class="page type-interior pluginConfigurationPage"
+      data-require="emby-input,emby-button,emby-checkbox"
+    >
+      <div data-role="content">
+        <div class="content-primary">
+          <h1>Unimatrix-TV</h1>
+          <form id="UnimatrixTVConfigForm">
+            <div class="checkboxContainer">
+              <label
+                ><input is="emby-checkbox" type="checkbox" id="chkEnabled" /><span
+                  >Enable Unimatrix-TV</span
+                ></label
+              >
             </div>
+            <div class="checkboxContainer">
+              <label
+                ><input is="emby-checkbox" type="checkbox" id="chkBootGate" /><span
+                  >Show loading screen</span
+                ></label
+              >
+            </div>
+            <div class="inputContainer">
+              <label class="inputLabel" for="txtRequestsUrl">Requests URL</label
+              ><input is="emby-input" type="url" id="txtRequestsUrl" required />
+            </div>
+            <p id="UnimatrixTVConfigError" role="alert" hidden></p>
+            <button is="emby-button" type="submit" class="raised button-submit block">
+              <span>Save</span>
+            </button>
+          </form>
         </div>
+      </div>
+      <script>
+        (function () {
+          var id = "f6b0f02e-128b-4a57-b088-3e4b7b20e001";
+          var page = document.getElementById("UnimatrixTVConfigPage");
+          var form = page.querySelector("form");
+          var error = page.querySelector("#UnimatrixTVConfigError");
+          page.addEventListener("pageshow", function () {
+            error.hidden = true;
+            ApiClient.getPluginConfiguration(id)
+              .then(function (config) {
+                page.querySelector("#chkEnabled").checked = config.Enabled;
+                page.querySelector("#chkBootGate").checked = config.EnableBootGate;
+                page.querySelector("#txtRequestsUrl").value = config.RequestsUrl;
+              })
+              .catch(function () {
+                error.textContent = "Could not load settings.";
+                error.hidden = false;
+              });
+          });
+          form.addEventListener("submit", async function (event) {
+            event.preventDefault();
+            error.hidden = true;
+            var save = form.querySelector("button[type=submit]");
+            try {
+              var url = new URL(page.querySelector("#txtRequestsUrl").value);
+              if (url.protocol !== "https:" || url.username || url.password)
+                throw new Error("Enter an HTTPS URL without credentials.");
+              save.disabled = true;
+              var config = await ApiClient.getPluginConfiguration(id);
+              config.Enabled = page.querySelector("#chkEnabled").checked;
+              config.EnableBootGate = page.querySelector("#chkBootGate").checked;
+              config.RequestsUrl = url.href;
+              await ApiClient.updatePluginConfiguration(id, config);
+              Dashboard.processPluginConfigurationUpdateResult();
+            } catch (e) {
+              error.textContent = e.message || "Could not save settings.";
+              error.hidden = false;
+            } finally {
+              save.disabled = false;
+            }
+          });
+        })();
+      </script>
     </div>
-</body>
+  </body>
 </html>

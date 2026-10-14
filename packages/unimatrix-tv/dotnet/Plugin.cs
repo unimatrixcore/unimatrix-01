@@ -18,7 +18,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 
     public static Plugin? Instance { get; private set; }
 
-    public override string Name => "Unimatrix TV";
+    public override string Name => "Unimatrix-TV";
 
     public override string Description => "Unimatrix-TV presentation and UX refinement plugin.";
 
@@ -32,7 +32,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
             {
                 Name = "UnimatrixTV",
                 EmbeddedResourcePath = GetType().Namespace + ".Web.configPage.html",
-                EnableInMainMenu = true,
+                EnableInMainMenu = false,
                 MenuSection = "server",
                 MenuIcon = "tv"
             }

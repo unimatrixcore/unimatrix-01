@@ -22,8 +22,10 @@
     "build": "pnpm build:client && pnpm build:plugin && pnpm build:requests && pnpm package",
     "deploy:live": "node ./scripts/deploy.mjs",
     "lint": "eslint .",
-    "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json"
+    "test": "vitest run && pnpm test:requests && pnpm test:plugin",
+    "typecheck": "tsc -p tsconfig.json",
+    "test:requests": "node requests/run-tests.cjs",
+    "test:plugin": "node scripts/test-plugin.mjs"
   },
   "devDependencies": {
     "@unimatrix/config-eslint": "workspace:*",

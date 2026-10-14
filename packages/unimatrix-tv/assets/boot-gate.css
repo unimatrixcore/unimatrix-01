@@ -1,75 +1,89 @@
-/* Boot Gate: Full-screen loading overlay to prevent FOUC / layout shift */
-html.utv-boot-pending #reactRoot,
-html.utv-boot-pending .mainAnimatedPages,
-html.utv-boot-pending .viewContainer {
-  opacity: 0 !important;
-  pointer-events: none !important;
+html.utv-boot-pending {
+  background: #101114 !important;
 }
-
-/* HARD SAFETY: Never ever show boot gate during video playback */
-body:has(video) #utv-boot-gate,
-body:has(.videoPlayerContainer) #utv-boot-gate,
-body:has(#videoPlayerPage) #utv-boot-gate,
-html:has(video) #utv-boot-gate {
-  display: none !important;
-  opacity: 0 !important;
+html.utv-boot-pending body > :not(#utv-boot-gate),
+html.utv-boot-pending body > :not(#utv-boot-gate) * {
   visibility: hidden !important;
   pointer-events: none !important;
 }
-
-html.utv-boot-pending:has(video) #reactRoot,
-html.utv-boot-pending:has(.videoPlayerContainer) #reactRoot,
-html.utv-boot-pending:has(#videoPlayerPage) #reactRoot {
-  opacity: 1 !important;
-  visibility: visible !important;
-  pointer-events: auto !important;
+html.utv-boot-pending::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 999998;
+  background: #101114;
 }
-
-
 #utv-boot-gate {
   position: fixed;
   inset: 0;
   z-index: 999999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background-color: #111114;
+  display: grid;
+  place-items: center;
+  background: #101114;
   color: #fafafa;
-  font-family: 'Geist Mono Variable', monospace, sans-serif;
-  user-select: none;
+  font:
+    450 13px/1.5 "Geist Mono Variable",
+    monospace;
 }
-
 .utv-boot-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1.25rem;
-  padding: 2rem;
+  display: grid;
+  justify-items: center;
+  gap: 20px;
+  padding: 24px;
 }
-
 .utv-boot-logo {
+  width: 48px;
   height: 48px;
-  width: auto;
   object-fit: contain;
 }
-
 .utv-boot-spinner {
   width: 24px;
   height: 24px;
-  border: 2px solid rgba(255, 255, 255, 0.12);
+  border: 2px solid #ffffff20;
   border-top-color: #8fdeaa;
   border-radius: 50%;
-  animation: utv-spin 0.75s linear infinite;
+  animation: utv-spin 900ms linear infinite;
 }
-
+.utv-boot-text {
+  color: #a1a1aa;
+}
+.utv-boot-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.utv-boot-actions button,
+.utv-boot-actions a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid #ffffff25;
+  border-radius: 8px;
+  background: #1b1d20;
+  color: #fafafa;
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+.utv-boot-actions button {
+  background: #8fdeaa;
+  color: #101114;
+}
+.utv-boot-actions :focus-visible {
+  outline: 2px solid #8fdeaa;
+  outline-offset: 3px;
+}
 @keyframes utv-spin {
   to {
     transform: rotate(360deg);
   }
 }
-
-.utv-boot-text {
-  font-size: 0.8rem;
-  letter-spacing: -0.02em;
-  color: #a1a1aa;
+@media (prefers-reduced-motion: reduce) {
+  .utv-boot-spinner {
+    animation: none;
+  }
+  #utv-boot-gate {
+    transition: none !important;
+  }
 }

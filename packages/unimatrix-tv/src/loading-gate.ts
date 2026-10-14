@@ -1,127 +1,165 @@
+import { isPlaybackRoute } from "./playback.js";
+
 export interface BootGate {
   begin(): void;
   ready(): void;
   fail(): void;
+  dispose?(): void;
 }
 
 export interface BootGateOptions {
   logoUrl?: string;
   loadingText?: string;
   transitionMs?: number;
+  timeoutMs?: number;
 }
 
-const DEFAULT_LOGO = '/UnimatrixTV/assets/logo.png';
-const DEFAULT_TEXT = 'Loading your library';
-const DEFAULT_TRANSITION_MS = 250;
+declare global {
+  interface Window {
+    __unimatrixTVBoot?: BootGate;
+    __unimatrixTVConfig?: {
+      enabled: boolean;
+      bootGate: boolean;
+      requestsUrl: string;
+      assetsBase: string;
+    };
+  }
+}
 
 export function createBootGate(options: BootGateOptions = {}): BootGate {
-  const logoUrl = options.logoUrl ?? DEFAULT_LOGO;
-  const loadingText = options.loadingText ?? DEFAULT_TEXT;
-  const transitionMs = options.transitionMs ?? DEFAULT_TRANSITION_MS;
+  const transitionMs = options.transitionMs ?? 250;
+  let screen: HTMLElement | undefined;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  let removal: ReturnType<typeof setTimeout> | undefined;
+  let bodyObserver: MutationObserver | undefined;
+  let pendingRoute: string | undefined;
+  let readyRoute: string | undefined;
+  let disposed = false;
 
-  let gateEl: HTMLElement | null = null;
-  let isReady = false;
-  let hasBooted = false;
-
-  function isPlayback(): boolean {
-    if (typeof location !== 'undefined' && (location.hash.toLowerCase().includes('video') || location.hash.toLowerCase().includes('playback'))) {
-      return true;
-    }
-    if (typeof document !== 'undefined') {
-      return Boolean(
-        document.querySelector('video') ||
-        document.querySelector('.videoPlayerContainer') ||
-        document.querySelector('#videoPlayerPage') ||
-        document.querySelector('[data-type="video"]')
-      );
-    }
-    return false;
-  }
-
-  function ensureGate(): HTMLElement {
-    if (gateEl && document.contains(gateEl)) {
-      return gateEl;
-    }
-
-    const existing = document.getElementById('utv-boot-gate');
-    if (existing) {
-      gateEl = existing;
-      return gateEl;
-    }
-
-    const gate = document.createElement('div');
-    gate.id = 'utv-boot-gate';
-    gate.setAttribute('role', 'status');
-    gate.setAttribute('aria-live', 'polite');
-    gate.setAttribute('aria-label', loadingText);
-
-    const card = document.createElement('div');
-    card.className = 'utv-boot-card';
-
-    const logo = document.createElement('img');
-    logo.className = 'utv-boot-logo';
-    logo.src = logoUrl;
-    logo.alt = 'Unimatrix-TV';
-
-    const spinner = document.createElement('div');
-    spinner.className = 'utv-boot-spinner';
-    spinner.setAttribute('aria-hidden', 'true');
-
-    const text = document.createElement('div');
-    text.className = 'utv-boot-text';
-    text.textContent = loadingText;
-
+  function mount(): HTMLElement {
+    if (screen?.isConnected) return screen;
+    screen = document.getElementById("utv-boot-gate") ?? document.createElement("div");
+    screen.id = "utv-boot-gate";
+    screen.setAttribute("role", "status");
+    screen.setAttribute("aria-live", "polite");
+    const card = document.createElement("div");
+    card.className = "utv-boot-card";
+    const logo = document.createElement("img");
+    logo.className = "utv-boot-logo";
+    logo.src = options.logoUrl ?? "/UnimatrixTV/assets/logo.png";
+    logo.alt = "Unimatrix-TV";
+    const spinner = document.createElement("div");
+    spinner.className = "utv-boot-spinner";
+    spinner.setAttribute("aria-hidden", "true");
+    const text = document.createElement("div");
+    text.className = "utv-boot-text";
+    text.textContent = options.loadingText ?? "Loading";
     card.append(logo, spinner, text);
-    gate.append(card);
-
-    if (document.body) {
-      document.body.prepend(gate);
-    } else {
-      document.addEventListener('DOMContentLoaded', () => {
-        if (!isReady && !document.getElementById('utv-boot-gate')) {
-          document.body?.prepend(gate);
-        }
-      });
+    screen.replaceChildren(card);
+    const node = screen;
+    function attach(): void {
+      if (!document.body || disposed || node !== screen) return;
+      document.body.prepend(node);
+      bodyObserver?.disconnect();
+      bodyObserver = undefined;
     }
-
-    gateEl = gate;
-    return gate;
+    if (document.body) attach();
+    else {
+      bodyObserver?.disconnect();
+      bodyObserver = new MutationObserver(attach);
+      bodyObserver.observe(document.documentElement, { childList: true });
+    }
+    return screen;
   }
 
   function dismiss(): void {
-    isReady = true;
-    document.documentElement.classList.remove('utv-boot-pending');
-
-    const gate = gateEl ?? document.getElementById('utv-boot-gate');
-    if (!gate) return;
-
-    gate.style.transition = `opacity ${transitionMs}ms ease-out`;
-    gate.style.opacity = '0';
-    gate.style.pointerEvents = 'none';
-
-    setTimeout(() => {
-      gate.remove();
-      if (gateEl === gate) gateEl = null;
-    }, transitionMs);
+    clearTimeout(timeout);
+    bodyObserver?.disconnect();
+    bodyObserver = undefined;
+    document.documentElement.classList.remove("utv-boot-pending");
+    document.documentElement.dataset.utvBoot = "ready";
+    const node = screen;
+    if (!node) return;
+    const reduced =
+      typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const duration = reduced ? 0 : transitionMs;
+    node.style.transition = `opacity ${duration}ms ease-out`;
+    node.style.opacity = "0";
+    node.style.pointerEvents = "none";
+    clearTimeout(removal);
+    removal = setTimeout(() => {
+      node.remove();
+      if (screen === node) screen = undefined;
+    }, duration);
   }
 
-  return {
+  const gate: BootGate = {
     begin(): void {
-      if (hasBooted || isPlayback()) {
+      if (disposed) return;
+      if (isPlaybackRoute()) {
+        pendingRoute = undefined;
         dismiss();
         return;
       }
-      isReady = false;
-      document.documentElement.classList.add('utv-boot-pending');
-      ensureGate();
+      if (readyRoute === location.hash || pendingRoute === location.hash) return;
+      pendingRoute = location.hash;
+      clearTimeout(timeout);
+      clearTimeout(removal);
+      document.documentElement.classList.add("utv-boot-pending");
+      document.documentElement.dataset.utvBoot = "loading";
+      mount().removeAttribute("style");
+      timeout = setTimeout(() => {
+        gate.fail();
+      }, options.timeoutMs ?? 25000);
     },
     ready(): void {
-      hasBooted = true;
+      if (disposed) return;
+      readyRoute = location.hash;
+      pendingRoute = undefined;
       dismiss();
     },
     fail(): void {
-      hasBooted = true;
-      dismiss();
+      if (disposed || isPlaybackRoute()) {
+        dismiss();
+        return;
+      }
+      clearTimeout(timeout);
+      clearTimeout(removal);
+      pendingRoute = location.hash;
+      document.documentElement.classList.add("utv-boot-pending");
+      document.documentElement.dataset.utvBoot = "error";
+      const node = mount();
+      node.setAttribute("role", "alert");
+      node.removeAttribute("style");
+      const card = node.querySelector(".utv-boot-card");
+      const text = node.querySelector(".utv-boot-text");
+      if (text) text.textContent = "Couldn't load this page";
+      node.querySelector(".utv-boot-spinner")?.remove();
+      const actions = document.createElement("div");
+      actions.className = "utv-boot-actions";
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.textContent = "Try again";
+      retry.addEventListener("click", () => {
+        location.reload();
+      });
+      const standard = document.createElement("a");
+      const href = new URL(location.href);
+      href.searchParams.set("unimatrix", "off");
+      standard.href = href.toString();
+      standard.textContent = "Standard view";
+      actions.append(retry, standard);
+      card?.querySelector(".utv-boot-actions")?.remove();
+      card?.append(actions);
+    },
+    dispose(): void {
+      disposed = true;
+      clearTimeout(timeout);
+      clearTimeout(removal);
+      bodyObserver?.disconnect();
+      screen?.remove();
+      document.documentElement.classList.remove("utv-boot-pending");
     },
   };
+  return gate;
 }
