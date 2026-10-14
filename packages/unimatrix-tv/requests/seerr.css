@@ -1091,8 +1091,7 @@ html.um-seerr-pending .um-catalog {
   background: #101114;
   color: #fafafa;
   font:
-    450 13px/1.5 "Geist Mono Variable",
-    monospace;
+    500 13px/1.5 var(--um-font);
   pointer-events: none;
 }
 .utv-boot-card {
@@ -1588,13 +1587,21 @@ body.um-seerr-ready:not(.um-search-open) .searchbar > div {
 }
 
 @font-face {
+  font-family: "Manrope";
+  src: url("/unimatrix-theme/manrope.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+}
+@font-face {
   font-family: "Geist Mono Variable";
   src: url("/unimatrix-theme/geist-mono.woff2") format("woff2");
   font-weight: 100 900;
   font-display: swap;
 }
 :root {
-  --um-font: "Geist Mono Variable", monospace;
+  --um-font: "Manrope", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --um-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 /* Requests: compact titles, live progress, optional diagnostics. */
@@ -2891,4 +2898,152 @@ input[type="checkbox"]:disabled:checked {
     top: 56px !important;
     padding: 12px 20px;
   }
+}
+
+/* Card refinements: hide captions beneath poster */
+[data-testid="title-card"] > div:last-child:not([role="link"]) {
+  display: none !important;
+}
+[data-testid="title-card"] > .mt-2 {
+  display: none !important;
+}
+
+/* Audio Language Target Selector (Prime Video Slate Glassmorphism) */
+.um-audio-preference-card {
+  margin: 16px 0;
+  padding: 14px 16px;
+  background: rgba(30, 41, 59, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  font-family: var(--um-font);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.um-audio-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.um-audio-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #f1f5f9;
+  letter-spacing: -0.01em;
+}
+
+.um-audio-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  transition: all 150ms ease;
+}
+
+.um-audio-badge.is-dubbed {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.35);
+}
+
+.um-audio-toggle-group {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.um-audio-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--um-font);
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #cbd5e1;
+  cursor: pointer;
+  transition: all 160ms ease;
+}
+
+.um-audio-btn:hover {
+  background: rgba(30, 41, 59, 0.85);
+  border-color: rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+}
+
+.um-audio-btn.is-active {
+  background: rgba(56, 189, 248, 0.18);
+  border-color: #38bdf8;
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.25);
+}
+
+.um-audio-description {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #94a3b8;
+}
+
+/* Detail page audio toggle */
+.um-detail-audio-toggle {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 10px;
+}
+
+.um-detail-audio-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--um-font);
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #e2e8f0;
+  cursor: pointer;
+  transition: all 160ms ease;
+}
+
+.um-detail-audio-btn:hover {
+  background: rgba(51, 65, 85, 0.85);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #ffffff;
+}
+
+.um-detail-audio-btn.is-dubbed {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: #38bdf8;
+  color: #ffffff;
+}
+
+/* Modals & Dialogs High Contrast */
+[role="dialog"][aria-modal="true"] {
+  font-family: var(--um-font) !important;
+}
+
+[data-testid="modal-cancel-button"] {
+  background: rgba(255, 255, 255, 0.1) !important;
+  border: 1px solid rgba(255, 255, 255, 0.22) !important;
+  color: #ffffff !important;
+  font-weight: 600 !important;
+}
+
+[data-testid="modal-cancel-button"]:hover {
+  background: rgba(255, 255, 255, 0.18) !important;
+  border-color: rgba(255, 255, 255, 0.35) !important;
 }

@@ -18,9 +18,25 @@
       posterTitles.set(data.posterPath.split("/").at(-1), data.title || data.name);
     for (const key of ["results", "media", "items"]) if (data[key]) rememberMedia(data[key]);
   }
+  function getAudioPreference() {
+    try {
+      return localStorage.getItem("um-seerr-audio-preference") || "original";
+    } catch {
+      return "original";
+    }
+  }
+
+  function setAudioPreference(pref) {
+    try {
+      localStorage.setItem("um-seerr-audio-preference", pref);
+    } catch {}
+  }
+
   const nativeOpen = XMLHttpRequest.prototype.open;
   XMLHttpRequest.prototype.open = function (method, url, ...rest) {
-    if (String(url).startsWith("/api/v1/"))
+    this._umMethod = String(method).toUpperCase();
+    this._umUrl = String(url);
+    if (this._umUrl.startsWith("/api/v1/"))
       this.addEventListener(
         "load",
         () => {
@@ -35,6 +51,55 @@
       );
     return nativeOpen.call(this, method, url, ...rest);
   };
+
+  const nativeSend = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.send = function (data) {
+    if (
+      this._umMethod === "POST" &&
+      /^\/api\/v1\/request(?:\?|$)/.test(this._umUrl) &&
+      typeof data === "string"
+    ) {
+      try {
+        const payload = JSON.parse(data);
+        const pref = getAudioPreference();
+        if (pref === "dubbed") {
+          payload.profileId = 8;
+          payload.tags = Array.from(new Set([...(payload.tags || []), 1]));
+          payload.languageProfileId = 1;
+          data = JSON.stringify(payload);
+        }
+      } catch {}
+    }
+    return nativeSend.call(this, data);
+  };
+
+  if (typeof window !== "undefined" && typeof window.fetch === "function") {
+    const nativeFetch = window.fetch;
+    window.fetch = function (input, init) {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.href : input?.url;
+      if (
+        init &&
+        init.method &&
+        String(init.method).toUpperCase() === "POST" &&
+        /^\/api\/v1\/request(?:\?|$)/.test(String(url))
+      ) {
+        try {
+          if (typeof init.body === "string") {
+            const payload = JSON.parse(init.body);
+            const pref = getAudioPreference();
+            if (pref === "dubbed") {
+              payload.profileId = 8;
+              payload.tags = Array.from(new Set([...(payload.tags || []), 1]));
+              payload.languageProfileId = 1;
+              init.body = JSON.stringify(payload);
+            }
+          }
+        } catch {}
+      }
+      return nativeFetch.call(this, input, init);
+    };
+  }
 
   let pendingDeadline,
     featureGeneration = 0;
@@ -273,6 +338,96 @@
     rememberMedia(data);
     return data;
   };
+  function enhanceRequestDialog(dialog) {
+    if (!dialog || dialog.querySelector(".um-audio-preference-card")) return;
+    const isRequest =
+      dialog.querySelector("[data-testid=modal-cancel-button]") ||
+      Array.from(dialog.querySelectorAll("button")).some((b) => /request/i.test(b.textContent || ""));
+    if (!isRequest) return;
+
+    const pref = getAudioPreference();
+    const card = document.createElement("div");
+    card.className = "um-audio-preference-card";
+    card.innerHTML =
+      '<div class="um-audio-header">' +
+      '<span class="um-audio-title">Audio Language Target</span>' +
+      `<span class="um-audio-badge ${pref === "dubbed" ? "is-dubbed" : ""}">${pref === "dubbed" ? "English Dubbed" : "Original Audio"}</span>` +
+      "</div>" +
+      '<div class="um-audio-toggle-group" role="radiogroup">' +
+      `<button type="button" class="um-audio-btn ${pref === "original" ? "is-active" : ""}" data-pref="original"><span class="um-audio-icon">🌐</span> Original Audio</button>` +
+      `<button type="button" class="um-audio-btn ${pref === "dubbed" ? "is-active" : ""}" data-pref="dubbed"><span class="um-audio-icon">🎙️</span> English Dubbed</button>` +
+      "</div>" +
+      '<p class="um-audio-description">' +
+      (pref === "dubbed"
+        ? "Prioritizes English audio tracks using Radarr/Sonarr English Dub profile & tag."
+        : "Downloads media in original language of release.") +
+      "</p>";
+
+    card.querySelectorAll(".um-audio-btn").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const next = btn.getAttribute("data-pref") || "original";
+        setAudioPreference(next);
+        card.querySelectorAll(".um-audio-btn").forEach((b) => {
+          b.classList.toggle("is-active", b.getAttribute("data-pref") === next);
+        });
+        const badge = card.querySelector(".um-audio-badge");
+        if (badge) {
+          badge.textContent = next === "dubbed" ? "English Dubbed" : "Original Audio";
+          badge.classList.toggle("is-dubbed", next === "dubbed");
+        }
+        const desc = card.querySelector(".um-audio-description");
+        if (desc) {
+          desc.textContent =
+            next === "dubbed"
+              ? "Prioritizes English audio tracks using Radarr/Sonarr English Dub profile & tag."
+              : "Downloads media in original language of release.";
+        }
+      });
+    });
+
+    const target =
+      dialog.querySelector(".form-action, .modal-actions, [data-testid=modal-cancel-button]")
+        ?.parentElement ||
+      dialog.querySelector("form") ||
+      dialog.querySelector(".p-6") ||
+      dialog;
+    if (target && target !== dialog && target.parentElement) {
+      target.parentElement.insertBefore(card, target);
+    } else {
+      dialog.appendChild(card);
+    }
+  }
+
+  function enhanceDetailPageAudio() {
+    if (!/^\/(?:movie|tv)\/\d+/.test(location.pathname)) return;
+    if (document.querySelector(".um-detail-audio-toggle")) return;
+    const actions = document.querySelector(".media-actions, .media-header .flex.items-center");
+    if (!actions) return;
+
+    const pref = getAudioPreference();
+    const toggle = document.createElement("div");
+    toggle.className = "um-detail-audio-toggle";
+    toggle.innerHTML =
+      `<button type="button" class="um-detail-audio-btn ${pref === "dubbed" ? "is-dubbed" : ""}" title="Click to toggle Audio Preference (Original vs English Dubbed)">` +
+      `<span class="um-detail-audio-icon">${pref === "dubbed" ? "🎙️" : "🌐"}</span>` +
+      `<span>${pref === "dubbed" ? "English Dub" : "Original Audio"}</span>` +
+      "</button>";
+    const btn = toggle.querySelector("button");
+    btn?.addEventListener("click", (e) => {
+      e.preventDefault();
+      const next = getAudioPreference() === "dubbed" ? "original" : "dubbed";
+      setAudioPreference(next);
+      btn.classList.toggle("is-dubbed", next === "dubbed");
+      const icon = btn.querySelector(".um-detail-audio-icon");
+      if (icon) icon.textContent = next === "dubbed" ? "🎙️" : "🌐";
+      const text = btn.querySelector("span:last-child");
+      if (text) text.textContent = next === "dubbed" ? "English Dub" : "Original Audio";
+    });
+    actions.appendChild(toggle);
+  }
+
   let activeDialog,
     lastDialogFocus,
     inertRoots = [];
@@ -314,6 +469,8 @@
       e.setAttribute("aria-modal", "true");
       e.setAttribute("aria-label", e.querySelector("h2")?.textContent || "Manage request");
     });
+    const isMoviesPage = /^\/(?:discover\/)?movies/.test(location.pathname);
+    const isTvPage = /^\/(?:discover\/)?tv/.test(location.pathname);
     document.querySelectorAll("[data-testid=title-card]").forEach((card) => {
       const image = card.querySelector("img");
       let src = image?.currentSrc || image?.src || "";
@@ -328,6 +485,21 @@
         entry?.setAttribute("aria-label", name);
       } else entry?.setAttribute("aria-label", "View title details");
       card.querySelector(".um-native-card-caption")?.remove();
+      const shelf =
+        card.closest(".slider-header, .slider-title")?.parentElement ||
+        card.closest("section") ||
+        card.closest(".um-shelf");
+      const heading =
+        shelf?.querySelector("h2, .slider-title, [data-testid=page-header]")?.textContent || "";
+      const isHomogeneous =
+        isMoviesPage ||
+        isTvPage ||
+        /movies?|films?/i.test(heading) ||
+        /series|tv\s*shows?|shows?/i.test(heading);
+      if (isHomogeneous) {
+        const typeBadge = card.querySelector(".pointer-events-none.rounded-full");
+        if (typeBadge) typeBadge.style.display = "none";
+      }
       card.querySelectorAll("button").forEach((b) => {
         if (!b.textContent.trim() && !b.getAttribute("aria-label")) {
           const paths = [...b.querySelectorAll("path")]
@@ -357,16 +529,20 @@
         (e) => !e.contains(dialog) && !["SCRIPT", "STYLE", "LINK"].includes(e.tagName) && !e.inert,
       );
       inertRoots.forEach((e) => (e.inert = true));
+      enhanceRequestDialog(dialog);
       (
         dialog.querySelector("[data-testid=modal-cancel-button]") ||
         dialog.querySelector('button:not([disabled]),input,select,[tabindex="0"]')
       )?.focus();
+    } else if (dialog) {
+      enhanceRequestDialog(dialog);
     } else if (!dialog && activeDialog) {
       activeDialog = null;
       inertRoots.forEach((e) => (e.inert = false));
       inertRoots = [];
       if (lastDialogFocus?.isConnected) lastDialogFocus.focus();
     }
+    enhanceDetailPageAudio();
     if (matchMedia("(prefers-reduced-motion:reduce)").matches)
       document.querySelectorAll("svg animateTransform").forEach((e) => {
         e.ownerSVGElement?.pauseAnimations?.();

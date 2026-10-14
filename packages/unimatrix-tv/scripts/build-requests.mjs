@@ -15,7 +15,13 @@ const runtimeFiles = [
   "request-pipeline.cjs",
   "released-only.cjs",
 ];
-const sharedFiles = ["logo.png", "geist-mono.woff2", "geist-mono.LICENSE"];
+const sharedFiles = [
+  "logo.png",
+  "geist-mono.woff2",
+  "geist-mono.LICENSE",
+  "manrope.ttf",
+  "manrope.LICENSE",
+];
 const contents = new Map();
 for (const name of runtimeFiles) contents.set(name, fs.readFileSync(path.join(source, name)));
 for (const name of sharedFiles)

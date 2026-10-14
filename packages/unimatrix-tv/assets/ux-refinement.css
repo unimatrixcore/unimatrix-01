@@ -1,6 +1,13 @@
 /* Unimatrix-TV UX pass: readable film typography, compact navigation,
    native playback transparency, restrained motion, and responsive shelves. */
 @font-face {
+  font-family: "Manrope";
+  src: url("/UnimatrixTV/assets/manrope.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+}
+@font-face {
   font-family: "Geist Mono Variable";
   src: url("/UnimatrixTV/assets/geist-mono.woff2") format("woff2");
   font-style: normal;
@@ -9,8 +16,8 @@
 }
 
 :root {
-  --utv-font: "Geist Mono Variable", monospace;
-  --utv-mono: "Geist Mono Variable", monospace;
+  --utv-font: "Manrope", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --utv-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --utv-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --utv-radius: 8px;
   --utv-ink: #101114;
@@ -205,11 +212,51 @@ h6 {
   margin-bottom: 16px;
 }
 .utv-meta {
-  font: 450 11px var(--utv-mono);
-  color: #c2c5ce;
-  gap: 12px;
-  margin-bottom: 17px;
+  font: 500 12px/1.5 var(--utv-font) !important;
+  color: #c3c7cc !important;
+  gap: 10px !important;
+  margin-bottom: 16px !important;
   letter-spacing: 0;
+  display: flex !important;
+  align-items: center !important;
+  flex-wrap: wrap !important;
+}
+.utv-meta > span + span:not(.utv-rating-badge):not(.mediaInfoOfficialRating)::before {
+  content: "•";
+  margin-right: 10px;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 8px;
+  vertical-align: middle;
+}
+.utv-rating-badge,
+.mediaInfoOfficialRating {
+  border: 1px solid rgba(255, 255, 255, 0.28) !important;
+  border-radius: 3px !important;
+  padding: 1px 6px !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  line-height: 1.4 !important;
+  color: #f4f4f6 !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  letter-spacing: 0.02em !important;
+  text-transform: uppercase !important;
+  display: inline-flex !important;
+  align-items: center !important;
+}
+.utv-rating-badge::before,
+.mediaInfoOfficialRating::before {
+  content: none !important;
+  display: none !important;
+}
+.utv-star-rating {
+  display: inline-flex !important;
+  align-items: center !important;
+  color: #f4f4f6 !important;
+  font-weight: 600 !important;
+}
+.utv-star-rating .starIcon {
+  color: #f59e0b !important;
+  margin-right: 3px !important;
 }
 .utv-summary {
   font: 450 15px/1.65 var(--utv-font);
@@ -407,6 +454,8 @@ body.utv-home-active #utv-home-loading {
   transform-origin: 50% 55%;
 }
 
+.card .cardFooter,
+.card .cardTextContainer,
 .card .cardText,
 .card .cardText-first,
 .card .cardText-secondary {
@@ -416,10 +465,34 @@ body.utv-home-active #utv-home-loading {
 .cardBox {
   margin-bottom: 0 !important;
   padding-bottom: 0 !important;
+  overflow: visible !important;
+}
+
+.emby-scroller {
+  padding-top: 14px !important;
+  padding-bottom: 22px !important;
+  margin-top: -10px !important;
+  margin-bottom: -14px !important;
+  overflow-y: visible !important;
+}
+
+.itemsContainer {
+  padding-top: 4px !important;
+  padding-bottom: 8px !important;
+}
+
+.card:hover,
+.card:focus-within {
+  z-index: 25 !important;
 }
 
 [data-utv-shelf="movies"] .utv-card-type-badge,
-[data-utv-shelf="series"] .utv-card-type-badge {
+[data-utv-shelf="series"] .utv-card-type-badge,
+.utv-shelf-homogeneous .utv-card-type-badge,
+.type-movies .utv-card-type-badge,
+.type-tvshows .utv-card-type-badge,
+#moviesPage .utv-card-type-badge,
+#tvPage .utv-card-type-badge {
   display: none !important;
 }
 
@@ -466,6 +539,9 @@ body.utv-home-active #utv-home-loading {
 }
 
 .utv-card-favorite-btn {
+  margin-left: auto !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
   width: 28px !important;
   height: 28px !important;
   border-radius: 6px !important;
@@ -478,15 +554,21 @@ body.utv-home-active #utv-home-loading {
   align-items: center !important;
   justify-content: center !important;
   cursor: pointer !important;
-  pointer-events: auto !important;
   padding: 0 !important;
-  transition: all 150ms ease !important;
+  transition: opacity 180ms ease, background 150ms ease, border-color 150ms ease, transform 150ms ease !important;
+}
+
+.card:hover .utv-card-favorite-btn,
+.card:focus-within .utv-card-favorite-btn {
+  opacity: 1 !important;
+  pointer-events: auto !important;
 }
 
 .utv-card-favorite-btn:hover {
   background: rgba(30, 32, 38, 0.85) !important;
   border-color: rgba(255, 255, 255, 0.3) !important;
   color: #fff !important;
+  transform: scale(1.08) !important;
 }
 
 .utv-card-favorite-btn.is-favorite {
@@ -557,16 +639,16 @@ body.utv-home-active #utv-home-loading {
 }
 
 .utv-card-overview {
-  font-family: var(--utv-mono), monospace !important;
-  font-size: 10.5px !important;
-  line-height: 1.35 !important;
-  color: #94a3b8 !important;
+  font-family: var(--utv-font) !important;
+  font-size: 11px !important;
+  line-height: 1.4 !important;
+  color: #cbd5e1 !important;
   display: -webkit-box !important;
-  -webkit-line-clamp: 3 !important;
+  -webkit-line-clamp: 4 !important;
   -webkit-box-orient: vertical !important;
   overflow: hidden !important;
   word-break: break-word !important;
-  margin-bottom: 10px !important;
+  margin-bottom: 8px !important;
   white-space: normal !important;
 }
 
@@ -2196,4 +2278,117 @@ body.utv-home-active #homeTab .verticalSection .sectionTitleTextButton {
   .videoOsdBottom .osdTimeText {
     display: none !important;
   }
+}
+
+/* Dialogs & Confirmation Modals: High-contrast, clean typography, dark glass */
+.dialogContainer {
+  background-color: rgba(0, 0, 0, 0.72) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+}
+
+.dialogContainer .dialog,
+.formDialog,
+.MuiDialog-paper {
+  background: #14161a !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6) !important;
+  color: #f4f4f6 !important;
+  font-family: var(--utv-font) !important;
+}
+
+.formDialogHeaderTitle {
+  font-family: var(--utv-font) !important;
+  font-size: 20px !important;
+  font-weight: 700 !important;
+  color: #ffffff !important;
+  letter-spacing: -0.01em !important;
+  text-align: center !important;
+}
+
+.formDialogContent,
+.dialogContentInner,
+.formDialogContent .text {
+  font-family: var(--utv-font) !important;
+  font-size: 14px !important;
+  line-height: 1.6 !important;
+  color: #d1d5db !important;
+}
+
+.formDialogFooter {
+  display: flex !important;
+  gap: 12px !important;
+  justify-content: center !important;
+  padding: 16px !important;
+}
+
+.formDialogFooterItem {
+  font-family: var(--utv-font) !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  border-radius: 8px !important;
+  padding: 10px 22px !important;
+  min-height: 42px !important;
+  transition: all 160ms ease !important;
+  text-transform: none !important;
+  letter-spacing: 0.01em !important;
+  cursor: pointer !important;
+}
+
+/* Cancel / secondary button: dark glass with crisp white text */
+.formDialogFooterItem.button-cancel,
+.formDialogFooterItem[data-id="cancel"],
+.formDialogFooterItem.btnCancel {
+  background: rgba(255, 255, 255, 0.1) !important;
+  border: 1px solid rgba(255, 255, 255, 0.22) !important;
+  color: #ffffff !important;
+}
+
+.formDialogFooterItem.button-cancel:hover,
+.formDialogFooterItem.button-cancel:focus,
+.formDialogFooterItem[data-id="cancel"]:hover,
+.formDialogFooterItem[data-id="cancel"]:focus,
+.formDialogFooterItem.btnCancel:hover,
+.formDialogFooterItem.btnCancel:focus {
+  background: rgba(255, 255, 255, 0.18) !important;
+  border-color: rgba(255, 255, 255, 0.38) !important;
+  color: #ffffff !important;
+}
+
+/* Delete / destructive button: bold red with white text */
+.formDialogFooterItem.button-delete,
+.formDialogFooterItem[data-id="delete"],
+.formDialogFooterItem.btnDanger {
+  background: #dc2626 !important;
+  border: 1px solid #b91c1c !important;
+  color: #ffffff !important;
+}
+
+.formDialogFooterItem.button-delete:hover,
+.formDialogFooterItem.button-delete:focus,
+.formDialogFooterItem[data-id="delete"]:hover,
+.formDialogFooterItem[data-id="delete"]:focus,
+.formDialogFooterItem.btnDanger:hover,
+.formDialogFooterItem.btnDanger:focus {
+  background: #ef4444 !important;
+  border-color: #dc2626 !important;
+  color: #ffffff !important;
+}
+
+/* Submit / confirm button: mint background with dark high-contrast text */
+.formDialogFooterItem.button-submit,
+.formDialogFooterItem[data-id="ok"]:not(.button-delete):not([data-id="delete"]):not(.btnDanger) {
+  background: #8fdeaa !important;
+  border: 1px solid #7cdba1 !important;
+  color: #0d1711 !important;
+  font-weight: 700 !important;
+}
+
+.formDialogFooterItem.button-submit:hover,
+.formDialogFooterItem.button-submit:focus,
+.formDialogFooterItem[data-id="ok"]:not(.button-delete):not(.btnDanger):hover,
+.formDialogFooterItem[data-id="ok"]:not(.button-delete):not(.btnDanger):focus {
+  background: #a3e8bb !important;
+  color: #0a110d !important;
 }

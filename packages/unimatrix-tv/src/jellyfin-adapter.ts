@@ -39,6 +39,8 @@ const itemSchema = z.object({
   ProductionYear: z.number().optional(),
   RunTimeTicks: z.number().optional(),
   OfficialRating: z.string().optional(),
+  CommunityRating: z.number().optional(),
+  CriticRating: z.number().optional(),
   MediaSources: z.array(z.unknown()).optional(),
   ImageTags: z.record(z.string(), z.string()).optional(),
   BackdropImageTags: z.array(z.string()).optional(),
@@ -108,6 +110,17 @@ function link(text: string, href: string, className = ""): HTMLAnchorElement {
   const node = element("a", className, text);
   node.href = href;
   return node;
+}
+
+function formatDuration(ticks?: number): string | undefined {
+  if (!ticks) return undefined;
+  const totalMinutes = Math.round(ticks / 600000000);
+  if (totalMinutes <= 0) return undefined;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours > 0 && minutes > 0) return `${hours}h ${minutes}m`;
+  if (hours > 0) return `${hours}h`;
+  return `${minutes}m`;
 }
 
 function visible(node: Element | null): node is HTMLElement {
@@ -676,17 +689,26 @@ export function installJellyfinAdapter(gate: BootGate): () => void {
     }
 
     const meta = element("div", "utv-meta");
-    for (const value of [
-      item.ProductionYear,
-      item.Type === "Series"
-        ? "Series"
-        : item.RunTimeTicks
-          ? Math.round(item.RunTimeTicks / 600000000) + " min"
-          : "Movie",
-      item.Genres?.[0],
-      item.OfficialRating,
-    ]) {
-      if (value !== undefined && value !== "") meta.append(element("span", "", String(value)));
+    if (item.ProductionYear) {
+      meta.append(element("span", "utv-meta-item", String(item.ProductionYear)));
+    }
+    const duration = formatDuration(item.RunTimeTicks);
+    if (item.Type === "Series") {
+      meta.append(element("span", "utv-meta-item", "Series"));
+    } else if (duration) {
+      meta.append(element("span", "utv-meta-item", duration));
+    }
+    if (item.Genres?.[0]) {
+      meta.append(element("span", "utv-meta-item", item.Genres[0]));
+    }
+    if (typeof item.CommunityRating === "number" && item.CommunityRating > 0) {
+      const star = element("span", "utv-meta-item utv-star-rating");
+      const iconSpan = element("span", "starIcon", "★");
+      star.append(iconSpan, document.createTextNode(" " + item.CommunityRating.toFixed(1)));
+      meta.append(star);
+    }
+    if (item.OfficialRating) {
+      meta.append(element("span", "utv-rating-badge mediaInfoOfficialRating", item.OfficialRating));
     }
     copy.append(meta);
 
@@ -868,7 +890,7 @@ export function installJellyfinAdapter(gate: BootGate): () => void {
               SortBy: "DateCreated",
               SortOrder: "Descending",
               Fields:
-                "Overview,Genres,PrimaryImageAspectRatio,ParentId,ProductionYear,RunTimeTicks,OfficialRating,MediaSources,RecursiveItemCount",
+                "Overview,Genres,PrimaryImageAspectRatio,ParentId,ProductionYear,RunTimeTicks,OfficialRating,CommunityRating,CriticRating,MediaSources,RecursiveItemCount",
               EnableImageTypes: "Primary,Backdrop,Logo",
               ImageTypeLimit: 1,
             }),
@@ -1061,12 +1083,19 @@ export function installJellyfinAdapter(gate: BootGate): () => void {
     const section = card.closest<HTMLElement>(".verticalSection");
     const shelf = section?.dataset.utvShelf;
     const heading = section?.querySelector("h2.sectionTitle")?.textContent?.trim();
-    const isHomogeneous =
+    const isMoviesSection =
       shelf === "movies" ||
+      /movies?|films?/i.test(heading ?? "") ||
+      document.body.classList.contains("type-movies") ||
+      location.hash.includes("type=movies") ||
+      card.closest("#moviesPage") !== null;
+    const isSeriesSection =
       shelf === "series" ||
-      heading === "Movies" ||
-      heading === "Series" ||
-      heading === "TV Shows";
+      /series|tv\s*shows?|shows?/i.test(heading ?? "") ||
+      document.body.classList.contains("type-tvshows") ||
+      location.hash.includes("type=tvshows") ||
+      card.closest("#tvPage") !== null;
+    const isHomogeneous = isMoviesSection || isSeriesSection;
 
     const pill = badges.querySelector<HTMLElement>(".utv-card-type-badge");
     if (pill) {
@@ -1253,7 +1282,7 @@ export function installJellyfinAdapter(gate: BootGate): () => void {
     void bounded(
       api.getItems(user, {
         Ids: Array.from(missing).join(","),
-        Fields: "Overview,ProductionYear,OfficialRating,RunTimeTicks,Genres,MediaSources,Path",
+        Fields: "Overview,ProductionYear,OfficialRating,CommunityRating,CriticRating,RunTimeTicks,Genres,MediaSources,Path",
         EnableImageTypes: "Primary,Thumb,Backdrop",
         ImageTypeLimit: 1,
       }),

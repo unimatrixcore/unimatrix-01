@@ -38,6 +38,9 @@ function fixture(html, url = "https://requests.example/requests") {
       this.url = url;
       this.method = method;
     }
+    send(data) {
+      this.sentData = data;
+    }
     respond(payload, status = 200) {
       this.status = status;
       this.responseType = "json";
@@ -214,6 +217,62 @@ test("cards do not render captions beneath poster", async () => {
     assert.ok(card);
     const caption = card.querySelector(".um-native-card-caption");
     assert.equal(caption, null, "captions should not be created under cards");
+  } finally {
+    f.close();
+  }
+});
+
+test("request dialog mounts audio preference toggle", async () => {
+  const f = fixture(
+    '<!doctype html><html><head></head><body><div id="__next"><main></main></div><div role="dialog" aria-modal="true"><h2>Request Movie</h2><form><button data-testid="modal-cancel-button">Cancel</button><button type="submit">Request</button></form></div></body></html>',
+    "https://requests.example/",
+  );
+  try {
+    f.window.eval(source);
+    await new Promise((resolve) => f.window.setTimeout(resolve, 450));
+    const prefCard = f.window.document.querySelector(".um-audio-preference-card");
+    assert.ok(prefCard, "audio preference card should be injected in request dialog");
+    const dubbedBtn = prefCard.querySelector('.um-audio-btn[data-pref="dubbed"]');
+    assert.ok(dubbedBtn, "dubbed button should exist");
+    dubbedBtn.click();
+    assert.equal(f.window.localStorage.getItem("um-seerr-audio-preference"), "dubbed");
+  } finally {
+    f.close();
+  }
+});
+
+test("POST /api/v1/request intercepts and injects profile 8 and tag 1 for dubbed preference", async () => {
+  const f = fixture(
+    '<!doctype html><html><head></head><body><div id="__next"><main></main></div></body></html>',
+    "https://requests.example/",
+  );
+  try {
+    f.window.localStorage.setItem("um-seerr-audio-preference", "dubbed");
+    f.window.eval(source);
+    const xhr = new f.window.XMLHttpRequest();
+    xhr.open("POST", "/api/v1/request");
+    xhr.send(JSON.stringify({ mediaId: 101, mediaType: "movie", profileId: 1 }));
+    assert.ok(xhr.sentData, "payload should be sent");
+    const parsed = JSON.parse(xhr.sentData);
+    assert.equal(parsed.profileId, 8, "profileId should be updated to 8 (English Dub)");
+    assert.deepEqual(parsed.tags, [1], "tags should include [1] (dubbed)");
+    assert.equal(parsed.languageProfileId, 1, "languageProfileId should be 1");
+  } finally {
+    f.close();
+  }
+});
+
+test("cards suppress type pill on homogeneous movie or tv pages", async () => {
+  const f = fixture(
+    '<!doctype html><html><head></head><body><div id="__next"><main><div data-testid="title-card"><div role="link"><div class="pointer-events-none rounded-full">MOVIE</div><img src="/poster.jpg"></div></div></main></div></body></html>',
+    "https://requests.example/movies",
+  );
+  try {
+    f.window.eval(source);
+    await new Promise((resolve) => f.window.setTimeout(resolve, 450));
+    const badge = f.window.document.querySelector(".pointer-events-none.rounded-full");
+    assert.ok(badge);
+    assert.equal(badge.style.display, "none", "movie badge should be hidden on movies page");
   } finally {
     f.close();
   }

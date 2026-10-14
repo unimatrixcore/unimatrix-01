@@ -64,7 +64,13 @@ await esbuild.build({
 
 // 3. Copy static assets into dist/assets
 console.log("Copying static assets...");
-const assetFiles = ["logo.png", "geist-mono.woff2", "geist-mono.LICENSE"];
+const assetFiles = [
+  "logo.png",
+  "geist-mono.woff2",
+  "geist-mono.LICENSE",
+  "manrope.ttf",
+  "manrope.LICENSE",
+];
 for (const file of assetFiles) {
   const src = path.join(pkgRoot, "assets", file);
   if (!fs.existsSync(src)) throw new Error(`Required client asset is missing: ${file}`);

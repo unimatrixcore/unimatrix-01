@@ -22,8 +22,7 @@ html.utv-boot-pending::before {
   background: #101114;
   color: #fafafa;
   font:
-    450 13px/1.5 "Geist Mono Variable",
-    monospace;
+    500 13px/1.5 "Manrope", system-ui, -apple-system, sans-serif;
 }
 .utv-boot-card {
   display: grid;
