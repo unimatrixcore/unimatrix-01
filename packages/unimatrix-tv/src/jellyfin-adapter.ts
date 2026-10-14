@@ -1128,6 +1128,19 @@ export function installJellyfinAdapter(gate: BootGate): () => void {
 
       const titleEl = document.createElement("div");
       titleEl.className = "utv-card-title";
+      titleEl.style.cursor = "pointer";
+      titleEl.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const targetItem = card.dataset.id ? images.get(card.dataset.id) || item : item;
+        const api = client();
+        if (targetItem && api) {
+          location.hash = itemHref(targetItem, api).slice(1);
+        } else if (card.dataset.id) {
+          const srv = card.dataset.serverid || api?.serverId();
+          location.hash = `#!/details?id=${card.dataset.id}&serverId=${srv || ""}`;
+        }
+      });
 
       const overviewEl = document.createElement("div");
       overviewEl.className = "utv-card-overview";

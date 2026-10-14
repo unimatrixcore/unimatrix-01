@@ -421,8 +421,8 @@ body.utv-home-active #utv-home-loading {
 @media (hover: hover) {
   .card:hover .cardScalable,
   .card:focus-visible .cardScalable {
-    transform: translateY(-4px) scale(1.02);
-    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6) !important;
+    transform: translateY(-6px) scale(1.05);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.75) !important;
   }
 }
 
@@ -469,10 +469,10 @@ body.utv-home-active #utv-home-loading {
 }
 
 .emby-scroller {
-  padding-top: 14px !important;
-  padding-bottom: 22px !important;
-  margin-top: -10px !important;
-  margin-bottom: -14px !important;
+  padding-top: 18px !important;
+  padding-bottom: 26px !important;
+  margin-top: -14px !important;
+  margin-bottom: -18px !important;
   overflow-y: visible !important;
 }
 
@@ -589,16 +589,12 @@ body.utv-home-active #utv-home-loading {
   z-index: 5 !important;
   opacity: 0 !important;
   transition: opacity 220ms ease !important;
-  background: linear-gradient(
-    0deg,
-    rgba(16, 17, 20, 0.98) 0%,
-    rgba(16, 17, 20, 0.9) 55%,
-    rgba(16, 17, 20, 0.4) 80%,
-    rgba(16, 17, 20, 0.1) 100%
-  ) !important;
+  background: rgba(14, 16, 20, 0.94) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
   display: flex !important;
   flex-direction: column !important;
-  justify-content: flex-end !important;
+  justify-content: flex-start !important;
   padding: 12px !important;
   box-sizing: border-box !important;
   white-space: normal !important;
@@ -619,7 +615,9 @@ body.utv-home-active #utv-home-loading {
   font-weight: 600 !important;
   color: #94a3b8 !important;
   margin-bottom: 2px !important;
+  padding-right: 36px !important;
   white-space: normal !important;
+  flex-shrink: 0 !important;
 }
 
 .utv-card-title {
@@ -629,27 +627,36 @@ body.utv-home-active #utv-home-loading {
   line-height: 1.25 !important;
   color: #ffffff !important;
   letter-spacing: -0.02em !important;
-  margin-bottom: 4px !important;
+  margin-bottom: 6px !important;
+  padding-right: 36px !important;
   display: -webkit-box !important;
   -webkit-line-clamp: 2 !important;
   -webkit-box-orient: vertical !important;
   overflow: hidden !important;
   word-break: break-word !important;
   white-space: normal !important;
+  flex-shrink: 0 !important;
 }
 
 .utv-card-overview {
   font-family: var(--utv-font) !important;
   font-size: 11px !important;
-  line-height: 1.4 !important;
+  line-height: 1.45 !important;
   color: #cbd5e1 !important;
-  display: -webkit-box !important;
-  -webkit-line-clamp: 4 !important;
-  -webkit-box-orient: vertical !important;
-  overflow: hidden !important;
+  display: block !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain !important;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
   word-break: break-word !important;
   margin-bottom: 8px !important;
   white-space: normal !important;
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  pointer-events: auto !important;
+}
+.utv-card-overview::-webkit-scrollbar {
+  display: none !important;
 }
 
 .utv-card-actions {
@@ -657,6 +664,8 @@ body.utv-home-active #utv-home-loading {
   align-items: center !important;
   gap: 6px !important;
   width: 100% !important;
+  margin-top: auto !important;
+  flex-shrink: 0 !important;
   pointer-events: auto !important;
 }
 

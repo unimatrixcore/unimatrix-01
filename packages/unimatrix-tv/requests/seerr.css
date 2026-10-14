@@ -541,6 +541,11 @@ textarea {
 [data-testid="title-card"] > div[role="link"] {
   border-radius: 10px !important;
 }
+[data-testid="title-card"] [data-testid="title-card-title"] + div {
+  -webkit-line-clamp: 6 !important;
+  line-height: 1.4 !important;
+  font-family: var(--um-font) !important;
+}
 button {
   transition-timing-function: var(--um-ease) !important;
 }
