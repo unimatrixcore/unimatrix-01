@@ -2,7 +2,7 @@ import { createCoverageConfig } from "@unimatrix/config-vitest";
 import { defineConfig } from "vitest/config";
 
 const coverage = createCoverageConfig({
-  thresholds: { statements: 86, functions: 86 },
+  thresholds: { statements: 89, functions: 88 },
   exclude: ["src/index.ts", "src/bootstrap.ts"],
 });
 

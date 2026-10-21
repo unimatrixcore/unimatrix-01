@@ -1,24 +1,53 @@
-# Unimatrix-TV audit
+# Unimatrix-TV verification and follow-up
 
-- [x] Reproduce the deployed Jellyfin detail-page regression and Seerr search transition.
-- [x] Add loading, route, playback, and card regressions; include the adapter in coverage.
-- [x] Restore styles for the detail components and featured artwork hit target.
-- [x] Complete server-plugin and deployment checks.
-- [x] Complete Requests search and request-status checks.
-- [x] Run repository verification, deploy, and verify desktop, 1080×1920, mobile, and playback.
+## Verification
 
-## Findings
+The package tests cover initial-document loading, native navigation and recycled cards,
+account-scoped favorite writes, card-menu focus and dismissal, synopsis dialogs, season
+selection, available-episode filtering, request diagnostics, and bounded download recovery.
+Server tests exercise asset delivery and authentication boundaries. Deployment tests cover
+compatibility checks and rollback. Run the root verification command with the ASP.NET
+runtime configured through `UTV_DOTNET_RUNTIME` when it is unavailable on the host.
 
-| Severity | Defect | Verification |
-| --- | --- | --- |
-| High | Detail components remained in JavaScript after their stylesheet was removed, rendering the brand image at its native 1037px width. | Reproduced on the deployed detail page; matching component styles restored. |
-| High | Any cached video DOM disabled page adaptation after playback. | Regression tests exercise navigation back with a hidden cached video. |
-| High | Boot code ran only after the native client, leaving first paint unprotected. | Early inline bootstrap and critical CSS added; deployed and verified live. |
-| High | Deployment printed success after unsuccessful health checks and did not verify Requests. | Preflight checks, retry loops, asset checksum verification, and automated rollback verified. |
-| Medium | A failed artwork decode failed the whole page; interrupted hero work could leave a cached shell permanently pending. | Adapter regressions cover missing artwork and interrupted navigation. |
-| Medium | Card adaptation ended after initial load, leaving pagination and recycled cards stale. | Behavioral pagination/recycling tests added. |
-| Medium | Card image container height collapsed to 0px due to relative positioning override, causing blank poster cards. | Corrected `.cardImageContainer` absolute positioning and verified live in browser. |
-| Medium | The coverage report excluded the main adapter. | Adapter included in test suite and coverage reports. |
-| Medium | Seerr search loses its editable query when results render. | Fixed with editable query retention across history/search updates; 108 tests passing. |
+Earlier live checks covered Jellyfin and Requests at desktop, 1080×1920 and 390×844,
+including request audio/profile selection, search/history, private-library permissions,
+series navigation and hover geometry. These checks do not verify the latest episode-card
+layout, card menus or synopsis integration. Final browser verification of those changes
+is pending because the in-app browser was unavailable during branch closeout.
 
-The upstream CSS remains pinned by `assets/sources.json` and is excluded from formatting. The audit does not establish that a future Jellyfin or Seerr version is compatible with these adapters.
+## Runtime constraints
+
+- The presentation layer depends on the installed Jellyfin web DOM. Pinned upstream CSS
+  and compatibility-checked Seerr document assets do not establish compatibility with
+  future server versions.
+- The full-screen loading gate runs once per document. Later navigation must preserve
+  native playback, account changes and available-media filtering.
+- Requests diagnostics retain native authentication, request ownership and manager/season
+  scoping. Synthetic DOM tests cannot establish React search/history behavior after an
+  upstream Seerr upgrade.
+- Recovery is bounded by per-title/episode retry budgets and persisted cooldowns. A live
+  stalled-torrent replacement was not exercised during closeout; fake Arr/qBittorrent
+  cases cover failure and recovery without deleting a production download.
+- The active media/download root is the 4 TB HDD, bind-mounted at `/srv/streaming/data`.
+  Container mounts, original file sizes and consolidated library imports were verified
+  during migration. The original SSD directory is retained for rollback.
+- Footage remains a private library. Its navigation entry is excluded by the adapter;
+  home-shelf exclusions and library permissions are server configuration, not a browser
+  authorization boundary.
+
+## Remaining checks
+
+- [ ] Live-test the final card menu, synopsis dialog and episode-card layout on desktop,
+      portrait and mobile, including keyboard focus, edge placement and browser history.
+- [ ] Complete the broader Apple TV interaction comparison. The current implementation
+      covers observed card-menu, synopsis and season-rail patterns; it is not a verified
+      component-for-component clone.
+- [ ] Confirm sustained Westworld caption sync after seeks and resume at zero offset.
+      S02E10 source captions aligned with audio at early/middle/late checkpoints; the
+      external SRT preserves those timings. Native subtitle delivery returned valid
+      cues, and playback selected the external track. Progressive client playback drift
+      remains unconfirmed, so no blanket offset or framerate retiming is justified.
+- [ ] Review completion of the separate, bounded Westworld audio/subtitle audit before
+      reporting the remaining episodes corrected. Subtitle files and protected reports
+      live on the media server and are not part of this source change.
+- [ ] Finish the remaining disk-usage inventory.

@@ -33,7 +33,7 @@ export function createBootGate(options: BootGateOptions = {}): BootGate {
   let removal: ReturnType<typeof setTimeout> | undefined;
   let bodyObserver: MutationObserver | undefined;
   let pendingRoute: string | undefined;
-  let readyRoute: string | undefined;
+  let completed = false;
   let disposed = false;
 
   function mount(): HTMLElement {
@@ -95,13 +95,14 @@ export function createBootGate(options: BootGateOptions = {}): BootGate {
 
   const gate: BootGate = {
     begin(): void {
-      if (disposed) return;
+      if (disposed || completed) return;
       if (isPlaybackRoute()) {
+        completed = true;
         pendingRoute = undefined;
         dismiss();
         return;
       }
-      if (readyRoute === location.hash || pendingRoute === location.hash) return;
+      if (pendingRoute === location.hash) return;
       pendingRoute = location.hash;
       clearTimeout(timeout);
       clearTimeout(removal);
@@ -114,12 +115,13 @@ export function createBootGate(options: BootGateOptions = {}): BootGate {
     },
     ready(): void {
       if (disposed) return;
-      readyRoute = location.hash;
+      completed = true;
       pendingRoute = undefined;
       dismiss();
     },
     fail(): void {
-      if (disposed || isPlaybackRoute()) {
+      if (disposed || completed) return;
+      if (isPlaybackRoute()) {
         dismiss();
         return;
       }

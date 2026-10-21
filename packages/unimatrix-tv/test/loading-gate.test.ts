@@ -45,16 +45,37 @@ describe("loading gate", () => {
     expect(href).toContain("unimatrix=off");
     expect(href).toContain("#/home");
   });
-  it("does not let a dismiss timer remove the next page's gate", () => {
+  it("does not remount the full-screen loader on later view changes", () => {
     gate.begin();
     gate.ready();
     history.replaceState(null, "", "#/details?id=movie");
     gate.begin();
     vi.advanceTimersByTime(60);
-    expect(document.documentElement.classList.contains("utv-boot-pending")).toBe(true);
-    expect(document.getElementById("utv-boot-gate")?.style.opacity).not.toBe("0");
+    expect(document.documentElement.classList.contains("utv-boot-pending")).toBe(false);
+    expect(document.documentElement.dataset.utvBoot).toBe("ready");
+    expect(document.getElementById("utv-boot-gate")).toBeNull();
+    history.replaceState(null, "", "#/movies");
+    gate.begin();
+    vi.advanceTimersByTime(1500);
+    expect(document.getElementById("utv-boot-gate")).toBeNull();
+  });
+  it("does not cover a loaded app when later adaptation fails", () => {
+    gate.begin();
     gate.ready();
     vi.advanceTimersByTime(50);
+    history.replaceState(null, "", "#/details?id=movie");
+    gate.begin();
+    gate.fail();
+    expect(document.documentElement.dataset.utvBoot).toBe("ready");
+    expect(document.documentElement.classList.contains("utv-boot-pending")).toBe(false);
+    expect(document.getElementById("utv-boot-gate")).toBeNull();
+  });
+  it("does not show a boot screen after opening directly into playback", () => {
+    history.replaceState(null, "", "#/video");
+    gate.begin();
+    history.replaceState(null, "", "#/home");
+    gate.begin();
+    expect(document.documentElement.classList.contains("utv-boot-pending")).toBe(false);
     expect(document.getElementById("utv-boot-gate")).toBeNull();
   });
   it("repeated lifecycle notifications do not extend a broken page indefinitely", () => {

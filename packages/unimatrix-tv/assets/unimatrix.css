@@ -1,13 +1,6 @@
 /* Unimatrix-TV: presentation layered over pinned ElegantFin + JF12 companion.
    Tokens and Geist Mono derive from unimatrix-01/packages/ui/src/styles.css. */
 @font-face {
-  font-family: "Manrope";
-  src: url("/UnimatrixTV/assets/manrope.ttf") format("truetype");
-  font-style: normal;
-  font-weight: 200 800;
-  font-display: swap;
-}
-@font-face {
   font-family: "Geist Mono Variable";
   src: url("/UnimatrixTV/assets/geist-mono.woff2") format("woff2");
   font-style: normal;
@@ -21,8 +14,10 @@
   --utv-muted: #a1a1aa;
   --utv-mint: #8fdeaa;
   --utv-border: rgba(255, 255, 255, 0.12);
-  --utv-font: "Manrope", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --utv-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --utv-font:
+    "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --utv-mono:
+    "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --accentColor: var(--utv-mint);
   --accentColorAlpha: rgba(143, 222, 170, 0.18);
   --darkerGradientPoint: var(--utv-ink);

@@ -85,10 +85,22 @@ function card(id = "m1", type = "Movie", title = "Native movie"): HTMLElement {
   node.dataset.id = id;
   node.dataset.type = type;
   node.innerHTML =
-    '<div class="cardBox"><div class="cardImageContainer"><div class="itemProgressBar"><div style="width:42%"></div></div></div></div><div class="cardText-first">' +
+    '<div class="cardBox"><div class="cardScalable"><div class="cardImageContainer"><div class="itemProgressBar"><div style="width:42%"></div></div></div></div></div><div class="cardText-first">' +
     title +
     '</div><div class="cardText-secondary">2020</div><button data-action="resume">Resume</button>';
   return node;
+}
+
+function openCardActions(card: HTMLElement): void {
+  card.querySelector<HTMLButtonElement>(".utv-card-menu-trigger")?.click();
+}
+
+function menuAction(label: string): HTMLButtonElement {
+  const action = [
+    ...document.querySelectorAll<HTMLButtonElement>(".utv-card-menu [role=menuitem]"),
+  ].find((button) => button.textContent === label);
+  if (!action) throw new Error("Missing menu action: " + label);
+  return action;
 }
 
 function install() {
@@ -254,12 +266,11 @@ describe("Jellyfin adapter behavior", () => {
     const native = card();
     page.append(native);
     await settle();
-    expect(native.querySelector(".utv-card-overview")?.textContent).toBe("First synopsis");
-    expect(native.querySelector(".utv-card-favorite-btn")?.getAttribute("aria-label")).toBe(
-      "Favorite",
+    expect(native.querySelector(".utv-card-hover-overlay")).toBeNull();
+    expect(native.querySelector(".utv-card-favorite-btn")).toBeNull();
+    expect(native.querySelector(".utv-card-menu-trigger")?.getAttribute("aria-label")).toContain(
+      "First movie",
     );
-    expect(native.querySelector(".utv-card-play-btn span")?.textContent).toBe("Resume");
-    expect(native.querySelector(".utv-card-info-btn")?.getAttribute("aria-label")).toBe("Details");
     native.dataset.id = "missing";
     native
       .querySelector(".cardText-first")
@@ -267,10 +278,11 @@ describe("Jellyfin adapter behavior", () => {
     native.querySelector(".cardText-secondary")?.replaceChildren();
     client.getItems.mockResolvedValue({ Items: [] });
     await settle();
-    expect(native.querySelector(".utv-card-title")?.textContent).toBe("Replacement title");
-    expect(native.querySelector(".utv-card-overview")?.textContent).toBe("");
-    expect(native.querySelector(".utv-card-year")?.textContent).toBe("");
-    expect(native.querySelector(".utv-card-status-badge")).toBeNull();
+    expect(native.querySelector(".cardText-first")?.textContent).toBe("Replacement title");
+    expect(native.querySelector(".utv-card-menu-trigger")?.getAttribute("aria-label")).toContain(
+      "Replacement title",
+    );
+    expect(native.querySelector(".utv-card-hover-overlay")).toBeNull();
     expect(gate.begin).toHaveBeenCalledTimes(1);
     native.dataset.type = "Person";
     await settle();
@@ -312,7 +324,7 @@ describe("Jellyfin adapter behavior", () => {
     const page = markup(false);
     page.id = "itemDetailPage";
     page.innerHTML =
-      '<div class="detailPagePrimaryContainer"></div><div class="mainDetailButtons"><button class="btnPlay">Play</button><button class="btnDelete">Delete</button></div>';
+      '<div class="detailPagePrimaryContainer"></div><div class="overview-controls"><span class="overview-expand">Show more</span></div><div class="mainDetailButtons"><button class="btnPlay">Play</button><button class="btnDelete">Delete</button></div>';
     const remove = vi.spyOn(document, "removeEventListener");
     api();
     const gate = install();
@@ -429,12 +441,86 @@ describe("Jellyfin adapter behavior", () => {
     expect(document.body.classList.contains("utv-mobile-menu-open")).toBe(false);
   });
 
+  it("renders only available episodes with an Apple-style season selector and keeps native fallback on failure", async () => {
+    navigate("#/details?id=s1");
+    const page = markup(false);
+    page.id = "itemDetailPage";
+    page.innerHTML =
+      '<div class="detailPagePrimaryContainer"></div><div class="mainDetailButtons"><button class="btnPlay">Play</button></div>';
+    const client = api();
+    client.getItem.mockResolvedValue(series);
+    client.getItems.mockImplementation((_user, query) =>
+      Promise.resolve(
+        query.IncludeItemTypes === "Episode"
+          ? {
+              Items: [
+                {
+                  ...episode,
+                  ParentIndexNumber: 1,
+                  IndexNumber: 1,
+                  Overview: "Episode synopsis",
+                  RunTimeTicks: 12000000000,
+                  UserData: { PlaybackPositionTicks: 6000000000 },
+                },
+                {
+                  ...episode,
+                  Id: "e2",
+                  Name: "Second season episode",
+                  ParentIndexNumber: 2,
+                  IndexNumber: 1,
+                  UserData: { Played: true },
+                },
+                {
+                  Id: "missing",
+                  Name: "Unavailable",
+                  Type: "Episode",
+                  ParentIndexNumber: 1,
+                  IndexNumber: 2,
+                  IsVirtualItem: true,
+                },
+              ],
+            }
+          : { Items: [] },
+      ),
+    );
+    install();
+    await settle();
+    const select = page.querySelector<HTMLSelectElement>(".utv-series-shelf select");
+    expect(select).not.toBeNull();
+    expect(page.classList.contains("utv-series-ready")).toBe(true);
+    expect(page.querySelectorAll(".utv-episode-card")).toHaveLength(1);
+    expect(page.querySelector(".utv-episode-card")?.textContent).toContain("Episode synopsis");
+    expect(page.querySelector<HTMLElement>(".utv-episode-progress span")?.style.width).toBe("50%");
+    expect(page.querySelector("a.utv-episode-link")?.getAttribute("href")).toContain("id=e1");
+    select!.value = "2";
+    select!.dispatchEvent(new Event("change"));
+    expect(page.querySelector(".utv-episode-card")?.textContent).toContain("Second season episode");
+    expect(page.querySelector(".utv-episode-card")?.textContent).toContain("WATCHED");
+    client.getItem.mockResolvedValue({
+      ...series,
+      Id: "season",
+      Type: "Season",
+      SeriesId: "s1",
+      IndexNumber: 2,
+    });
+    navigate("#/details?id=season");
+    await settle();
+    expect(page.querySelector<HTMLSelectElement>(".utv-series-shelf select")?.value).toBe("2");
+    client.getItems.mockRejectedValue(new Error("offline"));
+    navigate("#/details?id=unavailable");
+    await settle();
+    expect(page.classList.contains("utv-series-ready")).toBe(false);
+    expect(page.querySelector(".utv-series-shelf")).toBeNull();
+  });
+
   it("preserves native detail actions when artwork fails and supports closing More actions", async () => {
     navigate("#/details?id=m1");
     const page = markup(false);
     page.id = "itemDetailPage";
     page.innerHTML =
       '<div class="detailPagePrimaryContainer"></div><div class="mainDetailButtons"><button class="btnPlay">Play</button><button class="btnUserRating">Favorite</button><button class="btnDelete">Delete</button><button class="btnDownload hide" hidden>Download</button></div>';
+    page.innerHTML +=
+      '<div class="overview-controls"><span class="overview-expand">Show more</span></div>';
     const onDelete = vi.fn();
     const nativeDelete = page.querySelector<HTMLButtonElement>(".btnDelete");
     nativeDelete?.addEventListener("click", onDelete);
@@ -453,6 +539,11 @@ describe("Jellyfin adapter behavior", () => {
     expect(gate.ready).toHaveBeenCalled();
     expect(gate.fail).not.toHaveBeenCalled();
     expect(page.querySelector(".utv-detail-personnel")?.textContent).toContain("Actor name");
+    const synopsis = page.querySelector<HTMLButtonElement>(".utv-synopsis-trigger");
+    synopsis?.click();
+    expect(document.querySelector(".utv-synopsis-dialog p")?.textContent).toBe(movie.Overview);
+    document.querySelector<HTMLButtonElement>(".utv-synopsis-close")?.click();
+    expect(document.querySelector<HTMLDialogElement>(".utv-synopsis-dialog")?.hidden).toBe(true);
     const tools = page.querySelector<HTMLDetailsElement>(".utv-detail-tools");
     if (!tools) throw new Error("Missing More actions");
     tools.open = true;
@@ -521,7 +612,7 @@ describe("Jellyfin adapter behavior", () => {
     client.getItems.mockRejectedValue(new Error("Metadata temporarily unavailable"));
     const gate = install();
     await settle();
-    expect(native.querySelector(".utv-card-title")?.textContent).toBe("Native movie");
+    expect(native.querySelector(".cardText-first")?.textContent).toBe("Native movie");
     expect(native.querySelector(".utv-card-status-badge")).toBeNull();
     expect(gate.ready).toHaveBeenCalled();
     expect(gate.fail).not.toHaveBeenCalled();
@@ -588,6 +679,43 @@ describe("Jellyfin adapter behavior", () => {
     expect(location.hash).toBe("#/home");
   });
 
+  it("reuses navigation when the responsive native header changes its stack", async () => {
+    markup();
+    api();
+    install();
+    await settle();
+    const row = document.querySelector(".MuiToolbar-root")!;
+    const oldStack = row.querySelector(".MuiStack-root")!;
+    row.append(...Array.from(oldStack.childNodes));
+    oldStack.remove();
+    await settle();
+    const newStack = document.createElement("div");
+    newStack.className = "MuiStack-root";
+    row.append(newStack);
+    await settle();
+    expect(row.querySelectorAll(".utv-main-nav")).toHaveLength(1);
+    expect(newStack.querySelector(".utv-main-nav")).not.toBeNull();
+    expect(row.querySelector(".utv-mobile-brand")).toBeNull();
+  });
+
+  it("keeps private Footage out of main navigation without intercepting its native library route", async () => {
+    markup(false);
+    const client = api();
+    client.getUserViews.mockResolvedValue({
+      Items: [
+        { Id: "movies", Name: "Movies", Type: "CollectionFolder", CollectionType: "movies" },
+        { Id: "footage", Name: "Footage", Type: "CollectionFolder", CollectionType: "homevideos" },
+      ],
+    });
+    navigate("#/list?parentId=footage&serverId=srv1");
+    install();
+    await settle();
+    expect(document.querySelector(".utv-main-nav")?.textContent).not.toContain("Footage");
+    expect(document.querySelector('.utv-main-nav a[href*="parentId=footage"]')).toBeNull();
+    expect(location.hash).toBe("#/list?parentId=footage&serverId=srv1");
+    expect(document.querySelector("#moviesPage")).not.toBeNull();
+  });
+
   it("uses native library navigation when user-view discovery fails without retrying in a loop", async () => {
     markup();
     const client = api();
@@ -638,49 +766,58 @@ describe("Jellyfin adapter behavior", () => {
     expect(document.querySelector("#utv-featured")).toBeNull();
   });
 
-  it("handles card favorite button toggle and failure recovery", async () => {
+  it("handles favorite menu toggles and failure retry", async () => {
     const page = markup();
     const native = card();
     page.querySelector(".sections")?.append(native);
     const client = api();
     install();
     await settle();
-
-    const fav = native.querySelector<HTMLButtonElement>(".utv-card-favorite-btn");
-    expect(fav).not.toBeNull();
-    expect(fav?.classList.contains("is-favorite")).toBe(false);
-
-    // Toggle favorite on
-    fav?.click();
-    expect(fav?.classList.contains("is-favorite")).toBe(true);
-    expect(client.updateFavoriteStatus).toHaveBeenCalledWith("u1", "m1", true);
-
-    // Failure rolls back state
-    client.updateFavoriteStatus.mockRejectedValueOnce(new Error("Network failed"));
-    fav?.click();
+    openCardActions(native);
+    menuAction("Add favorite").click();
     await settle();
-    expect(fav?.classList.contains("is-favorite")).toBe(true);
+    expect(client.updateFavoriteStatus).toHaveBeenCalledWith("u1", "m1", true);
+    expect(document.querySelector<HTMLElement>(".utv-card-menu")?.hidden).toBe(true);
+    client.updateFavoriteStatus.mockRejectedValueOnce(new Error("Network failed"));
+    openCardActions(native);
+    menuAction("Remove favorite").click();
+    await settle();
+    expect(document.querySelector(".utv-card-menu [role=alert]")?.textContent).toContain(
+      "Try again",
+    );
+    expect(menuAction("Remove favorite").disabled).toBe(false);
+    menuAction("Remove favorite").click();
+    await settle();
+    openCardActions(native);
+    expect(menuAction("Add favorite").disabled).toBe(false);
   });
 
-  it("handles card play and details info button clicks", async () => {
+  it("keeps native artwork navigation and provides details and copy-link menu actions", async () => {
     const page = markup();
     const native = card();
+    const artwork = document.createElement("a");
+    artwork.href = "#/details?id=m1&serverId=srv1";
+    native.querySelector(".cardImageContainer")?.append(artwork);
     page.querySelector(".sections")?.append(native);
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
     api();
     install();
     await settle();
-
-    const nativeBtn = native.querySelector<HTMLButtonElement>("button[data-action=resume]");
-    const nativeClick = vi.fn();
-    if (nativeBtn) nativeBtn.click = nativeClick;
-
-    const play = native.querySelector<HTMLButtonElement>(".utv-card-play-btn");
-    play?.click();
-    expect(nativeClick).toHaveBeenCalledTimes(1);
-
-    const info = native.querySelector<HTMLButtonElement>(".utv-card-info-btn");
-    info?.click();
-    expect(location.hash).toContain("m1");
+    expect(artwork.isConnected).toBe(true);
+    expect(artwork.getAttribute("href")).toContain("id=m1");
+    expect(native.querySelector(".utv-card-hover-overlay")).toBeNull();
+    openCardActions(native);
+    menuAction("Copy link").click();
+    await settle();
+    expect(writeText).toHaveBeenCalledWith(
+      expect.stringContaining("#/details?id=m1&serverId=srv1"),
+    );
+    openCardActions(native);
+    menuAction("Details").click();
+    await settle();
+    expect(location.hash).toContain("id=m1");
+    Reflect.deleteProperty(navigator, "clipboard");
   });
 
   it("hides type badges on homogeneous shelves and shows on mixed shelves", async () => {
@@ -704,7 +841,7 @@ describe("Jellyfin adapter behavior", () => {
 
     const pill = c1.querySelector<HTMLElement>(".utv-card-type-badge");
     expect(pill?.style.display).toBe("none");
-    expect(c1.querySelector(".utv-card-play-btn span")?.textContent).toBe("Play");
+    expect(c1.querySelector(".utv-card-hover-overlay")).toBeNull();
 
     const mixed = document.createElement("div");
     mixed.className = "verticalSection";
@@ -720,5 +857,122 @@ describe("Jellyfin adapter behavior", () => {
 
     const pillMixed = c2.querySelector<HTMLElement>(".utv-card-type-badge");
     expect(pillMixed?.style.display).toBe("");
+  });
+});
+
+describe("card action regressions", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    history.replaceState(null, "", "#/home");
+    vi.stubGlobal(
+      "Image",
+      class {
+        src = "";
+        decode = () => Promise.resolve();
+      },
+    );
+    vi.stubGlobal("CSS", { escape: (value: string) => value });
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => ({ matches: true })),
+    );
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      width: 1000,
+      height: 500,
+    } as DOMRect);
+  });
+  afterEach(() => {
+    for (const dispose of disposers.splice(0)) dispose();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+    document.body.innerHTML = "";
+  });
+  it("serializes favorites across copies and leaves the confirmed state after failure", async () => {
+    const page = markup();
+    const first = card();
+    const second = card();
+    page.querySelector(".sections")?.append(first, second);
+    const client = api();
+    const request = deferred<void>();
+    client.updateFavoriteStatus.mockImplementationOnce(() => request.promise);
+    install();
+    await settle();
+    openCardActions(first);
+    menuAction("Add favorite").click();
+    openCardActions(second);
+    expect(menuAction("Add favorite").disabled).toBe(true);
+    menuAction("Add favorite").click();
+    await settle();
+    expect(client.updateFavoriteStatus).toHaveBeenCalledTimes(1);
+    request.reject(new Error("offline"));
+    await settle();
+    openCardActions(first);
+    expect(menuAction("Add favorite").disabled).toBe(false);
+    menuAction("Add favorite").click();
+    await settle();
+    expect(client.updateFavoriteStatus).toHaveBeenCalledTimes(2);
+  });
+  it("does not change a recycled card when an old favorite request completes", async () => {
+    const page = markup();
+    const c = card();
+    page.querySelector(".sections")?.append(c);
+    const client = api();
+    const request = deferred<void>();
+    client.updateFavoriteStatus.mockImplementationOnce(() => request.promise);
+    install();
+    await settle();
+    openCardActions(c);
+    menuAction("Add favorite").click();
+    await settle();
+    c.dataset.id = "m2";
+    await settle();
+    request.resolve();
+    await settle();
+    expect(document.querySelector<HTMLElement>(".utv-card-menu")?.hidden).toBe(true);
+    openCardActions(c);
+    expect(menuAction("Add favorite").disabled).toBe(false);
+    expect(c.querySelector(".utv-card-hover-overlay")).toBeNull();
+    expect(c.querySelector(".cardImageContainer .utv-card-actions")).toBeNull();
+  });
+  it("disables favorites when the native client cannot save them", async () => {
+    const page = markup();
+    const c = card();
+    page.querySelector(".sections")?.append(c);
+    const client = api();
+    Reflect.deleteProperty(client, "updateFavoriteStatus");
+    install();
+    await settle();
+    openCardActions(c);
+    expect(menuAction("Add favorite").disabled).toBe(true);
+  });
+  it("rejects an open menu after an account change and closes on route changes", async () => {
+    const page = markup();
+    const c = card();
+    page.querySelector(".sections")?.append(c);
+    const client = api();
+    install();
+    await settle();
+    openCardActions(c);
+    client.getCurrentUserId.mockReturnValue("u2");
+    menuAction("Add favorite").click();
+    await settle();
+    expect(client.updateFavoriteStatus).not.toHaveBeenCalled();
+    expect(document.querySelector<HTMLElement>(".utv-card-menu")?.hidden).toBe(true);
+    openCardActions(c);
+    navigate("#/movies");
+    await settle();
+    expect(document.querySelector<HTMLElement>(".utv-card-menu")?.hidden).toBe(true);
+  });
+  it("releases the gate for native React dashboard pages without the legacy page class", async () => {
+    markup(false);
+    api();
+    navigate("#/dashboard/plugins");
+    document.body.innerHTML +=
+      '<div class="mainAnimatedPages"><div id="dashboardPage" class="mainAnimatedPage type-interior">Plugins</div></div>';
+    const gate = install();
+    await settle();
+    expect(gate.ready).toHaveBeenCalled();
+    expect(gate.fail).not.toHaveBeenCalled();
   });
 });

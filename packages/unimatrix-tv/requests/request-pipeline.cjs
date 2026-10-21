@@ -26,6 +26,12 @@ function transfer(q, t) {
     etaText: t ? null : q.timeleft || null,
     seeds: Number.isSafeInteger(t?.num_seeds) && t.num_seeds >= 0 ? t.num_seeds : null,
     peers: Number.isSafeInteger(t?.num_leechs) && t.num_leechs >= 0 ? t.num_leechs : null,
+    release: clean(q.title),
+    state: /import/i.test(q.trackedDownloadState || "")
+      ? q.trackedDownloadState
+      : t?.state || q.trackedDownloadState || q.status || "unknown",
+    episodeId: q.episodeId || q.episode?.id || null,
+    episodeTitle: clean(q.episode?.title),
     quality: clean(q.quality?.quality?.name),
     source: clean(q.indexer),
     episode: q.episode
@@ -97,16 +103,7 @@ function derive(input, now = new Date()) {
       0,
     );
   const selected = r.seasons?.map((s) => s.seasonNumber) || [];
-  if (episodes) {
-    const relevant = episodes.filter((e) => selected.includes(e.seasonNumber));
-    const aired = relevant.filter((e) => e.airDateUtc && new Date(e.airDateUtc) <= now);
-    base.episodes = {
-      available: aired.filter((e) => e.hasFile).length,
-      aired: aired.length,
-      upcoming: relevant.length - aired.length,
-    };
-  }
-  if (mediaStatus === 5)
+  if (mediaStatus === 5 && r.type !== "tv")
     return state("available", "Ready to watch", "Available on Unimatrix-TV.", 4, "success");
   if (!item)
     return state(
@@ -119,28 +116,107 @@ function derive(input, now = new Date()) {
   const relevantQueue = queue.filter((q) =>
     r.type === "movie"
       ? q.movieId === item.id
-      : q.seriesId === item.id && (!selected.length || selected.includes(q.episode?.seasonNumber)),
+      : q.seriesId === item.id &&
+        (!selected.length || selected.includes(q.episode?.seasonNumber ?? q.seasonNumber)),
   );
+  const episodeIds = new Set(
+    (episodes || [])
+      .filter((e) => !selected.length || selected.includes(e.seasonNumber))
+      .map((e) => e.id),
+  );
+  if (episodes) {
+    const relevant = episodes.filter((e) => !selected.length || selected.includes(e.seasonNumber));
+    const queued = new Set(relevantQueue.map((q) => q.episodeId || q.episode?.id));
+    base.episodes = {
+      available: relevant.filter((e) => e.hasFile).length,
+      aired: relevant.filter((e) => e.airDateUtc && new Date(e.airDateUtc) <= now).length,
+      upcoming: relevant.filter((e) => !e.airDateUtc || new Date(e.airDateUtc) > now).length,
+      active: relevant.filter((e) => !e.hasFile && queued.has(e.id)).length,
+      missing: relevant
+        .filter(
+          (e) => !e.hasFile && !queued.has(e.id) && e.airDateUtc && new Date(e.airDateUtc) <= now,
+        )
+        .map(
+          (e) =>
+            `S${String(e.seasonNumber).padStart(2, "0")}E${String(e.episodeNumber).padStart(2, "0")}`,
+        ),
+      seasons: [...new Set(relevant.map((e) => e.seasonNumber))].map((n) => ({
+        number: n,
+        available: relevant.filter((e) => e.seasonNumber === n && e.hasFile).length,
+        aired: relevant.filter(
+          (e) => e.seasonNumber === n && e.airDateUtc && new Date(e.airDateUtc) <= now,
+        ).length,
+      })),
+    };
+    const searches = relevant
+      .map((e) => e.lastSearchTime)
+      .filter(Boolean)
+      .sort();
+    base.lastSearchAt = searches.at(-1) || base.lastSearchAt;
+  }
   const active = commands.filter(
     (c) =>
       /Search/.test(c.name || "") &&
       ((r.type === "movie" && (c.body?.movieIds || []).includes(item.id)) ||
         (r.type === "tv" &&
-          c.body?.seriesId === item.id &&
-          (!c.body?.seasonNumber || selected.includes(c.body.seasonNumber)))),
+          ((c.body?.seriesId === item.id &&
+            (c.body?.seasonNumber == null ||
+              !selected.length ||
+              selected.includes(c.body.seasonNumber))) ||
+            (c.body?.episodeIds || []).some((id) => episodeIds.has(id))))),
   );
   const searching = active.find((c) => ["started", "queued"].includes(c.status));
   const recentSearch = active.sort(
     (a, b) => new Date(b.started || b.queued) - new Date(a.started || a.queued),
   )[0];
-  base.lastSearchAt = item.lastSearchTime || recentSearch?.started || null;
+  base.lastSearchAt =
+    [base.lastSearchAt, item.lastSearchTime, recentSearch?.started, recentSearch?.queued]
+      .filter(Boolean)
+      .sort()
+      .at(-1) || null;
+  base.search = searching
+    ? { state: searching.status, name: searching.name, current: clean(searching.message) }
+    : recentSearch
+      ? { state: recentSearch.status, name: recentSearch.name }
+      : null;
   if (relevantQueue.length) {
-    const transfers = relevantQueue.map((q) =>
-      transfer(
-        q,
-        torrents.find((t) => t.hash?.toLowerCase() === q.downloadId?.toLowerCase()),
+    const groups = new Map();
+    for (const q of relevantQueue) {
+      const key = q.downloadId
+        ? q.downloadId.toLowerCase()
+        : `queue:${q.id ?? q.episodeId ?? groups.size}`;
+      const group = groups.get(key) || [];
+      group.push(q);
+      groups.set(key, group);
+    }
+    const transfers = [...groups.values()].map((rows) => ({
+      ...transfer(
+        rows[0],
+        torrents.find((t) => t.hash?.toLowerCase() === rows[0].downloadId?.toLowerCase()),
       ),
-    );
+      episodes: [
+        ...new Set(
+          rows
+            .filter((q) => q.episode)
+            .map(
+              (q) =>
+                `S${String(q.episode.seasonNumber).padStart(2, "0")}E${String(q.episode.episodeNumber).padStart(2, "0")}`,
+            ),
+        ),
+      ],
+      blockers: [
+        ...new Set(
+          rows
+            .flatMap((q) =>
+              (q.statusMessages || []).flatMap((x) =>
+                x.messages?.length ? x.messages : [x.title],
+              ),
+            )
+            .filter(Boolean)
+            .map(clean),
+        ),
+      ],
+    }));
     const messages = relevantQueue
       .flatMap((q) =>
         (q.statusMessages || []).flatMap((x) => (x.messages?.length ? x.messages : [x.title])),
@@ -151,7 +227,7 @@ function derive(input, now = new Date()) {
     const ts = relevantQueue
       .map((q) => torrents.find((t) => t.hash?.toLowerCase() === q.downloadId?.toLowerCase()))
       .filter(Boolean);
-    const common = { transfers, queueCount: relevantQueue.length, clientUnavailable };
+    const common = { transfers, queueCount: transfers.length, clientUnavailable };
     if (
       messages.length &&
       relevantQueue.some(
@@ -215,6 +291,19 @@ function derive(input, now = new Date()) {
         "The download is paused in the download client. It needs to be resumed there.",
         2,
         "warning",
+        common,
+      );
+    if (
+      ts.some(
+        (t) => ["downloading", "forcedDL"].includes(t.state) && t.progress < 1 && t.dlspeed > 0,
+      )
+    )
+      return state(
+        "downloading",
+        "Downloading",
+        "Receiving episode files; individual transfer states are shown below.",
+        2,
+        "active",
         common,
       );
     if (
@@ -285,10 +374,15 @@ function derive(input, now = new Date()) {
     );
   }
   if (
+    r.type === "tv" &&
+    base.episodes?.aired > 0 &&
+    base.episodes.available >= base.episodes.aired &&
+    mediaStatus === 5
+  )
+    return state("available", "Ready to watch", "All aired episodes are available.", 4, "success");
+  if (
     (r.type === "movie" && item.hasFile) ||
-    (base.episodes?.aired > 0 &&
-      base.episodes.available === base.episodes.aired &&
-      base.episodes.upcoming === 0)
+    (base.episodes?.aired > 0 && base.episodes.available >= base.episodes.aired)
   )
     return state(
       "library_sync",
@@ -552,7 +646,11 @@ async function queueFor(c) {
   return { queue: queue.records || [], commands, health };
 }
 async function pipeline(r) {
-  if ([1, 3, 4].includes(r.status) || [5, 7].includes(r.media?.[r.is4k ? "status4k" : "status"]))
+  if (
+    [1, 3, 4].includes(r.status) ||
+    r.media?.[r.is4k ? "status4k" : "status"] === 7 ||
+    (r.type !== "tv" && r.media?.[r.is4k ? "status4k" : "status"] === 5)
+  )
     return derive({ request: r });
   try {
     const c = clientFor(r),
@@ -571,7 +669,8 @@ async function pipeline(r) {
     const queue = context.queue.filter((q) =>
       r.type === "movie"
         ? q.movieId === id
-        : q.seriesId === id && (!selected.length || selected.includes(q.episode?.seasonNumber)),
+        : q.seriesId === id &&
+          (!selected.length || selected.includes(q.episode?.seasonNumber ?? q.seasonNumber)),
     );
     const { torrents, clientUnavailable } = telemetry(queue);
     const episodes =

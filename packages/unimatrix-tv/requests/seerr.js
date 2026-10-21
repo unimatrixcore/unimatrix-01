@@ -18,15 +18,18 @@
       posterTitles.set(data.posterPath.split("/").at(-1), data.title || data.name);
     for (const key of ["results", "media", "items"]) if (data[key]) rememberMedia(data[key]);
   }
+  let memoryAudioPreference;
   function getAudioPreference() {
+    if (memoryAudioPreference) return memoryAudioPreference;
     try {
-      return localStorage.getItem("um-seerr-audio-preference") || "original";
+      return localStorage.getItem("um-seerr-audio-preference") === "dubbed" ? "dubbed" : "original";
     } catch {
       return "original";
     }
   }
 
   function setAudioPreference(pref) {
+    memoryAudioPreference = pref;
     try {
       localStorage.setItem("um-seerr-audio-preference", pref);
     } catch {}
@@ -34,9 +37,7 @@
 
   const nativeOpen = XMLHttpRequest.prototype.open;
   XMLHttpRequest.prototype.open = function (method, url, ...rest) {
-    this._umMethod = String(method).toUpperCase();
-    this._umUrl = String(url);
-    if (this._umUrl.startsWith("/api/v1/"))
+    if (String(url).startsWith("/api/v1/"))
       this.addEventListener(
         "load",
         () => {
@@ -51,55 +52,6 @@
       );
     return nativeOpen.call(this, method, url, ...rest);
   };
-
-  const nativeSend = XMLHttpRequest.prototype.send;
-  XMLHttpRequest.prototype.send = function (data) {
-    if (
-      this._umMethod === "POST" &&
-      /^\/api\/v1\/request(?:\?|$)/.test(this._umUrl) &&
-      typeof data === "string"
-    ) {
-      try {
-        const payload = JSON.parse(data);
-        const pref = getAudioPreference();
-        if (pref === "dubbed") {
-          payload.profileId = 8;
-          payload.tags = Array.from(new Set([...(payload.tags || []), 1]));
-          payload.languageProfileId = 1;
-          data = JSON.stringify(payload);
-        }
-      } catch {}
-    }
-    return nativeSend.call(this, data);
-  };
-
-  if (typeof window !== "undefined" && typeof window.fetch === "function") {
-    const nativeFetch = window.fetch;
-    window.fetch = function (input, init) {
-      const url =
-        typeof input === "string" ? input : input instanceof URL ? input.href : input?.url;
-      if (
-        init &&
-        init.method &&
-        String(init.method).toUpperCase() === "POST" &&
-        /^\/api\/v1\/request(?:\?|$)/.test(String(url))
-      ) {
-        try {
-          if (typeof init.body === "string") {
-            const payload = JSON.parse(init.body);
-            const pref = getAudioPreference();
-            if (pref === "dubbed") {
-              payload.profileId = 8;
-              payload.tags = Array.from(new Set([...(payload.tags || []), 1]));
-              payload.languageProfileId = 1;
-              init.body = JSON.stringify(payload);
-            }
-          }
-        } catch {}
-      }
-      return nativeFetch.call(this, input, init);
-    };
-  }
 
   let pendingDeadline,
     featureGeneration = 0;
@@ -338,94 +290,174 @@
     rememberMedia(data);
     return data;
   };
-  function enhanceRequestDialog(dialog) {
-    if (!dialog || dialog.querySelector(".um-audio-preference-card")) return;
-    const isRequest =
-      dialog.querySelector("[data-testid=modal-cancel-button]") ||
-      Array.from(dialog.querySelectorAll("button")).some((b) => /request/i.test(b.textContent || ""));
-    if (!isRequest) return;
-
-    const pref = getAudioPreference();
-    const card = document.createElement("div");
-    card.className = "um-audio-preference-card";
-    card.innerHTML =
-      '<div class="um-audio-header">' +
-      '<span class="um-audio-title">Audio Language Target</span>' +
-      `<span class="um-audio-badge ${pref === "dubbed" ? "is-dubbed" : ""}">${pref === "dubbed" ? "English Dubbed" : "Original Audio"}</span>` +
-      "</div>" +
-      '<div class="um-audio-toggle-group" role="radiogroup">' +
-      `<button type="button" class="um-audio-btn ${pref === "original" ? "is-active" : ""}" data-pref="original"><span class="um-audio-icon">🌐</span> Original Audio</button>` +
-      `<button type="button" class="um-audio-btn ${pref === "dubbed" ? "is-active" : ""}" data-pref="dubbed"><span class="um-audio-icon">🎙️</span> English Dubbed</button>` +
-      "</div>" +
-      '<p class="um-audio-description">' +
-      (pref === "dubbed"
-        ? "Prioritizes English audio tracks using Radarr/Sonarr English Dub profile & tag."
-        : "Downloads media in original language of release.") +
-      "</p>";
-
-    card.querySelectorAll(".um-audio-btn").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const next = btn.getAttribute("data-pref") || "original";
-        setAudioPreference(next);
-        card.querySelectorAll(".um-audio-btn").forEach((b) => {
-          b.classList.toggle("is-active", b.getAttribute("data-pref") === next);
-        });
-        const badge = card.querySelector(".um-audio-badge");
-        if (badge) {
-          badge.textContent = next === "dubbed" ? "English Dubbed" : "Original Audio";
-          badge.classList.toggle("is-dubbed", next === "dubbed");
-        }
-        const desc = card.querySelector(".um-audio-description");
-        if (desc) {
-          desc.textContent =
-            next === "dubbed"
-              ? "Prioritizes English audio tracks using Radarr/Sonarr English Dub profile & tag."
-              : "Downloads media in original language of release.";
-        }
-      });
-    });
-
-    const target =
-      dialog.querySelector(".form-action, .modal-actions, [data-testid=modal-cancel-button]")
-        ?.parentElement ||
-      dialog.querySelector("form") ||
-      dialog.querySelector(".p-6") ||
-      dialog;
-    if (target && target !== dialog && target.parentElement) {
-      target.parentElement.insertBefore(card, target);
-    } else {
-      dialog.appendChild(card);
-    }
+  const audioDialogs = new WeakMap();
+  const dubProfileName = /\s*\(English Dub\)\s*$/i;
+  function audioProfiles(select) {
+    const options = [...select.options].filter((option) => !option.disabled && option.value);
+    const current = options.find((option) => option.value === select.value);
+    if (!current) return {};
+    const base = current.textContent
+      .replace(/\s*\(Default\)\s*$/i, "")
+      .replace(dubProfileName, "")
+      .trim();
+    const name = (option) => option.textContent.replace(/\s*\(Default\)\s*$/i, "").trim();
+    return {
+      original: options.find((option) => name(option) === base),
+      dubbed: options.find(
+        (option) =>
+          dubProfileName.test(name(option)) &&
+          name(option).replace(dubProfileName, "").trim() === base,
+      ),
+    };
   }
-
+  function syncAudioPreference() {
+    const dubbed = getAudioPreference() === "dubbed";
+    document.querySelectorAll(".um-detail-audio-btn").forEach((button) => {
+      button.classList.toggle("is-dubbed", dubbed);
+      button.setAttribute("aria-pressed", String(dubbed));
+      const text = dubbed ? "Request audio: English dub" : "Request audio: Default";
+      if (button.textContent !== text) button.textContent = text;
+    });
+  }
+  function enhanceRequestDialog(dialog) {
+    const submit = dialog?.querySelector("[data-testid=modal-ok-button]");
+    const select = dialog?.querySelector("select#profile");
+    if (
+      !submit ||
+      !/^(?:request|select\s*season)/i.test(submit.textContent.trim()) ||
+      !select ||
+      select.disabled ||
+      !select.value
+    ) {
+      dialog?.querySelector(".um-audio-preference-card")?.remove();
+      return;
+    }
+    const previous = audioDialogs.get(dialog);
+    if (previous?.select === select && previous.card.isConnected) {
+      previous.update();
+      return;
+    }
+    previous?.select.removeEventListener("change", previous.update);
+    dialog.querySelector(".um-audio-preference-card")?.remove();
+    const card = node("div", "um-audio-preference-card");
+    const heading = node("div", "um-audio-header");
+    const title = node("span", "um-audio-title", "Audio");
+    const badge = node("span", "um-audio-badge");
+    heading.append(title, badge);
+    const group = node("div", "um-audio-toggle-group");
+    group.setAttribute("role", "radiogroup");
+    group.setAttribute("aria-label", "Audio preference");
+    const buttons = [
+      ["original", "Default audio"],
+      ["dubbed", "English dub"],
+    ].map(([preference, text]) => {
+      const button = node("button", "um-audio-btn", text);
+      button.type = "button";
+      button.dataset.pref = preference;
+      button.setAttribute("role", "radio");
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const option = audioProfiles(select)[preference];
+        if (!option || select.disabled) return;
+        select.value = option.value;
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+        setAudioPreference(preference);
+        syncAudioPreference();
+        update();
+      });
+      button.addEventListener("keydown", (event) => {
+        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+        event.preventDefault();
+        const enabled = buttons.filter((item) => !item.disabled);
+        const next =
+          event.key === "Home"
+            ? enabled[0]
+            : event.key === "End"
+              ? enabled.at(-1)
+              : enabled[
+                  (enabled.indexOf(button) +
+                    (event.key === "ArrowLeft" ? -1 : 1) +
+                    enabled.length) %
+                    enabled.length
+                ];
+        next?.click();
+        next?.focus();
+      });
+      group.append(button);
+      return button;
+    });
+    function update() {
+      const pair = audioProfiles(select);
+      const dubbed = pair.dubbed?.value === select.value;
+      const active = dubbed ? "dubbed" : "original";
+      buttons.forEach((button) => {
+        button.disabled = select.disabled || !pair[button.dataset.pref];
+        const checked = button.dataset.pref === active;
+        button.classList.toggle("is-active", checked);
+        button.setAttribute("aria-checked", String(checked));
+        button.tabIndex = checked ? 0 : -1;
+        if (button.disabled) button.title = "No matching audio profile on this server";
+        else button.removeAttribute("title");
+      });
+      const text = dubbed ? "English dub" : "Default audio";
+      if (badge.textContent !== text) badge.textContent = text;
+      badge.classList.toggle("is-dubbed", dubbed);
+    }
+    select.addEventListener("change", update);
+    card.append(heading, group);
+    select.closest(".rounded-md")?.before(card);
+    if (!card.isConnected) select.parentElement.before(card);
+    audioDialogs.set(dialog, { select, card, update });
+    const preferred = audioProfiles(select)[getAudioPreference()];
+    let savedPreference = memoryAudioPreference;
+    if (!savedPreference) {
+      try {
+        savedPreference = localStorage.getItem("um-seerr-audio-preference");
+      } catch {}
+    }
+    const nativeDefault = /\(Default\)\s*$/i.test(select.selectedOptions[0]?.textContent || "");
+    if (
+      ["original", "dubbed"].includes(savedPreference) &&
+      nativeDefault &&
+      preferred &&
+      preferred.value !== select.value
+    ) {
+      select.value = preferred.value;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    update();
+  }
+  const audioDetailButtons = new WeakSet();
   function enhanceDetailPageAudio() {
-    if (!/^\/(?:movie|tv)\/\d+/.test(location.pathname)) return;
-    if (document.querySelector(".um-detail-audio-toggle")) return;
+    if (!/^\/(?:movie|tv)\/\d+(?:\/|$)/.test(location.pathname)) {
+      document.querySelectorAll(".um-detail-audio-toggle").forEach((toggle) => toggle.remove());
+      return;
+    }
     const actions = document.querySelector(".media-actions, .media-header .flex.items-center");
     if (!actions) return;
-
-    const pref = getAudioPreference();
-    const toggle = document.createElement("div");
-    toggle.className = "um-detail-audio-toggle";
-    toggle.innerHTML =
-      `<button type="button" class="um-detail-audio-btn ${pref === "dubbed" ? "is-dubbed" : ""}" title="Click to toggle Audio Preference (Original vs English Dubbed)">` +
-      `<span class="um-detail-audio-icon">${pref === "dubbed" ? "🎙️" : "🌐"}</span>` +
-      `<span>${pref === "dubbed" ? "English Dub" : "Original Audio"}</span>` +
-      "</button>";
-    const btn = toggle.querySelector("button");
-    btn?.addEventListener("click", (e) => {
-      e.preventDefault();
-      const next = getAudioPreference() === "dubbed" ? "original" : "dubbed";
-      setAudioPreference(next);
-      btn.classList.toggle("is-dubbed", next === "dubbed");
-      const icon = btn.querySelector(".um-detail-audio-icon");
-      if (icon) icon.textContent = next === "dubbed" ? "🎙️" : "🌐";
-      const text = btn.querySelector("span:last-child");
-      if (text) text.textContent = next === "dubbed" ? "English Dub" : "Original Audio";
-    });
-    actions.appendChild(toggle);
+    let toggle = actions.querySelector(".um-detail-audio-toggle");
+    if (!toggle) {
+      toggle = node("div", "um-detail-audio-toggle");
+      actions.append(toggle);
+    }
+    let button = toggle.querySelector("button.um-detail-audio-btn");
+    if (!button) {
+      button = node("button", "um-detail-audio-btn");
+      toggle.append(button);
+    }
+    if (!audioDetailButtons.has(button)) {
+      button.type = "button";
+      button.title = "Prefer English dub for new requests";
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setAudioPreference(getAudioPreference() === "dubbed" ? "original" : "dubbed");
+        syncAudioPreference();
+      });
+      audioDetailButtons.add(button);
+    }
+    syncAudioPreference();
   }
 
   let activeDialog,
@@ -496,10 +528,10 @@
         isTvPage ||
         /movies?|films?/i.test(heading) ||
         /series|tv\s*shows?|shows?/i.test(heading);
-      if (isHomogeneous) {
-        const typeBadge = card.querySelector(".pointer-events-none.rounded-full");
-        if (typeBadge) typeBadge.style.display = "none";
-      }
+      const typeBadge = [...card.querySelectorAll(".pointer-events-none.rounded-full")].find(
+        (badge) => /^(?:MOVIE|SERIES)$/i.test(badge.textContent.trim()),
+      );
+      if (typeBadge) typeBadge.style.display = isHomogeneous ? "none" : "";
       card.querySelectorAll("button").forEach((b) => {
         if (!b.textContent.trim() && !b.getAttribute("aria-label")) {
           const paths = [...b.querySelectorAll("path")]
@@ -774,8 +806,10 @@
         }
       });
     }
-    if (location.pathname === "/" && catalog && !catalog.isConnected) {
-      catalog = null;
+    if (
+      (location.pathname === "/" || isNetworkPage()) &&
+      (!catalog?.isConnected || catalog.parentElement !== main)
+    ) {
       path = "";
     }
     const current = location.pathname + location.search;
@@ -1286,6 +1320,7 @@
     const warnings = [...new Set(records.flatMap((r) => r.pipeline?.warnings || []))];
     if (!serviceIssues?.isConnected) {
       serviceIssues = make("section", "um-request-service-issues");
+      serviceSignature = undefined;
       serviceIssues.setAttribute("aria-label", "Service issues");
       const marker = make("span", "um-request-issue-marker", "!");
       serviceIssueText = make("p");
@@ -1394,6 +1429,8 @@
     const state = make("div", "um-request-state");
     const stateLabel = make("h3");
     state.append(make("span", "um-request-state-dot"), stateLabel);
+    const scope = make("p", "um-request-scope");
+    const releases = make("div", "um-request-releases");
     const download = make("div", "um-request-download");
     const progressTitle = make("div", "um-request-progress-title"),
       percent = make("strong"),
@@ -1438,8 +1475,8 @@
     why.append(make("span", "um-request-issue-marker", "!"), reason, reasonDetails);
     const activityBody = make("div");
     const activity = action(
-      "Activity",
-      () => openPanel("Request activity", activityBody),
+      "Details",
+      () => openPanel("Request details", activityBody),
       "um-request-activity-button",
     );
     const diagnostic = make("div", "um-request-diagnostic");
@@ -1480,12 +1517,14 @@
     }
     footer.append(watch, check, activity);
     if (manage) footer.append(manage);
-    panel.append(state, download, track, why, footer, diagnostic);
+    panel.append(state, scope, releases, download, why, footer, diagnostic);
     card.append(panel);
     const view = {
       meta,
       panel,
       stateLabel,
+      scope,
+      releases,
       download,
       progress,
       fill,
@@ -1661,6 +1700,84 @@
       "Requested " +
       date(r.createdAt) +
       (r.requestedBy?.displayName ? " by " + r.requestedBy.displayName : "");
+    const episodeSummary = p.episodes
+      ? `${p.episodes.available} of ${p.episodes.aired} episodes ready` +
+        (p.episodes.active ? ` · ${p.episodes.active} in downloads` : "") +
+        (p.episodes.missing?.length ? ` · ${p.episodes.missing.length} awaiting sources` : "")
+      : "";
+    put(view.scope, episodeSummary);
+    view.scope.hidden = !episodeSummary;
+    const releaseSignature = JSON.stringify([p.transfers, p.episodes?.missing, p.search]);
+    if (view.releaseSignature !== releaseSignature) {
+      view.releaseSignature = releaseSignature;
+      view.releases.replaceChildren();
+      const labels = {
+        stalledDL: "Waiting for seeds",
+        metaDL: "Getting file list",
+        forcedMetaDL: "Getting file list",
+        downloading: "Downloading",
+        forcedDL: "Downloading",
+        queuedDL: "Queued",
+        pausedDL: "Paused",
+        stoppedDL: "Paused",
+        error: "Download error",
+        missingFiles: "Files missing",
+        importing: "Importing",
+        importPending: "Import pending",
+        importBlocked: "Import blocked",
+        checkingDL: "Checking files",
+        checkingResumeData: "Checking files",
+        moving: "Moving files",
+      };
+      for (const t of p.transfers) {
+        const row = make("div", "um-request-release");
+        const name =
+          (t.episodes?.length ? t.episodes.join(", ") : t.episode) || t.release || "Movie download";
+        row.append(make("strong", null, name + (t.episodeTitle ? " · " + t.episodeTitle : "")));
+        const phase = /import/i.test(t.state || "")
+          ? labels[t.state] || t.state
+          : t.percent >= 100
+            ? "Downloaded · import pending"
+            : labels[t.state] || t.state || "Status unknown";
+        if (p.transfers.length > 1)
+          row.append(
+            make(
+              "span",
+              "um-request-muted",
+              [
+                phase,
+                t.percent == null ? null : t.percent.toFixed(1) + "%",
+                t.seeds == null ? null : t.seeds + (t.seeds === 1 ? " seed" : " seeds"),
+                t.speedBytes == null ? null : bytes(t.speedBytes) + "/s",
+              ]
+                .filter(Boolean)
+                .join(" · "),
+            ),
+          );
+
+        for (const message of t.blockers || [])
+          row.append(make("span", "um-request-release-issue", message));
+        view.releases.append(row);
+      }
+      if (p.episodes?.missing?.length) {
+        const missing = make(
+          "p",
+          "um-request-missing",
+          "Awaiting sources: " + p.episodes.missing.join(", "),
+        );
+        view.releases.append(missing);
+      }
+      if (p.search)
+        view.releases.append(
+          make(
+            "p",
+            "um-request-muted",
+            p.search.current ||
+              `Source search: ${p.search.state === "completed" ? "finished" : p.search.state}`,
+          ),
+        );
+    }
+    view.releases.hidden = !view.releases.childElementCount;
     const known = p.transfers.filter((t) => t.totalBytes > 0 && t.downloadedBytes !== null);
     view.download.hidden = !known.length;
     if (known.length) {
@@ -1691,6 +1808,7 @@
         "import_blocked",
         "client_unavailable",
       ].includes(p.phase);
+      view.metrics.eta.cell.hidden = waiting;
       view.metrics.speed.cell.hidden = !speeds.length;
       put(
         view.metrics.speed.value,
@@ -1733,7 +1851,7 @@
       "paused",
       "recovery_exhausted",
     ].includes(p.phase);
-    view.why.hidden = !blocker;
+    view.why.hidden = !blocker || p.phase === "stalled";
     const compactReason = (p.reason || "").split(/(?<=\.)\s/)[0];
     put(view.reason, compactReason);
     put(view.fullReason, p.reason || compactReason);
@@ -1745,6 +1863,7 @@
         "recovering",
         "recovery_exhausted",
         "search_failed",
+        "stalled",
         "download_failed",
         "not_connected",
         "unmonitored",
@@ -1764,11 +1883,12 @@
     ]
       .filter(Boolean)
       .join(" · ");
-    const summary =
-        activity +
-        (p.episodes
-          ? ` · ${p.episodes.available}/${p.episodes.aired} aired episodes imported`
-          : ""),
+    const summary = [
+        activity,
+        p.episodes ? `${p.episodes.available}/${p.episodes.aired} aired episodes imported` : "",
+      ]
+        .filter(Boolean)
+        .join(" · "),
       signature =
         summary +
         "|" +
@@ -1778,7 +1898,7 @@
         "|" +
         p.lastSearchAt +
         "|" +
-        JSON.stringify(p.transfers.map((t) => [t.episode, t.percent]));
+        JSON.stringify(p.transfers);
     if (view.signature !== signature) {
       view.signature = signature;
       view.activityBody.replaceChildren();
@@ -1798,15 +1918,21 @@
         view.activityBody.append(
           make("p", "um-request-muted", "Last search " + date(p.lastSearchAt)),
         );
-      if (p.transfers.length > 1)
+      if (p.transfers.length)
         p.transfers.forEach((t) =>
           view.activityBody.append(
             make(
               "p",
               null,
-              (t.episode || "Season pack") +
-                " · " +
-                (t.percent == null ? "—" : t.percent.toFixed(1) + "%"),
+              [
+                t.episodes?.join(", ") || t.episode || "Movie",
+                t.release,
+                t.quality,
+                t.state,
+                t.percent == null ? null : t.percent.toFixed(1) + "%",
+              ]
+                .filter(Boolean)
+                .join(" · "),
             ),
           ),
         );

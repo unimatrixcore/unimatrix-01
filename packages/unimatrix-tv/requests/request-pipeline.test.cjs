@@ -490,3 +490,81 @@ test("malformed collector records cannot match an absent queue hash", () => {
 });
 test("API key colon assignments are scrubbed", () =>
   assert.equal(clean("X-Api-Key: secret password = hidden"), "X-[redacted] [redacted]"));
+
+test("series tracks exact EpisodeSearch commands without a seriesId", () => {
+  const r = { ...request, type: "tv", seasons: [{ seasonNumber: 1 }] };
+  const episodes = [
+    {
+      id: 11,
+      seasonNumber: 1,
+      episodeNumber: 2,
+      airDateUtc: "2020-01-01",
+      hasFile: false,
+      lastSearchTime: "2026-10-12T20:00:00Z",
+    },
+  ];
+  const result = derive(
+    {
+      request: r,
+      item,
+      episodes,
+      commands: [{ name: "EpisodeSearch", status: "started", body: { episodeIds: [11] } }],
+    },
+    now,
+  );
+  assert.equal(result.phase, "searching");
+  assert.deepEqual(result.episodes.missing, ["S01E02"]);
+  assert.equal(result.search.state, "started");
+  assert.equal(
+    derive(
+      {
+        request: r,
+        item,
+        episodes,
+        commands: [{ name: "EpisodeSearch", status: "started", body: { episodeIds: [99] } }],
+      },
+      now,
+    ).phase,
+    "waiting",
+  );
+});
+test("one season pack is one transfer with all covered episode identities", () => {
+  const r = { ...request, type: "tv", seasons: [{ seasonNumber: 1 }] };
+  const rows = [1, 2].map((n) => ({
+    ...queue[0],
+    id: n,
+    movieId: undefined,
+    seriesId: item.id,
+    episodeId: n,
+    title: "Example.S01.1080p",
+    episode: { seasonNumber: 1, episodeNumber: n },
+  }));
+  const result = derive({ request: r, item, queue: rows, torrents: [torrent] }, now);
+  assert.equal(result.transfers.length, 1);
+  assert.equal(result.queueCount, 1);
+  assert.equal(result.transfers[0].totalBytes, 1000);
+  assert.deepEqual(result.transfers[0].episodes, ["S01E01", "S01E02"]);
+  assert.equal(result.transfers[0].release, "Example.S01.1080p");
+});
+test("series states distinguish imported, queued, missing, and future episodes", () => {
+  const r = { ...request, type: "tv", seasons: [] };
+  const episodes = [
+    { id: 1, seasonNumber: 1, episodeNumber: 1, hasFile: true, airDateUtc: "2020-01-01" },
+    { id: 2, seasonNumber: 1, episodeNumber: 2, hasFile: false, airDateUtc: "2020-01-01" },
+    { id: 3, seasonNumber: 1, episodeNumber: 3, hasFile: false, airDateUtc: "2030-01-01" },
+  ];
+  const result = derive({ request: r, item, episodes }, now);
+  assert.equal(result.episodes.available, 1);
+  assert.equal(result.episodes.aired, 2);
+  assert.equal(result.episodes.upcoming, 1);
+  assert.deepEqual(result.episodes.missing, ["S01E02"]);
+  const ready = derive(
+    {
+      request: { ...r, media: { status: 5 } },
+      item,
+      episodes: episodes.map((e) => (e.id === 2 ? { ...e, hasFile: true } : e)),
+    },
+    now,
+  );
+  assert.equal(ready.phase, "available");
+});

@@ -1,6 +1,8 @@
 import { z } from "zod";
+import { createCardMenu } from "./card-menu.js";
 import type { BootGate } from "./loading-gate.js";
 import { isPlaybackRoute } from "./playback.js";
+import { createSynopsisDialog } from "./synopsis-dialog.js";
 
 const configSchema = z.object({
   enabled: z.boolean().catch(true),
@@ -31,6 +33,9 @@ const itemSchema = z.object({
   Id: z.string().min(1),
   Name: z.string(),
   Type: z.string(),
+  SeriesId: z.string().optional(),
+  IndexNumber: z.number().optional(),
+  ParentIndexNumber: z.number().optional(),
   CollectionType: z.string().optional(),
   Path: z.string().optional(),
   IsVirtualItem: z.boolean().optional(),
@@ -67,6 +72,7 @@ interface JellyfinClient {
   getItem(user: string, id: string): Promise<unknown>;
   getUserViews(query: Query, user: string): Promise<unknown>;
   getImageUrl(id: string, options: Query): string;
+  updateFavoriteStatus?(user: string, id: string, favorite: boolean): Promise<unknown>;
 }
 
 const callable = <T extends (...args: never[]) => unknown>() =>
@@ -78,6 +84,7 @@ const clientSchema = z.object({
   getItem: callable<JellyfinClient["getItem"]>(),
   getUserViews: callable<JellyfinClient["getUserViews"]>(),
   getImageUrl: callable<JellyfinClient["getImageUrl"]>(),
+  updateFavoriteStatus: callable<NonNullable<JellyfinClient["updateFavoriteStatus"]>>().optional(),
 });
 
 function client(): JellyfinClient | undefined {
@@ -226,6 +233,7 @@ function hasMedia(item: Item): boolean {
 export function installJellyfinAdapter(gate: BootGate): () => void {
   const config = getClientConfig();
   if (!config.enabled) return () => {};
+  const synopsisDialog = createSynopsisDialog();
   const ASSETS = config.assetsBase.endsWith("/") ? config.assetsBase : config.assetsBase + "/";
   const REQUESTS = config.requestsUrl;
   let disposed = false;
@@ -340,7 +348,9 @@ export function installJellyfinAdapter(gate: BootGate): () => void {
     if (current.path === "/home" || current.path === "/") return visiblePage("#homeTab");
     if (current.path === "/details") return visiblePage("#itemDetailPage");
     if (current.path.includes("login")) return visiblePage("#loginPage");
-    return visiblePage(".mainAnimatedPages .page,.viewContainer .page,.page:not(.hide)");
+    return visiblePage(
+      ".mainAnimatedPages .page,.viewContainer .page,.page:not(.hide),.mainAnimatedPage:not(.hide)",
+    );
   }
 
   function observe(): void {
@@ -350,7 +360,10 @@ export function installJellyfinAdapter(gate: BootGate): () => void {
       return;
     }
     const page = activePage();
-    const target = page ?? document.querySelector("#reactRoot,.mainAnimatedPages,.viewContainer");
+    const target =
+      document.querySelector("#reactRoot") ??
+      page?.parentElement ??
+      document.querySelector(".mainAnimatedPages,.viewContainer");
     if (!target || target === observationTarget) return;
     observer?.disconnect();
     observationTarget = target;
@@ -393,6 +406,7 @@ export function installJellyfinAdapter(gate: BootGate): () => void {
 
   function begin(): void {
     if (disposed) return;
+    cardMenu.close();
     failed = false;
     controller.abort();
     controller = new AbortController();
@@ -444,13 +458,17 @@ export function installJellyfinAdapter(gate: BootGate): () => void {
       row.querySelector('button[aria-label="Open Menu"]')?.insertAdjacentElement("afterend", brand);
     }
 
-    let nav = stack.querySelector<HTMLElement>(".utv-main-nav");
+    if (stack !== row) row.querySelector(".utv-mobile-brand")?.remove();
+    let nav = row.querySelector<HTMLElement>(".utv-main-nav");
     if (!nav) {
       nav = owned("nav", "utv-main-nav");
       nav.id = "utv-main-navigation";
       nav.setAttribute("aria-label", "Main navigation");
-      stack.append(nav);
     }
+    if (nav.parentElement !== stack) stack.append(nav);
+    row.querySelectorAll(".utv-main-nav").forEach((other) => {
+      if (other !== nav) other.remove();
+    });
 
     const entries: [string, string][] = [
       ["Home", "#/home"],
@@ -554,6 +572,7 @@ export function installJellyfinAdapter(gate: BootGate): () => void {
     if (!api || !user || viewWork) return;
     const key = api.serverId() + ":" + user;
     if (key === viewUser) return;
+    viewRoutes = {};
     viewWork = true;
     const stamp = generation;
     const signal = controller.signal;
@@ -1001,83 +1020,134 @@ export function installJellyfinAdapter(gate: BootGate): () => void {
     }
   }
 
+  const favoritePending = new Set<string>();
+  const cardMenu = createCardMenu();
+
+  function openCardMenu(card: HTMLElement, trigger: HTMLButtonElement): void {
+    const api = client();
+    const user = api?.getCurrentUserId();
+    const id = card.dataset.id;
+    const type = card.dataset.type;
+    if (!api || !user || !id) return;
+    const identity = api.serverId() + ":" + user;
+    const item = imageUser === identity ? images.get(id) : undefined;
+    const key = identity + ":" + id;
+    const stamp = generation;
+    const valid = () =>
+      !disposed &&
+      stamp === generation &&
+      card.isConnected &&
+      card.dataset.id === id &&
+      card.dataset.type === type &&
+      client()?.serverId() + ":" + client()?.getCurrentUserId() === identity;
+    const target = item ?? { Id: id, Name: "", Type: type ?? "Movie" };
+    const href = itemHref(target, api);
+    const detailsTarget =
+      item?.Type === "Episode" && item.SeriesId
+        ? itemHref({ ...item, Id: item.SeriesId, Type: "Series" }, api)
+        : href;
+    cardMenu.open(trigger, {
+      label:
+        (item?.Name || card.querySelector(".cardText-first")?.textContent?.trim() || "Title") +
+        " actions",
+      valid,
+      actions: [
+        {
+          label:
+            item?.Type === "Series" || (item?.Type === "Episode" && item.SeriesId)
+              ? "Go to Show"
+              : "Details",
+          run: () => {
+            location.hash = detailsTarget.slice(1);
+          },
+        },
+        {
+          label: item?.UserData?.IsFavorite ? "Remove favorite" : "Add favorite",
+          disabled: !item || !api.updateFavoriteStatus || favoritePending.has(key),
+          run: async () => {
+            if (!valid() || !item || !api.updateFavoriteStatus || favoritePending.has(key)) return;
+            const nextFavorite = !item.UserData?.IsFavorite;
+            favoritePending.add(key);
+            try {
+              await api.updateFavoriteStatus(user, id, nextFavorite);
+              if (
+                client()?.serverId() + ":" + client()?.getCurrentUserId() === identity &&
+                images.get(id) === item
+              ) {
+                (item.UserData ??= {}).IsFavorite = nextFavorite;
+              }
+            } finally {
+              favoritePending.delete(key);
+              if (!disposed) decorateAllCards();
+            }
+          },
+        },
+        {
+          label: "Copy link",
+          disabled: typeof navigator.clipboard?.writeText !== "function",
+          run: async () => {
+            await navigator.clipboard.writeText(new URL(href, location.href).href);
+          },
+        },
+      ],
+    });
+  }
+
   function decorateCard(card: HTMLElement, item?: Item | null): void {
     const container = card.querySelector<HTMLElement>(".cardImageContainer");
     if (!container) return;
 
+    const presentation =
+      card.querySelector<HTMLElement>(".cardScalable") ?? container.parentElement ?? container;
     const rawType = item?.Type ?? card.dataset.type ?? "";
     if (!["Movie", "Series", "Episode"].includes(rawType)) {
-      container.querySelectorAll(".utv-card-badges,.utv-card-hover-overlay").forEach((node) => {
+      if (presentation.querySelector('.utv-card-menu-trigger[aria-expanded="true"]'))
+        cardMenu.close();
+      presentation.querySelectorAll(".utv-card-badges,.utv-card-menu-trigger").forEach((node) => {
         node.remove();
       });
       return;
     }
 
-    // 1. Jellyseerr Badges: Top-left pill (if mixed) + top-right favorite star
-    let badges = container.querySelector<HTMLElement>(".utv-card-badges");
+    let badges = presentation.querySelector<HTMLElement>(".utv-card-badges");
     if (!badges) {
-      badges = document.createElement("div");
-      badges.className = "utv-card-badges";
+      badges = element("div", "utv-card-badges");
       badges.dataset.utvOwned = "true";
-
-      const pill = document.createElement("span");
-      pill.className = "utv-card-type-badge";
-      badges.appendChild(pill);
-
-      const fav = document.createElement("button");
-      fav.type = "button";
-      fav.className = "utv-card-favorite-btn";
-      fav.setAttribute("aria-label", "Favorite");
-      fav.innerHTML =
-        '<svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
-        '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>' +
-        "</svg>";
-      fav.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const currentApi = client();
-        const user = currentApi?.getCurrentUserId();
-        const id = card.dataset.id;
-        if (!currentApi || !user || !id) return;
-        const target = images.get(id) || item;
-        const currentFav = Boolean(target?.UserData?.IsFavorite);
-        const nextFav = !currentFav;
-        if (target) {
-          const ud = target.UserData ?? (target.UserData = {});
-          ud.IsFavorite = nextFav;
-        }
-        fav.classList.toggle("is-favorite", nextFav);
-        fav.querySelector("svg")?.setAttribute("fill", nextFav ? "currentColor" : "none");
-        const rawApi = (
-          window as Window & {
-            ApiClient?: {
-              updateFavoriteStatus?: (u: string, i: string, f: boolean) => Promise<unknown>;
-            };
-          }
-        ).ApiClient;
-        if (typeof rawApi?.updateFavoriteStatus === "function") {
-          rawApi.updateFavoriteStatus(user, id, nextFav).catch(() => {
-            if (target?.UserData) target.UserData.IsFavorite = currentFav;
-            fav.classList.toggle("is-favorite", currentFav);
-            fav.querySelector("svg")?.setAttribute("fill", currentFav ? "currentColor" : "none");
-          });
-        }
+      badges.append(element("span", "utv-card-type-badge"));
+      presentation.append(badges);
+    }
+    let trigger = presentation.querySelector<HTMLButtonElement>(".utv-card-menu-trigger");
+    if (!trigger) {
+      trigger = element("button", "utv-card-menu-trigger", "•••");
+      trigger.type = "button";
+      trigger.dataset.utvOwned = "true";
+      trigger.setAttribute("aria-haspopup", "menu");
+      trigger.setAttribute("aria-expanded", "false");
+      const button = trigger;
+      trigger.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openCardMenu(card, button);
       });
-      badges.appendChild(fav);
-
-      container.appendChild(badges);
+      presentation.append(trigger);
     }
-
-    // Remove legacy checkmark badge if present
-    badges.querySelector(".utv-card-status-badge")?.remove();
-
-    // Update favorite button state
-    const favBtn = badges.querySelector<HTMLElement>(".utv-card-favorite-btn");
-    if (favBtn) {
-      const isFav = Boolean(item?.UserData?.IsFavorite);
-      favBtn.classList.toggle("is-favorite", isFav);
-      favBtn.querySelector("svg")?.setAttribute("fill", isFav ? "currentColor" : "none");
+    const targetKey =
+      client()?.serverId() +
+      ":" +
+      client()?.getCurrentUserId() +
+      ":" +
+      card.dataset.id +
+      ":" +
+      rawType;
+    if (trigger.dataset.utvMenuTarget !== targetKey) {
+      if (trigger.getAttribute("aria-expanded") === "true") cardMenu.close();
+      trigger.dataset.utvMenuTarget = targetKey;
     }
+    const menuLabel =
+      "More options for " +
+      (item?.Name || card.querySelector(".cardText-first")?.textContent?.trim() || "title");
+    if (trigger.getAttribute("aria-label") !== menuLabel)
+      trigger.setAttribute("aria-label", menuLabel);
 
     // Check if section is homogeneous (only movies or only series)
     const section = card.closest<HTMLElement>(".verticalSection");
@@ -1115,104 +1185,6 @@ export function installJellyfinAdapter(gate: BootGate): () => void {
         }
       }
     }
-
-    // 2. Jellyseerr Hover Overlay with Year, Title, Overview, Play/Resume, Info
-    let overlay = container.querySelector<HTMLElement>(".utv-card-hover-overlay");
-    if (!overlay) {
-      overlay = document.createElement("div");
-      overlay.className = "utv-card-hover-overlay";
-      overlay.dataset.utvOwned = "true";
-
-      const yearEl = document.createElement("div");
-      yearEl.className = "utv-card-year";
-
-      const titleEl = document.createElement("div");
-      titleEl.className = "utv-card-title";
-      titleEl.style.cursor = "pointer";
-      titleEl.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const targetItem = card.dataset.id ? images.get(card.dataset.id) || item : item;
-        const api = client();
-        if (targetItem && api) {
-          location.hash = itemHref(targetItem, api).slice(1);
-        } else if (card.dataset.id) {
-          const srv = card.dataset.serverid || api?.serverId();
-          location.hash = `#!/details?id=${card.dataset.id}&serverId=${srv || ""}`;
-        }
-      });
-
-      const overviewEl = document.createElement("div");
-      overviewEl.className = "utv-card-overview";
-
-      const actions = document.createElement("div");
-      actions.className = "utv-card-actions";
-
-      const playBtn = document.createElement("button");
-      playBtn.type = "button";
-      playBtn.className = "utv-card-play-btn";
-      playBtn.innerHTML =
-        '<svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg><span>Play</span>';
-      playBtn.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const targetItem = card.dataset.id ? images.get(card.dataset.id) || item : item;
-        if (targetItem) {
-          const target = nativePlay(targetItem);
-          if (target) target.click();
-          else {
-            const api = client();
-            if (api) location.hash = itemHref(targetItem, api).slice(1);
-          }
-        }
-      });
-
-      const infoBtn = document.createElement("button");
-      infoBtn.type = "button";
-      infoBtn.className = "utv-card-info-btn";
-      infoBtn.setAttribute("aria-label", "Details");
-      infoBtn.innerHTML =
-        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
-        '<circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line>' +
-        "</svg>";
-      infoBtn.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const targetItem = card.dataset.id ? images.get(card.dataset.id) || item : item;
-        const api = client();
-        if (targetItem && api) {
-          location.hash = itemHref(targetItem, api).slice(1);
-        } else if (card.dataset.id) {
-          const srv = card.dataset.serverid || api?.serverId();
-          location.hash = `#!/details?id=${card.dataset.id}&serverId=${srv || ""}`;
-        }
-      });
-
-      actions.append(playBtn, infoBtn);
-      overlay.append(yearEl, titleEl, overviewEl, actions);
-      container.appendChild(overlay);
-    }
-
-    const yearEl = overlay.querySelector<HTMLElement>(".utv-card-year");
-    const titleEl = overlay.querySelector<HTMLElement>(".utv-card-title");
-    const overviewEl = overlay.querySelector<HTMLElement>(".utv-card-overview");
-    const playText = overlay.querySelector<HTMLElement>(".utv-card-play-btn span");
-
-    const yearText = item?.ProductionYear
-      ? String(item.ProductionYear)
-      : card.querySelector(".cardText-secondary")?.textContent?.trim() || "";
-    const titleText =
-      item?.Name || card.querySelector(".cardText-first")?.textContent?.trim() || "";
-    const overviewText = item?.Overview || "";
-
-    if (yearEl && yearEl.textContent !== yearText) yearEl.textContent = yearText;
-    if (titleEl && titleEl.textContent !== titleText) titleEl.textContent = titleText;
-    if (overviewEl && overviewEl.textContent !== overviewText)
-      overviewEl.textContent = overviewText;
-    if (playText && item) {
-      const partially = isPartiallyPlayed(item, card);
-      playText.textContent = partially ? "Resume" : "Play";
-    }
   }
 
   function decorateAllCards(): void {
@@ -1236,6 +1208,7 @@ export function installJellyfinAdapter(gate: BootGate): () => void {
 
     const key = api.serverId() + ":" + user;
     if (key !== imageUser) {
+      cardMenu.close();
       imageUser = key;
       images.clear();
       availableSeries.clear();
@@ -1295,7 +1268,8 @@ export function installJellyfinAdapter(gate: BootGate): () => void {
     void bounded(
       api.getItems(user, {
         Ids: Array.from(missing).join(","),
-        Fields: "Overview,ProductionYear,OfficialRating,CommunityRating,CriticRating,RunTimeTicks,Genres,MediaSources,Path",
+        Fields:
+          "Overview,ProductionYear,OfficialRating,CommunityRating,CriticRating,RunTimeTicks,Genres,MediaSources,Path",
         EnableImageTypes: "Primary,Thumb,Backdrop",
         ImageTypeLimit: 1,
       }),
@@ -1350,13 +1324,15 @@ export function installJellyfinAdapter(gate: BootGate): () => void {
   }
 
   function clearDetail(page: HTMLElement): void {
-    page.classList.remove("utv-detail-ready");
+    synopsisDialog.close();
+    page.querySelector(".utv-synopsis-trigger")?.remove();
+    page.classList.remove("utv-detail-ready", "utv-series-ready");
     delete page.dataset.utvDetailId;
     delete page.dataset.utvDetailExcluded;
     delete page.dataset.utvDetailUser;
     page
       .querySelectorAll(
-        ":scope>.utv-detail-art,:scope>.utv-detail-genres,:scope>.utv-detail-personnel",
+        ":scope>.utv-detail-art,:scope>.utv-detail-genres,:scope>.utv-detail-personnel,:scope>.utv-series-shelf",
       )
       .forEach((node) => {
         node.remove();
@@ -1371,6 +1347,211 @@ export function installJellyfinAdapter(gate: BootGate): () => void {
     toolCleanup.get(tools)?.();
     toolCleanup.delete(tools);
     tools.remove();
+  }
+
+  async function seriesShelf(
+    page: HTMLElement,
+    item: Item,
+    api: JellyfinClient,
+    signal: AbortSignal,
+    stamp: number,
+  ): Promise<void> {
+    if (item.Type !== "Series" && item.Type !== "Season") return;
+    const seriesId = item.Type === "Series" ? item.Id : item.SeriesId;
+    const user = api.getCurrentUserId();
+    if (!seriesId || !user) return;
+    try {
+      const data = itemsSchema.parse(
+        await bounded(
+          api.getItems(user, {
+            ParentId: seriesId,
+            Recursive: true,
+            IncludeItemTypes: "Episode",
+            IsMissing: false,
+            Fields: "Overview,RunTimeTicks,Path,MediaSources",
+            EnableUserData: true,
+            SortBy: "ParentIndexNumber,IndexNumber",
+            SortOrder: "Ascending",
+            Limit: 1000,
+          }),
+          signal,
+        ),
+      );
+      const episodes = data.Items.filter(hasMedia);
+      if (
+        !episodes.length ||
+        disposed ||
+        stamp !== generation ||
+        signal.aborted ||
+        api.getCurrentUserId() !== user
+      )
+        return;
+      const seasons = [...new Set(episodes.map((e) => e.ParentIndexNumber ?? 0))].sort(
+        (a, b) => a - b,
+      );
+      const section = owned("section", "utv-series-shelf");
+      section.setAttribute("aria-label", "Episodes");
+      const heading = element("div", "utv-series-heading");
+      const label = element("label", "", "Season");
+      const select = element("select");
+      select.setAttribute("aria-label", "Season");
+      for (const number of seasons) {
+        const option = element("option", "", number === 0 ? "Specials" : `Season ${number}`);
+        option.value = String(number);
+        select.append(option);
+      }
+      const seasonKey = `utv:season:${api.serverId()}:${user}:${seriesId}`;
+      let rememberedSeason: number | undefined;
+      try {
+        const saved = sessionStorage.getItem(seasonKey);
+        if (saved !== null && seasons.includes(Number(saved))) rememberedSeason = Number(saved);
+      } catch {
+        // The selector still works when browser storage is unavailable.
+      }
+      select.value = String(
+        item.Type === "Season" && seasons.includes(item.IndexNumber ?? -1)
+          ? item.IndexNumber
+          : (rememberedSeason ?? seasons.find((n) => n > 0) ?? seasons[0]),
+      );
+      label.append(select);
+      const count = element("span", "utv-series-count");
+      const controls = element("div", "utv-series-controls");
+      const rail = element("div", "utv-episode-rail");
+      rail.setAttribute("role", "list");
+      const pageButtons: HTMLButtonElement[] = [];
+      const updateControls = (): void => {
+        const maximum = Math.max(0, rail.scrollWidth - rail.clientWidth);
+        pageButtons[0]!.disabled = rail.scrollLeft <= 1;
+        pageButtons[1]!.disabled = rail.scrollLeft >= maximum - 1;
+      };
+      rail.addEventListener("scroll", updateControls, { passive: true, signal });
+      window.addEventListener("resize", updateControls, { passive: true, signal });
+      for (const [name, direction] of [
+        ["Previous episodes", -1],
+        ["Next episodes", 1],
+      ] as const) {
+        const button = element("button", "", direction < 0 ? "‹" : "›");
+        button.type = "button";
+        button.setAttribute("aria-label", name);
+        button.addEventListener("click", () => {
+          rail.scrollBy({
+            left: rail.clientWidth * direction,
+            behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
+          });
+        });
+        pageButtons.push(button);
+        controls.append(button);
+      }
+      const render = (): void => {
+        const selected = episodes.filter(
+          (e) =>
+            e.ParentIndexNumber === Number(select.value) ||
+            (e.ParentIndexNumber == null && select.value === "0"),
+        );
+        count.textContent = `${selected.length} episode${selected.length === 1 ? "" : "s"}`;
+        rail.replaceChildren();
+        rail.scrollLeft = 0;
+        for (const episode of selected) {
+          const card = element("article", "utv-episode-card");
+          card.setAttribute("role", "listitem");
+          const content = link("", itemHref(episode, api), "utv-episode-link");
+          content.setAttribute(
+            "aria-label",
+            `Episode ${episode.IndexNumber ?? ""}: ${episode.Name}`,
+          );
+          const art = element("div", "utv-episode-art");
+          const image = element("img");
+          image.loading = "lazy";
+          image.alt = "";
+          image.src = api.getImageUrl(episode.Id, { type: "Primary", maxWidth: 640, quality: 90 });
+          art.append(image);
+          const progress = episode.UserData?.PlaybackPositionTicks;
+          if (episode.RunTimeTicks && progress && progress > 0) {
+            const track = element("div", "utv-episode-progress");
+            const fill = element("span");
+            fill.style.width = Math.min(100, (100 * progress) / episode.RunTimeTicks) + "%";
+            track.append(fill);
+            art.append(track);
+          }
+          const number = element(
+            "div",
+            "utv-episode-number",
+            `EPISODE ${episode.IndexNumber ?? ""}` + (episode.UserData?.Played ? " · WATCHED" : ""),
+          );
+          const title = element("span", "utv-episode-title", episode.Name);
+          const overview = element("p", "utv-episode-description", episode.Overview || "");
+          const runtime = element(
+            "span",
+            "utv-episode-runtime",
+            formatDuration(episode.RunTimeTicks) || "",
+          );
+          content.append(art, number, title, overview, runtime);
+          const more = element("button", "utv-episode-more", "⋯");
+          more.type = "button";
+          more.setAttribute(
+            "aria-label",
+            `More for episode ${episode.IndexNumber ?? ""}: ${episode.Name}`,
+          );
+          more.setAttribute("aria-haspopup", "menu");
+          more.addEventListener("click", () => {
+            const valid = () =>
+              !disposed &&
+              stamp === generation &&
+              card.isConnected &&
+              client()?.getCurrentUserId() === user &&
+              client()?.serverId() === api.serverId();
+            cardMenu.open(more, {
+              label: episode.Name + " actions",
+              valid,
+              actions: [
+                {
+                  label: "Go to Episode",
+                  run: () => {
+                    location.hash = itemHref(episode, api).slice(1);
+                  },
+                },
+                {
+                  label: "Go to Show",
+                  run: () => {
+                    location.hash = itemHref({ ...item, Id: seriesId, Type: "Series" }, api).slice(
+                      1,
+                    );
+                  },
+                },
+                {
+                  label: "Copy Link",
+                  run: () =>
+                    navigator.clipboard.writeText(
+                      new URL(itemHref(episode, api), location.href).href,
+                    ),
+                },
+              ],
+            });
+          });
+          card.append(content, more);
+          rail.append(card);
+        }
+        updateControls();
+      };
+      select.addEventListener("change", () => {
+        try {
+          sessionStorage.setItem(seasonKey, select.value);
+        } catch {
+          // Changing seasons does not depend on browser storage.
+        }
+        render();
+      });
+      heading.append(label, count, controls);
+      section.append(heading, rail);
+      render();
+      page.append(section);
+      requestAnimationFrame(() => {
+        if (section.isConnected && !signal.aborted) updateControls();
+      });
+      page.classList.add("utv-series-ready");
+    } catch {
+      // Keep native season navigation available when episode metadata cannot be loaded.
+    }
   }
 
   async function detail(): Promise<void> {
@@ -1498,10 +1679,29 @@ export function installJellyfinAdapter(gate: BootGate): () => void {
         buttons.append(tools);
       }
 
+      const overviewControls = page.querySelector<HTMLElement>(".overview-controls");
+      if (overviewControls && item.Overview) {
+        const more = owned("button", "utv-synopsis-trigger", "MORE");
+        more.type = "button";
+        more.setAttribute("aria-label", "Read full synopsis");
+        more.setAttribute("aria-haspopup", "dialog");
+        const identity = api.serverId() + ":" + user;
+        more.addEventListener("click", () => {
+          if (
+            disposed ||
+            !more.isConnected ||
+            client()?.serverId() + ":" + client()?.getCurrentUserId() !== identity
+          )
+            return;
+          synopsisDialog.open(more, { title: item.Name, text: item.Overview ?? "" });
+        });
+        overviewControls.append(more);
+      }
       page.prepend(art, genres, personnel);
       page.dataset.utvDetailId = id;
       page.dataset.utvDetailUser = api.serverId() + ":" + user;
       page.classList.add("utv-detail-ready");
+      await seriesShelf(page, item, api, signal, stamp);
       adaptationReady = true;
     } catch {
       fail(stamp);
@@ -1576,7 +1776,10 @@ export function installJellyfinAdapter(gate: BootGate): () => void {
     }
   }
 
-  listen(window, "hashchange", begin);
+  listen(window, "hashchange", () => {
+    synopsisDialog.close();
+    begin();
+  });
   listen(document, "viewshow", begin);
   listen(document, "visibilitychange", () => {
     if (!document.hidden) begin();
@@ -1608,6 +1811,7 @@ export function installJellyfinAdapter(gate: BootGate): () => void {
   return () => {
     if (disposed) return;
     disposed = true;
+    cardMenu.dispose();
     generation++;
     heroGeneration++;
     controller.abort();
@@ -1617,6 +1821,7 @@ export function installJellyfinAdapter(gate: BootGate): () => void {
     for (const page of document.querySelectorAll<HTMLElement>("#itemDetailPage")) clearDetail(page);
     for (const remove of toolCleanup.values()) remove();
     toolCleanup.clear();
+    synopsisDialog.dispose();
     for (const [section, display] of folderDisplays) {
       if (display.value) section.style.setProperty("display", display.value, display.priority);
       else section.style.removeProperty("display");

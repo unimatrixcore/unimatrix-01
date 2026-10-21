@@ -81,6 +81,8 @@ textarea {
   max-width: none;
   padding-inline: 3.2vw;
 }
+.um-seerr-ready #__next > div.flex > div:has(> .sidebar),
+.um-seerr-ready #__next > div.flex > div.lg\:hidden,
 .um-native-sidebar,
 .um-native-mobile {
   display: none !important;
@@ -471,9 +473,12 @@ textarea {
   overflow: hidden;
   display: block;
 }
-.um-tile:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 12px 30px #0007;
+.um-tile:hover,
+.um-tile:focus-visible {
+  transform: none;
+  box-shadow: inset 0 0 0 2px #8fdeaa;
+  outline: 2px solid #8fdeaa;
+  outline-offset: -2px;
 }
 .um-tile img {
   width: 100%;
@@ -1095,9 +1100,8 @@ html.um-seerr-pending .um-catalog {
   place-items: center;
   background: #101114;
   color: #fafafa;
-  font:
-    500 13px/1.5 var(--um-font);
-  pointer-events: none;
+  font: 500 13px/1.5 var(--um-font);
+  pointer-events: auto;
 }
 .utv-boot-card {
   display: grid;
@@ -1605,8 +1609,10 @@ body.um-seerr-ready:not(.um-search-open) .searchbar > div {
   font-display: swap;
 }
 :root {
-  --um-font: "Manrope", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --um-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --um-font:
+    "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --um-mono:
+    "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 /* Requests: compact titles, live progress, optional diagnostics. */
@@ -2404,20 +2410,13 @@ input[type="checkbox"]:disabled:checked {
   font-family: var(--um-font, "Geist Mono Variable", monospace) !important;
 }
 .um-request-card {
-  grid-template-columns: 100px minmax(0, 1fr);
-  gap: 10px 24px;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 6px 24px;
   border-radius: 13px !important;
   animation: um-request-arrive 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 .um-request-card > div.absolute {
-  display: block !important;
-  width: 100% !important;
-  overflow: hidden;
-  border-radius: 13px;
-  pointer-events: none;
-  z-index: 0;
-  opacity: 0.28;
-  mask-image: linear-gradient(90deg, #000, transparent 80%);
+  display: none !important;
 }
 .um-request-identity > a,
 .um-request-identity > div,
@@ -2428,7 +2427,7 @@ input[type="checkbox"]:disabled:checked {
   z-index: 1;
 }
 .um-request-identity > a {
-  width: 100px !important;
+  width: 84px !important;
 }
 .um-request-identity > div > a {
   font-size: 21px !important;
@@ -2475,11 +2474,17 @@ input[type="checkbox"]:disabled:checked {
   color: #efb1b1;
 }
 .um-request-progress-title strong {
-  font-size: 24px;
+  font-size: 20px;
   color: #8fdeaa;
 }
 .um-request-download {
-  margin: 10px 0 20px;
+  margin: 6px 0 16px;
+}
+.um-request-card[data-tone="warning"] .um-request-progress > div {
+  background: #d6b474;
+}
+.um-request-card[data-tone="warning"] .um-request-progress-title strong {
+  color: #d6b474;
 }
 .um-request-progress {
   height: 5px;
@@ -2981,7 +2986,12 @@ input[type="checkbox"]:disabled:checked {
   transition: all 160ms ease;
 }
 
-.um-audio-btn:hover {
+.um-audio-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.um-audio-btn:hover:not(:disabled) {
   background: rgba(30, 41, 59, 0.85);
   border-color: rgba(255, 255, 255, 0.22);
   color: #ffffff;
@@ -3051,4 +3061,39 @@ input[type="checkbox"]:disabled:checked {
 [data-testid="modal-cancel-button"]:hover {
   background: rgba(255, 255, 255, 0.18) !important;
   border-color: rgba(255, 255, 255, 0.35) !important;
+}
+
+.um-request-scope {
+  color: #a4adb8;
+  margin: 0 0 12px;
+  font-size: 12px;
+}
+.um-request-releases {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0;
+  min-width: 0;
+}
+.um-request-release {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.um-request-release strong {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.um-request-release-name {
+  font-size: 11px;
+  color: #959ba6;
+  overflow-wrap: anywhere;
+}
+.um-request-release-issue,
+.um-request-missing {
+  font-size: 11px;
+  color: #e3b96d;
+  overflow-wrap: anywhere;
+}
+.um-request-missing {
+  margin: 0;
 }

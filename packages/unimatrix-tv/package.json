@@ -22,10 +22,12 @@
     "build": "pnpm build:client && pnpm build:plugin && pnpm build:requests && pnpm package",
     "deploy:live": "node ./scripts/deploy.mjs",
     "lint": "eslint .",
-    "test": "vitest run && pnpm test:requests && pnpm test:plugin",
+    "test": "vitest run && pnpm test:requests && pnpm test:plugin && pnpm test:deployment && pnpm test:automation",
     "typecheck": "tsc -p tsconfig.json",
     "test:requests": "node requests/run-tests.cjs",
-    "test:plugin": "node scripts/test-plugin.mjs"
+    "test:plugin": "node scripts/test-plugin.mjs",
+    "test:deployment": "node --test scripts/deploy.test.mjs",
+    "test:automation": "python3 -B -m unittest discover -s automation -p 'test_*.py'"
   },
   "devDependencies": {
     "@unimatrix/config-eslint": "workspace:*",

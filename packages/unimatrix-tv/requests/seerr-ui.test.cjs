@@ -4,6 +4,8 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const { JSDOM } = require("jsdom");
 const source = fs.readFileSync(require.resolve("./seerr.js"), "utf8");
+const discoveryShell =
+  '<div id="__next"><div class="flex"><div class="sidebar"><nav class="mt-8"><a href="/">Home</a><a href="/discover/movies">Movies</a><a href="/discover/tv">Series</a><a href="/requests">Requests</a></nav></div><main><div class="max-w-8xl"><h1>Discover</h1></div></main></div></div><div class="searchbar"><div><div><input id="search_field" aria-label="Search"></div><div>Account</div></div></div>';
 const controls =
   '<div class="mb-4 flex flex-col"><div><h1 data-testid="page-header">Requests</h1></div><div><div><select id="mediaType"><option value="all">All</option></select></div><div><select id="filter"><option value="all">All</option><option value="processing">Processing</option></select></div><div><select id="sort"><option>Recent</option></select><button>Sort</button></div></div></div>';
 const nativeCard = () =>
@@ -27,7 +29,7 @@ function request(id, phase, is4k = false) {
     },
   };
 }
-function fixture(html, url = "https://requests.example/requests") {
+function fixture(html, url = "https://requests.example/requests", prepare = () => {}) {
   const dom = new JSDOM(html, { url, pretendToBeVisual: true, runScripts: "outside-only" });
   const { window } = dom;
   window.matchMedia = () => ({ matches: false });
@@ -66,6 +68,7 @@ function fixture(html, url = "https://requests.example/requests") {
           }
         : { results: [] },
   });
+  prepare(window);
   window.eval(source);
   window.document.dispatchEvent(new window.Event("DOMContentLoaded"));
   const send = (payload, url = "/api/v1/request?filter=all") => {
@@ -135,8 +138,7 @@ test("an in-flight status poll cannot overwrite a newly selected filter", async 
   }
 });
 test("search retires discover immediately and keeps its native query editable across query/history changes", async () => {
-  const html =
-    '<div id="__next"><div class="flex"><div class="sidebar"><nav class="mt-8"><a href="/">Home</a><a href="/discover/movies">Movies</a><a href="/discover/tv">Series</a><a href="/requests">Requests</a></nav></div><main><div class="max-w-8xl"><h1>Discover</h1></div></main></div></div><div class="searchbar"><div><div><input id="search_field" aria-label="Search"></div><div>Account</div></div></div>';
+  const html = discoveryShell;
   const f = fixture(html, "https://requests.example/");
   try {
     await new Promise((resolve) => f.window.setTimeout(resolve, 450));
@@ -189,7 +191,6 @@ test("home loading screen mounts matching boot gate with logo and spinner", asyn
     "https://requests.example/",
   );
   try {
-    f.window.eval(source);
     const gate = f.window.document.getElementById("um-page-loading");
     assert.ok(gate, "um-page-loading should exist");
     assert.equal(gate.getAttribute("role"), "status");
@@ -212,7 +213,6 @@ test("cards do not render captions beneath poster", async () => {
     "https://requests.example/movies",
   );
   try {
-    f.window.eval(source);
     const card = f.window.document.querySelector('[data-testid="title-card"]');
     assert.ok(card);
     const caption = card.querySelector(".um-native-card-caption");
@@ -222,41 +222,152 @@ test("cards do not render captions beneath poster", async () => {
   }
 });
 
-test("request dialog mounts audio preference toggle", async () => {
-  const f = fixture(
-    '<!doctype html><html><head></head><body><div id="__next"><main></main></div><div role="dialog" aria-modal="true"><h2>Request Movie</h2><form><button data-testid="modal-cancel-button">Cancel</button><button type="submit">Request</button></form></div></body></html>',
-    "https://requests.example/",
-  );
+const requestDialog = (
+  options = '<option value="7">WEB 1080p (Default)</option><option value="83">WEB 1080p (English Dub)</option>',
+  heading = "Request Movie",
+) =>
+  '<main></main><div role="dialog" aria-modal="true"><h2>' +
+  heading +
+  '</h2><div class="rounded-md"><label for="profile">Quality Profile</label><select id="profile">' +
+  options +
+  '</select></div><button data-testid="modal-cancel-button">Cancel</button><button data-testid="modal-ok-button">Request</button></div>';
+const settle = (f) => new Promise((resolve) => f.window.setTimeout(resolve, 450));
+
+test("audio buttons select actual native profile values and restore the corresponding standard profile", async () => {
+  const f = fixture(requestDialog());
   try {
-    f.window.eval(source);
-    await new Promise((resolve) => f.window.setTimeout(resolve, 450));
-    const prefCard = f.window.document.querySelector(".um-audio-preference-card");
-    assert.ok(prefCard, "audio preference card should be injected in request dialog");
-    const dubbedBtn = prefCard.querySelector('.um-audio-btn[data-pref="dubbed"]');
-    assert.ok(dubbedBtn, "dubbed button should exist");
-    dubbedBtn.click();
+    await settle(f);
+    const select = f.window.document.querySelector("#profile");
+    const changed = [];
+    select.addEventListener("change", () => changed.push(select.value));
+    const card = f.window.document.querySelector(".um-audio-preference-card");
+    const dubbed = card.querySelector('[data-pref="dubbed"]');
+    const original = card.querySelector('[data-pref="original"]');
+    dubbed.click();
+    assert.equal(select.value, "83");
+    assert.equal(dubbed.getAttribute("aria-checked"), "true");
     assert.equal(f.window.localStorage.getItem("um-seerr-audio-preference"), "dubbed");
+    dubbed.dispatchEvent(
+      new f.window.KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }),
+    );
+    assert.equal(select.value, "7");
+    assert.equal(original.getAttribute("aria-checked"), "true");
+    assert.deepEqual(changed, ["83", "7"]);
   } finally {
     f.close();
   }
 });
 
-test("POST /api/v1/request intercepts and injects profile 8 and tag 1 for dubbed preference", async () => {
+test("remembered audio preference uses the selected server's actual matching profiles", async () => {
   const f = fixture(
-    '<!doctype html><html><head></head><body><div id="__next"><main></main></div></body></html>',
-    "https://requests.example/",
+    requestDialog(
+      '<option value="104">WEB-1080p (Default)</option><option value="205">WEB-1080p (English Dub)</option>',
+    ),
+    undefined,
+    (window) => window.localStorage.setItem("um-seerr-audio-preference", "dubbed"),
   );
   try {
-    f.window.localStorage.setItem("um-seerr-audio-preference", "dubbed");
-    f.window.eval(source);
-    const xhr = new f.window.XMLHttpRequest();
-    xhr.open("POST", "/api/v1/request");
-    xhr.send(JSON.stringify({ mediaId: 101, mediaType: "movie", profileId: 1 }));
-    assert.ok(xhr.sentData, "payload should be sent");
-    const parsed = JSON.parse(xhr.sentData);
-    assert.equal(parsed.profileId, 8, "profileId should be updated to 8 (English Dub)");
-    assert.deepEqual(parsed.tags, [1], "tags should include [1] (dubbed)");
-    assert.equal(parsed.languageProfileId, 1, "languageProfileId should be 1");
+    await settle(f);
+    assert.equal(f.window.document.querySelector("#profile").value, "205");
+  } finally {
+    f.close();
+  }
+});
+
+test("unsupported 4K and server profiles keep native settings and disable the dub control", async () => {
+  const f = fixture(
+    requestDialog(
+      '<option value="55">Ultra-HD (Default)</option><option value="83">WEB 1080p (English Dub)</option>',
+    ),
+    undefined,
+    (window) => window.localStorage.setItem("um-seerr-audio-preference", "dubbed"),
+  );
+  try {
+    await settle(f);
+    const select = f.window.document.querySelector("#profile");
+    const dubbed = f.window.document.querySelector('[data-pref="dubbed"]');
+    assert.equal(select.value, "55");
+    assert.equal(dubbed.disabled, true);
+    dubbed.click();
+    assert.equal(select.value, "55");
+    select.innerHTML =
+      '<option value="12">Other 1080p</option><option value="19">Other 1080p (English Dub)</option>';
+    select.dispatchEvent(new f.window.Event("change", { bubbles: true }));
+    dubbed.click();
+    assert.equal(select.value, "19");
+  } finally {
+    f.close();
+  }
+});
+
+test("audio preference never rewrites native movie, series, 4K, fetch, or unrelated request payloads", async () => {
+  let fetchInit;
+  const f = fixture("<main></main>", undefined, (window) => {
+    window.localStorage.setItem("um-seerr-audio-preference", "dubbed");
+    window.fetch = async (_url, init) => {
+      fetchInit = init;
+      return { ok: true };
+    };
+  });
+  try {
+    for (const mediaType of ["movie", "tv"]) {
+      const body = JSON.stringify({
+        mediaId: 101,
+        mediaType,
+        is4k: true,
+        serverId: 12,
+        profileId: 33,
+        tags: [44],
+        languageProfileId: 55,
+      });
+      const xhr = new f.XHR();
+      xhr.open("POST", "/api/v1/request");
+      xhr.send(body);
+      assert.equal(xhr.sentData, body);
+      const init = Object.freeze({ method: "POST", body });
+      await f.window.fetch("/api/v1/request", init);
+      assert.equal(fetchInit, init);
+      assert.equal(fetchInit.body, body);
+    }
+  } finally {
+    f.close();
+  }
+});
+
+test("unrelated dialogs and users without native profile access get no ineffective audio controls", async () => {
+  const f = fixture(
+    '<main></main><div role="dialog" aria-modal="true"><h2>Delete request</h2><button data-testid="modal-cancel-button">Cancel</button><button data-testid="modal-ok-button">Delete</button></div>',
+  );
+  try {
+    await settle(f);
+    assert.equal(f.window.document.querySelector(".um-audio-preference-card"), null);
+    const dialog = f.window.document.querySelector('[role="dialog"]');
+    dialog.querySelector('[data-testid="modal-ok-button"]').textContent = "Request";
+    await settle(f);
+    assert.equal(f.window.document.querySelector(".um-audio-preference-card"), null);
+  } finally {
+    f.close();
+  }
+});
+
+test("invalid saved audio values safely fall back and profile changes preserve manual choices", async () => {
+  const f = fixture(
+    requestDialog(
+      '<option value="7">WEB 1080p (Default)</option><option value="83">WEB 1080p (English Dub)</option><option value="5">Ultra-HD</option>',
+    ),
+    undefined,
+    (window) => window.localStorage.setItem("um-seerr-audio-preference", "invalid"),
+  );
+  try {
+    await settle(f);
+    const select = f.window.document.querySelector("#profile");
+    assert.equal(select.value, "7");
+    select.value = "5";
+    select.dispatchEvent(new f.window.Event("change", { bubbles: true }));
+    f.window.document.body.appendChild(f.window.document.createElement("div"));
+    await settle(f);
+    assert.equal(select.value, "5");
+    assert.equal(f.window.document.querySelector('[data-pref="dubbed"]').disabled, true);
   } finally {
     f.close();
   }
@@ -268,11 +379,220 @@ test("cards suppress type pill on homogeneous movie or tv pages", async () => {
     "https://requests.example/movies",
   );
   try {
-    f.window.eval(source);
     await new Promise((resolve) => f.window.setTimeout(resolve, 450));
     const badge = f.window.document.querySelector(".pointer-events-none.rounded-full");
     assert.ok(badge);
     assert.equal(badge.style.display, "none", "movie badge should be hidden on movies page");
+  } finally {
+    f.close();
+  }
+});
+
+test("reused title cards restore type badges when returning to mixed search results", async () => {
+  const f = fixture(
+    '<main><div data-testid="title-card"><div role="link"><div class="pointer-events-none rounded-full">MOVIE</div><div class="pointer-events-none rounded-full">Available</div><img src="/poster.jpg"></div></div></main>',
+    "https://requests.example/discover/movies",
+  );
+  try {
+    await settle(f);
+    const badges = f.window.document.querySelectorAll(".pointer-events-none.rounded-full");
+    assert.equal(badges[0].style.display, "none");
+    assert.equal(badges[1].style.display, "");
+    f.window.history.pushState({}, "", "/search?query=movie");
+    await settle(f);
+    assert.equal(badges[0].style.display, "");
+  } finally {
+    f.close();
+  }
+});
+
+test("saved preference cannot override an explicit native quality profile or a server's default without a preference", async () => {
+  for (const saved of [null, "original"]) {
+    const f = fixture(
+      requestDialog(
+        '<option value="83">WEB 1080p (English Dub)</option><option value="7">WEB 1080p (Default)</option>',
+      ),
+      undefined,
+      (window) => {
+        if (saved) window.localStorage.setItem("um-seerr-audio-preference", saved);
+      },
+    );
+    try {
+      await settle(f);
+      assert.equal(f.window.document.querySelector("#profile").value, "83");
+    } finally {
+      f.close();
+    }
+  }
+});
+
+test("series request labels composed of adjacent spans retain audio controls", async () => {
+  const f = fixture(requestDialog(undefined, "Request Series"));
+  try {
+    const submit = f.window.document.querySelector('[data-testid="modal-ok-button"]');
+    submit.innerHTML = "<span>Request</span><span>1 Season</span>";
+    await settle(f);
+    const dub = f.window.document.querySelector('[role="radio"][data-pref="dubbed"]');
+    assert.ok(dub);
+    dub.click();
+    assert.equal(f.window.document.querySelector("#profile").value, "83");
+  } finally {
+    f.close();
+  }
+});
+
+test("detail audio preference remains usable after native cloning and unavailable storage", async () => {
+  const f = fixture(
+    '<main><div class="media-actions"></div></main>',
+    "https://requests.example/tv/123542",
+    (window) => {
+      window.Storage.prototype.setItem = () => {
+        throw new Error("storage unavailable");
+      };
+    },
+  );
+  try {
+    await settle(f);
+    const original = f.window.document.querySelector(".um-detail-audio-btn");
+    assert.ok(original);
+    original.click();
+    assert.equal(original.textContent, "Request audio: English dub");
+    assert.equal(original.getAttribute("aria-pressed"), "true");
+    f.window.document.body.insertAdjacentHTML("beforeend", requestDialog());
+    await settle(f);
+    assert.equal(f.window.document.querySelector("#profile").value, "83");
+    f.window.document.querySelector('[role="dialog"]')?.remove();
+    await settle(f);
+    const clone = original.cloneNode(true);
+    original.replaceWith(clone);
+    await settle(f);
+    clone.click();
+    assert.equal(clone.textContent, "Request audio: Default");
+    assert.equal(clone.getAttribute("aria-pressed"), "false");
+  } finally {
+    f.close();
+  }
+});
+
+test("series audio profiles work before seasons are selected without enabling request submission", async () => {
+  const f = fixture(requestDialog(undefined, "Request Series"));
+  try {
+    const submit = f.window.document.querySelector('[data-testid="modal-ok-button"]');
+    submit.textContent = "Select Season(s)";
+    submit.disabled = true;
+    await settle(f);
+    const dub = f.window.document.querySelector('[role="radio"][data-pref="dubbed"]');
+    assert.ok(dub);
+    dub.click();
+    assert.equal(f.window.document.querySelector("#profile").value, "83");
+    assert.equal(submit.disabled, true);
+  } finally {
+    f.close();
+  }
+});
+
+test("Networks recovers after native rendering replaces main content without changing the URL", async () => {
+  const f = fixture(discoveryShell, "https://requests.example/discover/tv?view=networks");
+  try {
+    await settle(f);
+    assert.ok(f.window.document.querySelector(".um-networks-page"));
+    const oldMain = f.window.document.querySelector("main");
+    const newMain = f.window.document.createElement("main");
+    newMain.innerHTML = '<div class="max-w-8xl"><h1>Native series discovery</h1></div>';
+    oldMain.replaceWith(newMain);
+    await settle(f);
+    const page = newMain.querySelector(".um-networks-page");
+    assert.ok(page);
+    const search = page.querySelector(".um-network-search");
+    search.value = "netflix";
+    search.dispatchEvent(new f.window.Event("input", { bubbles: true }));
+    assert.deepEqual(
+      [...page.querySelectorAll(".um-network-page-grid a:not([hidden])")].map((a) =>
+        a.getAttribute("aria-label"),
+      ),
+      ["Netflix"],
+    );
+    f.window.history.pushState({}, "", "/requests");
+    await settle(f);
+    assert.equal(f.window.document.querySelector(".um-networks-page"), null);
+    assert.equal(f.window.document.body.classList.contains("um-catalog-active"), false);
+  } finally {
+    f.close();
+  }
+});
+
+test("Home retries when native content arrives after its initial empty main", async () => {
+  const f = fixture(
+    discoveryShell.replace('<div class="max-w-8xl"><h1>Discover</h1></div>', ""),
+    "https://requests.example/",
+  );
+  try {
+    await settle(f);
+    assert.equal(f.window.document.querySelector(".um-catalog"), null);
+    const host = f.window.document.createElement("div");
+    host.className = "max-w-8xl";
+    f.window.document.querySelector("main").append(host);
+    await settle(f);
+    assert.ok(f.window.document.querySelector(".um-catalog"));
+    assert.ok(f.window.document.querySelector(".um-hero"));
+  } finally {
+    f.close();
+  }
+});
+
+test("episode source identity and individual stall state stay visible after status refresh", () => {
+  const f = fixture('<main><div class="max-w-8xl">' + controls + nativeCard() + "</div></main>");
+  try {
+    const r = request(4, "stalled");
+    r.pipeline.episodes = { available: 17, aired: 22, active: 3, missing: ["S01E01", "S01E05"] };
+    r.pipeline.transfers = [
+      {
+        episodes: ["S01E03"],
+        release: "Dead.City.S01E03.1080p",
+        state: "stalledDL",
+        percent: 9.1,
+        seeds: 0,
+        speedBytes: 0,
+      },
+    ];
+    f.send({ results: [r] });
+    assert.match(
+      f.window.document.querySelector(".um-request-scope").textContent,
+      /17 of 22 episodes ready.*3 in downloads.*2 awaiting sources/,
+    );
+    const rows = f.window.document.querySelector(".um-request-releases");
+    assert.match(rows.textContent, /S01E03/);
+    assert.match(rows.textContent, /Awaiting sources: S01E01, S01E05/);
+    r.pipeline.transfers[0].state = "downloading";
+    r.pipeline.transfers[0].percent = 22;
+    f.send({ results: [r] });
+    assert.match(rows.textContent, /S01E03/);
+    assert.doesNotMatch(rows.textContent, /Dead.City.S01E03.1080p/);
+    assert.match(
+      f.window.document.querySelector(".um-request-activity-button").textContent,
+      /Details/,
+    );
+    assert.equal(f.window.document.querySelector(".um-request-track"), null);
+    assert.doesNotMatch(rows.textContent, /Waiting for seeds/);
+  } finally {
+    f.close();
+  }
+});
+
+test("service warning text survives native request-page reconstruction", () => {
+  const f = fixture('<main><div class="max-w-8xl">' + controls + nativeCard() + "</div></main>");
+  try {
+    const record = request(4, "available");
+    record.pipeline.warnings = ["Indexer unavailable: Internet Archive"];
+    f.send({ results: [record] });
+    const original = f.window.document.querySelector(".um-request-service-issues p").textContent;
+    assert.ok(original.length > 0);
+    f.window.document.querySelector(".um-request-service-issues").remove();
+    f.send({ results: [record] });
+    assert.equal(
+      f.window.document.querySelector(".um-request-service-issues p").textContent,
+      original,
+    );
   } finally {
     f.close();
   }
