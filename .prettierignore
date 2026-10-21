@@ -17,6 +17,8 @@ CLAUDE.md
 # Verbatim upstream files. Reformatting one would break the byte-for-byte
 # correspondence with the URL recorded beside it in vendor/NOTICE.md.
 apps/cflop/vendor/
+packages/unimatrix-tv/vendor/
+packages/unimatrix-tv/requests/seerr-document.js
 
 # Generated, not hand-edited.
 pnpm-lock.yaml

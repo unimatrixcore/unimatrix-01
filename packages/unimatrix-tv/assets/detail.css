@@ -1,0 +1,1056 @@
+/* Apple TV detail reference: artwork, compact lockup, quiet utility menu. */
+#itemDetailPage.utv-detail-ready {
+  --utv-detail-gutter: 40px;
+  --utv-detail-height: clamp(660px, calc(100svh - 56px), 900px);
+  display: grid !important;
+  grid-template-columns: minmax(0, 420px) minmax(20px, 1fr) minmax(0, 310px);
+  grid-template-rows:
+    calc(var(--utv-detail-height) - 330px)
+    81px max-content max-content max-content 44px 52px max-content max-content;
+  column-gap: 24px;
+  position: relative !important;
+  height: auto !important;
+  min-height: 100vh !important;
+  padding: 0 var(--utv-detail-gutter) !important;
+  box-sizing: border-box;
+  background: #101114 !important;
+  isolation: isolate;
+  align-content: start;
+}
+#itemDetailPage.utv-detail-ready > .utv-detail-art {
+  position: absolute;
+  inset: 0 0 auto;
+  height: var(--utv-detail-height);
+  z-index: -1;
+  background-size: cover;
+  background-position: center;
+  pointer-events: none;
+}
+#itemDetailPage.utv-detail-ready > .utv-detail-art::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(0deg, #101114 0%, rgba(16, 17, 20, 0.62) 18%, rgba(16, 17, 20, 0.08) 60%),
+    linear-gradient(90deg, rgba(16, 17, 20, 0.24), transparent 65%);
+}
+#itemDetailPage.utv-detail-ready .itemBackdrop {
+  display: none !important;
+}
+#itemDetailPage.utv-detail-ready
+  :is(
+    .detailPageWrapperContainer,
+    .detailPagePrimaryContainer,
+    .detailRibbon,
+    .infoWrapper,
+    .detailPagePrimaryContent,
+    .detailSection
+  ) {
+  display: contents !important;
+}
+#itemDetailPage.utv-detail-ready .detailImageContainer {
+  display: none !important;
+}
+#itemDetailPage.utv-detail-ready .detailLogo {
+  grid-column: 1;
+  grid-row: 2;
+  align-self: end;
+  position: relative !important;
+  inset: auto !important;
+  transform: none !important;
+  animation: none !important;
+  width: 216px !important;
+  height: 81px !important;
+  max-height: none !important;
+  margin: 0 !important;
+  background-size: contain !important;
+  background-position: left bottom !important;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.22)) !important;
+}
+#itemDetailPage.utv-detail-ready .nameContainer {
+  grid-column: 1;
+  grid-row: 2;
+  align-self: end;
+  justify-content: flex-start !important;
+  margin: 0 !important;
+}
+#itemDetailPage.utv-detail-ready .nameContainer h1 {
+  font: 700 32px/1.08 var(--utv-font) !important;
+  letter-spacing: -0.035em !important;
+  margin: 0 !important;
+}
+#itemDetailPage.utv-detail-ready .utv-detail-genres {
+  grid-column: 1;
+  grid-row: 3;
+  margin: 12px 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  font: 600 13px/1.5 var(--utv-font);
+  color: #e6e8eb;
+}
+.utv-detail-genres img {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+}
+#itemDetailPage.utv-detail-ready .detailSectionContent {
+  grid-column: 1;
+  grid-row: 4;
+  display: block !important;
+  min-height: 0 !important;
+  max-width: 420px;
+  margin: 0 !important;
+  padding: 0 !important;
+  position: relative;
+}
+#itemDetailPage.utv-detail-ready .detailSectionContent > :not(.overview):not(.overview-controls) {
+  display: none !important;
+}
+#itemDetailPage.utv-detail-ready .overview {
+  font: 400 14px/1.55 var(--utv-font) !important;
+  color: #c6c9cd !important;
+  max-width: none !important;
+  margin: 0 !important;
+  -webkit-line-clamp: 2 !important;
+  line-clamp: 2 !important;
+}
+#itemDetailPage.utv-detail-ready .overview p {
+  margin: 0 !important;
+}
+#itemDetailPage.utv-detail-ready .overview.detail-clamp-text {
+  display: -webkit-box !important;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  padding-right: 44px;
+  box-sizing: border-box;
+}
+#itemDetailPage.utv-detail-ready .overview:not(.detail-clamp-text) {
+  display: block !important;
+  overflow: visible !important;
+}
+#itemDetailPage.utv-detail-ready .overview-controls {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: auto !important;
+  height: auto !important;
+  margin: 0 !important;
+}
+#itemDetailPage.utv-detail-ready .overview-expand {
+  font: 650 10px/1.2 var(--utv-font) !important;
+  font-size: 10px !important;
+  color: #f1f2f4 !important;
+  padding: 2px 5px !important;
+  min-height: 0 !important;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.19) !important;
+  white-space: nowrap;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+#itemDetailPage.utv-detail-ready .overview-expand::after,
+#itemDetailPage.utv-detail-ready .overview-expand::before {
+  content: none !important;
+}
+#itemDetailPage.utv-detail-ready .itemMiscInfo-primary {
+  grid-column: 1;
+  grid-row: 5;
+  display: flex !important;
+  justify-content: flex-start !important;
+  align-items: center !important;
+  justify-self: start;
+  margin: 10px 0 14px !important;
+  gap: 10px;
+  font: 500 12px/1.5 var(--utv-font) !important;
+  color: #c3c7cc !important;
+}
+#itemDetailPage.utv-detail-ready .itemMiscInfo-secondary {
+  grid-column: 1;
+  grid-row: 5;
+}
+#itemDetailPage.utv-detail-ready .mediaInfoItem {
+  margin: 0 !important;
+}
+#itemDetailPage.utv-detail-ready .endsAt {
+  display: none !important;
+}
+#itemDetailPage.utv-detail-ready .mainDetailButtons {
+  grid-column: 1;
+  grid-row: 6;
+  justify-self: start;
+  display: flex !important;
+  justify-content: flex-start !important;
+  align-items: center !important;
+  gap: 12px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  flex-wrap: nowrap !important;
+}
+#itemDetailPage.utv-detail-ready .mainDetailButtons > .detailButton {
+  display: flex;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: center !important;
+  height: 40px !important;
+  width: 40px;
+  min-width: 40px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 50% !important;
+  background: rgba(255, 255, 255, 0.12);
+  color: #f4f4f6;
+  font: 600 14px var(--utv-font) !important;
+  flex: 0 0 auto !important;
+  transition:
+    background 180ms ease,
+    transform 180ms ease !important;
+}
+#itemDetailPage.utv-detail-ready .mainDetailButtons > .detailButton::after {
+  content: none !important;
+}
+#itemDetailPage.utv-detail-ready .mainDetailButtons > .btnPlay {
+  width: auto;
+  min-width: 110px !important;
+  padding: 0 20px !important;
+  gap: 6px !important;
+  background: #8fdeaa !important;
+  color: #101114 !important;
+  border-radius: 24px !important;
+}
+#itemDetailPage.utv-detail-ready .mainDetailButtons > .btnPlay::after {
+  content: attr(title) !important;
+  padding: 0 !important;
+}
+#itemDetailPage.utv-detail-ready .detailButton-content {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+#itemDetailPage.utv-detail-ready .detailButton-content::after {
+  content: none !important;
+}
+#itemDetailPage.utv-detail-ready .detailButton-icon {
+  font-size: 21px !important;
+}
+#itemDetailPage.utv-detail-ready .mainDetailButtons .hide {
+  display: none !important;
+}
+.utv-detail-tools {
+  position: relative;
+}
+.utv-detail-tools > summary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  list-style: none;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+.utv-detail-tools > summary::-webkit-details-marker {
+  display: none;
+}
+.utv-detail-tools > summary svg {
+  width: 20px;
+  height: 20px;
+}
+.utv-detail-tools > div {
+  position: absolute;
+  top: 48px;
+  left: 0;
+  min-width: 210px;
+  padding: 6px;
+  z-index: 20;
+  background: #202226;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+#itemDetailPage.utv-detail-ready .utv-detail-tools .detailButton {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex-direction: row !important;
+  width: 100%;
+  min-height: 44px !important;
+  padding: 0 12px !important;
+  margin: 0 !important;
+  border: 0 !important;
+  border-radius: 6px !important;
+  background: transparent !important;
+  gap: 10px !important;
+  font: 500 13px var(--utv-font) !important;
+  color: #eee;
+}
+#itemDetailPage.utv-detail-ready .utv-detail-tools .detailButton::after {
+  content: attr(title) !important;
+}
+#itemDetailPage.utv-detail-ready .utv-detail-tools .detailButton:hover,
+.utv-detail-tools > summary:hover {
+  background: rgba(255, 255, 255, 0.16) !important;
+}
+#itemDetailPage.utv-detail-ready :is(.detailButton, .utv-detail-tools > summary):focus-visible {
+  outline: 2px solid #8fdeaa !important;
+  outline-offset: 3px;
+}
+#itemDetailPage.utv-detail-ready .utv-detail-personnel {
+  grid-column: 3;
+  grid-row: 6;
+  align-self: end;
+  font: 400 12px/1.5 var(--utv-font);
+  color: #e6e6e9;
+  max-width: 310px;
+}
+.utv-detail-personnel span {
+  color: #9ca0a8;
+  margin-right: 4px;
+}
+.utv-detail-personnel a {
+  color: inherit;
+  text-decoration: none;
+}
+.utv-detail-personnel a:hover {
+  text-decoration: underline;
+}
+#itemDetailPage.utv-detail-ready .itemDetailsGroup {
+  grid-column: 1/3;
+  grid-row: 8;
+  margin: 0 !important;
+  padding: 20px !important;
+  background: rgba(255, 255, 255, 0.035) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 12px;
+  box-sizing: border-box;
+  align-self: start;
+}
+#itemDetailPage.utv-detail-ready .trackSelections {
+  grid-column: 3;
+  grid-row: 8;
+  margin: 0 !important;
+  padding: 20px !important;
+  background: rgba(255, 255, 255, 0.035) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 12px;
+  box-sizing: border-box;
+  align-self: start;
+}
+#itemDetailPage.utv-detail-ready
+  .detailSection
+  > :not(.detailSectionContent):not(.trackSelections):not(.itemDetailsGroup):not(.hide) {
+  grid-column: 1/-1;
+  grid-row: auto;
+}
+#itemDetailPage.utv-detail-ready .detailPageSecondaryContainer {
+  grid-column: 1/-1;
+  grid-row: 9;
+  background: #101114 !important;
+  padding: 32px 0 60px !important;
+  margin: 0 !important;
+  min-width: 0;
+}
+@media (max-width: 1000px) {
+  #itemDetailPage.utv-detail-ready {
+    grid-template-columns: minmax(0, 420px) minmax(0, 1fr);
+    column-gap: 24px;
+  }
+  .utv-detail-personnel {
+    display: none !important;
+  }
+  #itemDetailPage.utv-detail-ready .itemDetailsGroup {
+    grid-column: 1;
+  }
+  #itemDetailPage.utv-detail-ready .trackSelections {
+    grid-column: 2;
+  }
+}
+@media (max-width: 700px) {
+  #itemDetailPage.utv-detail-ready {
+    --utv-detail-gutter: 20px;
+    --utv-detail-height: clamp(620px, calc(100svh - 98px), 700px);
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows:
+      calc(var(--utv-detail-height) - 300px)
+      81px max-content max-content max-content 44px 40px max-content max-content max-content;
+    column-gap: 0;
+    text-align: center;
+  }
+  #itemDetailPage.utv-detail-ready > .utv-detail-art {
+    background-position: 55% center;
+  }
+  #itemDetailPage.utv-detail-ready > .utv-detail-art::after {
+    background: linear-gradient(0deg, #101114 0%, rgba(16, 17, 20, 0.52) 27%, transparent 65%);
+  }
+  #itemDetailPage.utv-detail-ready .detailLogo {
+    justify-self: center;
+    background-position: center bottom !important;
+  }
+  #itemDetailPage.utv-detail-ready .nameContainer {
+    justify-content: center !important;
+    text-align: center;
+  }
+  #itemDetailPage.utv-detail-ready .utv-detail-genres {
+    justify-content: center;
+    font-size: 12px;
+    gap: 6px;
+    white-space: normal;
+  }
+  #itemDetailPage.utv-detail-ready .detailSectionContent {
+    max-width: none;
+    text-align: center;
+  }
+  #itemDetailPage.utv-detail-ready .overview {
+    font-size: 14px !important;
+  }
+  #itemDetailPage.utv-detail-ready .itemMiscInfo-primary {
+    justify-content: center !important;
+    justify-self: center;
+    gap: 8px !important;
+    font-size: 11px !important;
+  }
+  #itemDetailPage.utv-detail-ready .mainDetailButtons {
+    justify-self: center;
+  }
+  #itemDetailPage.utv-detail-ready .utv-detail-tools > div {
+    left: auto;
+    right: 0;
+  }
+  #itemDetailPage.utv-detail-ready .itemDetailsGroup {
+    grid-column: 1;
+    grid-row: 8;
+    text-align: left;
+  }
+  #itemDetailPage.utv-detail-ready .trackSelections {
+    grid-column: 1;
+    grid-row: 9;
+    text-align: left;
+    margin-top: 20px !important;
+  }
+  #itemDetailPage.utv-detail-ready .detailPageSecondaryContainer {
+    grid-row: 10;
+    text-align: left;
+    padding-top: 28px !important;
+  }
+}
+/* The reference opens details from the artwork, with controls above the hit area. */
+#utv-featured .utv-featured-hit {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: block;
+  cursor: pointer;
+  border-radius: 0;
+  text-decoration: none;
+}
+#utv-featured .utv-featured-copy {
+  z-index: 1;
+}
+#utv-featured .utv-featured-bottom {
+  z-index: 2;
+  pointer-events: none;
+}
+#utv-featured .utv-featured-bottom button {
+  pointer-events: auto;
+}
+#utv-featured .utv-featured-hit:focus-visible {
+  outline: 2px solid #8fdeaa;
+  outline-offset: -4px;
+}
+/* Native mobile collapse dimensions cannot size the flattened hero grid. */
+#itemDetailPage.utv-detail-ready
+  :is(.detailSectionContent, .itemMiscInfo-primary, .itemDetailsGroup, .trackSelections) {
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  contain: none !important;
+  overflow: visible !important;
+}
+#itemDetailPage.utv-detail-ready .overview-controls {
+  min-height: 0 !important;
+  height: auto !important;
+  align-items: flex-end !important;
+}
+#itemDetailPage.utv-detail-ready .overview-expand {
+  min-width: 0 !important;
+  height: auto !important;
+  min-height: 0 !important;
+}
+
+#itemDetailPage.utv-detail-ready
+  :is(.detailSectionContent, .itemMiscInfo-primary, .itemDetailsGroup, .trackSelections) {
+  height: fit-content !important;
+  min-height: min-content !important;
+  align-self: start !important;
+}
+.utv-detail-tools > div {
+  top: auto;
+  bottom: 48px;
+}
+#itemDetailPage.utv-detail-ready:has(.detailLogo:not(.hide)) .nameContainer h1 {
+  display: block !important;
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+}
+/* Shared Seerr typography and full-height detail canvas. */
+:root {
+  --utv-radius: 10px;
+}
+#itemDetailPage.utv-detail-ready {
+  contain: none !important;
+  content-visibility: visible !important;
+  min-height: 100vh !important;
+}
+body:has(#itemDetailPage.utv-detail-ready:not(.hide)):not(.hide-scroll) .backdropContainer {
+  opacity: 0 !important;
+}
+#itemDetailPage.utv-detail-ready .detailPageSecondaryContainer {
+  grid-row: 10 !important;
+  gap: 32px !important;
+  background: transparent !important;
+  padding: 0 0 28px !important;
+}
+#itemDetailPage.utv-detail-ready .nextUpSection {
+  grid-column: 1 / -1;
+  grid-row: 8 !important;
+}
+#itemDetailPage.utv-detail-ready #listChildrenCollapsible {
+  grid-column: 1 / -1;
+  grid-row: 9 !important;
+}
+#itemDetailPage.utv-detail-ready
+  .card
+  :is(.cardTextContainer, .cardText, .cardText-first, .cardText-secondary) {
+  display: block !important;
+}
+#itemDetailPage.utv-detail-ready .card .cardText {
+  padding: 6px 0 0;
+  overflow-wrap: anywhere;
+}
+#itemDetailPage.utv-detail-ready .detailVerticalSection {
+  height: auto !important;
+  min-height: min-content !important;
+  align-self: start;
+  margin: 0 !important;
+  padding: 0 !important;
+  width: 100% !important;
+  min-width: 0;
+}
+#itemDetailPage.utv-detail-ready .detailVerticalSection > .emby-scroller {
+  overflow: hidden !important;
+  margin: 0 !important;
+  padding: 4px 0 12px !important;
+  width: 100% !important;
+}
+#itemDetailPage.utv-detail-ready .detailVerticalSection .scrollSlider {
+  padding: 0 !important;
+}
+#itemDetailPage.utv-detail-ready #castCollapsible .card {
+  width: 160px !important;
+  padding: 0 !important;
+}
+#itemDetailPage.utv-detail-ready #castCollapsible .cardBox {
+  margin: 0 20px 0 0 !important;
+}
+#itemDetailPage.utv-detail-ready #castCollapsible .cardScalable {
+  box-shadow: none !important;
+  border: 0 !important;
+}
+#itemDetailPage.utv-detail-ready #castCollapsible .cardText {
+  font: 450 12px/1.5 var(--utv-font) !important;
+  white-space: normal !important;
+}
+#itemDetailPage.utv-detail-ready #castCollapsible .cardText-secondary {
+  font-size: 11px !important;
+  color: #91959d !important;
+}
+#itemDetailPage.utv-detail-ready .itemDetailsGroup {
+  grid-row: 11 !important;
+  grid-column: 1/3 !important;
+  max-width: 700px;
+  width: 100%;
+  background: none !important;
+  border: 0 !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 0 !important;
+  padding: 24px 0 48px !important;
+}
+#itemDetailPage.utv-detail-ready .itemDetailsGroup::before {
+  content: "Information";
+  display: block;
+  font: 650 20px/1.4 var(--utv-font);
+  margin-bottom: 20px;
+  color: #f3f3f5;
+}
+#itemDetailPage.utv-detail-ready .detailsGroupItem {
+  padding: 10px 0 !important;
+  border: 0 !important;
+  align-items: baseline !important;
+  gap: 24px !important;
+}
+#itemDetailPage.utv-detail-ready .detailsGroupItem .label {
+  font: 450 12px/1.5 var(--utv-font) !important;
+  color: #91959d !important;
+  margin: 0 !important;
+  min-width: 95px;
+}
+#itemDetailPage.utv-detail-ready .detailsGroupItem a {
+  font: 450 12px/1.5 var(--utv-font) !important;
+}
+#itemDetailPage.utv-detail-ready .trackSelections {
+  grid-row: 11 !important;
+  grid-column: 3 !important;
+  background: none !important;
+  border: 0 !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 0 !important;
+  padding: 24px 0 48px !important;
+}
+#itemDetailPage.utv-detail-ready .trackSelections::before {
+  content: "Playback";
+  display: block;
+  font: 650 20px/1.4 var(--utv-font);
+  margin-bottom: 20px;
+  color: #f3f3f5;
+}
+#itemDetailPage.utv-detail-ready .trackSelections .selectContainer {
+  margin: 0 0 12px !important;
+}
+#itemDetailPage.utv-detail-ready .trackSelections select {
+  font: 450 12px/1.5 var(--utv-font) !important;
+}
+/* Poster geometry follows Requests; episodes keep their landscape thumbnails. */
+
+#itemDetailPage.utv-detail-ready #similarCollapsible .card {
+  width: 196px !important;
+  padding: 0 !important;
+}
+#itemDetailPage.utv-detail-ready #similarCollapsible .cardBox {
+  margin: 0 18px 0 0 !important;
+}
+#itemDetailPage.utv-detail-ready #similarCollapsible .cardScalable {
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  box-shadow: none !important;
+  border-radius: 10px !important;
+}
+#itemDetailPage.utv-detail-ready #similarCollapsible .cardText {
+  font: 450 12px/1.5 var(--utv-font) !important;
+  text-align: left !important;
+  white-space: normal !important;
+}
+@media (max-width: 1000px) {
+  #itemDetailPage.utv-detail-ready .itemDetailsGroup {
+    grid-column: 1 !important;
+  }
+  #itemDetailPage.utv-detail-ready .trackSelections {
+    grid-column: 2 !important;
+  }
+}
+@media (max-width: 700px) {
+  #itemDetailPage.utv-detail-ready {
+    grid-template-rows:
+      calc(var(--utv-detail-height) - 300px)
+      81px max-content max-content max-content 44px 40px max-content max-content max-content !important;
+  }
+  #itemDetailPage.utv-detail-ready .detailPageSecondaryContainer {
+    grid-row: 10 !important;
+    gap: 24px !important;
+  }
+  #itemDetailPage.utv-detail-ready .itemDetailsGroup {
+    grid-row: 11 !important;
+    grid-column: 1 !important;
+    padding-bottom: 12px !important;
+  }
+  #itemDetailPage.utv-detail-ready .trackSelections {
+    grid-row: 12 !important;
+    grid-column: 1 !important;
+    margin: 12px 0 0 !important;
+  }
+  #itemDetailPage.utv-detail-ready #castCollapsible .card {
+    width: 120px !important;
+  }
+  #itemDetailPage.utv-detail-ready #castCollapsible .cardBox {
+    margin-right: 16px !important;
+  }
+  #itemDetailPage.utv-detail-ready #similarCollapsible .card {
+    width: 152px !important;
+  }
+}
+html.transparentDocument #itemDetailPage.utv-detail-ready {
+  background: transparent !important;
+}
+html.transparentDocument #itemDetailPage.utv-detail-ready > .utv-detail-art {
+  display: none !important;
+}
+/* Respect native view visibility when playback or another page is active. */
+#itemDetailPage.utv-detail-ready.hide {
+  display: none !important;
+}
+#itemDetailPage.utv-detail-ready :is(.itemDetailsGroup, .trackSelections) {
+  box-shadow: none !important;
+  outline: none !important;
+}
+#itemDetailPage.utv-detail-ready .overview-expand {
+  font-size: 0 !important;
+}
+#itemDetailPage.utv-detail-ready .overview-expand::after {
+  content: "MORE" !important;
+  font: 650 10px/1.2 var(--utv-font) !important;
+}
+#itemDetailPage.utv-detail-ready
+  .overview:not(.detail-clamp-text)
+  ~ .overview-controls
+  .overview-expand::after {
+  content: "LESS" !important;
+}
+@media (max-width: 700px) {
+  #itemDetailPage.utv-detail-ready .overview,
+  #itemDetailPage.utv-detail-ready .overview p {
+    text-align: center !important;
+  }
+}
+#itemDetailPage.utv-detail-ready .overview {
+  padding-right: 44px !important;
+  box-sizing: border-box;
+}
+
+#itemDetailPage.utv-detail-ready [hidden],
+#itemDetailPage.utv-detail-ready .hide {
+  display: none !important;
+}
+
+#itemDetailPage.utv-series-ready :is(.nextUpSection, #listChildrenCollapsible) {
+  display: none !important;
+}
+.utv-series-shelf {
+  grid-column: 1 / -1;
+  grid-row: 8;
+  min-width: 0;
+  padding: 16px 0 36px;
+}
+.utv-series-heading {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 20px;
+}
+.utv-series-heading label {
+  font-size: 0;
+}
+.utv-series-heading select {
+  font: 650 23px/1.3 var(--utv-font);
+  color: #f4f4f6;
+  border: 0;
+  background: #101114;
+  padding: 6px 28px 6px 0;
+  cursor: pointer;
+}
+.utv-series-count {
+  font: 400 12px var(--utv-font);
+  color: #9298a2;
+}
+.utv-series-controls {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+.utv-series-controls button {
+  width: 36px;
+  height: 36px;
+  border: 1px solid #ffffff24;
+  border-radius: 50%;
+  background: #ffffff06;
+  color: #e4e6ea;
+  font-size: 25px;
+  cursor: pointer;
+}
+.utv-episode-rail {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: clamp(260px, 26vw, 360px);
+  gap: 20px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: thin;
+  padding: 3px 2px 14px;
+}
+.utv-episode-card {
+  min-width: 0;
+  scroll-snap-align: start;
+}
+.utv-episode-art {
+  display: block;
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 9px;
+  background: #22252a;
+}
+.utv-episode-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.utv-episode-number {
+  margin: 14px 0 5px;
+  font: 500 10px/1.4 var(--utv-font);
+  color: #969da7;
+  letter-spacing: 0.06em;
+}
+.utv-episode-title {
+  display: block;
+  color: #f1f2f5;
+  font: 600 15px/1.4 var(--utv-font);
+  text-decoration: none;
+}
+.utv-episode-description {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin: 7px 0;
+  font: 400 12px/1.6 var(--utv-font);
+  color: #a4aab4;
+  min-height: 3.2em;
+}
+.utv-episode-runtime {
+  font: 400 11px/1.4 var(--utv-font);
+  color: #9298a2;
+}
+.utv-episode-progress {
+  position: absolute;
+  height: 3px;
+  inset: auto 12px 12px;
+  background: #ffffff40;
+}
+.utv-episode-progress span {
+  display: block;
+  height: 100%;
+  background: #8fdeaa;
+}
+.utv-series-shelf :is(a, button, select):focus-visible {
+  outline: 2px solid #8fdeaa;
+  outline-offset: 3px;
+}
+@media (max-width: 700px) {
+  .utv-series-heading {
+    gap: 10px;
+  }
+  .utv-series-heading select {
+    font-size: 19px;
+  }
+  .utv-series-count {
+    font-size: 10px;
+  }
+  .utv-series-controls {
+    display: none;
+  }
+  .utv-episode-rail {
+    grid-auto-columns: 82%;
+    gap: 16px;
+  }
+}
+
+#itemDetailPage.utv-series-ready .nameContainer h3 {
+  display: none !important;
+}
+
+.utv-episode-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+.utv-series-controls button:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+.utv-episode-card {
+  position: relative;
+}
+.utv-episode-card > .utv-card-menu-trigger {
+  opacity: 1;
+  visibility: visible;
+  bottom: 8px;
+}
+
+#itemDetailPage.utv-detail-ready .overview-controls:has(.utv-synopsis-trigger) .overview-expand {
+  display: none !important;
+}
+.utv-synopsis-trigger {
+  border: 0;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: #ffffff30;
+  color: #f5f5f7;
+  font: 600 10px/1.3 var(--utv-font);
+  cursor: pointer;
+}
+.utv-synopsis-dialog {
+  width: min(620px, calc(100vw - 48px));
+  max-height: min(80svh, 700px);
+  padding: 0;
+  border: 1px solid #ffffff1a;
+  border-radius: 18px;
+  background: #242629;
+  color: #f5f5f7;
+  box-shadow: 0 20px 80px #0008;
+  font-family: var(--utv-font);
+}
+.utv-synopsis-dialog[hidden] {
+  display: none;
+}
+.utv-synopsis-dialog::backdrop {
+  background: #0009;
+  backdrop-filter: blur(4px);
+}
+.utv-synopsis-panel {
+  position: relative;
+  padding: 64px 40px 40px;
+}
+.utv-synopsis-panel h2 {
+  font: 600 20px/1.4 var(--utv-font);
+  margin: 0 0 18px;
+}
+.utv-synopsis-panel p {
+  font: 400 14px/1.7 var(--utv-font);
+  margin: 0;
+  white-space: pre-line;
+}
+.utv-synopsis-close {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 50%;
+  background: #ffffff12;
+  color: #f5f5f7;
+  font-size: 25px;
+  cursor: pointer;
+}
+.utv-synopsis-fallback {
+  position: fixed;
+  inset: 50% auto auto 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2147483000;
+  margin: 0;
+}
+.utv-synopsis-trigger:focus-visible,
+.utv-synopsis-close:focus-visible {
+  outline: 2px solid var(--utv-mint);
+  outline-offset: 3px;
+}
+.utv-episode-more {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #ffffff12;
+  color: #f5f5f7;
+  font: 700 16px/1 var(--utv-font);
+  cursor: pointer;
+}
+.utv-episode-runtime {
+  padding-right: 42px;
+}
+@media (max-width: 700px) {
+  .utv-synopsis-panel {
+    padding: 60px 24px 28px;
+  }
+  .utv-episode-more {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* Episode art and metadata share one surface, as in the reference season rail. */
+.utv-episode-link {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-rows: minmax(70px, 1fr) max-content max-content max-content max-content;
+  aspect-ratio: 1.3;
+  box-sizing: border-box;
+  padding: 12px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #242629;
+  box-shadow: inset 0 0 0 1px #ffffff1c;
+}
+.utv-episode-link > .utv-episode-art {
+  position: absolute;
+  inset: 0;
+  aspect-ratio: auto;
+  border-radius: inherit;
+  z-index: -1;
+}
+.utv-episode-link > .utv-episode-art::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(0deg, #101114f5, #101114cf 35%, #10111422 80%);
+}
+.utv-episode-link .utv-episode-number {
+  grid-row: 2;
+  margin: 0 0 3px;
+  color: #d0d2d5;
+}
+.utv-episode-link .utv-episode-title {
+  grid-row: 3;
+  font-size: 14px;
+}
+.utv-episode-link .utv-episode-description {
+  grid-row: 4;
+  margin: 5px 0;
+  min-height: 3.2em;
+  line-height: 1.6;
+  color: #d0d2d5;
+}
+.utv-episode-link .utv-episode-runtime {
+  grid-row: 5;
+  color: #c6c9cd;
+}
+.utv-episode-link:hover {
+  box-shadow: inset 0 0 0 2px #ffffff60;
+}
+.utv-episode-progress {
+  inset: 0 0 auto;
+}
+@media (max-width: 700px) {
+  #itemDetailPage.utv-detail-ready {
+    grid-template-rows:
+      calc(var(--utv-detail-height) - 320px)
+      81px max-content 44px max-content max-content 32px max-content max-content max-content !important;
+  }
+  #itemDetailPage.utv-detail-ready .mainDetailButtons {
+    grid-row: 4;
+    margin: 8px 0 12px !important;
+  }
+  #itemDetailPage.utv-detail-ready .detailSectionContent {
+    grid-row: 5;
+    margin-top: 16px !important;
+  }
+  #itemDetailPage.utv-detail-ready .itemMiscInfo-primary {
+    grid-row: 6;
+    margin-bottom: 0 !important;
+  }
+  .utv-episode-rail {
+    grid-auto-columns: 72%;
+    gap: 16px;
+  }
+}
