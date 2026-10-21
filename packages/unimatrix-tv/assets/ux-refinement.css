@@ -1716,6 +1716,10 @@ body.utv-login-active #loginPage .checkboxOutline {
   outline: 0 !important;
   box-shadow: none !important;
 }
+body.utv-login-active #loginPage .emby-checkbox:focus-visible + span + .checkboxOutline {
+  outline: 2px solid var(--utv-mint) !important;
+  outline-offset: 2px !important;
+}
 @media (max-width: 600px) {
   .MuiAppBar-root
     .MuiToolbar-root:first-child:has(> .utv-main-nav)

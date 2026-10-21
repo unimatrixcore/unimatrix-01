@@ -326,7 +326,8 @@ export function deploy(args = process.argv.slice(2), run = execFileSync, root = 
       "python3",
       "-",
     ],
-    { input: python, encoding: "utf8", maxBuffer: 2 * 1024 * 1024, timeout: 240_000 },
+    // Remote worst case: restart (80s) + verify (30 × 7s) + rollback restart (80s) + CSS restore (10 × 7s).
+    { input: python, encoding: "utf8", maxBuffer: 2 * 1024 * 1024, timeout: 600_000 },
   );
   console.log(output.trim());
   return output;

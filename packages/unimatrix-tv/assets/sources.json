@@ -3,7 +3,8 @@
     "repository": "lscambo13/ElegantFin",
     "commit": "9d43fa9b898c74055237133b7a7b8b8c5543f0ce",
     "path": "Theme/ElegantFin-jellyfin-theme-build-latest-minified.css",
-    "local": "elegantfin.css"
+    "local": "elegantfin.css",
+    "modifications": "Removed external fonts.gstatic.com font-face declarations for offline/privacy isolation"
   },
   {
     "repository": "mihaif7/elegantfin-jf12",

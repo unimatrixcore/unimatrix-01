@@ -266,13 +266,27 @@ def main():
                     state['events'].append({'at':now,'kind':'search-completed','key':job['key'],**({'seasonNumbers':job['seasonNumbers']} if 'seasonNumbers' in job else {})});state['pending'].pop(job['key'],None);persist();return
                 job.pop('commandId',None);job['searchDelay']=6*3600
                 if job.get('searchAttempts',0)>=8:
-                    job['phase']='exhausted';persist();return
+                    job.update(phase='exhausted',exhaustedAt=now);persist();return
         if job.get('searchAttempts',0)>=8:
-            job['phase']='exhausted';persist();return
+            job.update(phase='exhausted',exhaustedAt=now);persist();return
         if job.get('lastSearch') and now-job['lastSearch']<job.get('searchDelay',COOLDOWN):return
         job.update(lastSearch=now,searchAttempts=job.get('searchAttempts',0)+1);persist()
         if job['app'] == 'sonarr':job['command']['episodeIds'] = remaining
         cmd=arr(job['app'],'/command',job['command']);job['commandId']=cmd['id'];persist()
+    EXHAUSTED_TTL = 7 * 86400
+    for key, job in list(state['pending'].items()):
+        if job.get('phase') == 'exhausted':
+            obj = objects[job['app']].get(int(job['key'].split(':')[1]), {})
+            hasnew = any((q.get('downloadId') or '').lower() in torrents for q in queues[job['app']] if (q.get('movieId') if job['app']=='radarr' else q.get('seriesId')) == int(job['key'].split(':')[1]))
+            if hasnew or (job['app'] == 'radarr' and obj.get('hasFile')):
+                state['events'].append({'at': now, 'kind': 'search-completed', 'key': key, **({'seasonNumbers': job['seasonNumbers']} if 'seasonNumbers' in job else {})})
+                state['pending'].pop(key, None)
+                persist()
+                continue
+            if now - job.get('exhaustedAt', job.get('at', 0)) >= EXHAUSTED_TTL:
+                state['pending'].pop(key, None)
+                state['events'].append({'at': now, 'kind': 'recovery-expired', 'key': key})
+                persist()
     # Durable pending searches are retried after a transient API failure, without deleting again.
     for job in list(state['pending'].values()):
         if job.get('phase')=='removed':

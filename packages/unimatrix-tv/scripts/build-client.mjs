@@ -17,7 +17,8 @@ fs.mkdirSync(distAssetsDir, { recursive: true });
 console.log("Building presentation.css...");
 const elegantFin = fs
   .readFileSync(path.join(pkgRoot, "vendor/elegantfin.css"), "utf8")
-  .replace(/@import\s+(?:url\([^)]*\)|["'][^"']*["'])\s*;/g, "");
+  .replace(/@import\s+(?:url\([^)]*\)|["'][^"']*["'])\s*;/g, "")
+  .replace(/@font-face\s*\{[^}]*fonts\.gstatic\.com[^}]*\}/g, "");
 const elegantFinJf12 = fs.readFileSync(path.join(pkgRoot, "vendor/elegantfin-jf12.css"), "utf8");
 const unimatrixCss = fs.readFileSync(path.join(pkgRoot, "assets/unimatrix.css"), "utf8");
 const uxRefinementCss = fs.readFileSync(path.join(pkgRoot, "assets/ux-refinement.css"), "utf8");
