@@ -41,8 +41,15 @@ export function readRelease(root, includeRequests) {
       if (!allowed.has(name) || !/^[a-f0-9]{64}$/.test(hash))
         throw new Error(`Unexpected release artifact: ${name}`);
       const file = path.join(directory, name);
-      if (!fs.lstatSync(file).isFile()) throw new Error(`Artifact must be a regular file: ${name}`);
-      const bytes = fs.readFileSync(file);
+      const fd = fs.openSync(file, "r");
+      let bytes;
+      try {
+        const stat = fs.fstatSync(fd);
+        if (!stat.isFile()) throw new Error(`Artifact must be a regular file: ${name}`);
+        bytes = fs.readFileSync(fd);
+      } finally {
+        fs.closeSync(fd);
+      }
       if (sha256(bytes) !== hash) throw new Error(`Artifact checksum mismatch: ${name}`);
       output[name] = bytes.toString("base64");
     }

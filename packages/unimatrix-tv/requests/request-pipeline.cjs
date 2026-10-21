@@ -522,8 +522,9 @@ function telemetry(queue, file = "/run/unimatrix-telemetry/status.json", now = D
     return { torrents: [], clientUnavailable: false };
   try {
     const fs = require("node:fs");
-    if (fs.statSync(file).size > 2097152) throw new Error("Invalid telemetry");
-    const data = JSON.parse(fs.readFileSync(file, "utf8"));
+    const raw = fs.readFileSync(file, "utf8");
+    if (raw.length > 2097152) throw new Error("Invalid telemetry");
+    const data = JSON.parse(raw);
     if (
       typeof data.checkedAt !== "string" ||
       !Array.isArray(data.torrents) ||
@@ -569,7 +570,6 @@ function recoveryFor(r, c, file = "/run/unimatrix-telemetry/recovery.json", now 
     return null;
   try {
     const fs = require("node:fs");
-    if (fs.statSync(file).size > 131072) return null;
     const raw = fs.readFileSync(file, "utf8");
     if (raw.length > 131072) return null;
     const data = JSON.parse(raw),
