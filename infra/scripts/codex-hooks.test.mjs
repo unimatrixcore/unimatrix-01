@@ -419,6 +419,12 @@ test("session telemetry exposes unsupported metrics explicitly and contains no b
 });
 
 test("default telemetry stays in existing scratch space and write failures are nonblocking", (t) => {
+  const previousTelemetryFile = process.env.UNIMATRIX_CODEX_TELEMETRY_FILE;
+  t.after(() => {
+    if (previousTelemetryFile === undefined) delete process.env.UNIMATRIX_CODEX_TELEMETRY_FILE;
+    else process.env.UNIMATRIX_CODEX_TELEMETRY_FILE = previousTelemetryFile;
+  });
+  delete process.env.UNIMATRIX_CODEX_TELEMETRY_FILE;
   const f = fixture(t, [meta, turn]);
   const warnings = [];
   const options = { warn: (warning) => warnings.push(warning) };
