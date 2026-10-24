@@ -23,6 +23,14 @@ import { ToolSectionRail, type ToolSection } from "./tool-section-rail.js";
  * reason.
  */
 
+export type ToolPageWidth = "default" | "wide" | "full";
+
+export type ToolPageContainerProps = React.ComponentProps<"div"> & {
+  /** Explicit width takes precedence over the legacy `wide` flag. */
+  width?: ToolPageWidth;
+  wide?: boolean;
+};
+
 export type ToolShellProps = {
   /**
    * Rendered at the right of the title bar. When this and `homeHref` are both
@@ -40,6 +48,7 @@ export type ToolShellProps = {
   accountControl?: React.ReactNode | ((state: { collapsed: boolean }) => React.ReactNode);
   children: React.ReactNode;
   className?: string;
+  width?: ToolPageWidth;
   /**
    * Right-hand cluster of the footer — source links, data attribution, and
    * anything else that is specific to this tool. Use `ToolFooterLink` for the
@@ -90,19 +99,17 @@ function resolveAccountControl(
   return typeof accountControl === "function" ? accountControl({ collapsed }) : accountControl;
 }
 
-export function ToolPageContainer({
-  className,
-  wide,
-  ...props
-}: React.ComponentProps<"div"> & {
-  /** Widens the container's cap from `max-w-5xl` to `max-w-7xl`, for a rail + content layout. */
-  wide?: boolean;
-}) {
+export function ToolPageContainer({ className, wide, width, ...props }: ToolPageContainerProps) {
+  const widthClasses: Record<ToolPageWidth, string> = {
+    default: "max-w-5xl",
+    wide: "max-w-7xl",
+    full: "max-w-none",
+  };
   return (
     <div
       className={cn(
         "relative mx-auto flex min-h-[100dvh] w-full flex-col gap-8 px-4 py-4 sm:px-6 lg:gap-10 lg:px-8 lg:py-6",
-        wide ? "max-w-7xl" : "max-w-5xl",
+        widthClasses[width ?? (wide ? "wide" : "default")],
         className,
       )}
       {...props}
@@ -209,6 +216,7 @@ export function ToolShell({
   sectionsHomeHref = "/",
   sectionsLabel = "Sections",
   showFooter = true,
+  width,
 }: ToolShellProps) {
   // An empty array falls back to the no-sections layout, not a rail with
   // nothing in it — a caller computing `sections` from permissions must not
@@ -310,7 +318,7 @@ export function ToolShell({
           toggleRef={toggleRef}
         />
 
-        <ToolPageContainer className="min-h-0 flex-1" inert={railOpen} wide>
+        <ToolPageContainer className="min-h-0 flex-1" inert={railOpen} width={width ?? "wide"}>
           {main}
           {showFooter ? (
             <ToolFooter end={footerEnd} homeHref={homeHref} ownerName={ownerName} />
@@ -321,7 +329,7 @@ export function ToolShell({
   }
 
   return (
-    <ToolPageContainer className={className}>
+    <ToolPageContainer className={className} width={width ?? "default"}>
       <GraphBackground />
 
       {skipLink}

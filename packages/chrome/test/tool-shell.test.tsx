@@ -11,7 +11,7 @@ import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { ToolSection } from "../src/tool.js";
-import { ToolFooterLink, ToolShell, ToolTitleBar } from "../src/tool.js";
+import { ToolFooterLink, ToolPageContainer, ToolShell, ToolTitleBar } from "../src/tool.js";
 
 function StubIcon({ className }: { className?: string | undefined }) {
   return <svg className={className} data-testid="section-icon" />;
@@ -159,5 +159,44 @@ describe("ToolTitleBar", () => {
     fireEvent.click(screen.getByRole("button", { name: "Back to cases" }));
 
     expect(onClick).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("ToolPageContainer width", () => {
+  it.each([
+    [{}, "max-w-5xl"],
+    [{ wide: true }, "max-w-7xl"],
+    [{ width: "default" as const, wide: true }, "max-w-5xl"],
+    [{ width: "wide" as const }, "max-w-7xl"],
+    [{ width: "full" as const, wide: true }, "max-w-none"],
+  ])("resolves %o to %s without leaking layout props onto the DOM", (props, expected) => {
+    render(<ToolPageContainer data-testid="container" {...props} />);
+    const container = screen.getByTestId("container");
+    expect(container).toHaveClass(expected);
+    expect(container).not.toHaveAttribute("width");
+    expect(container).not.toHaveAttribute("wide");
+  });
+
+  it("lets consumer classes override the resolved width", () => {
+    render(<ToolPageContainer className="max-w-3xl" data-testid="container" width="full" />);
+    expect(screen.getByTestId("container")).toHaveClass("max-w-3xl");
+    expect(screen.getByTestId("container")).not.toHaveClass("max-w-none");
+  });
+
+  it.each([false, true])(
+    "preserves branch defaults and forwards explicit width with rail=%s",
+    async (rail) => {
+      await renderInRouter(<ToolShell sections={rail ? SECTIONS : []}>tool content</ToolShell>);
+      expect(screen.getByRole("main").parentElement).toHaveClass(rail ? "max-w-7xl" : "max-w-5xl");
+    },
+  );
+
+  it.each([false, true])("forwards full width with rail=%s", async (rail) => {
+    await renderInRouter(
+      <ToolShell sections={rail ? SECTIONS : []} width="full">
+        tool content
+      </ToolShell>,
+    );
+    expect(screen.getByRole("main").parentElement).toHaveClass("max-w-none");
   });
 });
