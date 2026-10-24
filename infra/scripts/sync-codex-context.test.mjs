@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { constants } from "node:fs";
+import fs from "node:fs/promises";
 import {
   mkdtemp,
   mkdir,
@@ -10,9 +12,20 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { syncBuiltinESMExports } from "node:module";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { syncCodexContext } from "./sync-codex-context.mjs";
+
+function interceptOpen(t, implementation) {
+  const original = fs.open;
+  t.mock.method(fs, "open", (...args) => implementation(original, ...args));
+  syncBuiltinESMExports();
+  t.after(() => {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+  });
+}
 
 async function put(root, path, content) {
   await mkdir(dirname(join(root, path)), { recursive: true });
@@ -230,4 +243,124 @@ test("fails when an existing Claude event gains an unhandled handler or matcher"
     syncCodexContext({ sourceRoot: root }),
     /Unhandled Claude hook registration or handler: PostToolUse/,
   );
+});
+
+test("refuses agent and hook leaf symlinks without modifying their targets", async (t) => {
+  const root = await fixture(t);
+  await syncCodexContext({ sourceRoot: root });
+  const victim = join(root, "user-file.txt");
+  await writeFile(victim, "User content.");
+  for (const name of [".codex/agents/planner.toml", ".codex/hooks.json"]) {
+    const path = join(root, name);
+    const previous = await readFile(path, "utf8");
+    await rm(path);
+    await symlink(victim, path);
+    await assert.rejects(syncCodexContext({ sourceRoot: root }), /Refusing non-file/);
+    assert.equal(await readFile(victim, "utf8"), "User content.");
+    await rm(path);
+    await writeFile(path, previous);
+  }
+});
+
+test("exclusive creation preserves a user file appearing after the missing-file read", async (t) => {
+  const root = await fixture(t);
+  const target = join(root, ".codex/agents/planner.toml");
+  await mkdir(dirname(target), { recursive: true });
+  let raced = false;
+  interceptOpen(t, async (original, path, flags, mode) => {
+    if (path === target && !raced && !(flags & constants.O_CREAT)) {
+      raced = true;
+      try {
+        return await original(path, flags, mode);
+      } catch (error) {
+        assert.equal(error.code, "ENOENT");
+        await writeFile(target, "User file appeared.");
+        throw error;
+      }
+    }
+    return original(path, flags, mode);
+  });
+  await assert.rejects(syncCodexContext({ sourceRoot: root }), { code: "EEXIST" });
+  assert.equal(raced, true);
+  assert.equal(await readFile(target, "utf8"), "User file appeared.");
+});
+
+test("a symlink swapped in after ownership validation cannot redirect an update", async (t) => {
+  const root = await fixture(t);
+  await syncCodexContext({ sourceRoot: root });
+  const target = join(root, ".codex/agents/planner.toml");
+  const source = join(root, ".claude/agents/planner.md");
+  await writeFile(
+    source,
+    (await readFile(source, "utf8")).replace("Plan a change.", "Changed plan."),
+  );
+  const victim = join(root, "user-file.txt");
+  await writeFile(victim, "User content.");
+  let raced = false;
+  interceptOpen(t, async (original, path, flags, mode) => {
+    const handle = await original(path, flags, mode);
+    if (path === target && !raced && !(flags & constants.O_RDWR)) {
+      const read = handle.readFile.bind(handle);
+      handle.readFile = async (...args) => {
+        const value = await read(...args);
+        raced = true;
+        await rm(target);
+        await symlink(victim, target);
+        return value;
+      };
+    }
+    return handle;
+  });
+  await assert.rejects(syncCodexContext({ sourceRoot: root }), { code: "ELOOP" });
+  assert.equal(raced, true);
+  assert.equal(await readFile(victim, "utf8"), "User content.");
+});
+
+test("a pathname swap after opening the update descriptor cannot redirect its writes", async (t) => {
+  const root = await fixture(t);
+  await syncCodexContext({ sourceRoot: root });
+  const target = join(root, ".codex/agents/planner.toml");
+  const source = join(root, ".claude/agents/planner.md");
+  await writeFile(
+    source,
+    (await readFile(source, "utf8")).replace("Plan a change.", "Changed plan."),
+  );
+  const victim = join(root, "user-file.txt");
+  await writeFile(victim, "User content.");
+  let raced = false;
+  interceptOpen(t, async (original, path, flags, mode) => {
+    const handle = await original(path, flags, mode);
+    if (path === target && !raced && flags & constants.O_RDWR) {
+      raced = true;
+      await rm(target);
+      await symlink(victim, target);
+    }
+    return handle;
+  });
+  await assert.rejects(syncCodexContext({ sourceRoot: root }), /Refusing non-file/);
+  assert.equal(raced, true);
+  assert.equal(await readFile(victim, "utf8"), "User content.");
+});
+
+test("concurrent edits to an owned file fail closed before overwriting them", async (t) => {
+  const root = await fixture(t);
+  await syncCodexContext({ sourceRoot: root });
+  const target = join(root, ".codex/agents/planner.toml");
+  const source = join(root, ".claude/agents/planner.md");
+  await writeFile(
+    source,
+    (await readFile(source, "utf8")).replace("Plan a change.", "Changed plan."),
+  );
+  let raced = false;
+  interceptOpen(t, async (original, path, flags, mode) => {
+    const handle = await original(path, flags, mode);
+    if (path === target && !raced && flags & constants.O_RDWR) {
+      raced = true;
+      await writeFile(target, "Concurrent user edit.");
+    }
+    return handle;
+  });
+  await assert.rejects(syncCodexContext({ sourceRoot: root }), /Output changed during/);
+  assert.equal(raced, true);
+  assert.equal(await readFile(target, "utf8"), "Concurrent user edit.");
 });

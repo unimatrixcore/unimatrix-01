@@ -1,4 +1,5 @@
-import { lstat, mkdir, readFile, readdir, readlink, symlink, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { lstat, mkdir, open, readFile, readdir, readlink, symlink } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -20,6 +21,71 @@ async function statIfPresent(path) {
   } catch (error) {
     if (error.code === "ENOENT") return undefined;
     throw error;
+  }
+}
+
+async function outputLink(path, optional = false) {
+  try {
+    return await readlink(path);
+  } catch (error) {
+    if (error.code === "ENOENT" || (optional && error.code === "EINVAL")) return undefined;
+    throw new Error(`Refusing conflicting skill link: ${path}`, { cause: error });
+  }
+}
+
+async function outputFile(path, optional = false) {
+  let handle;
+  try {
+    handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    const identity = await handle.stat({ bigint: true });
+    if (!identity.isFile()) {
+      if (optional) return undefined;
+      throw new Error(`Refusing non-file output: ${path}`);
+    }
+    return { text: await handle.readFile("utf8"), identity };
+  } catch (error) {
+    if (error.code === "ENOENT") return undefined;
+    if (["ELOOP", "EISDIR", "ENXIO"].includes(error.code)) {
+      if (optional) return undefined;
+      throw new Error(`Refusing non-file output: ${path}`, { cause: error });
+    }
+    throw error;
+  } finally {
+    await handle?.close();
+  }
+}
+
+function sameFile(first, second) {
+  return first.dev === second.dev && first.ino === second.ino;
+}
+
+async function writeOutput(path, text, previous) {
+  const flags = previous
+    ? constants.O_RDWR | constants.O_NOFOLLOW | constants.O_NONBLOCK
+    : constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW;
+  const handle = await open(path, flags, 0o666);
+  let identity;
+  try {
+    identity = await handle.stat({ bigint: true });
+    if (!identity.isFile() || (previous && !sameFile(identity, previous.identity))) {
+      throw new Error(`Output changed during synchronization: ${path}`);
+    }
+    if (previous && (await handle.readFile("utf8")) !== previous.text) {
+      throw new Error(`Output changed during synchronization: ${path}`);
+    }
+    const data = Buffer.from(text);
+    for (let offset = 0; offset < data.length;) {
+      const { bytesWritten } = await handle.write(data, offset, data.length - offset, offset);
+      if (!bytesWritten) throw new Error(`Could not finish writing output: ${path}`);
+      offset += bytesWritten;
+    }
+    await handle.truncate(data.length);
+  } finally {
+    await handle.close();
+  }
+  const current = await outputFile(path);
+  if (!current || !sameFile(identity, current.identity) || current.text !== text) {
+    throw new Error(`Output changed during synchronization: ${path}`);
   }
 }
 
@@ -178,6 +244,8 @@ export async function syncCodexContext({
 } = {}) {
   sourceRoot = resolve(sourceRoot);
   outputRoot = resolve(outputRoot);
+  if (typeof constants.O_NOFOLLOW !== "number")
+    throw new Error("Safe output synchronization requires no-follow file opens");
   const { agents, skills, events } = await discover(sourceRoot);
   const outputs = new Map(
     agents.map((agent) => [`.codex/agents/${agent.name}.toml`, { text: renderAgent(agent) }]),
@@ -221,13 +289,12 @@ export async function syncCodexContext({
       const path = `${directory}/${name}`;
       if (outputs.has(path)) continue;
       const absolute = join(outputRoot, path);
-      const existing = await lstat(absolute);
+      const link = directory === ".agents/skills" ? await outputLink(absolute, true) : undefined;
       const owned =
         directory === ".codex/agents"
-          ? existing.isFile() && (await readFile(absolute, "utf8")).startsWith(agentHeader)
-          : existing.isSymbolicLink() &&
-            dirname(resolve(dirname(absolute), await readlink(absolute))) ===
-              join(sourceRoot, ".claude/skills");
+          ? (await outputFile(absolute, true))?.text.startsWith(agentHeader)
+          : link !== undefined &&
+            dirname(resolve(dirname(absolute), link)) === join(sourceRoot, ".claude/skills");
       if (owned)
         throw new Error(`Stale managed output: ${path}; remove it explicitly after review`);
     }
@@ -236,37 +303,36 @@ export async function syncCodexContext({
   const changes = [];
   for (const [path, expected] of outputs) {
     const absolute = join(outputRoot, path);
-    const existing = await statIfPresent(absolute);
-    if (!existing) {
+    if (expected.link) {
+      const link = await outputLink(absolute);
+      if (link === undefined) changes.push([path, expected]);
+      else if (link !== expected.link) throw new Error(`Refusing conflicting skill link: ${path}`);
+      continue;
+    }
+    const current = await outputFile(absolute);
+    if (!current) {
       changes.push([path, expected]);
       continue;
     }
-    if (expected.link) {
-      if (!existing.isSymbolicLink() || (await readlink(absolute)) !== expected.link)
-        throw new Error(`Refusing conflicting skill link: ${path}`);
-      continue;
-    }
-    if (!existing.isFile()) throw new Error(`Refusing non-file output: ${path}`);
-    const current = await readFile(absolute, "utf8");
-    let owned = current.startsWith(agentHeader);
+    let owned = current.text.startsWith(agentHeader);
     if (expected.json) {
       try {
-        owned = JSON.parse(current).description === marker;
+        owned = JSON.parse(current.text).description === marker;
       } catch {
         owned = false;
       }
     }
     if (!owned) throw new Error(`Refusing unowned output: ${path}`);
-    if (current !== expected.text) changes.push([path, expected]);
+    if (current.text !== expected.text) changes.push([path, expected, current]);
   }
   if (check && changes.length)
     throw new Error(`Codex context drift: ${changes.map(([path]) => path).join(", ")}`);
   if (!check) {
-    for (const [path, expected] of changes) {
+    for (const [path, expected, previous] of changes) {
       const absolute = join(outputRoot, path);
       await mkdir(dirname(absolute), { recursive: true });
       if (expected.link) await symlink(expected.link, absolute);
-      else await writeFile(absolute, expected.text);
+      else await writeOutput(absolute, expected.text, previous);
     }
   }
   return changes.length;
