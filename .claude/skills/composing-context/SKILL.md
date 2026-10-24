@@ -5,6 +5,8 @@ description: Decide where agent-facing guidance goes and how much of it to write
 
 # Composing context for an agent
 
+In Codex, read `.claude/runtime.md` for runtime mechanics. `/doctor` below refers to Claude Code.
+
 A prompt is written for one request. Context is loaded across many, so it cannot be as specific — and
 every line of it is paid for on every session that loads it, including after each compaction.
 

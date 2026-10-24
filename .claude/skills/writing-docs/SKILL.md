@@ -5,6 +5,9 @@ description: How this repo wants documentation written — any .md file, AGENTS.
 
 # Writing docs in this repo
 
+In Codex, read `.claude/runtime.md` for skill loading. `/doctor` and the Claude measurements below
+refer to Claude Code.
+
 Two audiences, one failure mode: a human who skims and an agent that loads the file into a
 finite context and acts on it. Both are hurt by stale claims, by narration of past work, and by
 prose that costs attention without changing a decision.

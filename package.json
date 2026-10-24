@@ -27,6 +27,7 @@
     "lighthouse": "node ./infra/scripts/lighthouse.mjs apps/web && node ./infra/scripts/lighthouse.mjs apps/cflop",
     "check:app-wiring": "bash ./infra/scripts/check-app-wiring.sh",
     "check:agents-md": "bash ./infra/scripts/check-agents-md-symlinks.sh",
+    "check:codex-context": "node ./infra/scripts/sync-codex-context.mjs --check && node --test ./infra/scripts/sync-codex-context.test.mjs ./infra/scripts/codex-hooks.test.mjs",
     "check:stale-comments": "node ./infra/scripts/check-stale-comments.mjs",
     "check:doc-script-refs": "bash ./infra/scripts/check-doc-script-refs.sh",
     "check:deploy-config": "node ./infra/scripts/validate-deploy-config.mjs && node ./infra/scripts/generate-deploy-config.mjs --check",
@@ -36,9 +37,9 @@
     "check:reminder-hooks": "bash ./infra/scripts/check-reminder-hooks.sh",
     "check:todo-citations": "bash ./infra/scripts/check-todo-citations.sh",
     "check:scratch-untracked": "node ./infra/scripts/check-scratch-not-tracked.mjs",
-    "check": "pnpm format:check && pnpm deps:check && pnpm check:app-wiring && pnpm check:agents-md && pnpm check:stale-comments && pnpm check:doc-script-refs && pnpm check:deploy-config && pnpm check:runner-labels && pnpm check:ship-pr-fixtures && pnpm check:reminder-hooks && pnpm check:todo-citations && pnpm check:scratch-untracked && turbo run lint typecheck test && pnpm check:coverage-drift",
+    "check": "pnpm format:check && pnpm deps:check && pnpm check:app-wiring && pnpm check:agents-md && pnpm check:codex-context && pnpm check:stale-comments && pnpm check:doc-script-refs && pnpm check:deploy-config && pnpm check:runner-labels && pnpm check:ship-pr-fixtures && pnpm check:reminder-hooks && pnpm check:todo-citations && pnpm check:scratch-untracked && turbo run lint typecheck test && pnpm check:coverage-drift",
     "knip": "knip",
-    "verify": "pnpm format:check && pnpm deps:check && pnpm check:app-wiring && pnpm check:agents-md && pnpm check:stale-comments && pnpm check:doc-script-refs && pnpm check:deploy-config && pnpm check:runner-labels && pnpm check:ship-pr-fixtures && pnpm check:reminder-hooks && pnpm check:todo-citations && pnpm check:scratch-untracked && turbo run build lint typecheck test && pnpm check:coverage-drift"
+    "verify": "pnpm format:check && pnpm deps:check && pnpm check:app-wiring && pnpm check:agents-md && pnpm check:codex-context && pnpm check:stale-comments && pnpm check:doc-script-refs && pnpm check:deploy-config && pnpm check:runner-labels && pnpm check:ship-pr-fixtures && pnpm check:reminder-hooks && pnpm check:todo-citations && pnpm check:scratch-untracked && turbo run build lint typecheck test && pnpm check:coverage-drift"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",

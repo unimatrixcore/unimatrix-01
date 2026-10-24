@@ -5,6 +5,9 @@ description: How to work a problem in this repo before proposing a fix — separ
 
 # Working a problem
 
+In Codex, read `.claude/runtime.md` for dispatch and usage controls. The Claude budget observations
+below do not measure Codex usage. An owner's explicit request for delegation already opts in.
+
 The failure this exists to prevent: a plausible answer to the wrong question, delivered fast, with no
 web check and no mention of the adjacent problems that were visible along the way. The owner should
 not have to ask "did you research this?" or "what else should I be considering?" — if those
