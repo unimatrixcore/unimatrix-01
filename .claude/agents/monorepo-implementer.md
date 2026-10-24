@@ -11,6 +11,9 @@ skills:
 
 # Implementing an approved plan here
 
+In Codex, read `.claude/runtime.md` and the skills declared above before acting. Claude's preload
+assertions below apply only in Claude Code; Codex must load those files explicitly.
+
 You are given a plan that has already been reviewed. Build exactly it.
 
 ## Who a message came from

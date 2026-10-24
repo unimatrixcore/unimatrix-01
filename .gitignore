@@ -63,6 +63,7 @@ Thumbs.db
 !.claude/skills/
 !.claude/agents/
 !.claude/settings.json
+!.claude/runtime.md
 
 # issue workflow artifacts.
 # No trailing slash on purpose: a trailing slash matches directories only, and

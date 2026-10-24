@@ -5,6 +5,8 @@ description: Build, iterate on, or promote a prototype in the `lab` harness. Use
 
 # Prototyping in the lab
 
+In Codex, read `.claude/runtime.md` for browser and skill-loading mechanics.
+
 ## Before you touch anything
 
 Read `lab/AGENTS.md` and `lab/prototypes/README.md`. They hold every fact about the harness —

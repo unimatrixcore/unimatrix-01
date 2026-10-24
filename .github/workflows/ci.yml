@@ -94,6 +94,9 @@ jobs:
       - name: Reminder hook fixtures
         run: bash ./infra/scripts/check-reminder-hooks.sh
 
+      - name: Codex context and hook fixtures
+        run: pnpm check:codex-context
+
       # The repo's shell reaches no other static analysis: CodeQL has no shell
       # extractor, `.claude/` is in no pnpm workspace so turbo never sees it, and
       # prettier has no bash parser. A step in `Verify` rather than a job of its

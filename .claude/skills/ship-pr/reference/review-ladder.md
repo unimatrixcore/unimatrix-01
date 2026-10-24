@@ -1,5 +1,8 @@
 # The reviewer ladder — full mechanics
 
+In Codex, use `.claude/runtime.md` for available specialist-role dispatches. The `Workflow`, plugin
+registrations and paid cloud-review invocation below describe Claude Code only.
+
 Loaded on demand from `ship-pr`. Read this when picking a pre-merge reviewer, and before invoking
 the `code-review` workflow or handing off `ultra`.
 

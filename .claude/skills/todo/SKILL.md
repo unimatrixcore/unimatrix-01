@@ -5,6 +5,9 @@ description: Compose a `.notes/01-todo/*.todo.md` item. Use when asked to add or
 
 # Compose a todo item
 
+In Codex, read `.claude/runtime.md` for explicit skill loading; do not rely on Claude's context
+injection or compaction behavior.
+
 ## Before you write anything
 
 Read `.notes/AGENTS.md` — it owns the format. `.notes/` is gitignored, so a fresh clone has this

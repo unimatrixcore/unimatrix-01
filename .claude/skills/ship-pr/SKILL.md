@@ -5,6 +5,9 @@ description: Take a task all the way to merged. Use at the start of any session 
 
 # Ship a PR
 
+In Codex, read `.claude/runtime.md` first. It replaces the Claude-specific tool, worktree,
+effort, monitor and review invocation mechanics below; the ordered steps and approval stops remain.
+
 ## How this is invoked
 
 **The owner types this at the *start* of a session, not the end.** The argument is either the

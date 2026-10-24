@@ -152,7 +152,10 @@ resumed with the flag after a real review already ran gets the ordinary armed li
 genuinely never-reviewed PR gets `auto-merge armed UNREVIEWED on <sha>`. `SHIP_PR_AUTO_MERGE=0`
 outranks it either way, for when you want the wait skipped but the merge left to a person.
 
-To wait: **arm a `Monitor` and carry on working.** This is the case `Monitor` is for — an outcome that
+In Codex, use the persistent-command and separate-stream procedure in `.claude/runtime.md` wherever
+this reference calls for `Monitor`.
+
+To wait in Claude Code: **arm a `Monitor` and carry on working.** This is the case `Monitor` is for — an outcome that
 arrives on someone else's schedule, with no way to know which of five endings it will be.
 
 ```sh
