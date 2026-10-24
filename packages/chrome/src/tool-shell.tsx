@@ -88,6 +88,8 @@ export type ToolShellProps = {
    * the whole `<footer>`, including the `contentinfo` landmark.
    */
   showFooter?: boolean;
+  /** Section mode bounds the frame; children own their scrolling within `main`. */
+  scroll?: "page" | "section";
 };
 
 const DEFAULT_OWNER_NAME = "Gwen Phalan";
@@ -175,10 +177,12 @@ export function ToolFooterLink({ className, ...props }: React.ComponentProps<"a"
 }
 
 function ToolFooter({
+  bounded,
   end,
   homeHref,
   ownerName,
 }: {
+  bounded: boolean;
   end: React.ReactNode | undefined;
   homeHref: string | undefined;
   ownerName: string;
@@ -187,7 +191,7 @@ function ToolFooter({
   const copyright = `${year} ${ownerName}`;
 
   return (
-    <footer className="py-1">
+    <footer className={cn("py-1", bounded && "shrink-0")}>
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-muted-foreground/85">
         <p>
           ©{" "}
@@ -216,6 +220,7 @@ export function ToolShell({
   sectionsHomeHref = "/",
   sectionsLabel = "Sections",
   showFooter = true,
+  scroll = "page",
   width,
 }: ToolShellProps) {
   // An empty array falls back to the no-sections layout, not a rail with
@@ -233,6 +238,7 @@ export function ToolShell({
   const toggleRef = useRef<HTMLButtonElement>(null);
   const focusToggleOnTransition = useRef(false);
   const railOpen = hasSections && !collapsed;
+  const sectionScroll = scroll === "section";
 
   useEffect(() => {
     if (focusToggleOnTransition.current) {
@@ -253,7 +259,10 @@ export function ToolShell({
 
   const main = (
     <main
-      className={cn("flex flex-1 flex-col gap-8 lg:gap-10", !hasSections && "justify-center")}
+      className={cn(
+        "flex flex-1 flex-col gap-8 lg:gap-10",
+        sectionScroll ? "min-h-0 min-w-0 overflow-hidden" : !hasSections && "justify-center",
+      )}
       id="main-content"
     >
       {children}
@@ -283,7 +292,13 @@ export function ToolShell({
   // Expansion is transient: the scrim blocks the page until the rail closes.
   if (hasSections) {
     return (
-      <div className={cn("relative flex min-h-[100dvh] w-full pl-16", className)}>
+      <div
+        className={cn(
+          "relative flex min-h-[100dvh] w-full pl-16",
+          sectionScroll && "h-dvh min-h-0 overflow-hidden",
+          className,
+        )}
+      >
         <GraphBackground />
         {skipLink}
 
@@ -318,10 +333,19 @@ export function ToolShell({
           toggleRef={toggleRef}
         />
 
-        <ToolPageContainer className="min-h-0 flex-1" inert={railOpen} width={width ?? "wide"}>
+        <ToolPageContainer
+          className={cn("min-h-0 flex-1", sectionScroll && "h-full min-w-0 overflow-hidden")}
+          inert={railOpen}
+          width={width ?? "wide"}
+        >
           {main}
           {showFooter ? (
-            <ToolFooter end={footerEnd} homeHref={homeHref} ownerName={ownerName} />
+            <ToolFooter
+              bounded={sectionScroll}
+              end={footerEnd}
+              homeHref={homeHref}
+              ownerName={ownerName}
+            />
           ) : null}
         </ToolPageContainer>
       </div>
@@ -329,13 +353,16 @@ export function ToolShell({
   }
 
   return (
-    <ToolPageContainer className={className} width={width ?? "default"}>
+    <ToolPageContainer
+      className={cn(sectionScroll && "h-dvh min-h-0 min-w-0 overflow-hidden", className)}
+      width={width ?? "default"}
+    >
       <GraphBackground />
 
       {skipLink}
 
       {hasTitleBar ? (
-        <div className="flex items-center justify-between gap-4">
+        <div className={cn("flex items-center justify-between gap-4", sectionScroll && "shrink-0")}>
           {homeLabel === undefined ? (
             <span />
           ) : (
@@ -354,7 +381,14 @@ export function ToolShell({
 
       {main}
 
-      {showFooter ? <ToolFooter end={footerEnd} homeHref={homeHref} ownerName={ownerName} /> : null}
+      {showFooter ? (
+        <ToolFooter
+          bounded={sectionScroll}
+          end={footerEnd}
+          homeHref={homeHref}
+          ownerName={ownerName}
+        />
+      ) : null}
     </ToolPageContainer>
   );
 }
