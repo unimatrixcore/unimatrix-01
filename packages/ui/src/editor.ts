@@ -43,6 +43,7 @@ export {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "./components/ui/alert-dialog.js";
+export { Alert, AlertTitle, AlertDescription } from "./components/ui/alert.js";
 export { Badge } from "./components/ui/badge.js";
 export { Button } from "./components/ui/button.js";
 export { Checkbox } from "./components/ui/checkbox.js";
@@ -59,6 +60,7 @@ export {
   EmptyContent,
   EmptyDescription,
   EmptyHeader,
+  EmptyMedia,
   EmptyTitle,
 } from "./components/ui/empty.js";
 export { Input } from "./components/ui/input.js";
