@@ -1,5 +1,5 @@
 import type * as React from "react";
-import { useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { RiArrowLeftLine } from "@remixicon/react";
 
@@ -220,7 +220,23 @@ export function ToolShell({
   // screen rather than a redesign. A rail replaces the title bar outright, so
   // it is forced off when `hasSections` even if both are supplied.
   const hasTitleBar = !hasSections && (accountControl !== undefined || homeLabel !== undefined);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
+  const railId = useId();
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const focusToggleOnTransition = useRef(false);
+  const railOpen = hasSections && !collapsed;
+
+  useEffect(() => {
+    if (focusToggleOnTransition.current) {
+      focusToggleOnTransition.current = false;
+      toggleRef.current?.focus();
+    }
+  }, [collapsed]);
+
+  function dismissRail() {
+    focusToggleOnTransition.current = true;
+    setCollapsed(true);
+  }
   // The no-sections layout has no rail and so no collapse concept: the
   // function form of `accountControl` always resolves with `collapsed:
   // false` there, never the state variable above (which this branch never
@@ -239,7 +255,9 @@ export function ToolShell({
   const skipLink = (
     <a
       className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:border focus:border-primary/45 focus:bg-background focus:px-3 focus:py-2 focus:text-sm"
-      href="#main-content"
+      aria-disabled={railOpen || undefined}
+      href={railOpen ? undefined : "#main-content"}
+      tabIndex={railOpen ? -1 : undefined}
     >
       Skip to main content
     </a>
@@ -254,27 +272,45 @@ export function ToolShell({
   // *collapsed* width rather than the expanded one. The rail is out of flow, so
   // this is the only thing reserving space for it; pinning the gutter to one
   // width is what stops expanding the rail from shoving the page sideways.
-  // Expanded, the rail spans onto the content instead.
+  // Expansion is transient: the scrim blocks the page until the rail closes.
   if (hasSections) {
     return (
       <div className={cn("relative flex min-h-[100dvh] w-full pl-16", className)}>
         <GraphBackground />
         {skipLink}
 
+        {railOpen ? (
+          <button
+            aria-label="Close sections"
+            className="fixed inset-0 z-40 bg-black/55 backdrop-blur-[1px]"
+            onClick={dismissRail}
+            tabIndex={-1}
+            type="button"
+          />
+        ) : null}
+
         <ToolSectionRail
           accountControl={resolvedAccountControl}
           collapsed={collapsed}
           homeLabel={homeLabel}
           logoSrc={logoSrc}
+          onDismiss={dismissRail}
+          onNavigate={() => {
+            focusToggleOnTransition.current = false;
+            setCollapsed(true);
+          }}
           onToggleCollapsed={() => {
+            focusToggleOnTransition.current = true;
             setCollapsed((wasCollapsed) => !wasCollapsed);
           }}
+          railId={railId}
           sections={sections}
           sectionsHomeHref={sectionsHomeHref}
           sectionsLabel={sectionsLabel}
+          toggleRef={toggleRef}
         />
 
-        <ToolPageContainer className="min-h-0 flex-1" wide>
+        <ToolPageContainer className="min-h-0 flex-1" inert={railOpen} wide>
           {main}
           {showFooter ? (
             <ToolFooter end={footerEnd} homeHref={homeHref} ownerName={ownerName} />

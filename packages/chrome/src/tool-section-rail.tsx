@@ -1,4 +1,4 @@
-import type { ComponentType, ReactNode } from "react";
+import type { ComponentType, MouseEvent, ReactNode, Ref } from "react";
 import { Link } from "@tanstack/react-router";
 import { RiSidebarFoldLine, RiSidebarUnfoldLine } from "@remixicon/react";
 
@@ -42,20 +42,43 @@ export function ToolSectionRail({
   collapsed,
   homeLabel,
   logoSrc,
+  onDismiss,
+  onNavigate,
   onToggleCollapsed,
+  railId,
   sections,
   sectionsHomeHref,
   sectionsLabel,
+  toggleRef,
 }: {
   accountControl?: ReactNode;
   collapsed: boolean;
   homeLabel: string | undefined;
   logoSrc: string;
+  onDismiss: () => void;
+  onNavigate: () => void;
   onToggleCollapsed: () => void;
+  railId: string;
   sections: readonly ToolSection[];
   sectionsHomeHref: string;
   sectionsLabel: string;
+  toggleRef: Ref<HTMLButtonElement>;
 }) {
+  function handleNavigation(event: MouseEvent<HTMLAnchorElement>) {
+    const target = event.currentTarget.getAttribute("target");
+    if (
+      !event.defaultPrevented &&
+      event.button === 0 &&
+      !event.metaKey &&
+      !event.altKey &&
+      !event.ctrlKey &&
+      !event.shiftKey &&
+      (!target || target === "_self")
+    ) {
+      onNavigate();
+    }
+  }
+
   return (
     <div
       className={cn(
@@ -73,15 +96,34 @@ export function ToolSectionRail({
         // it must never gain `overflow-hidden` or the part of the toggle that
         // overhangs the right edge is clipped away.
         //
-        // `z-10` belongs on the rail, not only on the toggle inside it.
+        // `z-50` belongs on the rail, not only on the toggle inside it.
         // `backdrop-blur-sm` sets a `backdrop-filter`, which creates a
         // stacking context, so a `z-index` on a descendant is confined to the
         // rail and never competes with the page. Without it the toggle — which
         // hangs past the rail's edge — is painted over by `ToolPageContainer`
         // and stops being clickable while still looking perfectly fine.
-        "fixed top-0 left-0 z-10 flex h-[100dvh] shrink-0 flex-col gap-4 border-r border-border/60 bg-background/70 p-3 backdrop-blur-sm",
-        collapsed ? "w-16" : "w-56",
+        "fixed top-0 left-0 z-50 flex h-[100dvh] shrink-0 flex-col gap-4 border-r border-border/60 bg-background/95 p-3 backdrop-blur-sm",
+        collapsed ? "w-16" : "w-72",
       )}
+      id={railId}
+      onKeyDown={(event) => {
+        // Account popups can bubble through this React tree from a portal.
+        if (
+          !collapsed &&
+          event.key === "Escape" &&
+          !event.defaultPrevented &&
+          event.currentTarget.contains(event.target as Node)
+        ) {
+          const popupTrigger = (event.target as Element).closest(
+            '[aria-expanded="true"][aria-haspopup]:not([aria-haspopup="false"])',
+          );
+          // Popups retaining trigger focus may handle Escape at the document.
+          if (popupTrigger && event.currentTarget.contains(popupTrigger)) return;
+          event.preventDefault();
+          event.stopPropagation();
+          onDismiss();
+        }
+      }}
     >
       {/* Floats outside the rail's own flow so it can sit beside it rather
           than sharing a row (and the wordmark's width) with the wordmark.
@@ -94,9 +136,12 @@ export function ToolSectionRail({
           does not move when the rail's width changes between collapsed and
           expanded, and it does not depend on the button's own width either. */}
       <Button
+        aria-controls={railId}
+        aria-expanded={!collapsed}
         aria-label={collapsed ? "Expand sections" : "Collapse sections"}
         className="absolute top-3 left-full z-10 ml-2 text-muted-foreground hover:bg-transparent hover:text-foreground"
         onClick={onToggleCollapsed}
+        ref={toggleRef}
         size="icon"
         variant="ghost"
       >
@@ -134,6 +179,7 @@ export function ToolSectionRail({
           "flex h-9 min-w-0 items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground",
           collapsed ? "justify-center" : "pl-2",
         )}
+        onClick={handleNavigation}
         to={sectionsHomeHref}
       >
         <img alt="" className="size-6 shrink-0" src={logoSrc} />
@@ -159,6 +205,7 @@ export function ToolSectionRail({
                   : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
               )}
               key={section.to}
+              onClick={handleNavigation}
               title={section.label}
               to={section.to}
             >
