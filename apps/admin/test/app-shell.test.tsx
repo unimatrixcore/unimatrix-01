@@ -5,7 +5,7 @@ import {
   createRootRoute,
   createRouter,
 } from "@tanstack/react-router";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 // `SignedIn` needs a mounted Clerk provider, and mounting a real one would
@@ -45,11 +45,19 @@ describe("AppShell", () => {
   it("carries a wordmark that stays on the admin origin, with no footer link back to the public site", async () => {
     renderShell(<p>console body</p>);
 
+    const toggle = await screen.findByRole("button", { name: "Expand sections" });
+    expect(screen.queryByRole("link", { name: "Unimatrix Admin" })).not.toBeInTheDocument();
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(toggle);
     // The wordmark: `sectionsHomeHref="/"` keeps it same-origin.
     expect(await screen.findByRole("link", { name: "Unimatrix Admin" })).toHaveAttribute(
       "href",
       "/",
     );
+    fireEvent.click(screen.getByRole("button", { name: "Collapse sections" }));
+    expect(screen.queryByRole("link", { name: "Unimatrix Admin" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Expand sections" }));
+    expect(screen.getByRole("link", { name: "Unimatrix Admin" })).toHaveAttribute("href", "/");
     // `showFooter={false}` means there is no footer, and so no copyright link
     // back to the public site at all — see `app-shell.tsx`'s doc comment.
     expect(screen.queryByRole("contentinfo")).not.toBeInTheDocument();
