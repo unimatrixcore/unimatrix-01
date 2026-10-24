@@ -85,6 +85,7 @@ export {
   TableHeader,
   TableRow,
 } from "./components/ui/table.js";
+export { Tabs, TabsList, TabsTrigger, TabsContent } from "./components/ui/tabs.js";
 export { Textarea } from "./components/ui/textarea.js";
 export { Toaster } from "./components/ui/sonner.js";
 // Re-exported rather than imported from `sonner` by the consumer: `<Toaster />`
