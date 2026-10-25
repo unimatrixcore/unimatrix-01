@@ -27,13 +27,7 @@ export function SectionPanel({
     // heading is what tells a screen-reader user which collection's controls
     // they are in.
     <section aria-labelledby={headingId} className={className}>
-      <div className="site-panel flex min-h-0 flex-1 flex-col gap-4 px-5 py-5 lg:px-6 lg:py-6">
-        {/* `items-center`, not `items-start`: the heading's cap height and a
-            small button's box do not start at the same y, so aligning their
-            tops left them visibly a couple of pixels out of line. */}
-        {/* A rule under the header, not just the column gap: the panel's own
-            border is the only other line on the card, so without it the title
-            reads as the first row of the content rather than its heading. */}
+      <div className="flex min-h-0 flex-1 flex-col gap-4 bg-card px-5 py-5 lg:px-6 lg:py-6">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-4">
           <div className="space-y-1">
             <h2
