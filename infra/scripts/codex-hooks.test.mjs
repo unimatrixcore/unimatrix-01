@@ -515,7 +515,13 @@ test("oversized transcripts report unknown measurements", (t) => {
 test("native context consists of real skill directories and directly maintained hooks", () => {
   const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
   const skills = join(root, ".agents", "skills");
-  assert.deepEqual(readdirSync(skills).sort(), ["composing-context", "ship-pr", "writing-docs"]);
+  assert.deepEqual(readdirSync(skills).sort(), [
+    "composing-context",
+    "lab-prototype",
+    "ship-pr",
+    "todo",
+    "writing-docs",
+  ]);
   for (const name of readdirSync(skills)) {
     assert.equal(lstatSync(join(skills, name)).isDirectory(), true);
     const body = readFileSync(join(skills, name, "SKILL.md"), "utf8");
