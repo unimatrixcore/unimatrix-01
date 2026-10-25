@@ -9,11 +9,6 @@
 # rewrite list markers and emphasis in text a human wrote.
 **/*.md
 
-# CLAUDE.md is a symlink to AGENTS.md. Prettier hard-errors on an explicitly
-# named symlink ("Explicitly specified pattern ... is a symbolic link"), so it
-# must stay ignored even if the *.md rule above is ever narrowed.
-CLAUDE.md
-
 # Verbatim upstream files. Reformatting one would break the byte-for-byte
 # correspondence with the URL recorded beside it in vendor/NOTICE.md.
 apps/cflop/vendor/

@@ -28,7 +28,7 @@
 // directory, so it must be given a file inside the repo root rather than the
 // root itself — handed a directory, it starts one level too high and finds
 // the repo's config only when some ancestor happens to hold one. A worktree
-// under .claude/worktrees/ has such an ancestor (the main checkout) and a CI
+// nested inside another checkout has such an ancestor and a CI
 // checkout does not, which is why a missing config surfaced as generated
 // output that differed between the two rather than as an error. Resolution
 // failing is fatal here for the same reason: falling back to prettier's

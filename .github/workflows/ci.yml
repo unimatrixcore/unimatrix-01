@@ -52,11 +52,6 @@ jobs:
       - name: App wiring
         run: bash ./infra/scripts/check-app-wiring.sh
 
-      # Same placement rationale as App wiring above: no `node_modules` needed,
-      # and a missing symlink means a workspace's AGENTS.md reaches no agent.
-      - name: AGENTS.md symlinks
-        run: bash ./infra/scripts/check-agents-md-symlinks.sh
-
       - name: Stale comments
         run: node ./infra/scripts/check-stale-comments.mjs
 
@@ -71,36 +66,12 @@ jobs:
       - name: Runner labels
         run: node ./infra/scripts/check-runner-labels.mjs
 
-      # Same placement rationale as the gates above — bash and jq over fixture
-      # files, no `node_modules`. `watch-pr.sh` is the one script in this repo
-      # that arms an unattended merge, and this suite is the only thing that
-      # exercises its gate: that a partial checks list does not read as green,
-      # that a red required context stops before the ping, and that an empty
-      # checks list is not counted as an API failure. It reaches the network on
-      # no path — asserted by running it with a `gh` stub on PATH that logs and
-      # exits 99, which came back with zero invocations.
-      #
-      # (jq is in the ubuntu-24.04 runner image's tool list — read from that
-      # list, not measured here; no other step in this workflow uses jq.)
-      - name: Ship-pr fixtures
-        run: bash ./.claude/skills/ship-pr/scripts/fixtures/run-fixtures.sh
-
-      # Same placement rationale — bash and jq against synthetic payloads and
-      # transcript fixtures, no `node_modules`. Exercises the loaded-skill
-      # check in writing-docs-reminder.sh, composing-context-reminder.sh and
-      # problem-solving-reminder.sh. These fixtures are the only signal those
-      # hooks get: suppression is silent by design — no output, exit 0 — so a
-      # detection that broke reads exactly like one that worked.
-      - name: Reminder hook fixtures
-        run: bash ./infra/scripts/check-reminder-hooks.sh
-
       - name: Codex context and hook fixtures
         run: pnpm check:codex-context
 
       # The repo's shell reaches no other static analysis: CodeQL has no shell
-      # extractor, `.claude/` is in no pnpm workspace so turbo never sees it, and
-      # prettier has no bash parser. A step in `Verify` rather than a job of its
-      # own, for the same reason as the gates above — `Verify` is already
+      # extractor and prettier has no bash parser. A step in `Verify` rather than
+      # a job of its own, for the same reason as the gates above — `Verify` is already
       # required on `main`, so a new job would need arming as a required check
       # before it gated anything.
       #
