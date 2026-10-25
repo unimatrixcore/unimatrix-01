@@ -14,6 +14,7 @@
       "@unimatrix/chrome/tool": ["../../packages/chrome/src/tool.ts"],
       "@unimatrix/cube/react": ["../../packages/cube/src/react.ts"],
       "@unimatrix/cube": ["../../packages/cube/src/index.ts"],
+      "@unimatrix/ui/scroll-area": ["../../packages/ui/src/components/ui/scroll-area.tsx"],
       "@unimatrix/ui/public": ["../../packages/ui/src/public.ts"],
       "@unimatrix/ui": ["../../packages/ui/src/index.ts"]
     },

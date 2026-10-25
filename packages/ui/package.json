@@ -22,7 +22,11 @@
       "types": "./dist/editor.d.ts",
       "default": "./dist/editor.js"
     },
-    "./styles.css": "./src/styles.css"
+    "./styles.css": "./src/styles.css",
+    "./scroll-area": {
+      "types": "./dist/components/ui/scroll-area.d.ts",
+      "default": "./dist/components/ui/scroll-area.js"
+    }
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

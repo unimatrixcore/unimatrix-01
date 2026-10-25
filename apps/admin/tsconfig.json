@@ -12,6 +12,7 @@
       "@unimatrix/auth": ["../../packages/auth/src/index.ts"],
       "@unimatrix/shared": ["../../packages/shared/src/index.ts"],
       "@unimatrix/ui/public": ["../../packages/ui/src/public.ts"],
+      "@unimatrix/ui/scroll-area": ["../../packages/ui/src/components/ui/scroll-area.tsx"],
       "@unimatrix/ui/editor": ["../../packages/ui/src/editor.ts"],
       "@unimatrix/ui": ["../../packages/ui/src/index.ts"]
     },

@@ -129,3 +129,6 @@ export { DigestRowList, DigestRow } from "./components/ui/digest-row-list.js";
 export type { DigestRowListProps, DigestRowProps } from "./components/ui/digest-row-list.js";
 export { UptimeStrip } from "./components/ui/uptime-strip.js";
 export type { UptimeStripProps, UptimeSample } from "./components/ui/uptime-strip.js";
+
+export { ScrollArea, ScrollBar } from "./components/ui/scroll-area.js";
+export type { ScrollAreaProps, ScrollAreaViewportProps } from "./components/ui/scroll-area.js";
