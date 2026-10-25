@@ -132,3 +132,6 @@ export type { UptimeStripProps, UptimeSample } from "./components/ui/uptime-stri
 
 export { ScrollArea, ScrollBar } from "./components/ui/scroll-area.js";
 export type { ScrollAreaProps, ScrollAreaViewportProps } from "./components/ui/scroll-area.js";
+
+export { ActionTooltip } from "./components/ui/action-tooltip.js";
+export type { ActionTooltipProps } from "./components/ui/action-tooltip.js";
