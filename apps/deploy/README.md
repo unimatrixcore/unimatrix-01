@@ -10,8 +10,7 @@ Three credentials can never come from the secrets store this service will
 eventually manage, and this service cannot be what creates itself in Dokploy
 the first time:
 
-- **The Dokploy API key** (`DOKPLOY_API_KEY`) — it is what the store-side
-  materialization work (a later change) would use to reach Dokploy in the
+- **The Dokploy API key** (`DOKPLOY_API_KEY`) — it is what the env apply uses to reach Dokploy in the
   first place, so it cannot itself be fetched from the store.
 - **This service's own secrets-store read token** (`SECRETS_PLATFORM_READ_TOKEN`)
   — issuing it needs the secrets service already running and reachable, which
@@ -70,7 +69,7 @@ For each declared app it reports one of `MISSING` (no Dokploy compose service of
 `Deploy` job does), `IN SYNC`, or `DRIFT` naming which env keys and which of `composePath`,
 `sourceType`, `branch`, `autoDeploy` disagree. An env finding is always a key and a state — `set`,
 `blank`, `missing`, `optional-absent`, or `undeclared` — never a value; Dokploy's `env` blob is
-reduced to that before it exists anywhere in this service (`readEnvKeyStates`,
+reduced to that before it reaches reconciliation (`readEnvKeyStates`,
 `src/dokploy/schemas.ts`).
 
 It deliberately does not check a service's Domains entry (out of scope — `packages/deploy-config`
@@ -116,11 +115,11 @@ values one declared app's manifest entry names — the `secretName` on each `sec
 `composeEnv` entry — against the store this service holds a read-only token for. It writes nothing,
 to the store or to Dokploy, and never prints a value, a length, or a prefix: only whether each
 declared name resolved, and whether a resolved value is single-line (a stored value with real
-newlines can never be written by PR 2's line-oriented env write). Run
+newlines is refused by env apply). Run
 `pnpm --filter @unimatrix/deploy-app reconcile secrets-status` with no app name for the full
 exit-code table.
 
-The store is read lazily, only by this subcommand — `report` and `apply` never touch a store
+The store is read lazily by `secrets-status` and `secrets-apply` — `report` and `apply` never touch a store
 variable, so a store left unconfigured cannot affect either of them.
 
 In production: `docker exec <deploy container> node dist/cli/reconcile.js secrets-status <app>`. The
@@ -129,6 +128,30 @@ compose env:
 
     docker exec --env-file /path/to/token.env <deploy container> \
       node dist/cli/reconcile.js secrets-status api
+
+## Secrets apply
+
+`pnpm --filter @unimatrix/deploy-app reconcile secrets-apply <app> [--overwrite]` resolves every
+manifest-declared store name before reading Dokploy. It refuses self, unknown, ambiguous,
+foreign-repository and non-GitHub targets. It fills missing keys; a differing existing value requires
+`--overwrite`. Empty values, real CR/LF characters and duplicate declared keys are refused before
+any write. A blank existing assignment is an existing value and also requires `--overwrite`.
+
+The merge preserves every unrelated byte, including `IMAGE_TAG=${{project.IMAGE_TAG}}`, comments,
+blank lines and line endings. Comparison trims assignment padding and removes one matching outer
+quote pair; it performs no interpolation or escape decoding. Values are never printed or persisted.
+After a write it re-reads and compares each declared value, since a legal 200 can silently drop env.
+Exit codes: 0 applied and verified, 1 already in sync, 2 refused, 3 write status unknown, 4 read
+failure, 5 verification failed. After exit 3, inspect state before retrying with overwrite.
+
+Use the same invoke-time token setup as secrets status:
+
+    docker exec --env-file /path/to/token.env <deploy container> \
+      node dist/cli/reconcile.js secrets-apply api
+
+This updates stored configuration and triggers no deploy. The correction window lasts until the
+next merge to `main`, which triggers deployment. Avoid concurrent Dokploy env edits during apply:
+`compose.update` replaces the whole blob and provides no conditional-write guard.
 
 ## Local development
 
