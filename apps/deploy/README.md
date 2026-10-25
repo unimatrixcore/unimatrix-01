@@ -54,7 +54,7 @@ on at all, and it reports **after** the merge, in a job that cannot block one:
 6. Set `SECRETS_TLS_CERT_BASE64` in the same UI — the store's certificate, the
    same base64 PEM its own stack carries. Unlike the two variables above, an
    unset value here does not block this service's boot: it is read lazily, only
-   when `secrets-status` runs (see below), so `reconcile report` shows `deploy:
+   when `secrets-status` or `secrets-apply` runs (see below), so `reconcile report` shows `deploy:
    DRIFT` on this key until it is set rather than the service restart-looping.
 
 ## Reconcile report
@@ -135,7 +135,7 @@ compose env:
 manifest-declared store name before reading Dokploy. It refuses self, unknown, ambiguous,
 foreign-repository and non-GitHub targets. It fills missing keys; a differing existing value requires
 `--overwrite`. Empty values, real CR/LF or NUL characters, Dokploy `${{...}}` references and duplicate declared keys are refused before
-any write. A blank existing assignment is an existing value and also requires `--overwrite`.
+any write. Keys must use the environment-name grammar `[A-Za-z_][A-Za-z0-9_]*`. A blank existing assignment is an existing value and also requires `--overwrite`.
 
 The merge preserves every unrelated byte, including `IMAGE_TAG=${{project.IMAGE_TAG}}`, comments,
 blank lines and line endings. Comparison trims assignment padding and removes one matching outer

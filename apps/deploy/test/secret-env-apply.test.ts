@@ -262,3 +262,24 @@ void test("existing interpolation and inline comments cannot masquerade as liter
   }
   assert.deepEqual(mergeSecretEnv(secret('KEY="bad\\q"'), values, false).refused, ["KEY"]);
 });
+
+void test("merge rejects keys that cannot be one environment assignment", () => {
+  for (const key of [
+    "BAD=NAME",
+    "BAD\rNAME",
+    "BAD\nNAME",
+    "",
+    " PAD ",
+    "#BAD",
+    "BAD\0NAME",
+    "1BAD",
+  ]) {
+    const result = mergeSecretEnv(
+      secret("UNCHANGED=value\n"),
+      new Map([[key, secret("fixture")]]),
+      true,
+    );
+    assert.deepEqual(result.refused, [key]);
+    assert.equal(result.env.reveal(), "UNCHANGED=value\n");
+  }
+});

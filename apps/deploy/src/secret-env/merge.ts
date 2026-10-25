@@ -48,6 +48,7 @@ export function mergeSecretEnv(
       parseEnvLine(line)?.key === key ? [index] : [],
     );
     if (
+      !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(key) ||
       value.trim().length === 0 ||
       /[\r\n\0]/u.test(value) ||
       value.includes("${{") ||
