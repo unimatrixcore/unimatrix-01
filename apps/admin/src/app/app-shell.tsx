@@ -1,3 +1,4 @@
+import { useRouterState } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { ToolShell } from "@unimatrix/chrome/tool";
 
@@ -28,12 +29,15 @@ type AppShellProps = {
  */
 export function AppShell({ children }: AppShellProps) {
   const sections = useAdminSections();
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
 
   return (
     <ToolShell
       accountControl={({ collapsed }) => <AccountControl collapsed={collapsed} />}
       homeLabel="Unimatrix Admin"
+      scroll={pathname === "/content" || pathname === "/content/" ? "section" : "page"}
       sections={sections}
+      width="wide"
       sectionsHomeHref="/"
       showFooter={false}
     >
