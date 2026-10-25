@@ -35,7 +35,14 @@ export function AppShell({ children }: AppShellProps) {
     <ToolShell
       accountControl={({ collapsed }) => <AccountControl collapsed={collapsed} />}
       homeLabel="Unimatrix Admin"
-      scroll={pathname === "/content" || pathname === "/content/" ? "section" : "page"}
+      scroll={
+        pathname === "/content" ||
+        pathname === "/content/" ||
+        pathname === "/secrets" ||
+        pathname === "/secrets/"
+          ? "section"
+          : "page"
+      }
       sections={sections}
       width="wide"
       sectionsHomeHref="/"
