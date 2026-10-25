@@ -438,6 +438,56 @@ describe("ToolShell with sections", () => {
     },
   );
 
+  it("focuses the stable toggle before a current-route wordmark is removed", async () => {
+    const router = await renderInRouter(
+      <ToolShell homeLabel="Tool home" sections={SECTIONS}>
+        tool content
+      </ToolShell>,
+    );
+    const toggle = screen.getByRole("button", { name: "Expand sections" });
+    fireEvent.click(toggle);
+    const wordmark = screen.getByRole("link", { name: "Tool home" });
+    wordmark.focus();
+    expect(wordmark).toHaveFocus();
+    const originalFocus = toggle.focus.bind(toggle);
+    const focus = vi.spyOn(toggle, "focus").mockImplementation((options) => {
+      expect(wordmark).toBeInTheDocument();
+      originalFocus(options);
+    });
+    await act(async () => {
+      fireEvent.click(wordmark);
+      await router.load();
+    });
+    expect(router.state.location.href).toBe("/");
+    expect(wordmark).not.toBeInTheDocument();
+    expect(focus).toHaveBeenCalledTimes(1);
+    expect(toggle).toHaveFocus();
+  });
+
+  it.each(["/?view=history", "/#details"])(
+    "leaves focus to navigation when the current URL %s differs only by search or hash",
+    async (initialEntry) => {
+      const router = await renderInRouter(
+        <ToolShell homeLabel="Tool home" sections={SECTIONS}>
+          tool content
+        </ToolShell>,
+        initialEntry,
+      );
+      const toggle = screen.getByRole("button", { name: "Expand sections" });
+      fireEvent.click(toggle);
+      const focus = vi.spyOn(toggle, "focus");
+      const wordmark = screen.getByRole("link", { name: "Tool home" });
+      wordmark.focus();
+      await act(async () => {
+        fireEvent.click(wordmark);
+        await router.load();
+      });
+      expect(router.state.location.href).toBe("/");
+      expect(toggle).toHaveAttribute("aria-expanded", "false");
+      expect(focus).not.toHaveBeenCalled();
+    },
+  );
+
   it("keeps modified, non-primary, new-tab and prevented navigation events unchanged", async () => {
     const router = await renderInRouter(
       <ToolShell homeLabel="Tool home" sections={SECTIONS}>
@@ -483,6 +533,62 @@ describe("ToolShell with sections", () => {
       .map((toggle) => toggle.getAttribute("aria-controls"));
     expect(new Set(ids).size).toBe(2);
     for (const id of ids) expect(document.getElementById(id!)).toBeInTheDocument();
+  });
+
+  it("keeps keyboard focus on the toggle when the collapsed logo replaces the wordmark", async () => {
+    await renderInRouter(
+      <ToolShell homeLabel="Unimatrix Admin" sections={SECTIONS}>
+        tool content
+      </ToolShell>,
+    );
+
+    const toggle = screen.getByRole("button", { name: "Expand sections" });
+    toggle.focus();
+    fireEvent.click(toggle);
+
+    expect(toggle).toHaveAccessibleName("Collapse sections");
+    expect(toggle).toHaveFocus();
+    fireEvent.click(toggle);
+
+    const expand = screen.getByRole("button", { name: "Expand sections" });
+    expect(expand).toBe(toggle);
+    expect(expand).toHaveFocus();
+    expect(expand).toHaveAttribute("aria-expanded", "false");
+    expect(expand.querySelector("img")).toHaveAttribute("src", "/logo.png");
+    expect(screen.queryByRole("link", { name: "Unimatrix Admin" })).not.toBeInTheDocument();
+
+    fireEvent.click(expand);
+
+    expect(screen.getByRole("button", { name: "Collapse sections" })).toHaveFocus();
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("link", { name: "Unimatrix Admin" })).toHaveTextContent(
+      "Unimatrix Admin",
+    );
+  });
+
+  it("keeps the expanded wordmark and collapsed section links as router navigation", async () => {
+    const router = await renderInRouter(
+      <ToolShell homeLabel="Unimatrix Admin" sections={SECTIONS} sectionsHomeHref="/content">
+        tool content
+      </ToolShell>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Expand sections" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("link", { name: "Unimatrix Admin" }));
+      await router.load();
+    });
+    expect(router.state.location.pathname).toBe("/content");
+
+    expect(screen.getByRole("button", { name: "Expand sections" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole("link", { name: "Feedback" }));
+      await router.load();
+    });
+    expect(router.state.location.pathname).toBe("/feedback");
   });
 
   it("marks only the active section as the current page", async () => {
