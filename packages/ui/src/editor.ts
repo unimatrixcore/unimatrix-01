@@ -127,3 +127,5 @@ export { DigestCardGrid } from "./components/ui/digest-card-grid.js";
 export type { DigestCardGridProps } from "./components/ui/digest-card-grid.js";
 export { DigestRowList, DigestRow } from "./components/ui/digest-row-list.js";
 export type { DigestRowListProps, DigestRowProps } from "./components/ui/digest-row-list.js";
+export { UptimeStrip } from "./components/ui/uptime-strip.js";
+export type { UptimeStripProps, UptimeSample } from "./components/ui/uptime-strip.js";
