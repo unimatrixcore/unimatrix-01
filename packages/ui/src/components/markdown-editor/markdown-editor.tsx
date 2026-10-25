@@ -171,16 +171,15 @@ const baseTheme = EditorView.theme({
     fontSize: "0.875rem",
     backgroundColor: "transparent",
     color: "var(--foreground)",
-    // Fill the host rather than the document. Paired with the `flex-1` host
-    // element, this is what makes the whole visible box clickable: without it
-    // CodeMirror ends at the last line and every click below that lands on a
-    // plain `div` that cannot take focus.
-    height: "100%",
+    // Fill a short draft without constraining a long document's scroll geometry.
+    height: "auto",
+    minHeight: "100%",
   },
   "&.cm-focused": { outline: "none" },
   ".cm-content": {
     padding: "0.75rem",
     caretColor: "var(--foreground)",
+    alignSelf: "stretch",
     // `.cm-content` is the element that actually takes the click, so it has to
     // grow too — `.cm-editor` filling the box is not enough on its own. The
     // 16rem is the editor's floor, and it lives here rather than on the box:
@@ -190,6 +189,7 @@ const baseTheme = EditorView.theme({
     // for.
     minHeight: "max(100%, 16rem)",
   },
+  ".cm-scroller": { overflow: "visible", height: "auto", flex: "1 0 auto" },
   ".cm-line": { padding: "0 0.25rem" },
   ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--foreground)" },
   "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": {
@@ -477,15 +477,20 @@ export const MarkdownEditor = React.forwardRef<MarkdownEditorHandle, MarkdownEdi
               : undefined
           }
         >
+          {/* A fixed-height content wrapper clips CodeMirror's caret-scroll calculation. */}
           <ScrollArea
             variant="overlay"
             orientation="both"
             className={
               expanded ? "h-auto [&>[data-slot=scroll-area-viewport]]:h-auto" : "min-h-0 flex-1"
             }
-            viewportProps={{ "aria-label": "Post body scroll", tabIndex: 0 }}
+            viewportProps={{
+              "aria-label": `${label} scroll`,
+              tabIndex: 0,
+              className: expanded ? undefined : "[&>div]:grid! [&>div]:h-auto! [&>div]:min-h-full",
+            }}
           >
-            <div className="min-h-full" ref={hostRef} />
+            <div className={expanded ? undefined : "grid"} ref={hostRef} />
           </ScrollArea>
 
           {expandable ? (
