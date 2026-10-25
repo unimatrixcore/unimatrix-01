@@ -90,7 +90,7 @@ export function PostsPage() {
       >
         <TabsList
           variant="line"
-          className="col-start-1 row-start-1 ml-auto w-fit min-w-0 justify-end px-3 lg:col-start-2"
+          className="col-start-1 row-start-1 -translate-y-0.5 ml-auto w-fit min-w-0 justify-end px-3 lg:col-start-2"
         >
           <TabsTrigger value="blog">
             <RiArticleLine aria-hidden="true" className="size-4" />
@@ -227,7 +227,7 @@ function PostBulkTable({
     <section aria-label={collection.title} className="contents">
       <div
         data-content-controls
-        className="col-start-1 row-start-2 flex min-h-9 min-w-0 flex-wrap items-center gap-3 px-3 lg:col-start-1 lg:row-start-1"
+        className="col-start-1 row-start-2 flex min-h-8 min-w-0 flex-wrap items-center gap-2 px-1 lg:col-start-1 lg:row-start-1"
       >
         <Button asChild className="shrink-0" size="sm" variant="outline">
           <Link search={{ type: collection.type }} to="/content/posts/new">
@@ -249,7 +249,7 @@ function PostBulkTable({
           <div
             role="toolbar"
             aria-label="Selection actions"
-            className="flex min-h-8 flex-wrap items-center gap-3 text-sm text-muted-foreground"
+            className="flex min-h-8 flex-wrap items-center gap-2 text-sm text-muted-foreground"
           >
             <div className="flex shrink-0 items-center gap-1">
               <ActionTooltip label="Publish selected">
