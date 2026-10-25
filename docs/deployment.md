@@ -509,7 +509,7 @@ can a log line. What does distinguish them:
   `DOKPLOY_BASE_URL` and `DOKPLOY_API_KEY` — the service refuses to start
   without either
 - `SECRETS_TLS_CERT_BASE64` (set in Dokploy's UI): the store's certificate.
-  Read lazily, only when `secrets-status` runs (below) — an unset value here
+  Read lazily, only when `secrets-status` or `secrets-apply` runs (below) — an unset value here
   does not block this service's boot, unlike the two above
 - no volume — it holds no persistent state
 
@@ -548,6 +548,12 @@ nothing and prints no value, only whether each declared name resolved. The token
 (`SECRETS_PLATFORM_READ_TOKEN`) arrives via `docker exec --env-file`, never as compose env, and the
 store connection is read lazily — a store left unconfigured cannot affect `report` or `apply`. See
 `apps/deploy/README.md`.
+
+`reconcile secrets-apply <app> [--overwrite]` applies resolved store values to Dokploy without
+triggering deployment. See `apps/deploy/README.md` for refusal rules, comparison semantics and exit
+codes. The correction window is until the next merge to `main`; do not edit Dokploy env concurrently
+with the read-modify-write operation.
+
 
 ## Traefik expectations
 

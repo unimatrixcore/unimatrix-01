@@ -115,7 +115,15 @@ const WORKSPACE_RESTRICTIONS = {
         // anchored to one `../` only covers a file sitting directly in src/reconcile/. The `**`
         // forms are what keep the ban true for a nested src/reconcile/<dir>/file.ts, which would
         // otherwise reach the module tree as `../../secret-env/status.js` and match nothing here.
-        group: ["@unimatrix/secrets", "@unimatrix/secrets/**", "**/secret-env", "**/secret-env/**"],
+        group: [
+          "@unimatrix/secrets",
+          "@unimatrix/secrets/**",
+          "**/secret-env",
+          "**/secret-env/**",
+          "**/dokploy/transport.*",
+          "**/dokploy/env-client.*",
+          "**/dokploy/env-line.*",
+        ],
         message:
           "src/reconcile/ never imports the secrets store — apps/deploy/AGENTS.md's no-write rule. src/secret-env/ imports from src/reconcile/, never the other way.",
       },
