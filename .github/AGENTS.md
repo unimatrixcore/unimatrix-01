@@ -33,8 +33,7 @@ this file holds the mechanics, each of which was learned the hard way.
 ## CI
 
 - CI's `Images` job builds every `apps/*/Dockerfile`. The required status checks on `main` are
-  whatever `rules/branches/main` reports — `.claude/skills/ship-pr/scripts/required-checks.sh` prints
-  them — rather than a list here. This exists because `Verify` is Vite and tsc only and never touches
+  whatever GitHub’s `rules/branches/main` API reports rather than a list here. This exists because `Verify` is Vite and tsc only and never touches
   a Dockerfile, so a dependency could pass every check while making the deployable image unbuildable.
   `better-sqlite3@13` is the live example: no published prebuilds, so it falls back to `node-gyp` and
   dies on alpine. **If you add a Dockerfile, add it to the matrix and to the required checks, or it is
@@ -69,12 +68,6 @@ this file holds the mechanics, each of which was learned the hard way.
   from any call, because `project.all` returns every project's whole env blob and these run logs are
   public. `docs/deployment.md` carries the rollback runbook and the project-env invariant that tag
   write depends on.
-- `infra/scripts/check-agents-md-symlinks.sh` (same placement and rationale, as the `AGENTS.md
-  symlinks` step) asserts every `AGENTS.md` has a sibling `CLAUDE.md` symlink pointing at it.
-  Claude Code reads `CLAUDE.md`, not `AGENTS.md`, and discovers nested ones on demand when a file in
-  their directory is read — so an `AGENTS.md` without the symlink reaches no agent, and nothing else
-  notices. It fails closed on a missing symlink, a regular file in its place, a wrong target, and a
-  `CLAUDE.md` whose `AGENTS.md` was renamed away.
 - The remaining guards, each aimed at one kind of drift.
   `check-stale-comments.mjs` (`Stale comments`) fails when a backticked
   `PascalCase` name in a comment exists in no code; an "occluder" mechanism was deleted and five

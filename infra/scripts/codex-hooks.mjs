@@ -18,15 +18,12 @@ const LIMIT = 8 * 1024 * 1024;
 const SKILLS = {
   "writing-docs": "# Writing docs in this repo",
   "composing-context": "# Composing context for an agent",
-  "problem-solving": "# Working a problem",
 };
 const REASONS = {
   "writing-docs":
-    "Read .claude/skills/writing-docs/SKILL.md before composing more guidance or comments. It governs current, verified guidance and comments that explain what code cannot express.",
+    "Read .agents/skills/writing-docs/SKILL.md before composing more guidance or comments. It governs current, verified guidance and comments that explain what code cannot express.",
   "composing-context":
-    "Read .claude/skills/composing-context/SKILL.md before continuing agent-facing guidance. It governs whether a rule belongs and which context layer should carry it.",
-  "problem-solving":
-    "Read .claude/skills/problem-solving/SKILL.md before answering. Separate concerns, name the binding constraint, research the repo and upstream, compare options, and state a recommendation with its limits.",
+    "Read .agents/skills/composing-context/SKILL.md before continuing agent-facing guidance. It governs whether a rule belongs and which context layer should carry it.",
 };
 
 function boundedRead(pathOrDescriptor) {
@@ -76,9 +73,7 @@ function commandText(command) {
 
 function skillFromPath(path) {
   return typeof path === "string"
-    ? path
-        .replaceAll("\\", "/")
-        .match(/(?:^|\/)\.(?:claude|agents)\/skills\/([^/]+)\/SKILL\.md$/)?.[1]
+    ? path.replaceAll("\\", "/").match(/(?:^|\/)\.agents\/skills\/([^/]+)\/SKILL\.md$/)?.[1]
     : undefined;
 }
 
@@ -105,7 +100,7 @@ function readSkills(command, output, cwd, root) {
   return words.flatMap((path) => {
     const skill = skillFromPath(path);
     if (!SKILLS[skill]) return [];
-    const canonical = join(root, ".claude", "skills", skill, "SKILL.md");
+    const canonical = join(root, ".agents", "skills", skill, "SKILL.md");
     try {
       if (realpathSync(resolve(cwd ?? root, path)) !== realpathSync(canonical)) return [];
       const body = boundedRead(canonical).text?.trimEnd();
@@ -272,15 +267,6 @@ function patchFailed(response) {
 }
 
 function requestedReminders(payload) {
-  if (payload.hook_event_name === "UserPromptSubmit") {
-    const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
-    return prompt.trim().split(/\s+/).length >= 8 &&
-      /how should|how do we|how would we|how can we|what is the best|what's the best|which approach|should we|should i|is it worth|what are the options|what options|what else|trade-?off|why does|why is|what would you|do you think|better approach|alternatives|recommend/i.test(
-        prompt,
-      )
-      ? [{ skill: "problem-solving", branch: "prompt" }]
-      : [];
-  }
   if (
     payload.hook_event_name !== "PostToolUse" ||
     payload.tool_name !== "apply_patch" ||
@@ -296,8 +282,8 @@ function requestedReminders(payload) {
     )
       reminders.set("comments", { skill: "writing-docs", branch: "comments" });
     if (
-      /(?:^|\/)(?:AGENTS|CLAUDE)\.md$/.test(edit.path) ||
-      /(?:^|\/)\.(?:claude|agents)\/(?:skills|agents)\/.*\.md$/.test(edit.path)
+      /(?:^|\/)AGENTS\.md$/.test(edit.path) ||
+      /(?:^|\/)\.agents\/skills\/.*\.md$/.test(edit.path)
     )
       reminders.set("context", { skill: "composing-context", branch: "context" });
   }
@@ -322,7 +308,7 @@ function reminderOutput(payload, state, options) {
     }
     messages.push(
       branch === "comments"
-        ? "Read .claude/skills/writing-docs/SKILL.md before composing more code comments. Match surrounding comment density and explain what code cannot express; removing a mechanism includes checking its comments."
+        ? "Read .agents/skills/writing-docs/SKILL.md before composing more code comments. Match surrounding comment density and explain what code cannot express; removing a mechanism includes checking its comments."
         : REASONS[skill],
     );
   }
@@ -527,10 +513,9 @@ function telemetryRecord(payload, state) {
 export function handleHook(payload, options = {}) {
   if (!payload || typeof payload !== "object") return null;
   const event = payload.hook_event_name;
-  if (!["UserPromptSubmit", "PostToolUse", "Stop", "SessionEnd"].includes(event)) return null;
+  if (!["PostToolUse", "Stop", "SessionEnd"].includes(event)) return null;
   const state = transcriptState(payload.transcript_path, payload.cwd);
-  if (event === "UserPromptSubmit" || event === "PostToolUse")
-    return reminderOutput(payload, state, options);
+  if (event === "PostToolUse") return reminderOutput(payload, state, options);
   const record = telemetryRecord(payload, state);
   const directory = typeof payload.cwd === "string" ? join(payload.cwd, ".notes") : null;
   const target =

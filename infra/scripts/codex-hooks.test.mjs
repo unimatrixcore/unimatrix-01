@@ -1,26 +1,32 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  lstatSync,
+  readdirSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { handleHook, handleInput } from "./codex-hooks.mjs";
 
 const skillBodies = {
   "writing-docs": "---\nname: writing-docs\n---\n# Writing docs in this repo\nfixture body",
   "composing-context": "# Composing context for an agent\ncomplete fixture body",
-  "problem-solving": "# Working a problem\ncomplete fixture body",
 };
 
 function fixture(t, records = []) {
   const cwd = mkdtempSync(join(tmpdir(), "unimatrix-codex-hook-test-"));
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
   for (const [skill, body] of Object.entries(skillBodies)) {
-    const directory = join(cwd, ".claude", "skills", skill);
+    const directory = join(cwd, ".agents", "skills", skill);
     mkdirSync(directory, { recursive: true });
     writeFileSync(join(directory, "SKILL.md"), body);
   }
-  mkdirSync(join(cwd, ".agents"));
-  symlinkSync("../.claude/skills", join(cwd, ".agents", "skills"));
   const transcript = join(cwd, "transcript.jsonl");
   writeFileSync(transcript, records.map((row) => JSON.stringify(row)).join("\n"));
   const telemetryFile = join(cwd, "telemetry.jsonl");
@@ -98,7 +104,7 @@ test("documentation and code-comment reminders retain separate branches in eithe
 test("patches collect agent instructions, skill files, and moves across multiple files", (t) => {
   const f = fixture(t);
   const patch =
-    "*** Begin Patch\n*** Add File: src/code.ts\n+const value = 1;\n*** Update File: draft.txt\n*** Move to: .claude/agents/reviewer.md\n@@\n+guidance\n*** End Patch";
+    "*** Begin Patch\n*** Add File: src/code.ts\n+const value = 1;\n*** Update File: draft.txt\n*** Move to: .agents/skills/reviewer/SKILL.md\n@@\n+guidance\n*** End Patch";
   const result = context(handleHook(post(f, patch), f.options));
   assert.match(result, /writing-docs/);
   assert.match(result, /composing-context/);
@@ -160,21 +166,15 @@ test("failed, malformed, and unrelated tool events do not remind", (t) => {
   assert.equal(handleHook(post(f, "not a patch"), f.options), null);
 });
 
-test("judgement prompts remind, short or imperative prompts do not", (t) => {
+test("prompt events do not register removed procedure reminders", (t) => {
   const f = fixture(t);
-  const result = handleHook(
-    {
-      ...f.payload,
-      hook_event_name: "UserPromptSubmit",
-      prompt: "How should we approach this given the trade-offs involved here",
-    },
-    f.options,
-  );
-  assert.equal(result.hookSpecificOutput.hookEventName, "UserPromptSubmit");
-  assert.match(context(result), /problem-solving/);
   assert.equal(
     handleHook(
-      { ...f.payload, hook_event_name: "UserPromptSubmit", prompt: "How should we test?" },
+      {
+        ...f.payload,
+        hook_event_name: "UserPromptSubmit",
+        prompt: "How should we approach this given the trade-offs involved here",
+      },
       f.options,
     ),
     null,
@@ -183,8 +183,8 @@ test("judgement prompts remind, short or imperative prompts do not", (t) => {
 
 test("only a successful actual skill read with body evidence suppresses reminders", (t) => {
   const skillRead = command({
-    command: ["cat", ".claude/skills/writing-docs/SKILL.md"],
-    parsed_cmd: [{ type: "read", path: ".claude/skills/writing-docs/SKILL.md" }],
+    command: ["cat", ".agents/skills/writing-docs/SKILL.md"],
+    parsed_cmd: [{ type: "read", path: ".agents/skills/writing-docs/SKILL.md" }],
     aggregated_output: skillBodies["writing-docs"],
   });
   const f = fixture(t, [meta, turn, skillRead]);
@@ -220,7 +220,7 @@ test("compaction clears loaded skill evidence and reminder sentinels", (t) => {
     meta,
     turn,
     command({
-      command: "cat .claude/skills/writing-docs/SKILL.md",
+      command: "cat .agents/skills/writing-docs/SKILL.md",
       aggregated_output: skillBodies["writing-docs"],
     }),
     { type: "compacted", payload: {} },
@@ -228,13 +228,13 @@ test("compaction clears loaded skill evidence and reminder sentinels", (t) => {
   assert.ok(handleHook(post(other, edit("docs/guide.md")), other.options));
 });
 
-test("multi-file cat recognizes native skill discovery symlinks without parsed metadata", (t) => {
+test("multi-file cat recognizes native skill directories without parsed metadata", (t) => {
   const f = fixture(t, [
     meta,
     turn,
     command({
       command:
-        'cat .agents/skills/writing-docs/SKILL.md ".claude/skills/composing-context/SKILL.md" .claude/skills/problem-solving/SKILL.md',
+        'cat .agents/skills/writing-docs/SKILL.md ".agents/skills/composing-context/SKILL.md"',
       parsed_cmd: [{ type: "unknown" }],
       aggregated_output: Object.values(skillBodies).join("\n"),
     }),
@@ -252,25 +252,21 @@ test("multi-file cat recognizes native skill discovery symlinks without parsed m
     null,
   );
   handleHook(stop(f), f.options);
-  assert.deepEqual(readRecord(f).skills_loaded, [
-    "composing-context",
-    "problem-solving",
-    "writing-docs",
-  ]);
+  assert.deepEqual(readRecord(f).skills_loaded, ["composing-context", "writing-docs"]);
 });
 
 test("partial reads and truncated cat output cannot prove that a skill loaded", (t) => {
   for (const [text, output] of [
-    ["sed -n '1,6p' .claude/skills/writing-docs/SKILL.md", skillBodies["writing-docs"]],
-    ["cat .claude/skills/writing-docs/SKILL.md", "# Writing docs in this repo"],
-    ["cat .claude/skills/writing-docs/SKILL.md", skillBodies["writing-docs"].slice(0, -4)],
+    ["sed -n '1,6p' .agents/skills/writing-docs/SKILL.md", skillBodies["writing-docs"]],
+    ["cat .agents/skills/writing-docs/SKILL.md", "# Writing docs in this repo"],
+    ["cat .agents/skills/writing-docs/SKILL.md", skillBodies["writing-docs"].slice(0, -4)],
   ]) {
     const f = fixture(t, [
       meta,
       turn,
       command({
         command: text,
-        parsed_cmd: [{ type: "read", path: ".claude/skills/writing-docs/SKILL.md" }],
+        parsed_cmd: [{ type: "read", path: ".agents/skills/writing-docs/SKILL.md" }],
         aggregated_output: output,
       }),
     ]);
@@ -514,4 +510,35 @@ test("oversized transcripts report unknown measurements", (t) => {
   handleHook(stop(f), f.options);
   assert.equal(readRecord(f).main_commands, null);
   assert.ok(readRecord(f).degraded.includes("transcript-input-too-large"));
+});
+
+test("native context consists of real skill directories and directly maintained hooks", () => {
+  const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
+  const skills = join(root, ".agents", "skills");
+  assert.deepEqual(readdirSync(skills).sort(), ["composing-context", "ship-pr", "writing-docs"]);
+  for (const name of readdirSync(skills)) {
+    assert.equal(lstatSync(join(skills, name)).isDirectory(), true);
+    const body = readFileSync(join(skills, name, "SKILL.md"), "utf8");
+    assert.match(body, new RegExp(`^---\\nname: ${name}\\n`));
+    assert.doesNotMatch(body, /\.claude\//);
+  }
+  const scripts = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).scripts;
+  assert.equal(scripts["check:codex-context"], "node --test ./infra/scripts/codex-hooks.test.mjs");
+  for (const gate of ["check", "verify"]) assert.match(scripts[gate], /pnpm check:codex-context/);
+  const ci = readFileSync(join(root, ".github", "workflows", "ci.yml"), "utf8");
+  assert.match(ci, /run: pnpm check:codex-context/);
+  const hooks = JSON.parse(readFileSync(join(root, ".codex", "hooks.json"), "utf8"));
+  assert.deepEqual(Object.keys(hooks.hooks).sort(), ["PostToolUse", "SessionEnd", "Stop"]);
+  assert.equal(hooks.hooks.PostToolUse[0].matcher, "^apply_patch$");
+  for (const event of Object.values(hooks.hooks)) {
+    assert.equal(event.length, 1);
+    assert.equal(event[0].hooks.length, 1);
+    const handler = event[0].hooks[0];
+    assert.equal(handler.type, "command");
+    assert.equal(
+      handler.command,
+      'node "$(git rev-parse --show-toplevel)/infra/scripts/codex-hooks.mjs"',
+    );
+    assert.equal(Number.isInteger(handler.timeout) && handler.timeout > 0, true);
+  }
 });
