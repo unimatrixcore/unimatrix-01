@@ -123,3 +123,5 @@ export {
 export type { CardHeight, CardProps } from "./components/ui/card.js";
 export { DigestCard } from "./components/ui/digest-card.js";
 export type { DigestCardProps } from "./components/ui/digest-card.js";
+export { DigestCardGrid } from "./components/ui/digest-card-grid.js";
+export type { DigestCardGridProps } from "./components/ui/digest-card-grid.js";
