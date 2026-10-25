@@ -2,11 +2,14 @@ import * as React from "react";
 
 import { cn } from "../../lib/utils.js";
 
-function Card({
-  className,
-  size = "default",
-  ...props
-}: React.ComponentProps<"div"> & { size?: "default" | "sm" }) {
+export type CardHeight = "content" | "summary" | "fill";
+
+export type CardProps = React.ComponentProps<"div"> & {
+  size?: "default" | "sm";
+  height?: CardHeight;
+};
+
+function Card({ className, size = "default", height = "content", ...props }: CardProps) {
   return (
     <div
       data-slot="card"
@@ -16,6 +19,8 @@ function Card({
         size === "sm"
           ? "gap-4 py-4 [--card-section-padding:--spacing(4)] [--card-title-size:var(--text-sm)]"
           : "gap-6 py-6",
+        height === "summary" && "h-48 shrink-0",
+        height === "fill" && "min-h-0 flex-1",
         className,
       )}
       {...props}
