@@ -21,6 +21,9 @@ import {
 import * as React from "react";
 
 import { cn } from "../../lib/utils.js";
+import { Card, CardHeader } from "../ui/card.js";
+import { ScrollArea } from "../ui/scroll-area.js";
+import { ActionTooltip } from "../ui/action-tooltip.js";
 import { Button } from "../ui/button.js";
 import { ToggleGroup, ToggleGroupItem } from "../ui/toggle-group.js";
 import { markdownLivePreview, markdownLivePreviewTheme } from "./live-preview.js";
@@ -409,62 +412,62 @@ export const MarkdownEditor = React.forwardRef<MarkdownEditorHandle, MarkdownEdi
     };
 
     return (
-      <div className={cn("flex min-h-0 flex-col gap-2", className)}>
-        {/* `label` is the accessible name only — it names the editing surface
-            and the mode toggle for assistive technology, and is deliberately
-            not painted. The visible name is whatever the consumer passes as
-            `header`, which sits here so it reads as the label of the box
-            directly below it. */}
-        <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className={cn("flex min-h-0 flex-col", className)}>
+        <CardHeader className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border/60 px-4 py-3">
           {header}
 
-          <div className="flex flex-wrap items-center gap-1">
-            {TOOLBAR_ACTIONS.map((action) => (
-              <Button
-                aria-label={action.label}
-                className="size-8"
-                disabled={readOnly}
-                key={action.key}
-                onClick={() => {
-                  applyToolbarAction(action.apply);
-                }}
-                size="icon"
-                title={action.label}
-                type="button"
-                variant="ghost"
-              >
-                <action.icon aria-hidden="true" className="size-4" />
-              </Button>
-            ))}
-
-            {actions}
-
-            <ToggleGroup
-              aria-label={`${label} view mode`}
-              className="ml-1"
-              onValueChange={handleModeChange}
-              size="sm"
-              type="single"
-              value={mode}
-              variant="outline"
-            >
-              {MARKDOWN_EDITOR_MODES.map((editorMode) => (
-                <ToggleGroupItem key={editorMode} value={editorMode}>
-                  {MODE_LABELS[editorMode]}
-                </ToggleGroupItem>
+          <ScrollArea
+            variant="overlay"
+            orientation="horizontal"
+            className="min-w-0 flex-1"
+            viewportProps={{ "aria-label": "Formatting controls", tabIndex: 0 }}
+          >
+            <div className="flex min-w-max items-center justify-end gap-1">
+              {TOOLBAR_ACTIONS.map((action) => (
+                <ActionTooltip key={action.key} label={action.label}>
+                  <Button
+                    aria-label={action.label}
+                    className="size-8"
+                    disabled={readOnly}
+                    onClick={() => {
+                      applyToolbarAction(action.apply);
+                    }}
+                    size="icon"
+                    title={action.label}
+                    type="button"
+                    variant="ghost"
+                  >
+                    <action.icon aria-hidden="true" className="size-4" />
+                  </Button>
+                </ActionTooltip>
               ))}
-            </ToggleGroup>
-          </div>
-        </div>
 
-        {/* `relative` so the expand control can float over the bottom-right of
-            the writing surface. Collapsed, the box takes the leftover space and
-            the document scrolls inside it; expanded, `h-auto` lets CodeMirror's
-            own height be the document's and the page does the scrolling. */}
-        <div
+              {actions}
+
+              <ToggleGroup
+                aria-label={`${label} view mode`}
+                className="ml-1"
+                onValueChange={handleModeChange}
+                size="sm"
+                type="single"
+                value={mode}
+                variant="default"
+              >
+                {MARKDOWN_EDITOR_MODES.map((editorMode) => (
+                  <ToggleGroupItem key={editorMode} value={editorMode}>
+                    {MODE_LABELS[editorMode]}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            </div>
+          </ScrollArea>
+        </CardHeader>
+
+        <Card
+          size="sm"
           className={cn(
-            "relative flex flex-col border border-input bg-background",
-            expanded ? "h-auto" : "flex-1 overflow-auto",
+            "relative m-4 flex min-h-0 flex-col gap-0 rounded-none border-0 bg-black/25 p-0 shadow-none ring-0",
+            expanded ? "h-auto" : "flex-1 overflow-hidden",
             editorClassName,
           )}
           ref={boxRef}
@@ -474,34 +477,26 @@ export const MarkdownEditor = React.forwardRef<MarkdownEditorHandle, MarkdownEdi
               : undefined
           }
         >
-          {/*
-           * `flex-1` on the host, and `height: 100%` on `.cm-editor` inside it,
-           * are what make a click land on the editor rather than on dead space.
-           * CodeMirror sizes itself to its content by default, so in a box this
-           * tall — a full-page editor with a short draft in it — most of what
-           * looks like the writing surface belongs to this container, and
-           * clicking it does nothing at all.
-           */}
-          <div className="flex-1" ref={hostRef} />
+          <ScrollArea
+            variant="overlay"
+            orientation="both"
+            className={
+              expanded ? "h-auto [&>[data-slot=scroll-area-viewport]]:h-auto" : "min-h-0 flex-1"
+            }
+            viewportProps={{ "aria-label": "Post body scroll", tabIndex: 0 }}
+          >
+            <div className="min-h-full" ref={hostRef} />
+          </ScrollArea>
 
           {expandable ? (
-            /* `sticky`, not `absolute`: in the collapsed box the control has to
-               stay reachable while the document scrolls under it, and in the
-               expanded one it has to stay with the bottom edge rather than sit
-               at the end of a very long document. */
-            <div className="pointer-events-none sticky bottom-0 flex justify-end p-2">
+            <div className="pointer-events-none absolute right-0 bottom-0 flex justify-end p-2">
               <Button
                 aria-label={expanded ? "Shrink the editor" : "Expand the editor"}
                 aria-pressed={expanded}
                 className="pointer-events-auto size-8 bg-background/90 backdrop-blur-sm"
                 onClick={() => {
-                  // The notification happens here, not inside the updater:
-                  // React re-runs functional updaters in Strict Mode to check
-                  // they are pure, which would fire this callback twice.
                   const next = !expanded;
 
-                  // Read before the state change, while the box is still the
-                  // size being preserved.
                   setExpandedMinHeight(
                     next ? (boxRef.current?.getBoundingClientRect().height ?? null) : null,
                   );
@@ -521,7 +516,7 @@ export const MarkdownEditor = React.forwardRef<MarkdownEditorHandle, MarkdownEdi
               </Button>
             </div>
           ) : null}
-        </div>
+        </Card>
       </div>
     );
   },

@@ -8,6 +8,12 @@ import type {
   UpdatePostBody,
 } from "@unimatrix/shared";
 import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardContent,
+  ScrollArea,
+  ActionTooltip,
   Button,
   Checkbox,
   Input,
@@ -23,8 +29,6 @@ import {
   type MarkdownEditorHandle,
 } from "@unimatrix/ui/editor";
 import { useId, useRef, useState } from "react";
-
-import { SectionPanel } from "@/features/sections/section-panel";
 
 import { ASSET_ACCEPT, assetUrl, uploadAsset } from "./asset-upload";
 import { useCreatePost, useUpdatePost } from "./mutations";
@@ -156,10 +160,7 @@ export interface PostFormProps {
  * so a collision comes back as a 400 with a message rather than being
  * prevented by a guess here.
  *
- * The form owns its {@link SectionPanel} rather than being placed inside one by
- * the route: the publication state belongs in the panel header, beside the
- * title, and it has to stay inside the `<form>` element to be part of the same
- * submission and to keep its `<label for>` association.
+ * Details and the document scroll independently; the submit controls stay above both panes.
  */
 export function PostForm({ baseUrl, post, type, title, onDone }: PostFormProps) {
   const effectiveType = post?.type ?? type;
@@ -183,11 +184,6 @@ export function PostForm({ baseUrl, post, type, title, onDone }: PostFormProps) 
   const createPost = useCreatePost();
   const updatePost = useUpdatePost();
   const fieldPrefix = useId();
-  // Mirrors the editor's own expand state. The editor cannot release a height
-  // lock set above it, so the column it sits in has to stop claiming the frame
-  // when the body is expanded to the whole document.
-  const [bodyExpanded, setBodyExpanded] = useState(false);
-
   const isSaving = createPost.isPending || updatePost.isPending;
 
   function update<TKey extends keyof PostFormState>(key: TKey, value: PostFormState[TKey]) {
@@ -228,233 +224,23 @@ export function PostForm({ baseUrl, post, type, title, onDone }: PostFormProps) 
 
   return (
     <form
-      // `min-h-0` on a flex child is what lets the editor below actually
-      // shrink; without it the column's implicit `min-height: auto` lets the
-      // body push the controls under it off the frame instead of scrolling
-      // inside its own box. Expanded, that is exactly what is wanted, so the
-      // claim on the frame is dropped and the page scrolls instead.
-      className={bodyExpanded ? "flex flex-col" : "flex min-h-0 flex-1 flex-col"}
+      className="flex min-h-0 flex-1 flex-col gap-4"
       onSubmit={(event) => {
-        // `onSubmit` expects a void return, so the promise is deliberately
-        // not handed to React. `handleSubmit` settles its own failures.
         void handleSubmit(event);
       }}
     >
-      <SectionPanel className={bodyExpanded ? "" : "flex min-h-0 flex-1 flex-col"} title={title}>
-        <div className="grid gap-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="grid gap-2">
-              <Label htmlFor={`${fieldPrefix}-title`}>Title</Label>
-              <Input
-                id={`${fieldPrefix}-title`}
-                maxLength={200}
-                onChange={(event) => {
-                  const title = event.target.value;
-
-                  setForm((current) => ({
-                    ...current,
-                    title,
-                    slug: isSlugEdited ? current.slug : slugifyTitle(title),
-                  }));
-                }}
-                required
-                value={form.title}
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor={`${fieldPrefix}-slug`}>Slug</Label>
-              {/* The hyphen in `pattern` is escaped because the attribute is
-                  compiled with the `v` flag, which rejects a bare `-` at the
-                  end of a character class. Firefox reported it as "not a valid
-                  regexp" and then skipped the check entirely — an invalid
-                  pattern silently disables validation rather than failing the
-                  field, so the slug input had no client-side check at all. */}
-              <Input
-                id={`${fieldPrefix}-slug`}
-                onChange={(event) => {
-                  const slug = event.target.value;
-
-                  setIsSlugEdited(slug.length > 0);
-                  update("slug", slug);
-                }}
-                pattern="[a-z0-9][a-z0-9\-]*"
-                required
-                title="Lowercase letters, numbers and hyphens, not starting with a hyphen."
-                value={form.slug}
-              />
-            </div>
-          </div>
-
-          <div className="grid gap-2">
-            <Label htmlFor={`${fieldPrefix}-summary`}>Summary</Label>
-            <Input
-              id={`${fieldPrefix}-summary`}
-              maxLength={500}
-              onChange={(event) => {
-                update("summary", event.target.value);
-              }}
-              required
-              value={form.summary}
-            />
-          </div>
-
-          <div className="grid gap-2">
-            <Label htmlFor={`${fieldPrefix}-description`}>
-              Description <span className="text-muted-foreground">(optional)</span>
-            </Label>
-            <Input
-              id={`${fieldPrefix}-description`}
-              maxLength={1000}
-              onChange={(event) => {
-                update("description", event.target.value);
-              }}
-              value={form.description}
-            />
-          </div>
-
-          {effectiveType === "project" ? (
-            <>
-              <Separator />
-              {/* No "project status" field. A project's status is not something
-                  an admin keeps up to date by hand — it is whether the thing is
-                  reachable, which `ProjectStatusBadge` answers by requesting
-                  the live URL below and reporting what actually happened. A
-                  typed value would only ever be a stale second opinion. */}
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="grid gap-2">
-                  <Label htmlFor={`${fieldPrefix}-repo`}>Repository URL</Label>
-                  <Input
-                    id={`${fieldPrefix}-repo`}
-                    onChange={(event) => {
-                      update("repoUrl", event.target.value);
-                    }}
-                    type="url"
-                    value={form.repoUrl}
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor={`${fieldPrefix}-live`}>Live URL</Label>
-                  <Input
-                    id={`${fieldPrefix}-live`}
-                    onChange={(event) => {
-                      update("liveUrl", event.target.value);
-                    }}
-                    type="url"
-                    value={form.liveUrl}
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  checked={form.featured}
-                  id={`${fieldPrefix}-featured`}
-                  onCheckedChange={(checked) => {
-                    update("featured", checked === true);
-                  }}
-                />
-                <Label htmlFor={`${fieldPrefix}-featured`}>Feature on the homepage</Label>
-              </div>
-            </>
-          ) : null}
-        </div>
-
-        <Separator />
-
-        {/* "Body" and "Insert image" are handed to the editor's own toolbar
-          row rather than rendered above it, so the label sits immediately
-          on top of the editing surface and the upload button lines up with
-          the formatting controls it belongs beside. */}
-        <MarkdownEditor
-          className={bodyExpanded ? "" : "min-h-0 flex-1"}
-          // Scrolls inside its box by default, so the controls under it stay
-          // on screen; the expand control it draws bottom-right hands the whole
-          // document to the page for anyone editing something long.
-          expandable
-          onExpandedChange={setBodyExpanded}
-          actions={
-            <>
-              <Button
-                aria-label={isUploading ? "Uploading image" : "Insert image"}
-                className="size-8"
-                disabled={isUploading}
-                onClick={() => {
-                  fileInputRef.current?.click();
-                }}
-                size="icon"
-                title={isUploading ? "Uploading image" : "Insert image"}
-                type="button"
-                variant="ghost"
-              >
-                {isUploading ? (
-                  <RiLoader4Line aria-hidden="true" className="size-4 animate-spin" />
-                ) : (
-                  <RiImageAddLine aria-hidden="true" className="size-4" />
-                )}
-              </Button>
-              <input
-                accept={ASSET_ACCEPT}
-                className="hidden"
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-
-                  // Reset first: picking the same file twice in a row fires no
-                  // change event otherwise, and re-inserting an image is a
-                  // normal thing to do.
-                  event.target.value = "";
-
-                  if (file !== undefined) {
-                    void handleUpload(file);
-                  }
-                }}
-                ref={fileInputRef}
-                type="file"
-              />
-            </>
-          }
-          header={<Label>Body</Label>}
-          label="Post body"
-          onChange={(next) => {
-            update("body", next);
-          }}
-          placeholder="Write the post in markdown."
-          ref={editorRef}
-          value={form.body}
-        />
-
-        {/* Below the body, not above it: these are what you reach for once the
-            post is written. State on the left because it is a property of the
-            post; the two buttons that end the edit on the right, Save last,
-            where a submit button is looked for. */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            {/* Off-screen. "Published" / "Draft" / "Archived" already read as a
-                state, so the word in front of them is a label for a screen
-                reader and clutter for everyone else. */}
-            <Label className="sr-only" htmlFor={`${fieldPrefix}-state`}>
-              State
-            </Label>
-            <Select
-              onValueChange={(next) => {
-                update("publicationState", next as ContentPublicationState);
-              }}
-              value={form.publicationState}
-            >
-              <SelectTrigger className="w-36 sm:w-40" id={`${fieldPrefix}-state`}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {PUBLICATION_STATES.map((state) => (
-                  <SelectItem key={state} value={state}>
-                    {STATE_LABELS[state]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="flex items-center gap-2">
+      <Card size="sm" className="shrink-0 gap-0 rounded-none p-0 shadow-none ring-0">
+        <CardHeader
+          data-editor-header
+          className="flex h-14 shrink-0 flex-row items-center justify-between gap-2 px-3 py-4"
+        >
+          <CardTitle className="min-w-0 text-lg leading-none font-semibold tracking-[-0.03em]">
+            <h1 className="truncate" title={title}>
+              {title}
+            </h1>
+          </CardTitle>
+          <div className="flex shrink-0 items-center gap-2">
+            {" "}
             <Button disabled={isSaving} onClick={onDone} type="button" variant="outline">
               Cancel
             </Button>
@@ -462,8 +248,234 @@ export function PostForm({ baseUrl, post, type, title, onDone }: PostFormProps) 
               {isSaving ? "Saving" : post === null ? "Create" : "Save"}
             </Button>
           </div>
-        </div>
-      </SectionPanel>
+        </CardHeader>
+      </Card>
+      <div className="grid min-h-0 flex-1 grid-rows-[minmax(140px,25%)_minmax(0,1fr)] gap-4 lg:grid-cols-[20rem_minmax(0,1fr)] lg:grid-rows-1">
+        <Card
+          role="region"
+          aria-labelledby={`${fieldPrefix}-details`}
+          size="sm"
+          height="fill"
+          className="gap-0 rounded-none py-0 shadow-none ring-0"
+        >
+          <CardHeader className="flex min-h-14 shrink-0 items-center border-b border-border/60 px-4 py-3">
+            <CardTitle className="text-sm font-bold uppercase">
+              <h2 id={`${fieldPrefix}-details`}>Post details</h2>
+            </CardTitle>
+          </CardHeader>
+          <ScrollArea
+            variant="overlay"
+            orientation="both"
+            className="min-h-0 flex-1"
+            viewportProps={{ "aria-label": "Post details", tabIndex: 0 }}
+          >
+            <div className="p-4">
+              <div className="grid gap-2">
+                {" "}
+                <Label htmlFor={`${fieldPrefix}-state`}>Publication state</Label>
+                <Select
+                  onValueChange={(next) => {
+                    update("publicationState", next as ContentPublicationState);
+                  }}
+                  value={form.publicationState}
+                >
+                  <SelectTrigger className="w-full" id={`${fieldPrefix}-state`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PUBLICATION_STATES.map((state) => (
+                      <SelectItem key={state} value={state}>
+                        {STATE_LABELS[state]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="mt-4 grid gap-4">
+                <div className="grid gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor={`${fieldPrefix}-title`}>Title</Label>
+                    <Input
+                      id={`${fieldPrefix}-title`}
+                      maxLength={200}
+                      onChange={(event) => {
+                        const title = event.target.value;
+
+                        setForm((current) => ({
+                          ...current,
+                          title,
+                          slug: isSlugEdited ? current.slug : slugifyTitle(title),
+                        }));
+                      }}
+                      required
+                      value={form.title}
+                    />
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor={`${fieldPrefix}-slug`}>Slug</Label>
+                    {/* HTML patterns use the v flag, which requires this escaped hyphen. */}
+                    <Input
+                      id={`${fieldPrefix}-slug`}
+                      onChange={(event) => {
+                        const slug = event.target.value;
+
+                        setIsSlugEdited(slug.length > 0);
+                        update("slug", slug);
+                      }}
+                      pattern="[a-z0-9][a-z0-9\-]*"
+                      required
+                      title="Lowercase letters, numbers and hyphens, not starting with a hyphen."
+                      value={form.slug}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor={`${fieldPrefix}-summary`}>Summary</Label>
+                  <Input
+                    id={`${fieldPrefix}-summary`}
+                    maxLength={500}
+                    onChange={(event) => {
+                      update("summary", event.target.value);
+                    }}
+                    required
+                    value={form.summary}
+                  />
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor={`${fieldPrefix}-description`}>
+                    Description <span className="text-muted-foreground">(optional)</span>
+                  </Label>
+                  <Input
+                    id={`${fieldPrefix}-description`}
+                    maxLength={1000}
+                    onChange={(event) => {
+                      update("description", event.target.value);
+                    }}
+                    value={form.description}
+                  />
+                </div>
+
+                {effectiveType === "project" ? (
+                  <>
+                    <Separator />
+
+                    <div className="grid gap-4">
+                      <div className="grid gap-2">
+                        <Label htmlFor={`${fieldPrefix}-repo`}>Repository URL</Label>
+                        <Input
+                          id={`${fieldPrefix}-repo`}
+                          onChange={(event) => {
+                            update("repoUrl", event.target.value);
+                          }}
+                          type="url"
+                          value={form.repoUrl}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor={`${fieldPrefix}-live`}>Live URL</Label>
+                        <Input
+                          id={`${fieldPrefix}-live`}
+                          onChange={(event) => {
+                            update("liveUrl", event.target.value);
+                          }}
+                          type="url"
+                          value={form.liveUrl}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        checked={form.featured}
+                        id={`${fieldPrefix}-featured`}
+                        onCheckedChange={(checked) => {
+                          update("featured", checked === true);
+                        }}
+                      />
+                      <Label htmlFor={`${fieldPrefix}-featured`}>Feature on the homepage</Label>
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            </div>
+          </ScrollArea>
+        </Card>
+        <Card
+          role="region"
+          aria-label="Markdown body"
+          size="sm"
+          height="fill"
+          className="min-w-0 gap-0 rounded-none py-0 shadow-none ring-0"
+        >
+          <CardContent className="flex min-h-0 flex-1 flex-col px-0">
+            <ScrollArea
+              variant="overlay"
+              orientation="both"
+              className="min-h-0 flex-1"
+              viewportProps={{ "aria-label": "Expanded document", className: "[&>div]:h-full" }}
+            >
+              <MarkdownEditor
+                className="h-full min-h-0 flex-1"
+
+                actions={
+                  <>
+                    <ActionTooltip label={isUploading ? "Uploading image" : "Insert image"}>
+                      <Button
+                        aria-label={isUploading ? "Uploading image" : "Insert image"}
+                        className="size-8"
+                        disabled={isUploading}
+                        onClick={() => {
+                          fileInputRef.current?.click();
+                        }}
+                        size="icon"
+                        title={isUploading ? "Uploading image" : "Insert image"}
+                        type="button"
+                        variant="ghost"
+                      >
+                        {isUploading ? (
+                          <RiLoader4Line aria-hidden="true" className="size-4 animate-spin" />
+                        ) : (
+                          <RiImageAddLine aria-hidden="true" className="size-4" />
+                        )}
+                      </Button>
+                    </ActionTooltip>
+                    <input
+                      accept={ASSET_ACCEPT}
+                      className="hidden"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+
+                        event.target.value = "";
+
+                        if (file !== undefined) {
+                          void handleUpload(file);
+                        }
+                      }}
+                      ref={fileInputRef}
+                      type="file"
+                    />
+                  </>
+                }
+                header={
+                  <CardTitle className="text-sm font-bold uppercase">
+                    <h2>Body</h2>
+                  </CardTitle>
+                }
+                label="Post body"
+                onChange={(next) => {
+                  update("body", next);
+                }}
+                placeholder="Write the post in markdown."
+                ref={editorRef}
+                value={form.body}
+              />
+            </ScrollArea>
+          </CardContent>
+        </Card>
+      </div>
     </form>
   );
 }

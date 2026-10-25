@@ -37,7 +37,7 @@ export function AppShell({ children }: AppShellProps) {
       homeLabel="Unimatrix Admin"
       scroll={
         pathname === "/content" ||
-        pathname === "/content/" ||
+        pathname.startsWith("/content/") ||
         pathname === "/secrets" ||
         pathname === "/secrets/"
           ? "section"
