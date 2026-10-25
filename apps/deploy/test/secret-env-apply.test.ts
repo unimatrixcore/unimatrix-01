@@ -38,7 +38,7 @@ void test("merge refuses duplicate declared keys, blanks, multiline and unapprov
   for (const existing of ["KEY=old", "KEY=", "KEY=a\nKEY=b"]) {
     assert.deepEqual(mergeSecretEnv(secret(existing), values, false).refused, ["KEY"]);
   }
-  for (const value of ["", "  ", "a\nb", "a\rb"]) {
+  for (const value of ["", "  ", "a\nb", "a\rb", "a\0b"]) {
     assert.deepEqual(mergeSecretEnv(secret(""), new Map([["KEY", secret(value)]]), true).refused, [
       "KEY",
     ]);
@@ -230,4 +230,35 @@ void test("CLI requires explicit secrets-apply, rejects flags, and exposes no va
     }),
     2,
   );
+});
+
+void test("merge quotes dotenv syntax as literal data and compares its encoded value on a re-read", () => {
+  for (const value of ["abc #def", "${OTHER}", "a'b", '"quoted"', "a\\nb", " padded ", "a\\'b"]) {
+    const resolved = new Map([["KEY", secret(value)]]);
+    const written = mergeSecretEnv(secret(""), resolved, false);
+    assert.deepEqual(written.refused, []);
+    assert.ok(written.env.reveal().startsWith('KEY="'));
+    assert.deepEqual(mergeSecretEnv(written.env, resolved, false).changed, []);
+  }
+  assert.deepEqual(
+    mergeSecretEnv(secret(""), new Map([["KEY", secret("${{project.KEY}}")]]), false).refused,
+    ["KEY"],
+  );
+});
+
+void test("dollar signs are doubled on the env wire", () => {
+  assert.equal(
+    mergeSecretEnv(secret(""), new Map([["KEY", secret("${OTHER}")]]), false).env.reveal(),
+    'KEY="$${OTHER}"\n',
+  );
+});
+
+void test("existing interpolation and inline comments cannot masquerade as literal values", () => {
+  for (const value of ["${OTHER}", "abc #def"]) {
+    assert.deepEqual(
+      mergeSecretEnv(secret(`KEY=${value}`), new Map([["KEY", secret(value)]]), false).refused,
+      ["KEY"],
+    );
+  }
+  assert.deepEqual(mergeSecretEnv(secret('KEY="bad\\q"'), values, false).refused, ["KEY"]);
 });

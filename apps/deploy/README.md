@@ -134,12 +134,16 @@ compose env:
 `pnpm --filter @unimatrix/deploy-app reconcile secrets-apply <app> [--overwrite]` resolves every
 manifest-declared store name before reading Dokploy. It refuses self, unknown, ambiguous,
 foreign-repository and non-GitHub targets. It fills missing keys; a differing existing value requires
-`--overwrite`. Empty values, real CR/LF characters and duplicate declared keys are refused before
+`--overwrite`. Empty values, real CR/LF or NUL characters, Dokploy `${{...}}` references and duplicate declared keys are refused before
 any write. A blank existing assignment is an existing value and also requires `--overwrite`.
 
 The merge preserves every unrelated byte, including `IMAGE_TAG=${{project.IMAGE_TAG}}`, comments,
 blank lines and line endings. Comparison trims assignment padding and removes one matching outer
-quote pair; it performs no interpolation or escape decoding. Values are never printed or persisted.
+quote pair. Single-quoted values decode escaped single quotes; double-quoted values decode JSON
+escapes and doubled dollars. Unquoted inline comments are excluded from comparison, and
+interpolated values cannot establish equality with a literal secret. New values containing dotenv syntax or edge whitespace are
+double-quoted, with escaped backslashes, quotes and dollars so Compose treats them literally. Dokploy reference syntax is refused because
+Dokploy expands it before Compose sees the file. Values are never printed or persisted.
 After a write it re-reads and compares each declared value, since a legal 200 can silently drop env.
 Exit codes: 0 applied and verified, 1 already in sync, 2 refused, 3 write status unknown, 4 read
 failure, 5 verification failed. After exit 3, inspect state before retrying with overwrite.
