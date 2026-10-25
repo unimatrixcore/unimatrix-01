@@ -1,9 +1,11 @@
 import { SecretValue } from "@unimatrix/secrets/client";
 
-import { parseEnvLine } from "../dokploy/env-line.js";
+import { isSupportedEnvBlob, parseEnvLine, readEnvValueToken } from "../dokploy/env-line.js";
 
 /** Trim assignment padding and decode the literal quoting emitted by encodeValue. */
-function comparable(value: string): string | null {
+function comparable(raw: string): string | null {
+  const value = readEnvValueToken(raw);
+  if (value === null) return null;
   if (value.startsWith("'") && value.endsWith("'")) {
     return value.slice(1, -1).replaceAll("\\'", "'");
   }
@@ -39,6 +41,8 @@ export function mergeSecretEnv(
   overwrite: boolean,
 ): EnvMergeResult {
   const blob = existing.reveal();
+  if (!isSupportedEnvBlob(blob))
+    return { env: existing, changed: [], refused: [...resolved.keys()] };
   const lines = blob.split(/(?<=\n)/u);
   const changed: string[] = [];
   const refused: string[] = [];

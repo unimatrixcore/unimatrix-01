@@ -283,3 +283,55 @@ void test("merge rejects keys that cannot be one environment assignment", () => 
     assert.equal(result.env.reveal(), "UNCHANGED=value\n");
   }
 });
+
+void test("apply refuses export and multiline dotenv syntax before any write", async () => {
+  for (const blob of [
+    "export CLERK_SECRET_KEY=old\n",
+    'OTHER="first\nCLERK_SECRET_KEY=old\nlast"\n',
+    "OTHER='first\nCLERK_SECRET_KEY=old\nlast'\n",
+  ]) {
+    for (const overwrite of [false, true]) {
+      const f = fixture({ blob });
+      const result = await applySecretEnv(f.client, f.envClient, f.store, "api", overwrite);
+      assert.equal(result.outcome, "refused");
+      assert.equal(f.writes(), 0);
+      assert.equal(f.reads(), 1);
+    }
+  }
+});
+
+void test("merge preserves unsupported blobs and accepts only complete physical assignments", () => {
+  for (const blob of [
+    'KEY="unterminated',
+    'OTHER="done"junk\n',
+    "OTHER=value\rmore\n",
+    "OTHER=a\0b",
+    "OTHER: value",
+    "OTHER",
+  ]) {
+    const result = mergeSecretEnv(secret(blob), values, true);
+    assert.deepEqual(result.refused, ["KEY"]);
+    assert.equal(result.env.reveal(), blob);
+  }
+  for (const blob of [
+    "OTHER='a\\'b' # comment\n",
+    'OTHER="a\\"b"\n',
+    'OTHER="done"\n',
+    "OTHER=value\n",
+  ]) {
+    assert.deepEqual(mergeSecretEnv(secret(blob), values, false).refused, []);
+  }
+});
+
+void test("quoted assignments with trailing comments remain in sync without rewriting", () => {
+  for (const blob of [
+    'KEY="fixture" # retained\n',
+    "KEY='fixture'# retained\n",
+    "KEY=fixture # retained\n",
+  ]) {
+    const result = mergeSecretEnv(secret(blob), values, false);
+    assert.deepEqual(result.refused, []);
+    assert.deepEqual(result.changed, []);
+    assert.equal(result.env.reveal(), blob);
+  }
+});

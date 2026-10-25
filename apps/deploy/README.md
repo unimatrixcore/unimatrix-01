@@ -135,7 +135,9 @@ compose env:
 manifest-declared store name before reading Dokploy. It refuses self, unknown, ambiguous,
 foreign-repository and non-GitHub targets. It fills missing keys; a differing existing value requires
 `--overwrite`. Empty values, real CR/LF or NUL characters, Dokploy `${{...}}` references and duplicate declared keys are refused before
-any write. Keys must use the environment-name grammar `[A-Za-z_][A-Za-z0-9_]*`. A blank existing assignment is an existing value and also requires `--overwrite`.
+any write. Existing blobs using `export`, multiline quoted assignments, or syntax the shared
+physical-line parser cannot safely identify are refused as a whole; no key-like line inside
+another value can be replaced. Keys must use the environment-name grammar `[A-Za-z_][A-Za-z0-9_]*`. A blank existing assignment is an existing value and also requires `--overwrite`.
 
 The merge preserves every unrelated byte, including `IMAGE_TAG=${{project.IMAGE_TAG}}`, comments,
 blank lines and line endings. Comparison trims assignment padding and removes one matching outer
