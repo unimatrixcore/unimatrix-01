@@ -108,3 +108,6 @@ export type {
 export { markdownLivePreview } from "./components/markdown-editor/live-preview.js";
 export { STATUS_DOT_CLASSES, STATUS_TEXT_CLASSES, getUptimeTone } from "./lib/status-tone.js";
 export type { StatusTone } from "./lib/status-tone.js";
+export { StatusDot } from "./components/ui/status-dot.js";
+export type { StatusDotProps } from "./components/ui/status-dot.js";
+export { TooltipProvider } from "./components/ui/tooltip.js";

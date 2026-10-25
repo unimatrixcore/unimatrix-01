@@ -53,3 +53,4 @@ export * from "./textarea.js";
 export * from "./toggle-group.js";
 export * from "./toggle.js";
 export * from "./tooltip.js";
+export * from "./status-dot.js";
