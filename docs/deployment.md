@@ -199,9 +199,9 @@ Required environment variable (set in Dokploy's UI):
 CORS_ALLOWED_ORIGINS=https://site.example.com,https://www.site.example.com
 ```
 
-`HOST`, `PORT`, `NODE_ENV`, `LOG_LEVEL`, and `TRUST_PROXY=1` are already fixed
-in `infra/docker/api-compose.yaml` for this deployment shape and don't need to
-be set again in Dokploy.
+`HOST`, `PORT`, `NODE_ENV`, `LOG_LEVEL`, and `TRUST_PROXY` are fixed by
+`apps/api/deploy.config.ts` and generated into `infra/docker/api-compose.yaml`;
+a Dokploy variable of the same name does not override them.
 
 **Persistent storage:** user settings and uploaded files are stored in SQLite,
 so the API needs a durable volume or all user data is lost on redeploy.
@@ -575,8 +575,19 @@ Production routing still needs to satisfy:
 - the `auth.unimatrix-01.dev` hostname routes to the auth service
 - the `admin.unimatrix-01.dev` hostname routes to the admin service
 - TLS terminates at Traefik
-- standard proxy headers are forwarded so the API can run with
-  `TRUST_PROXY=1`
+- standard proxy headers are forwarded, and the API trusts only Traefik's
+  explicit address through `TRUST_PROXY`
+
+The API's `TRUST_PROXY` literal in `apps/api/deploy.config.ts` must match the
+immediate Traefik endpoint. `docker inspect dokploy-traefik` reported an explicit
+`dokploy-network` endpoint address of `10.0.1.166`, and DNS from the API container
+resolved `dokploy-traefik` to that address. Persistence across proxy recreation
+has not been verified. After recreating Traefik, recheck its network address,
+update the config if needed, regenerate deployment artifacts, and redeploy the API.
+Address drift ignores forwarded headers and makes clients share the proxy's rate
+limit bucket. Do not trust the whole shared overlay subnet: unrelated apps join it.
+Numeric hop counts such as `TRUST_PROXY=1` are rejected; use one verified IPv4 or
+IPv6 address. `true` trusts all peers and is unsuitable for this shared network.
 
 Because separate-origin is the default deployment shape, Traefik does not need
 to rewrite `/api` paths in the primary production setup.

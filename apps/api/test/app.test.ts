@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import Fastify from "fastify";
+
 import { buildApp, buildAppOptions } from "../src/app.js";
 import { loadApiRuntimeConfig, type ApiRuntimeEnv } from "../src/config.js";
 
@@ -23,6 +25,65 @@ void test("buildApp disables Fastify default request logging", () => {
   );
 
   assert.equal(options.logController.disableRequestLogging, true);
+});
+
+void test("proxy headers are trusted only from the configured proxy IP", async () => {
+  const app = Fastify(
+    buildAppOptions(
+      loadApiRuntimeConfig({
+        NODE_ENV: "test",
+        LOG_LEVEL: "error",
+        TRUST_PROXY: "10.0.1.166",
+      }),
+    ),
+  );
+  app.get("/identity", (request, reply) =>
+    reply.send({
+      ip: request.ip,
+      host: request.host,
+      protocol: request.protocol,
+    }),
+  );
+
+  try {
+    for (const peer of [
+      "10.0.1.166",
+      "::ffff:10.0.1.166",
+      "10.0.1.167",
+      "::ffff:10.0.1.167",
+      "203.0.113.10",
+    ]) {
+      const response = await app.inject({
+        method: "GET",
+        url: "/identity",
+        remoteAddress: peer,
+        headers: {
+          host: "api.example.test",
+          "x-forwarded-for": "192.0.2.250, 198.51.100.42",
+          "x-forwarded-host": "public.example.test",
+          "x-forwarded-proto": "https",
+        },
+      });
+
+      assert.equal(response.statusCode, 200);
+      assert.deepEqual(
+        response.json(),
+        peer === "10.0.1.166" || peer === "::ffff:10.0.1.166"
+          ? {
+              ip: "198.51.100.42",
+              host: "public.example.test",
+              protocol: "https",
+            }
+          : {
+              ip: peer,
+              host: "api.example.test",
+              protocol: "http",
+            },
+      );
+    }
+  } finally {
+    await app.close();
+  }
 });
 
 void test("GET /health returns the expected health payload and hardening headers", async () => {

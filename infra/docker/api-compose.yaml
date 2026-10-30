@@ -6,7 +6,9 @@ services:
       PORT: 3001
       NODE_ENV: production
       LOG_LEVEL: info
-      TRUST_PROXY: "1"
+      # Trust only the immediate Traefik endpoint, not every app on dokploy-network.
+      # Revalidate this address after proxy recreation; see docs/deployment.md.
+      TRUST_PROXY: "10.0.1.166"
       # This and the three CLERK_* references below are bare, with no default,
       # on purpose. An unset variable reaches the container as an empty string,
       # not as absent, and this API's loader refuses an empty value — so a stack
