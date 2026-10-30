@@ -85,6 +85,7 @@ export function createContainerObserver(
   client: Pick<DokployClient, "getContainers">,
   desired: DeployDesiredState,
   now: () => number = Date.now,
+  onReadFailure: () => void = () => undefined,
 ): ContainerObserver {
   let snapshot: readonly ContainerObservation[] = desired.map(({ appDir }) => ({
     appDir,
@@ -136,6 +137,7 @@ export function createContainerObserver(
           reason: "poll-failed",
           observedAt,
         }));
+        onReadFailure();
       }
       return snapshot;
     })().finally(() => {

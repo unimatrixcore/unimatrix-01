@@ -118,6 +118,7 @@ void test("ambiguous, lookalike, and failed reads are unknown rather than down o
   let entries = [container()];
   let fail = false;
   let time = 100;
+  let readFailures = 0;
   const observer = createContainerObserver(
     {
       getContainers: () =>
@@ -125,6 +126,9 @@ void test("ambiguous, lookalike, and failed reads are unknown rather than down o
     },
     desired.slice(0, 1),
     () => time,
+    () => {
+      readFailures += 1;
+    },
   );
   await observer.poll();
 
@@ -154,6 +158,7 @@ void test("ambiguous, lookalike, and failed reads are unknown rather than down o
     reason: "poll-failed",
     observedAt: 400,
   });
+  assert.equal(readFailures, 1);
 });
 
 void test("unknown samples do not erase the last matched identity or recreation time", async () => {

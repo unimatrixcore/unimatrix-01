@@ -51,7 +51,12 @@ export function buildApp(
 
   app.decorate("runtimeConfig", config);
   app.decorate("dokploy", options.dokploy);
-  app.decorate("containerObserver", createContainerObserver(options.dokploy, DEPLOY_DESIRED_STATE));
+  app.decorate(
+    "containerObserver",
+    createContainerObserver(options.dokploy, DEPLOY_DESIRED_STATE, Date.now, () => {
+      app.log.warn("container observation poll failed");
+    }),
+  );
   setupCorePlugins(app);
 
   app.setErrorHandler((error, request, reply) => {
