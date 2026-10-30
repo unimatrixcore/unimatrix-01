@@ -18,12 +18,20 @@ function getEditorContent(): HTMLElement {
  * themselves are a real-browser check; jsdom reports no layout.
  */
 describe("MarkdownEditor", () => {
-  it("mounts with the markdown it was given", () => {
-    render(<MarkdownEditor label="Post body" onChange={vi.fn()} value={"# Title\n\nBody copy."} />);
+  it(
+    "mounts with the markdown it was given",
+    // Cold mounting and accessibility assertions took 5.232s in CI's parallel test run.
+    { timeout: 15_000 },
+    () => {
+      render(
+        <MarkdownEditor label="Post body" onChange={vi.fn()} value={"# Title\n\nBody copy."} />,
+      );
 
-    expect(getEditorContent()).toHaveTextContent("# Title");
-    expect(getEditorContent()).toHaveTextContent("Body copy.");
-  });
+      const editor = getEditorContent();
+      expect(editor).toHaveTextContent("# Title");
+      expect(editor).toHaveTextContent("Body copy.");
+    },
+  );
 
   it("reports edits as raw markdown text", async () => {
     const onChange = vi.fn();
