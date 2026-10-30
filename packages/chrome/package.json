@@ -26,13 +26,13 @@
     "@unimatrix/config-eslint": "workspace:*",
     "@unimatrix/config-typescript": "workspace:*",
     "@unimatrix/config-vitest": "workspace:*",
-    "@vitest/coverage-v8": "^4.1.11",
+    "@vitest/coverage-v8": "^5.0.1",
     "eslint": "^10.8.1",
     "jsdom": "^30.0.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.11"
+    "vitest": "^5.0.1"
   },
   "dependencies": {
     "@remixicon/react": "^4.9.0",
