@@ -20,10 +20,14 @@ const ENV_STATE_LABEL: Record<EnvFindingState, string> = {
   "build-arg-runtime-copy": "build arg runtime copy (ignored; value is baked into image)",
 };
 
-function renderBuildArgCopies(diff: Extract<AppDiff, { verdict: "matched" }>): string[] {
-  return diff.envFindings
+function renderBuildArgCopies(
+  appDir: string,
+  diff: Extract<AppDiff, { verdict: "matched" }>,
+): string[] {
+  const copies = diff.envFindings
     .filter((finding) => finding.state === "build-arg-runtime-copy")
     .map((finding) => `  env ${finding.key}: ${ENV_STATE_LABEL[finding.state]}`);
+  return copies.length === 0 ? [] : [`${appDir}: BUILD ARG RUNTIME COPIES`, ...copies];
 }
 
 function renderAppDiff(appDir: string, diff: AppDiff): string[] {
@@ -38,13 +42,18 @@ function renderAppDiff(appDir: string, diff: AppDiff): string[] {
   }
 
   if (diff.inSync) {
-    return [`${appDir}: IN SYNC`, ...renderBuildArgCopies(diff)];
+    return [`${appDir}: IN SYNC`, ...renderBuildArgCopies(appDir, diff)];
   }
 
   const lines = [`${appDir}: DRIFT`];
 
   for (const finding of diff.envFindings) {
-    if (finding.state === "set" || finding.state === "optional-absent") continue;
+    if (
+      finding.state === "set" ||
+      finding.state === "optional-absent" ||
+      finding.state === "build-arg-runtime-copy"
+    )
+      continue;
     lines.push(`  env ${finding.key}: ${ENV_STATE_LABEL[finding.state]}`);
   }
 
@@ -52,7 +61,7 @@ function renderAppDiff(appDir: string, diff: AppDiff): string[] {
     lines.push(`  ${finding.setting}: declared ${finding.declared}, actual ${finding.actual}`);
   }
 
-  return lines;
+  return [...lines, ...renderBuildArgCopies(appDir, diff)];
 }
 
 function renderNonInSyncEnvFindings(diff: AppDiff): string[] {
