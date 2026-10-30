@@ -16,6 +16,57 @@ are **not** sourced from that config and stay hand-maintained duplication: `pack
 deliberately holds no subdomain or Dokploy metadata (see its `AGENTS.md`), so nothing generates or
 reads them.
 
+## New-app onboarding
+
+Follow this order when adding a deployable `apps/<app>` workspace. The checklist covers production
+Compose services; the local-only `lab` must never gain deployment artifacts.
+
+1. Declare the app in `apps/<app>/deploy.config.ts`, using the matching archetype from
+   `packages/deploy-config`. Add its workspace dependency and seed its Dockerfile from a matching
+   sibling so the generator can read the base-image `FROM` lines. Put browser configuration in
+   image build-arg defaults and backend configuration in the declared runtime env; keep credentials
+   out of build args. Run `node ./infra/scripts/generate-deploy-config.mjs` and review the generated
+   Dockerfile, Compose file and desired-state manifest. **Enforced:** `Deploy config` rejects
+   invalid declarations and generated-file drift; it does not validate live credentials.
+2. Add the app to the `Images` and `Publish` matrices in `.github/workflows/ci.yml`.
+   **Enforced:** `App wiring` checks every Dockerfile against both matrices and checks that the
+   Compose image matches the published image name. For Vite apps it also checks shared-package
+   stylesheet sources and router deduplication.
+3. Have a repository administrator add the exact context `Images (<app>)` to the effective required
+   status checks for `main`, preserving the other requirements. **Enforced:** `Required image
+   checks` in `Verify` reads GitHub's public branch-rules API and fails with each missing context.
+   It makes no ruleset writes and needs no token. Matrix membership alone does not make a failed
+   image build block a merge.
+4. Add `/apps/<app>` to the Docker ecosystem's `directories` in `.github/dependabot.yml` and check
+   GitHub's Dependency graph → Dependabot for configuration errors. **Manual:** neither app wiring
+   nor the required-check gate verifies Dependabot coverage or updater execution.
+5. Before merging, create a uniquely named Dokploy **Compose** service named `<app>`, connected to
+   this repository's `main` branch with compose path `infra/docker/<app>-compose.yaml`. Leave
+   `autoDeploy` off: CI publishes the image before queuing deployment. **Manual before merge:** the
+   reconciler reports missing/ambiguous services and settings drift, but creates no service; CI's
+   `Deploy` job detects a missing match only after merge.
+6. In that service's environment, set the literal `IMAGE_TAG=${{project.IMAGE_TAG}}` reference and
+   supply its declared runtime variables. Keep project-level env limited to `IMAGE_TAG`, because CI
+   replaces that blob. Provision external networks, pinned TLS, service tokens and durable volumes
+   before the first deploy where the app requires them; use the service-specific sections below.
+   **Manual:** CI validates config structure, not Dokploy env, network reachability or durable
+   storage. `reconcile report` checks env key states without exposing values; explicit
+   `secrets-apply` can fill declared store-backed values but triggers no deploy.
+7. Configure DNS, TLS and the Dokploy Domains entry with the app's service name and container port
+   if it is public; provision Cloudflare Access where required. Keep internal services unrouted and
+   authenticate their data routes. **Manual:** declarations and reconciliation do not manage domains
+   or access policy. Verify browser origins, API CORS and auth redirects for a browser app.
+8. Run `pnpm check` and `pnpm verify`, exercise browser behavior where applicable, and require the
+   PR's image build to pass before merging. After the first `Publish` run creates
+   `ghcr.io/unimatrixcore/unimatrix-<app>`, make the package public in its GitHub package settings.
+   **Manual:** package visibility is not inherited from the public repository and these gates do
+   not verify it. Until visibility is changed, the first queued deploy can fail its unauthenticated
+   pull; retry deployment after changing it.
+9. Confirm the deployment actually landed: inspect the recreated container and its requested image,
+   then check health, public routing and browser interactions, including deep-route refreshes and
+   unknown-route behavior appropriate to the app. **Manual:** a green `Deploy` job means queued,
+   and an old healthy container does not prove that the new image is serving.
+
 ## Default production topology
 
 The default production shape is separate-origin:
@@ -508,6 +559,8 @@ can a log line. What does distinguish them:
 - required environment variables (set in Dokploy's UI, not in the file):
   `DOKPLOY_BASE_URL` and `DOKPLOY_API_KEY` — the service refuses to start
   without either
+- `DOKPLOY_BASE_URL` uses the internal Dokploy address `http://dokploy:3000` on
+  `dokploy-network`; verify name resolution and API reachability from the deployed container
 - `SECRETS_TLS_CERT_BASE64` (set in Dokploy's UI): the store's certificate.
   Read lazily, only when `secrets-status` or `secrets-apply` runs (below) — an unset value here
   does not block this service's boot, unlike the two above

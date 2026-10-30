@@ -21,41 +21,10 @@ the first time:
   because it is the same root-set reasoning. See `packages/secrets/AGENTS.md`
   §4 for the store-side floor these three sit beside.
 
-## Before this stack can deploy
+## Production setup
 
-Nothing here is gated before a merge. Step 1 is the only one any check reports
-on at all, and it reports **after** the merge, in a job that cannot block one:
-
-1. Create a Dokploy Compose service named `deploy` **before merging** the PR
-   that adds `infra/docker/deploy-compose.yaml`. CI's `Deploy` job runs on push
-   to `main` only, resolves every generated compose file against Dokploy's
-   project list, and fails by name — not just skips — when one is missing. It
-   is not an armed required check, so a missing service is a red job on `main`
-   rather than a blocked PR.
-2. Set `IMAGE_TAG=${{project.IMAGE_TAG}}` in that service's own environment
-   variables. Dokploy does not inherit project-level variables into a Compose
-   stack, so without this line `${IMAGE_TAG}` resolves empty and the deploy
-   fails on `invalid reference format` (`docs/deployment.md`).
-3. Make the GHCR package public by hand after the first `Publish` run
-   creates it (`docs/deployment.md`'s "A new app's package is private until
-   someone makes it public by hand").
-4. Arm `Images (deploy)` as a required check on the `main` branch ruleset —
-   a repository-ruleset write outside this repo's files, tracked as its own
-   task in `.notes/01-todo/deploy.todo.md`.
-5. Set `DOKPLOY_BASE_URL` and `DOKPLOY_API_KEY` in Dokploy's environment-variable
-   UI before deploying. `DOKPLOY_BASE_URL` is `http://dokploy:3000`: the swarm
-   service is named `dokploy`, publishes target port 3000, and is attached to
-   `dokploy-network` (`docker service inspect dokploy` and
-   `docker network inspect dokploy-network` on the host, 2026-08-14). That the
-   name resolves from an attached Compose container is inferred from swarm's
-   embedded DNS, **not measured** — nothing has run in a container on that
-   network yet. Never the public hostname: that path measures Cloudflare and
-   Traefik as much as Dokploy, and costs two Access service-token secrets.
-6. Set `SECRETS_TLS_CERT_BASE64` in the same UI — the store's certificate, the
-   same base64 PEM its own stack carries. Unlike the two variables above, an
-   unset value here does not block this service's boot: it is read lazily, only
-   when `secrets-status` or `secrets-apply` runs (see below), so `reconcile report` shows `deploy:
-   DRIFT` on this key until it is set rather than the service restart-looping.
+Follow the [new-app onboarding checklist](../../docs/deployment.md#new-app-onboarding) and the
+[deploy service configuration](../../docs/deployment.md#deploy-service) before the first deploy.
 
 ## Reconcile report
 

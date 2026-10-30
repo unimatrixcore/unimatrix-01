@@ -3,6 +3,9 @@
 The secrets service is a Fastify service deployed from `apps/secrets/Dockerfile`
 through `infra/docker/secrets-compose.yaml`.
 
+For production setup, follow the
+[new-app onboarding checklist](../../docs/deployment.md#new-app-onboarding).
+
 Every request except `GET /health` carries a bearer service token or is
 answered 401, including a request to a URL matching no route. Reaching this
 service over the network is not authorization.
