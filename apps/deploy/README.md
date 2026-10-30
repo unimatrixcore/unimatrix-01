@@ -26,6 +26,24 @@ the first time:
 Follow the [new-app onboarding checklist](../../docs/deployment.md#new-app-onboarding) and the
 [deploy service configuration](../../docs/deployment.md#deploy-service) before the first deploy.
 
+## Container observation
+
+The running service samples Dokploy's `docker.getContainers` every 30 seconds and keeps the latest
+observation in memory for each app in `src/reconcile/desired-state.gen.ts`. A container is associated
+with an app only when its image repository matches that app's declared image uniquely. Missing or
+multiple matches are `unknown`; they do not establish that the app is down. A failed Dokploy read
+also yields `unknown` rather than retaining a stale running result.
+An image match alone cannot prove which Compose stack owns a container if another stack uses the
+same image repository.
+
+An observed container ID change records recreation. The Docker `status` text is retained for coarse
+display, but the response has no creation timestamp, so exact container age is unavailable. The
+first observation time measures only how long this service has seen that ID. Observations reset on
+service restart and do not establish that a requested image or configuration was deployed.
+
+The snapshot is internal to the service. The later authenticated deployment-state read will expose
+it to callers.
+
 ## Reconcile report
 
 `pnpm --filter @unimatrix/deploy-app reconcile report` diffs
