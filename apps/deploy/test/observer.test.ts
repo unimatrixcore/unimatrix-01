@@ -17,6 +17,7 @@ const desired: DeployDesiredState = [
     env: [],
     buildArgNames: [],
     publicStatus: true,
+    healthProbe: { url: "http://web:8080/" },
   },
   {
     appDir: "web",
@@ -28,6 +29,7 @@ const desired: DeployDesiredState = [
     env: [],
     buildArgNames: [],
     publicStatus: true,
+    healthProbe: { url: "http://web:8080/" },
   },
 ];
 

@@ -413,6 +413,9 @@ importers:
       '@unimatrix/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      better-sqlite3:
+        specifier: ^12.6.2
+        version: 12.11.1
       fastify:
         specifier: ^5.12.6
         version: 5.12.6
@@ -423,6 +426,9 @@ importers:
         specifier: ^4.3.6
         version: 4.4.3
     devDependencies:
+      '@types/better-sqlite3':
+        specifier: ^7.6.13
+        version: 7.6.13
       '@types/node':
         specifier: ^24.13.3
         version: 24.13.3

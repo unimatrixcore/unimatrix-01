@@ -133,3 +133,16 @@ void test("loadDeployRuntimeConfig rejects blank HOST values", () => {
     /HOST must not be empty when it is set/,
   );
 });
+
+void test("health history path defaults locally and rejects a blank override", () => {
+  assert.equal(loadDeployRuntimeConfig(BASE_ENV).databasePath, "local/deploy.sqlite");
+  assert.equal(
+    loadDeployRuntimeConfig({ ...BASE_ENV, DEPLOY_DATABASE_PATH: "/data/deploy.sqlite" })
+      .databasePath,
+    "/data/deploy.sqlite",
+  );
+  assert.throws(
+    () => loadDeployRuntimeConfig({ ...BASE_ENV, DEPLOY_DATABASE_PATH: " " }),
+    /DEPLOY_DATABASE_PATH must not be empty/,
+  );
+});

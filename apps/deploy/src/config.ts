@@ -17,6 +17,7 @@ export interface DeployRuntimeConfig {
   nodeEnv: DeployNodeEnv;
   logLevel: DeployLogLevel;
   dokployBaseUrl: string;
+  databasePath: string;
 }
 
 export interface DeployRuntimeEnv {
@@ -26,6 +27,7 @@ export interface DeployRuntimeEnv {
   LOG_LEVEL?: string | undefined;
   DOKPLOY_BASE_URL?: string | undefined;
   DOKPLOY_API_KEY?: string | undefined;
+  DEPLOY_DATABASE_PATH?: string | undefined;
 }
 
 const DEFAULT_HOST = "127.0.0.1";
@@ -185,5 +187,10 @@ export function loadDeployRuntimeConfig(env: DeployRuntimeEnv = process.env): De
     nodeEnv,
     logLevel: parseLogLevel(env.LOG_LEVEL, nodeEnv),
     dokployBaseUrl: parseDokployBaseUrl(env.DOKPLOY_BASE_URL),
+    databasePath: readOptionalString(
+      "DEPLOY_DATABASE_PATH",
+      env.DEPLOY_DATABASE_PATH,
+      "local/deploy.sqlite",
+    ),
   };
 }

@@ -8,6 +8,7 @@ export default nodeApiApp({
     { name: "HOST", value: "0.0.0.0" },
     { name: "PORT", value: "3001" },
     { name: "LOG_LEVEL", value: "info" },
+    { name: "DEPLOY_DATABASE_PATH", value: "/data/deploy.sqlite" },
   ],
   composeEnv: [
     { name: "HOST", value: { kind: "literal", value: "0.0.0.0" } },
@@ -52,12 +53,12 @@ export default nodeApiApp({
       comment: [
         "The store's certificate only, never its key — supplying it replaces",
         "this service's trust store for connections to the secrets store",
-        "rather than widening it. Read lazily, on the secrets-status CLI path",
-        "only, so an unset value here never fails this service's boot.",
+        "rather than widening it. The health probe also uses this pin; missing",
+        "or invalid trust configuration produces unknown health.",
       ],
     },
   ],
-  volumes: [],
+  volumes: [{ name: "deploy-data", mountPath: "/data" }],
   networks: [
     {
       name: "dokploy-network",

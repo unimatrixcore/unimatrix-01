@@ -18,6 +18,7 @@ const IN_SYNC_DESIRED: DeployDesiredState = [
     env: [{ name: "IMAGE_TAG", required: true }],
     buildArgNames: [],
     publicStatus: true,
+    healthProbe: { url: "http://web:8080/" },
   },
 ];
 
@@ -126,6 +127,7 @@ void test("exit 2 when a single app's compose.one fails, isolated to that app ra
       env: [{ name: "IMAGE_TAG", required: true }],
       buildArgNames: [],
       publicStatus: true,
+      healthProbe: { url: "http://web:8080/" },
     },
   ];
   const projects = [

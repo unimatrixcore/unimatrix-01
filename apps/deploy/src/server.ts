@@ -1,6 +1,9 @@
 import { buildApp } from "./app.js";
 import { loadDeployRuntimeConfig } from "./config.js";
 import { createDokployClient, loadDokployApiKey } from "./dokploy/client.js";
+import { setupHealthMonitoring } from "./health-history/lifecycle.js";
+import { resolveHealthProbeTargets } from "./health-history/probe.js";
+import { DEPLOY_DESIRED_STATE } from "./reconcile/desired-state.gen.js";
 import { startContainerPolling } from "./observe/polling.js";
 
 // No .env file loading here, same reasoning as apps/secrets/src/server.ts: porting it would put a
@@ -12,6 +15,11 @@ const dokploy = createDokployClient({
   apiKey: loadDokployApiKey(),
 });
 const app = buildApp(config, { dokploy });
+setupHealthMonitoring(
+  app,
+  config.databasePath,
+  resolveHealthProbeTargets(DEPLOY_DESIRED_STATE, process.env),
+);
 let stopContainerPolling: (() => void) | undefined;
 
 let closeAppPromise: Promise<void> | null = null;

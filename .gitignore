@@ -39,6 +39,10 @@ apps/secrets/local/*.sqlite
 apps/secrets/local/*.sqlite-shm
 apps/secrets/local/*.sqlite-wal
 apps/secrets/local/*.sqlite-journal
+apps/deploy/local/*.sqlite
+apps/deploy/local/*.sqlite-shm
+apps/deploy/local/*.sqlite-wal
+apps/deploy/local/*.sqlite-journal
 
 # editor and OS files
 .DS_Store

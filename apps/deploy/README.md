@@ -44,6 +44,37 @@ service restart and do not establish that a requested image or configuration was
 The snapshot is internal to the service. The later authenticated deployment-state read will expose
 it to callers.
 
+## Internal health history
+
+The collector probes each declared app every 60 seconds using the generated internal target in
+`src/reconcile/desired-state.gen.ts`. Node services use `/health`; SPA images use `/`. Requests
+have a five-second deadline, accept only 2xx responses, and follow no redirects. Response bodies
+and upstream error text are discarded. These requests measure internal app reachability; they do
+not measure Cloudflare or Traefik availability.
+
+Secrets health uses its declared HTTPS target and `SECRETS_TLS_CERT_BASE64` as the trust store,
+with hostname verification enabled and no bearer token. A missing or malformed pin produces an
+unknown observation. A completed probe that fails HTTP, connection, TLS or deadline checks is down.
+
+SQLite stores at most one observation per app per minute, retaining 30 days plus one minute for
+intervals crossing the window boundary. Each observation covers at most the following 60 seconds,
+ending sooner if another observation arrives. Missing intervals and stale observations are unknown.
+Uptime is up time divided by observed up-or-down time; coverage is observed time divided by the
+whole window. With no observed time, uptime is null. Daily summaries use UTC boundaries and include
+the elapsed portion of today. The internal snapshot includes the 30-day summary, 14 daily summaries
+and the most recent 60 probes; it is not an HTTP route.
+
+Production uses `/data/deploy.sqlite` on the `deploy-data` Compose volume, separate from the API
+and secrets databases. Preserve that volume across redeploys. `DEPLOY_DATABASE_PATH` selects a different
+file; local development defaults to `local/deploy.sqlite` relative to the service working directory.
+The service initializes its schema on startup and refuses unsupported schema versions. Shutdown
+stops and awaits pending probes before closing SQLite.
+
+Internal reachability was checked from the live deploy container on 2026-10-30: every generated
+app target returned 200, including secrets with certificate and hostname verification enabled.
+Recheck from that container after network or certificate changes; a public URL succeeding does
+not establish that these internal targets are reachable.
+
 ## Reconcile report
 
 `pnpm --filter @unimatrix/deploy-app reconcile report` diffs

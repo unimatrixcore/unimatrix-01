@@ -16,6 +16,7 @@ export const DEPLOY_DESIRED_STATE: DeployDesiredState = [
     env: [{ name: "IMAGE_TAG", required: true }],
     buildArgNames: ["VITE_API_BASE_URL", "VITE_AUTH_APP_URL", "VITE_CLERK_PUBLISHABLE_KEY"],
     publicStatus: false,
+    healthProbe: { url: "http://admin:8080/" },
   },
   {
     appDir: "api",
@@ -41,6 +42,7 @@ export const DEPLOY_DESIRED_STATE: DeployDesiredState = [
     ],
     buildArgNames: [],
     publicStatus: true,
+    healthProbe: { url: "http://api:3001/health" },
   },
   {
     appDir: "auth",
@@ -52,6 +54,7 @@ export const DEPLOY_DESIRED_STATE: DeployDesiredState = [
     env: [{ name: "IMAGE_TAG", required: true }],
     buildArgNames: ["VITE_API_BASE_URL", "VITE_CLERK_PUBLISHABLE_KEY"],
     publicStatus: false,
+    healthProbe: { url: "http://auth:8080/" },
   },
   {
     appDir: "cflop",
@@ -63,6 +66,7 @@ export const DEPLOY_DESIRED_STATE: DeployDesiredState = [
     env: [{ name: "IMAGE_TAG", required: true }],
     buildArgNames: [],
     publicStatus: true,
+    healthProbe: { url: "http://cflop:8080/" },
   },
   {
     appDir: "deploy",
@@ -79,6 +83,7 @@ export const DEPLOY_DESIRED_STATE: DeployDesiredState = [
     ],
     buildArgNames: [],
     publicStatus: false,
+    healthProbe: { url: "http://deploy:3001/health" },
   },
   {
     appDir: "secrets",
@@ -95,6 +100,10 @@ export const DEPLOY_DESIRED_STATE: DeployDesiredState = [
     ],
     buildArgNames: [],
     publicStatus: false,
+    healthProbe: {
+      url: "https://secrets:3001/health",
+      caCertificateEnv: "SECRETS_TLS_CERT_BASE64",
+    },
   },
   {
     appDir: "web",
@@ -106,5 +115,6 @@ export const DEPLOY_DESIRED_STATE: DeployDesiredState = [
     env: [{ name: "IMAGE_TAG", required: true }],
     buildArgNames: ["VITE_API_BASE_URL"],
     publicStatus: true,
+    healthProbe: { url: "http://web:8080/" },
   },
 ];
