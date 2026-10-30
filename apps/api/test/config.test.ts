@@ -101,8 +101,23 @@ void test("loadApiRuntimeConfig trims and validates explicit values", () => {
   );
 });
 
-void test("loadApiRuntimeConfig preserves single-hop TRUST_PROXY=1 semantics", () => {
-  assert.equal(loadApiRuntimeConfig({ TRUST_PROXY: " 1 " }).trustProxy, 1);
+void test("loadApiRuntimeConfig accepts explicit proxy IP addresses", () => {
+  for (const address of ["10.0.1.166", "2001:db8::1", "::ffff:10.0.1.166"]) {
+    assert.equal(loadApiRuntimeConfig({ TRUST_PROXY: ` ${address} ` }).trustProxy, address);
+  }
+});
+
+void test("loadApiRuntimeConfig rejects hop-count proxy trust with a migration error", () => {
+  assert.throws(
+    () => loadApiRuntimeConfig({ TRUST_PROXY: " 1 " }),
+    /TRUST_PROXY=1 is unsupported.*explicit IP address instead of a hop count/u,
+  );
+});
+
+void test("loadApiRuntimeConfig preserves disabled proxy trust", () => {
+  for (const value of ["false", "0"]) {
+    assert.equal(loadApiRuntimeConfig({ TRUST_PROXY: value }).trustProxy, false);
+  }
 });
 
 void test("loadApiRuntimeConfig replaces default cors origins when CORS_ALLOWED_ORIGINS is set", () => {
@@ -213,10 +228,19 @@ void test("loadApiRuntimeConfig rejects blank LOG_LEVEL values", () => {
 });
 
 void test("loadApiRuntimeConfig rejects unsupported TRUST_PROXY values", () => {
-  assert.throws(
-    () => loadApiRuntimeConfig({ TRUST_PROXY: "yes" }),
-    /TRUST_PROXY must be one of true, 1, false, 0/,
-  );
+  for (const value of [
+    "yes",
+    "2",
+    "10.0.1.999",
+    "10.0.1.166/24",
+    "10.0.1.166,10.0.1.167",
+    "localhost",
+  ]) {
+    assert.throws(
+      () => loadApiRuntimeConfig({ TRUST_PROXY: value }),
+      /TRUST_PROXY must be an explicit IP address or one of true, false, 0/u,
+    );
+  }
 });
 
 void test("loadApiRuntimeConfig rejects blank HOST values", () => {

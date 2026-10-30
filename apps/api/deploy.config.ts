@@ -30,7 +30,14 @@ export default nodeApiApp({
     { name: "PORT", value: { kind: "literal", value: "3001" } },
     { name: "NODE_ENV", value: { kind: "literal", value: "production" } },
     { name: "LOG_LEVEL", value: { kind: "literal", value: "info" } },
-    { name: "TRUST_PROXY", value: { kind: "literal", value: '"1"' } },
+    {
+      name: "TRUST_PROXY",
+      value: { kind: "literal", value: '"10.0.1.166"' },
+      comment: [
+        "Trust only the immediate Traefik endpoint, not every app on dokploy-network.",
+        "Revalidate this address after proxy recreation; see docs/deployment.md.",
+      ],
+    },
     {
       name: "CORS_ALLOWED_ORIGINS",
       value: { kind: "variable", name: "CORS_ALLOWED_ORIGINS" },
