@@ -32,6 +32,7 @@ const ONE_APP_DESIRED: DeployDesiredState = [
       { name: "IMAGE_TAG", required: true },
       { name: "CLERK_SECRET_KEY", required: true },
     ],
+    buildArgNames: [],
     publicStatus: true,
   },
 ];
@@ -157,6 +158,23 @@ void test("renders IN SYNC when every env and setting finding matches", async ()
   const { rendered } = await runWithEnv(`CLERK_SECRET_KEY=set-value\nIMAGE_TAG=abc123\n`);
 
   assert.deepEqual(rendered, ["api: IN SYNC"]);
+});
+
+void test("reports build-arg runtime copies separately without exposing their values or calling them drift", async () => {
+  const desired: DeployDesiredState = [
+    { ...ONE_APP_DESIRED[0]!, buildArgNames: ["VITE_API_BASE_URL"] },
+  ];
+  const run = await collectReconcileRun(
+    clientWithComposeEnv(
+      `CLERK_SECRET_KEY=${CANARY}\nIMAGE_TAG=abc123\nVITE_API_BASE_URL=${CANARY}\n`,
+    ),
+    desired,
+  );
+  const rendered = renderReconcileRun(run).join("\n");
+
+  assert.match(rendered, /^api: IN SYNC/mu);
+  assert.match(rendered, /env VITE_API_BASE_URL: build arg runtime copy/mu);
+  assert.ok(!rendered.includes(CANARY));
 });
 
 void test("a Dokploy compose service the repo declares nowhere is simply never reported", async () => {

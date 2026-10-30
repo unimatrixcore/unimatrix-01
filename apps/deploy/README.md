@@ -68,7 +68,9 @@ For each declared app it reports one of `MISSING` (no Dokploy compose service of
 `AMBIGUOUS` (more than one, matched globally across every Dokploy project the same way CI's
 `Deploy` job does), `IN SYNC`, or `DRIFT` naming which env keys and which of `composePath`,
 `sourceType`, `branch`, `autoDeploy` disagree. An env finding is always a key and a state — `set`,
-`blank`, `missing`, `optional-absent`, or `undeclared` — never a value; Dokploy's `env` blob is
+`blank`, `missing`, `optional-absent`, `undeclared`, or `build-arg-runtime-copy` — never a value;
+the last state is printed under `IN SYNC` when a Dokploy key duplicates a declared image build arg.
+It does not mask unrelated undeclared keys. Dokploy's `env` blob is
 reduced to that before it reaches reconciliation (`readEnvKeyStates`,
 `src/dokploy/schemas.ts`).
 

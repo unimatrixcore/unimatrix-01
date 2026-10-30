@@ -4,7 +4,7 @@ import type { ReconcileRun } from "./collect.js";
 
 /**
  * Every render in this module — {@link renderReconcileRun} and {@link renderApplyOutcome} alike —
- * carries an env key and one of {@link EnvFindingState}'s five states, never a value: nothing here
+ * carries an env key and one of {@link EnvFindingState}'s states, never a value: nothing here
  * holds a field a value could ride on. `renderApplyOutcome`'s `applied` and `nothing-to-apply`
  * cases additionally always say apply never writes env, then list the non-in-sync env findings
  * `report` would show — an operator reading only the apply output must never conclude apply fixed
@@ -17,7 +17,14 @@ const ENV_STATE_LABEL: Record<EnvFindingState, string> = {
   missing: "missing",
   "optional-absent": "optional, absent",
   undeclared: "undeclared",
+  "build-arg-runtime-copy": "build arg runtime copy (ignored; value is baked into image)",
 };
+
+function renderBuildArgCopies(diff: Extract<AppDiff, { verdict: "matched" }>): string[] {
+  return diff.envFindings
+    .filter((finding) => finding.state === "build-arg-runtime-copy")
+    .map((finding) => `  env ${finding.key}: ${ENV_STATE_LABEL[finding.state]}`);
+}
 
 function renderAppDiff(appDir: string, diff: AppDiff): string[] {
   if (diff.verdict === "missing") {
@@ -31,7 +38,7 @@ function renderAppDiff(appDir: string, diff: AppDiff): string[] {
   }
 
   if (diff.inSync) {
-    return [`${appDir}: IN SYNC`];
+    return [`${appDir}: IN SYNC`, ...renderBuildArgCopies(diff)];
   }
 
   const lines = [`${appDir}: DRIFT`];
@@ -54,7 +61,12 @@ function renderNonInSyncEnvFindings(diff: AppDiff): string[] {
   const lines: string[] = [];
 
   for (const finding of diff.envFindings) {
-    if (finding.state === "set" || finding.state === "optional-absent") continue;
+    if (
+      finding.state === "set" ||
+      finding.state === "optional-absent" ||
+      finding.state === "build-arg-runtime-copy"
+    )
+      continue;
     lines.push(`  env ${finding.key}: ${ENV_STATE_LABEL[finding.state]}`);
   }
 
@@ -117,7 +129,7 @@ export function renderApplyOutcome(outcome: ApplyOutcome): readonly string[] {
 }
 
 /**
- * Never carries an env value, only a key and one of {@link EnvFindingState}'s five states — the
+ * Never carries an env value, only a key and one of {@link EnvFindingState}'s states — the
  * type this renders holds no field that could carry one. Pure: no I/O.
  */
 export function renderReconcileRun(run: ReconcileRun): readonly string[] {

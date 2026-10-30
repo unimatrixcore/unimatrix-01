@@ -528,7 +528,9 @@ read for this instance. See `apps/deploy/AGENTS.md`.
 what Dokploy actually holds and prints the drift — missing or ambiguously-named compose services,
 env keys that are unset/blank/undeclared (never a value, only a key and a state), and disagreement
 on `composePath`, `sourceType`, `branch`, or `autoDeploy`. Read-only: it calls only `project.all`
-and `compose.one`. It does not check a service's Domains entry or its `watchPaths`/`composeFile` —
+and `compose.one`. A Dokploy env key also declared as an image build arg is reported as a
+`build-arg-runtime-copy` without counting as drift; its runtime value cannot change the bundle.
+It does not check a service's Domains entry or its `watchPaths`/`composeFile` —
 see `apps/deploy/README.md`.
 
 `pnpm --filter @unimatrix/deploy-app reconcile apply <app>` writes `composePath`, `branch`, and
