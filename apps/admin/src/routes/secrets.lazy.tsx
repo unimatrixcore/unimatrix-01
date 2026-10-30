@@ -37,7 +37,9 @@ function SecretsRoute() {
           description="This tool manages the credentials the system runs on."
         />
       )}
-      <Toaster position="bottom-right" />
+      <div className="absolute">
+        <Toaster position="bottom-right" />
+      </div>
     </>
   );
 }

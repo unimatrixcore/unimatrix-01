@@ -30,7 +30,7 @@
   },
   "dependencies": {
     "@clerk/clerk-react": "^5.61.6",
-    "@clerk/fastify": "^3.1.66",
+    "@clerk/fastify": "^3.1.68",
     "@clerk/themes": "^2.4.57"
   },
   "peerDependencies": {
@@ -56,12 +56,12 @@
     "@unimatrix/config-eslint": "workspace:*",
     "@unimatrix/config-typescript": "workspace:*",
     "@unimatrix/config-vitest": "workspace:*",
-    "@vitest/coverage-v8": "^4.1.10",
+    "@vitest/coverage-v8": "^4.1.11",
     "eslint": "^10.8.1",
     "fastify": "^5.12.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   }
 }

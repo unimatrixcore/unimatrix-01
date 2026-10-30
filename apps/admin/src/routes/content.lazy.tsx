@@ -38,7 +38,9 @@ function ContentRoute() {
           description="This tool manages the site’s blog posts and projects."
         />
       )}
-      <Toaster position="bottom-right" />
+      <div className="absolute">
+        <Toaster position="bottom-right" />
+      </div>
     </>
   );
 }

@@ -14,6 +14,7 @@
     // Mapped to source rather than left to the `exports` map, so typechecking
     // this package never depends on `packages/ui` having been built first.
     "paths": {
+      "@unimatrix/ui/scroll-area": ["../ui/src/components/ui/scroll-area.tsx"],
       "@unimatrix/ui/public": ["../ui/src/public.ts"]
     }
   },

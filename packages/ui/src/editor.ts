@@ -43,6 +43,7 @@ export {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "./components/ui/alert-dialog.js";
+export { Alert, AlertTitle, AlertDescription } from "./components/ui/alert.js";
 export { Badge } from "./components/ui/badge.js";
 export { Button } from "./components/ui/button.js";
 export { Checkbox } from "./components/ui/checkbox.js";
@@ -59,6 +60,7 @@ export {
   EmptyContent,
   EmptyDescription,
   EmptyHeader,
+  EmptyMedia,
   EmptyTitle,
 } from "./components/ui/empty.js";
 export { Input } from "./components/ui/input.js";
@@ -85,6 +87,7 @@ export {
   TableHeader,
   TableRow,
 } from "./components/ui/table.js";
+export { Tabs, TabsList, TabsTrigger, TabsContent } from "./components/ui/tabs.js";
 export { Textarea } from "./components/ui/textarea.js";
 export { Toaster } from "./components/ui/sonner.js";
 // Re-exported rather than imported from `sonner` by the consumer: `<Toaster />`
@@ -103,3 +106,32 @@ export type {
   MarkdownEditorProps,
 } from "./components/markdown-editor/markdown-editor.js";
 export { markdownLivePreview } from "./components/markdown-editor/live-preview.js";
+export { STATUS_DOT_CLASSES, STATUS_TEXT_CLASSES, getUptimeTone } from "./lib/status-tone.js";
+export type { StatusTone } from "./lib/status-tone.js";
+export { StatusDot } from "./components/ui/status-dot.js";
+export type { StatusDotProps } from "./components/ui/status-dot.js";
+export { TooltipProvider } from "./components/ui/tooltip.js";
+export {
+  Card,
+  CardHeader,
+  CardFooter,
+  CardTitle,
+  CardAction,
+  CardDescription,
+  CardContent,
+} from "./components/ui/card.js";
+export type { CardHeight, CardProps } from "./components/ui/card.js";
+export { DigestCard } from "./components/ui/digest-card.js";
+export type { DigestCardProps } from "./components/ui/digest-card.js";
+export { DigestCardGrid } from "./components/ui/digest-card-grid.js";
+export type { DigestCardGridProps } from "./components/ui/digest-card-grid.js";
+export { DigestRowList, DigestRow } from "./components/ui/digest-row-list.js";
+export type { DigestRowListProps, DigestRowProps } from "./components/ui/digest-row-list.js";
+export { UptimeStrip } from "./components/ui/uptime-strip.js";
+export type { UptimeStripProps, UptimeSample } from "./components/ui/uptime-strip.js";
+
+export { ScrollArea, ScrollBar } from "./components/ui/scroll-area.js";
+export type { ScrollAreaProps, ScrollAreaViewportProps } from "./components/ui/scroll-area.js";
+
+export { ActionTooltip } from "./components/ui/action-tooltip.js";
+export type { ActionTooltipProps } from "./components/ui/action-tooltip.js";

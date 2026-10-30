@@ -46,6 +46,12 @@ export function createCflopViteConfig({
     resolve: {
       alias: [
         {
+          find: /^@unimatrix\/ui\/scroll-area$/,
+          replacement: fileURLToPath(
+            new URL("../../packages/ui/src/components/ui/scroll-area.tsx", import.meta.url),
+          ),
+        },
+        {
           find: "@",
           replacement: fileURLToPath(new URL("./src", import.meta.url)),
         },

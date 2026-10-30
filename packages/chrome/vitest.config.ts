@@ -6,6 +6,12 @@ export default defineConfig({
   resolve: {
     alias: [
       {
+        find: /^@unimatrix\/ui\/scroll-area$/,
+        replacement: fileURLToPath(
+          new URL("../ui/src/components/ui/scroll-area.tsx", import.meta.url),
+        ),
+      },
+      {
         find: /^@unimatrix\/ui\/public$/,
         replacement: fileURLToPath(new URL("../ui/src/public.ts", import.meta.url)),
       },
