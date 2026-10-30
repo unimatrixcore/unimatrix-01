@@ -27,7 +27,7 @@ export const DEFAULT_API_CORS_ALLOWED_ORIGINS = [
 
 export type ApiNodeEnv = (typeof API_NODE_ENVS)[number];
 export type ApiLogLevel = (typeof API_LOG_LEVELS)[number];
-export type ApiTrustProxy = boolean | 1;
+export type ApiTrustProxy = boolean | string;
 export type ApiCorsProtocol = "http:" | "https:";
 
 export interface ApiCorsExactOriginRule {
@@ -324,15 +324,21 @@ function parseTrustProxy(value: string | undefined): ApiTrustProxy {
   }
 
   if (trimmedValue === "1") {
-    return 1;
+    throw createApiConfigError(
+      "TRUST_PROXY=1 is unsupported. Set the immediate proxy's explicit IP address instead of a hop count.",
+    );
   }
 
   if (trimmedValue === "false" || trimmedValue === "0") {
     return false;
   }
 
+  if (isIP(trimmedValue) !== 0) {
+    return trimmedValue;
+  }
+
   throw createApiConfigError(
-    `TRUST_PROXY must be one of true, 1, false, 0. Received ${JSON.stringify(trimmedValue)}.`,
+    `TRUST_PROXY must be an explicit IP address or one of true, false, 0. Received ${JSON.stringify(trimmedValue)}.`,
   );
 }
 

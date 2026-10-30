@@ -75,7 +75,8 @@ The API image builds `@unimatrix/shared`, compiles `apps/api`, then uses
 - entrypoint: `node dist/server.js`
 - container port: `3001`
 - healthcheck path: `/health`
-- runtime env that has to be supplied: `TRUST_PROXY=1` behind a proxy, and
+- runtime env that has to be supplied: `TRUST_PROXY=<verified-proxy-IP>` behind
+  a proxy (one IPv4 or IPv6 address; see `docs/deployment.md`), and
   `CORS_ALLOWED_ORIGINS` to override the built-in defaults (which include local
   development origins, so production logs a warning when it is unset).
   `NODE_ENV`, `HOST`, `PORT`, `LOG_LEVEL` and `DATABASE_URL` have image
