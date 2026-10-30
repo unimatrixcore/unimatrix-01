@@ -76,6 +76,11 @@ interface DeployAppConfigBase {
    *  builds `@unimatrix/auth-app`, so this is never derived from `appDir`. */
   readonly packageName: string;
   readonly publicStatus?: boolean;
+  /** Internal monitoring uses service DNS, never the public proxy path. */
+  readonly healthProbe?: {
+    readonly scheme: "http" | "https";
+    readonly caCertificateEnv?: string;
+  };
 }
 
 export interface StaticSpaAppConfig extends DeployAppConfigBase {
@@ -294,6 +299,20 @@ export function validateAppConfig(config: DeployAppConfig): readonly string[] {
   }
   if (!config.packageName.startsWith("@unimatrix/")) {
     failures.push(`${label}: packageName must start with "@unimatrix/".`);
+  }
+
+  if (config.healthProbe !== undefined && !["http", "https"].includes(config.healthProbe.scheme)) {
+    failures.push(`${label}: healthProbe.scheme must be http or https.`);
+  }
+
+  if (
+    config.healthProbe?.caCertificateEnv !== undefined &&
+    (config.healthProbe.scheme !== "https" ||
+      !/^[A-Z_][A-Z0-9_]*$/u.test(config.healthProbe.caCertificateEnv))
+  ) {
+    failures.push(
+      `${label}: healthProbe.caCertificateEnv requires https and a valid environment variable name.`,
+    );
   }
 
   if (config.kind === "static-spa") {
@@ -727,6 +746,7 @@ export interface DeployDesiredService {
   readonly buildArgNames: readonly string[];
   /** Whether a stranger may see this service's health — see {@link DeployAppConfigBase}. */
   readonly publicStatus: boolean;
+  readonly healthProbe: { readonly url: string; readonly caCertificateEnv?: string };
 }
 
 export type DeployDesiredState = readonly DeployDesiredService[];
@@ -764,6 +784,16 @@ function desiredServiceForConfig(config: DeployAppConfig): DeployDesiredService 
     buildArgNames:
       config.kind === "static-spa" ? config.buildArgs.map((arg) => arg.name).sort() : [],
     publicStatus: config.publicStatus ?? false,
+    healthProbe: {
+      url:
+        internalServiceUrl(config.appDir, {
+          kind: config.kind,
+          scheme: config.healthProbe?.scheme ?? "http",
+        }) + (config.kind === "static-spa" ? "/" : "/health"),
+      ...(config.healthProbe?.caCertificateEnv === undefined
+        ? {}
+        : { caCertificateEnv: config.healthProbe.caCertificateEnv }),
+    },
   };
 }
 
@@ -813,6 +843,7 @@ export function deployDesiredStateModule(configs: readonly DeployAppConfig[]): s
       "    ],",
       `    buildArgNames: ${JSON.stringify(service.buildArgNames)},`,
       `    publicStatus: ${String(service.publicStatus)},`,
+      `    healthProbe: ${JSON.stringify(service.healthProbe)},`,
       "  },",
     );
   }

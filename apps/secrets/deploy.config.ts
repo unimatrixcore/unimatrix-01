@@ -2,6 +2,7 @@ import { nodeApiApp } from "@unimatrix/deploy-config";
 
 export default nodeApiApp({
   appDir: "secrets",
+  healthProbe: { scheme: "https", caCertificateEnv: "SECRETS_TLS_CERT_BASE64" },
   packageName: "@unimatrix/secrets-app",
   dockerfileEnv: [
     { name: "NODE_ENV", value: "production" },

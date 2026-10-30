@@ -25,9 +25,11 @@ services:
       SECRETS_BASE_URL: https://secrets:3001
       # The store's certificate only, never its key — supplying it replaces
       # this service's trust store for connections to the secrets store
-      # rather than widening it. Read lazily, on the secrets-status CLI path
-      # only, so an unset value here never fails this service's boot.
+      # rather than widening it. The health probe also uses this pin; missing
+      # or invalid trust configuration produces unknown health.
       SECRETS_TLS_CERT_BASE64: ${SECRETS_TLS_CERT_BASE64}
+    volumes:
+      - deploy-data:/data
     networks:
       # This service exists to talk to Dokploy's own API, and the alternative —
       # reaching https://dokploy.unimatrix-01.dev — costs two more Cloudflare
@@ -52,6 +54,9 @@ services:
       # neither.
       unimatrix-secrets:
     restart: unless-stopped
+
+volumes:
+  deploy-data:
 
 networks:
   dokploy-network:

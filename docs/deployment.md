@@ -562,9 +562,17 @@ can a log line. What does distinguish them:
 - `DOKPLOY_BASE_URL` uses the internal Dokploy address `http://dokploy:3000` on
   `dokploy-network`; verify name resolution and API reachability from the deployed container
 - `SECRETS_TLS_CERT_BASE64` (set in Dokploy's UI): the store's certificate.
-  Read lazily, only when `secrets-status` or `secrets-apply` runs (below) — an unset value here
-  does not block this service's boot, unlike the two above
-- no volume — it holds no persistent state
+  Used by internal HTTPS health probes and by `secrets-status` or `secrets-apply` (below).
+  An unset or malformed pin makes secrets health unknown without blocking service startup;
+  the secrets CLI still refuses an unconfigured connection.
+- persistent storage: `deploy-data` mounted at `/data`, with `DEPLOY_DATABASE_PATH=/data/deploy.sqlite`.
+  Preserve this volume across redeploys; it holds bounded health history and is separate from the
+  API and secrets volumes. Confirm the actual Compose-prefixed volume name and mount on the host.
+
+The collector probes internal app targets every 60 seconds and retains 30 days of observations.
+Uptime excludes unknown intervals and is accompanied by coverage; see
+[internal health history](../apps/deploy/README.md#internal-health-history) for interval semantics
+and the internal reachability check. Missing observations must not be interpreted as healthy.
 
 It joins `dokploy-network`: it exists to call Dokploy's own API, and joining
 is what lets it reach that API by service name rather than round-tripping out

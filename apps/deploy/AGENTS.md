@@ -4,8 +4,9 @@
 `apps/deploy` is a Fastify service holding a typed Dokploy API client, a read-only reconcile report,
 and a settings-only apply (`src/reconcile/`, `pnpm --filter @unimatrix/deploy-app reconcile`): it
 diffs `src/reconcile/desired-state.gen.ts` against what Dokploy actually holds, prints drift, and can
-write `composePath`/`branch`/`autoDeploy` for one app at a time. It performs no probing and creates
-and deploys nothing — see `README.md` for what still has to happen by hand before
+write `composePath`/`branch`/`autoDeploy` for one app at a time. It observes containers and persists
+internal HTTP health probes in its own SQLite database. It creates and deploys nothing — see
+`README.md` for what still has to happen by hand before
 this stack deploys, and for apply's full refusal set. It also holds a read-only resolver against the
 secrets store (`src/secret-env/`, `reconcile secrets-status <app>`) that resolves declared
 values and applies them to Dokploy only through `secrets-apply` — it holds no write capability
@@ -74,7 +75,7 @@ against the store, and
   parameter; nothing downstream — the diff, the report, the CLI — ever holds a field that could
   carry a value. This is `docs/deployment.md`'s "never print a response body" rule applied one layer
   deeper than the client.
-- **`src/secret-env/`'s store token, base URL, and certificate are read lazily, only on the
+- **`src/secret-env/`'s store connection is read lazily on the
   `secrets-status` or `secrets-apply` CLI path — never from `src/config.ts`.**
   `loadDeployRuntimeConfig()` runs on every
   boot of this service and on every `reconcile report`/`reconcile apply` invocation; none of the three
@@ -84,6 +85,11 @@ against the store, and
   builds no Fastify instance for `secrets-status` at all, but the rule is the same one the Dokploy key
   follows. The token itself arrives via `docker exec --env-file` at invoke time; it is never declared
   in `infra/docker/deploy-compose.yaml` and never at rest in Dokploy's `env` column.
+- **Health probes hold no secrets-store token.** `src/health-history/` reads the declared TLS
+  certificate for anonymous `/health` requests, with hostname verification enabled. Missing pin
+  configuration yields unknown; never substitute the loopback Docker healthcheck's disabled TLS
+  verification for a request crossing the network. Probe history lives on the deploy-owned volume,
+  never in `@unimatrix/db`; shutdown must finish pending probes before closing that database.
 - **`src/reconcile/` never imports `src/secret-env/` or `@unimatrix/secrets`, in either direction of
   data.** `boundaries.mjs` grants this workspace the `secrets` package edge as a whole (it has no
   per-directory granularity); `restricted-imports.mjs` narrows that edge to `src/secret-env/`, the

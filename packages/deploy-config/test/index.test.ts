@@ -787,3 +787,44 @@ describe("internalServiceUrl", () => {
     expect(internalServiceUrl("web", options)).toBe("http://web:8080");
   });
 });
+
+describe("healthProbe", () => {
+  it("generates internal paths and explicit TLS trust configuration", () => {
+    const spa = staticSpaApp({ appDir: "web", packageName: "@unimatrix/web", buildArgs: [] });
+    const api = nodeApiApp({
+      appDir: "api",
+      packageName: "@unimatrix/api",
+      dockerfileEnv: [],
+      composeEnv: [],
+      volumes: [],
+    });
+    const secrets = nodeApiApp({
+      ...api,
+      appDir: "secrets",
+      healthProbe: { scheme: "https", caCertificateEnv: "SECRETS_TLS_CERT_BASE64" },
+    });
+    expect(deployDesiredStateModule([spa])).toContain('"url":"http://web:8080/"');
+    expect(deployDesiredStateModule([api])).toContain('"url":"http://api:3001/health"');
+    expect(deployDesiredStateModule([secrets])).toContain(
+      '"url":"https://secrets:3001/health","caCertificateEnv":"SECRETS_TLS_CERT_BASE64"',
+    );
+    expect(validateAppConfig(secrets)).toEqual([]);
+  });
+
+  it("rejects a pin on cleartext and malformed certificate variable names", () => {
+    for (const healthProbe of [
+      { scheme: "http" as const, caCertificateEnv: "CERT" },
+      { scheme: "https" as const, caCertificateEnv: "BAD-NAME" },
+    ]) {
+      const config = staticSpaApp({
+        appDir: "web",
+        packageName: "@unimatrix/web",
+        buildArgs: [],
+        healthProbe,
+      });
+      expect(validateAppConfig(config)).toContain(
+        "web: healthProbe.caCertificateEnv requires https and a valid environment variable name.",
+      );
+    }
+  });
+});

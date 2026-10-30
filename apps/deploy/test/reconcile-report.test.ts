@@ -34,6 +34,7 @@ const ONE_APP_DESIRED: DeployDesiredState = [
     ],
     buildArgNames: [],
     publicStatus: true,
+    healthProbe: { url: "http://web:8080/" },
   },
 ];
 

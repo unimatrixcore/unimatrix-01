@@ -26,6 +26,7 @@ function desiredService(overrides: Partial<DeployDesiredService> = {}): DeployDe
     env: [{ name: "IMAGE_TAG", required: true }],
     buildArgNames: [],
     publicStatus: true,
+    healthProbe: { url: "http://web:8080/" },
     ...overrides,
   };
 }

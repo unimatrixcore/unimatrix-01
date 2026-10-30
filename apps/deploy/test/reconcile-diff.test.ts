@@ -21,6 +21,7 @@ function desiredService(overrides: Partial<DeployDesiredService> = {}): DeployDe
     ],
     buildArgNames: [],
     publicStatus: true,
+    healthProbe: { url: "http://web:8080/" },
     ...overrides,
   };
 }
