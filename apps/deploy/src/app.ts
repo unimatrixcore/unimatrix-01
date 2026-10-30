@@ -5,12 +5,15 @@ import type { DokployClient } from "./dokploy/client.js";
 import { createNotFoundErrorEnvelope, normalizeDeployError } from "./lib/http/errors.js";
 import { buildLoggerOptions, type DeployLoggerStream } from "./lib/http/logging.js";
 import { registerModules } from "./modules/index.js";
+import { createContainerObserver, type ContainerObserver } from "./observe/observer.js";
 import { setupCorePlugins } from "./plugins/index.js";
+import { DEPLOY_DESIRED_STATE } from "./reconcile/desired-state.gen.js";
 
 declare module "fastify" {
   interface FastifyInstance {
     runtimeConfig: DeployRuntimeConfig;
     dokploy: DokployClient;
+    containerObserver: ContainerObserver;
   }
 }
 
@@ -48,6 +51,7 @@ export function buildApp(
 
   app.decorate("runtimeConfig", config);
   app.decorate("dokploy", options.dokploy);
+  app.decorate("containerObserver", createContainerObserver(options.dokploy, DEPLOY_DESIRED_STATE));
   setupCorePlugins(app);
 
   app.setErrorHandler((error, request, reply) => {

@@ -1,6 +1,7 @@
 import { buildApp } from "./app.js";
 import { loadDeployRuntimeConfig } from "./config.js";
 import { createDokployClient, loadDokployApiKey } from "./dokploy/client.js";
+import { startContainerPolling } from "./observe/polling.js";
 
 // No .env file loading here, same reasoning as apps/secrets/src/server.ts: porting it would put a
 // plaintext Dokploy API key on a developer's disk. Local dev supplies DOKPLOY_BASE_URL and
@@ -11,6 +12,7 @@ const dokploy = createDokployClient({
   apiKey: loadDokployApiKey(),
 });
 const app = buildApp(config, { dokploy });
+let stopContainerPolling: (() => void) | undefined;
 
 let closeAppPromise: Promise<void> | null = null;
 let isShuttingDown = false;
@@ -21,6 +23,7 @@ function closeApp(): Promise<void> {
   }
 
   closeAppPromise = app.close();
+  stopContainerPolling?.();
 
   return closeAppPromise;
 }
@@ -71,6 +74,9 @@ async function startServer(): Promise<void> {
       },
       "deploy server listening",
     );
+    stopContainerPolling = startContainerPolling(app.containerObserver, () => {
+      app.log.warn("container observation poll failed");
+    });
   } catch (error) {
     process.exitCode = 1;
     app.log.error({ err: error }, "failed to start deploy server");
