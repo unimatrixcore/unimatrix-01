@@ -24,6 +24,7 @@ function desiredService(overrides: Partial<DeployDesiredService> = {}): DeployDe
     image: "ghcr.io/unimatrixcore/unimatrix-api",
     containerPort: 3001,
     env: [{ name: "IMAGE_TAG", required: true }],
+    buildArgNames: [],
     publicStatus: true,
     ...overrides,
   };

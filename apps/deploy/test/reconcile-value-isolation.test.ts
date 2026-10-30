@@ -29,7 +29,11 @@ void test("no file under src/reconcile/ names secret-env or @unimatrix/secrets",
   for (const path of reconcileSourceFiles()) {
     const source = readFileSync(path, "utf8");
 
-    if (source.includes("secret-env") || SECRETS_IMPORT_SPECIFIER.test(source)) {
+    if (
+      source.includes("secret-env") ||
+      /dokploy\/(?:transport|env-client|env-line)/u.test(source) ||
+      SECRETS_IMPORT_SPECIFIER.test(source)
+    ) {
       offenders.push(path);
     }
   }

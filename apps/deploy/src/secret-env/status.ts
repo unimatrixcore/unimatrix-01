@@ -30,7 +30,7 @@ interface SecretEnvDeclaration {
 export interface SecretEnvResolvedResult extends SecretEnvDeclaration {
   readonly outcome: "resolved";
   /**
-   * Whether the resolved value contains a real newline. PR 2's env write is line-oriented, so a
+   * Whether the resolved value contains a real newline. Secrets apply is line-oriented, so a
    * stored value with real newlines can never be written as-is — this is the fact that matters, not
    * the value. Never a length, never a prefix, never any other value-derived field.
    */

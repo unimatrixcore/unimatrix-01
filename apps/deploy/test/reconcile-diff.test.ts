@@ -19,6 +19,7 @@ function desiredService(overrides: Partial<DeployDesiredService> = {}): DeployDe
       { name: "CLERK_SECRET_KEY", required: true },
       { name: "TRUST_PROXY", required: false },
     ],
+    buildArgNames: [],
     publicStatus: true,
     ...overrides,
   };
@@ -168,6 +169,62 @@ void test("diffApp env state: undeclared (a Dokploy key the manifest never names
     { key: "IMAGE_TAG", state: "set" },
   ]);
   assert.equal(diff.inSync, false);
+});
+
+void test("diffApp classifies a declared image build arg's runtime copy without hiding other drift", () => {
+  const diff = diffApp(
+    desiredService({
+      env: [{ name: "IMAGE_TAG", required: true }],
+      buildArgNames: ["VITE_API_BASE_URL"],
+    }),
+    ONE_MATCH,
+    composeDetail({
+      env: [
+        { key: "IMAGE_TAG", blank: false },
+        { key: "VITE_API_BASE_URL", blank: false },
+        { key: "UNDECLARED_KEY", blank: false },
+      ],
+    }),
+  );
+  if (diff.verdict !== "matched") throw new Error("unreachable");
+  assert.deepEqual(diff.envFindings, [
+    { key: "IMAGE_TAG", state: "set" },
+    { key: "UNDECLARED_KEY", state: "undeclared" },
+    { key: "VITE_API_BASE_URL", state: "build-arg-runtime-copy" },
+  ]);
+  assert.equal(diff.inSync, false);
+});
+
+void test("diffApp treats only present build-arg runtime copies as informational", () => {
+  const desired = desiredService({
+    env: [{ name: "IMAGE_TAG", required: true }],
+    buildArgNames: ["VITE_API_BASE_URL"],
+  });
+  const diff = diffApp(
+    desired,
+    ONE_MATCH,
+    composeDetail({
+      env: [
+        { key: "IMAGE_TAG", blank: false },
+        { key: "VITE_API_BASE_URL", blank: true },
+      ],
+    }),
+  );
+  if (diff.verdict !== "matched") throw new Error("unreachable");
+  assert.equal(diff.inSync, true);
+  assert.deepEqual(diff.envFindings, [
+    { key: "IMAGE_TAG", state: "set" },
+    { key: "VITE_API_BASE_URL", state: "build-arg-runtime-copy" },
+  ]);
+
+  const absent = diffApp(
+    desired,
+    ONE_MATCH,
+    composeDetail({ env: [{ key: "IMAGE_TAG", blank: false }] }),
+  );
+  if (absent.verdict !== "matched") throw new Error("unreachable");
+  assert.equal(absent.inSync, true);
+  assert.deepEqual(absent.envFindings, [{ key: "IMAGE_TAG", state: "set" }]);
 });
 
 void test("diffApp setting finding: composePath", () => {

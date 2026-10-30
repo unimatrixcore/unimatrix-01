@@ -16,6 +16,7 @@ const IN_SYNC_DESIRED: DeployDesiredState = [
     image: "ghcr.io/unimatrixcore/unimatrix-api",
     containerPort: 3001,
     env: [{ name: "IMAGE_TAG", required: true }],
+    buildArgNames: [],
     publicStatus: true,
   },
 ];
@@ -123,6 +124,7 @@ void test("exit 2 when a single app's compose.one fails, isolated to that app ra
       image: "ghcr.io/unimatrixcore/unimatrix-web",
       containerPort: 8080,
       env: [{ name: "IMAGE_TAG", required: true }],
+      buildArgNames: [],
       publicStatus: true,
     },
   ];

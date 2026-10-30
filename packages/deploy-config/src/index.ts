@@ -722,6 +722,9 @@ export interface DeployDesiredService {
   /** `IMAGE_TAG` plus every `composeEnv` entry sourced from `variable` or `secrets-store`, sorted
    *  by name. A `literal` or `generated` entry never appears — neither is Dokploy's to hold. */
   readonly env: readonly DeployDesiredEnvVar[];
+  /** Build-time keys in the image. A same-named Dokploy env entry is a redundant runtime copy,
+   *  never a required compose variable. Names only; defaults stay out of reconciliation. */
+  readonly buildArgNames: readonly string[];
   /** Whether a stranger may see this service's health — see {@link DeployAppConfigBase}. */
   readonly publicStatus: boolean;
 }
@@ -758,6 +761,8 @@ function desiredServiceForConfig(config: DeployAppConfig): DeployDesiredService 
     containerPort:
       config.kind === "static-spa" ? STATIC_SPA_CONTAINER_PORT : NODE_API_CONTAINER_PORT,
     env: desiredEnvVars(config),
+    buildArgNames:
+      config.kind === "static-spa" ? config.buildArgs.map((arg) => arg.name).sort() : [],
     publicStatus: config.publicStatus ?? false,
   };
 }
@@ -804,7 +809,12 @@ export function deployDesiredStateModule(configs: readonly DeployAppConfig[]): s
       );
     }
 
-    lines.push("    ],", `    publicStatus: ${String(service.publicStatus)},`, "  },");
+    lines.push(
+      "    ],",
+      `    buildArgNames: ${JSON.stringify(service.buildArgNames)},`,
+      `    publicStatus: ${String(service.publicStatus)},`,
+      "  },",
+    );
   }
 
   lines.push("];", "");

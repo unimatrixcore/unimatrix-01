@@ -690,6 +690,22 @@ describe("deployDesiredStateModule", () => {
     expect(source).toContain('env: [\n      { name: "IMAGE_TAG", required: true },\n    ]');
   });
 
+  it("carries static SPA build-arg names without their image-baked defaults", () => {
+    const config = staticSpaApp({
+      appDir: "web",
+      packageName: "@unimatrix/web",
+      buildArgs: [
+        { name: "VITE_CLERK_PUBLISHABLE_KEY", default: "pk_test_Canary" },
+        { name: "VITE_API_BASE_URL", default: "https://example.com" },
+      ],
+    });
+    const source = deployDesiredStateModule([config]);
+
+    expect(source).toContain('buildArgNames: ["VITE_API_BASE_URL","VITE_CLERK_PUBLISHABLE_KEY"]');
+    expect(source).not.toContain("pk_test_Canary");
+    expect(source).not.toContain("https://example.com");
+  });
+
   it("carries a repo-root-relative composePath with no leading ./", () => {
     const config = staticSpaApp({ appDir: "web", packageName: "@unimatrix/web", buildArgs: [] });
     const source = deployDesiredStateModule([config]);
