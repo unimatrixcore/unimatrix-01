@@ -3,6 +3,9 @@
 The administration console is a Vite SPA built from `apps/admin/Dockerfile`
 and served by nginx on port 8080, matching the other three static apps.
 
+For production setup, follow the
+[new-app onboarding checklist](../../docs/deployment.md#new-app-onboarding).
+
 Content (the blog/project CMS) and Secrets (the credential console) are the
 built sections, on `@unimatrix/chrome`'s tool shell; the remaining section
 routes are still placeholders. It is deployed and reachable:

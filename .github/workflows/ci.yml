@@ -52,6 +52,11 @@ jobs:
       - name: App wiring
         run: bash ./infra/scripts/check-app-wiring.sh
 
+      - name: Required image checks
+        run: |
+          node --test ./infra/scripts/check-required-image-checks.test.mjs
+          node ./infra/scripts/check-required-image-checks.mjs
+
       - name: Stale comments
         run: node ./infra/scripts/check-stale-comments.mjs
 

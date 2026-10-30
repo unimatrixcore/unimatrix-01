@@ -350,39 +350,12 @@ a shared storage strategy.
 
 ## Dokploy Compose deployment
 
-Every `infra/docker/*-compose.yaml` file is a single-service compose file meant to be used as
-Dokploy's "Compose" application type, one Dokploy app per file. They intentionally have:
+Follow the [new-app onboarding checklist](../../docs/deployment.md#new-app-onboarding) for
+production setup, required image checks, package visibility and Dokploy configuration. The
+service-specific sections there cover runtime variables, domains, networks and storage.
 
-- no `ports:` host publishing
-- no Traefik labels
-
-Dokploy's own Domains page handles routing: pick the service and the
-container port (`8080` for web, `3001` for api, `8080` for cflop,
-`8080` for auth, `8080` for admin) there, and Dokploy wires Traefik itself. Don't hand-add
-Traefik labels to these files. Point the cflop Dokploy app's domain at
-`cflop.unimatrix-01.dev` (plus `cube.unimatrix-01.dev` as a redirect-only entry —
-see `docs/deployment.md`), the auth Dokploy app's domain at
-`auth.unimatrix-01.dev`, and the admin Dokploy app's domain at
-`admin.unimatrix-01.dev`. The secrets Dokploy app gets no Domains entry at all — it is
-deliberately unrouted, which also keeps it off the shared `dokploy-network`, since Dokploy
-attaches a stack to that overlay when Traefik has to reach it. Neither fact is what makes the
-service private: a service token is. See `docs/deployment.md`'s "Secrets service" section.
-The deploy Dokploy app also gets no Domains entry, but it does join `dokploy-network` — it exists
-to call Dokploy's own API over that network, not to be reached across it. See
-`apps/deploy/AGENTS.md`.
-
-Every `node-api` compose file (`api-compose.yaml`, `secrets-compose.yaml`, `deploy-compose.yaml`)
-carries an `environment:` block; the SPA compose files do not. The `${...}` entries in it come from
-compose variable substitution — set those in the Dokploy app's environment variables UI rather than
-editing the file. The literals beside them (`HOST`, `PORT`, `NODE_ENV`, `LOG_LEVEL` and the rest)
-are fixed by the file, and a Dokploy variable of the same name does not override one. The SPA
-stacks have no block at all: their `VITE_*` values are inlined into the bundle when the image is
-built, so a Dokploy variable would reach nothing. Every stack reads `IMAGE_TAG` for the tag it
-pulls; see `docs/deployment.md`.
-
-Previews cannot be enabled on these apps — Dokploy supports them only on
-Application-type services. See `docs/deployment.md` for the full
-Dokploy service setup, including how previews are configured instead.
+Compose files intentionally publish no host ports and carry no Traefik labels: Dokploy's Domains
+page owns routing. For local container verification, use the direct `docker run` examples above.
 
 ## Base image updates
 
