@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>UnimatrixTV</AssemblyName>
+    <RootNamespace>UnimatrixTV</RootNamespace>
+    <Version>1.0.1</Version>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AllowMissingPrunePackageData>true</AllowMissingPrunePackageData>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <Reference Include="MediaBrowser.Model">
+      <Private>false</Private>
+      <HintPath>./refs/MediaBrowser.Model.dll</HintPath>
+    </Reference>
+    <Reference Include="MediaBrowser.Common">
+      <Private>false</Private>
+      <HintPath>./refs/MediaBrowser.Common.dll</HintPath>
+    </Reference>
+    <Reference Include="MediaBrowser.Controller">
+      <Private>false</Private>
+      <HintPath>./refs/MediaBrowser.Controller.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Web\configPage.html" />
+    <EmbeddedResource Include="..\dist\presentation.css" LogicalName="UnimatrixTV.Resources.presentation.css" />
+    <EmbeddedResource Include="..\dist\critical.css" LogicalName="UnimatrixTV.Resources.critical.css" />
+    <EmbeddedResource Include="..\dist\bootstrap.js" LogicalName="UnimatrixTV.Resources.bootstrap.js" />
+    <EmbeddedResource Include="..\dist\unimatrix.js" LogicalName="UnimatrixTV.Resources.unimatrix.js" />
+    <EmbeddedResource Include="..\dist\assets\*" LogicalName="UnimatrixTV.Resources.assets.%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup><Compile Remove="Tests/**/*.cs" /></ItemGroup>
+</Project>

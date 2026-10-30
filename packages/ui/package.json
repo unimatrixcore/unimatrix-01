@@ -22,7 +22,11 @@
       "types": "./dist/editor.d.ts",
       "default": "./dist/editor.js"
     },
-    "./styles.css": "./src/styles.css"
+    "./styles.css": "./src/styles.css",
+    "./scroll-area": {
+      "types": "./dist/components/ui/scroll-area.d.ts",
+      "default": "./dist/components/ui/scroll-area.js"
+    }
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -38,35 +42,35 @@
     "@unimatrix/config-eslint": "workspace:*",
     "@unimatrix/config-typescript": "workspace:*",
     "@unimatrix/config-vitest": "workspace:*",
-    "@vitest/coverage-v8": "^4.1.10",
+    "@vitest/coverage-v8": "^4.1.11",
     "eslint": "^10.8.1",
     "jsdom": "^29.1.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "shadcn": "^4.18.0",
+    "shadcn": "^4.21.0",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
-    "@codemirror/commands": "^6.10.4",
+    "@codemirror/commands": "^6.11.0",
     "@codemirror/lang-markdown": "^6.5.2",
     "@codemirror/language": "^6.12.4",
     "@codemirror/state": "^6.7.1",
-    "@codemirror/view": "^6.43.8",
+    "@codemirror/view": "^6.43.9",
     "@fontsource-variable/geist-mono": "^5.2.7",
     "@remixicon/react": "^4.9.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "embla-carousel-react": "^8.6.0",
-    "input-otp": "^1.4.2",
+    "input-otp": "^1.5.0",
     "next-themes": "^0.4.6",
     "prism-react-renderer": "^2.4.1",
     "radix-ui": "^1.4.3",
     "react-day-picker": "^9.14.0",
     "react-markdown": "^10.1.0",
-    "react-resizable-panels": "^4.7.3",
+    "react-resizable-panels": "^4.12.3",
     "recharts": "2.15.4",
     "remark-gfm": "^4.0.1",
     "sonner": "^2.0.8",

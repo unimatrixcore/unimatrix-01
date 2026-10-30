@@ -6,6 +6,8 @@ import type { SecretsClient } from "@unimatrix/secrets/client";
 
 import { loadDeployRuntimeConfig } from "../config.js";
 import { createDokployClient, loadDokployApiKey, type DokployClient } from "../dokploy/client.js";
+import { createDokployEnvClient, type DokployEnvClient } from "../dokploy/env-client.js";
+import { applySecretEnv } from "../secret-env/apply.js";
 import { applyAppSettings } from "../reconcile/apply.js";
 import { collectReconcileRun, type ReconcileRun } from "../reconcile/collect.js";
 import { DEPLOY_DESIRED_STATE } from "../reconcile/desired-state.gen.js";
@@ -19,6 +21,9 @@ const USAGE = [
   "  reconcile report",
   "  reconcile apply <app>",
   "  reconcile secrets-status <app>",
+  "  reconcile secrets-apply <app> [--overwrite]",
+  "secrets-apply: exits 0 applied, 1 in-sync, 2 refused, 3 write status unknown,",
+  "4 read failed, 5 verification failed. No deploy is triggered.",
   "",
   "report diffs apps/deploy/src/reconcile/desired-state.gen.ts against Dokploy and prints the",
   "result. Read-only — creates, updates, and deploys nothing.",
@@ -65,6 +70,7 @@ const USAGE = [
 
 export interface ReconcileCliDeps {
   readonly client: DokployClient;
+  readonly envClient?: DokployEnvClient;
   readonly desired: DeployDesiredState;
   readonly write: (line: string) => void;
   /**
@@ -194,6 +200,35 @@ export async function runReconcileCli(
     }
   }
 
+  if (
+    subcommand === "secrets-apply" &&
+    (argv.length === 2 || (argv.length === 3 && argv[2] === "--overwrite"))
+  ) {
+    const appDir = argv[1];
+    if (appDir !== undefined && deps.secretEnv !== null && deps.envClient !== undefined) {
+      const result = await applySecretEnv(
+        deps.client,
+        deps.envClient,
+        deps.secretEnv,
+        appDir,
+        argv[2] === "--overwrite",
+      );
+      deps.write(
+        `${appDir}: ${result.outcome.toUpperCase()}${result.keys.length ? ` (${result.keys.join(", ")})` : ""}`,
+      );
+      return {
+        applied: 0,
+        "in-sync": 1,
+        refused: 2,
+        "write-status-unknown": 3,
+        error: 4,
+        "verification-failed": 5,
+      }[result.outcome];
+    }
+    deps.write("REFUSED — secrets apply is not configured.");
+    return 2;
+  }
+
   if (argv.length === 2 && subcommand === "secrets-status") {
     const appDir = argv[1];
     if (appDir !== undefined) {
@@ -229,14 +264,25 @@ async function main(): Promise<void> {
     });
 
     const argv = process.argv.slice(2);
-    // Only this subcommand ever reads a store variable — report and apply never do, so a store left
+    // Only the secrets subcommands read a store variable — report and apply never do, so a store left
     // unconfigured cannot affect either of them.
-    const secretEnv = argv[0] === "secrets-status" ? tryCreateSecretsClientFromEnv() : null;
+    const secretEnv =
+      argv[0] === "secrets-status" || argv[0] === "secrets-apply"
+        ? tryCreateSecretsClientFromEnv()
+        : null;
 
     process.exitCode = await runReconcileCli(argv, {
       client,
       desired: DEPLOY_DESIRED_STATE,
       secretEnv,
+      ...(argv[0] === "secrets-apply"
+        ? {
+            envClient: createDokployEnvClient({
+              baseUrl: config.dokployBaseUrl,
+              apiKey: loadDokployApiKey(),
+            }),
+          }
+        : {}),
       write: (line) => {
         process.stdout.write(`${line}\n`);
       },
