@@ -1,0 +1,89 @@
+html.utv-boot-pending {
+  background: #101114 !important;
+}
+html.utv-boot-pending body > :not(#utv-boot-gate),
+html.utv-boot-pending body > :not(#utv-boot-gate) * {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+html.utv-boot-pending::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 999998;
+  background: #101114;
+}
+#utv-boot-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 999999;
+  display: grid;
+  place-items: center;
+  background: #101114;
+  color: #fafafa;
+  font:
+    450 13px/1.5 "Geist Mono Variable",
+    monospace;
+}
+.utv-boot-card {
+  display: grid;
+  justify-items: center;
+  gap: 20px;
+  padding: 24px;
+}
+.utv-boot-logo {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+}
+.utv-boot-spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid #ffffff20;
+  border-top-color: #8fdeaa;
+  border-radius: 50%;
+  animation: utv-spin 900ms linear infinite;
+}
+.utv-boot-text {
+  color: #a1a1aa;
+}
+.utv-boot-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.utv-boot-actions button,
+.utv-boot-actions a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid #ffffff25;
+  border-radius: 8px;
+  background: #1b1d20;
+  color: #fafafa;
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+.utv-boot-actions button {
+  background: #8fdeaa;
+  color: #101114;
+}
+.utv-boot-actions :focus-visible {
+  outline: 2px solid #8fdeaa;
+  outline-offset: 3px;
+}
+@keyframes utv-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .utv-boot-spinner {
+    animation: none;
+  }
+  #utv-boot-gate {
+    transition: none !important;
+  }
+}

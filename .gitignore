@@ -14,6 +14,8 @@ yarn-error.log*
 dist/
 build/
 coverage/
+bin/
+obj/
 apps/web/test-results/
 apps/cflop/test-results/
 
@@ -49,18 +51,8 @@ Thumbs.db
 # misc
 *.log
 
-# Claude Code state. Per-developer by default: scheduler state, the agent
-# worktrees under .claude/worktrees/, and settings.local.json. The negations are
-# the repo conventions a clone must not miss — the skills AGENTS.md points at,
-# the subagents those skills dispatch by name, and settings.json, whose
-# PostToolUse hook surfaces the writing-docs skill on a documentation edit. The
-# lines are not interchangeable: git does not descend into an excluded
-# directory, so the exclusion has to be `.claude/*` for the negations to be
-# reachable at all.
-.claude/*
-!.claude/skills/
-!.claude/agents/
-!.claude/settings.json
+# Local legacy tool state and settings stay private.
+.claude/
 
 # issue workflow artifacts.
 # No trailing slash on purpose: a trailing slash matches directories only, and
@@ -71,7 +63,7 @@ Thumbs.db
 # ignored paths without warning.
 .notes
 
-# design-sync (claude.ai/design)
+# Local design-sync artifacts
 .ds-sync/
 ds-bundle/
 .design-sync/.cache/

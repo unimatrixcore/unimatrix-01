@@ -1,0 +1,45 @@
+{
+  "name": "@unimatrix/tv",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Unimatrix-TV presentation plugin and client adapter.",
+  "license": "MIT",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build:client": "node ./scripts/build-client.mjs",
+    "build:plugin": "dotnet build ./dotnet/UnimatrixTV.csproj -c Release",
+    "build:requests": "node ./scripts/build-requests.mjs",
+    "package": "node ./scripts/package-plugin.mjs",
+    "build": "pnpm build:client && pnpm build:plugin && pnpm build:requests && pnpm package",
+    "deploy:live": "node ./scripts/deploy.mjs",
+    "lint": "eslint .",
+    "test": "vitest run && pnpm test:requests && pnpm test:plugin && pnpm test:deployment && pnpm test:automation",
+    "typecheck": "tsc -p tsconfig.json",
+    "test:requests": "node requests/run-tests.cjs",
+    "test:plugin": "node scripts/test-plugin.mjs",
+    "test:deployment": "node --test scripts/deploy.test.mjs",
+    "test:automation": "python3 -B -m unittest discover -s automation -p 'test_*.py'"
+  },
+  "devDependencies": {
+    "@unimatrix/config-eslint": "workspace:*",
+    "@unimatrix/config-typescript": "workspace:*",
+    "@unimatrix/config-vitest": "workspace:*",
+    "@vitest/coverage-v8": "^4.1.11",
+    "esbuild": "^0.28.2",
+    "eslint": "^10.8.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.11"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  }
+}

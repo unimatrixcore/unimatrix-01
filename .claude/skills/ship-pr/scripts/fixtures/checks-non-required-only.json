@@ -1,9 +1,0 @@
-[
-  { "name": "Socket Security: Project Report", "bucket": "pass" },
-  { "name": "Socket Security: Pull Request Alerts", "bucket": "pass" },
-  {
-    "name": "CodeRabbit",
-    "bucket": "pass",
-    "description": "Review skipped: automatic reviews are disabled"
-  }
-]

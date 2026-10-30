@@ -3,9 +3,8 @@
 // A `path/to/file:line` citation in a `.notes/01-todo/*.todo.md` item goes
 // stale the moment a commit shifts, edits, or removes the cited line — nothing
 // else in this repo notices, because `.notes/` is gitignored and no CI job
-// reads it. Run this at read time (by the `todo` skill and by `ship-pr` when it
-// resolves a `.notes/01-todo/*.todo.md` pointer, in "How this is invoked")
-// instead: it re-derives each citation's current line from a recorded
+// reads it. Run this when reviewing a TODO: it re-derives each citation’s
+// current line from a recorded
 // baseline, rewrites what merely moved, and annotates what did not survive.
 //
 // The baseline is `.notes/.todo-citations.json`, keyed by the citation's exact

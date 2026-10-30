@@ -6,7 +6,7 @@
 
 It is the third top-level workspace entry, alongside `apps/*` and `packages/*`, because it must be a workspace member to import `@unimatrix/ui` and `@unimatrix/chrome`.
 
-Building or promoting a prototype goes through the `lab-prototype` skill: this file holds the facts, the skill holds the order.
+Write prototypes in the main checkout and read `prototypes/README.md` before creating one. Compare any mock you use with its real interface, and verify the result in the browser before presenting it. Promotion replaces mock calls with real integrations and runs the target workspace’s checks.
 
 ## 2. The defining constraint: local-dev only
 

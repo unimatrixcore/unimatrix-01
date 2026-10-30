@@ -14,9 +14,8 @@
 #
 # What it does NOT catch, because the doc names no file:
 #
-#   * a prose claim about machine-local config — "the PreToolUse budget guard"
-#     names a hook registered in the owner's ~/.claude/settings.json and no file
-#     here, so nothing mechanical sees it. Labelling those is on the author.
+#   * a prose claim about machine-local config that names no file here.
+#     Nothing mechanical sees it; labelling those is on the author.
 #   * whether a script that does exist is registered, wired into CI, or called
 #     by anything at all.
 #
@@ -26,8 +25,8 @@
 # failure rather than a vacuous pass — as does a `grep` that fails for any reason
 # other than finding nothing.
 #
-# Assumes GNU bash 4+ and GNU coreutils, as `check-app-wiring.sh` and
-# `check-agents-md-symlinks.sh` already do. CI runs ubuntu-24.04.
+# Assumes GNU bash 4+ and GNU coreutils, as `check-app-wiring.sh` does.
+# CI runs ubuntu-24.04.
 
 set -euo pipefail
 
@@ -54,7 +53,7 @@ printf 'check-doc-script-refs: every script named in a tracked .md must exist he
 
 # The universe of names a doc is allowed to use: the basename of every tracked
 # file, not just `infra/scripts/*`. Docs legitimately name `eslint.config.mjs`,
-# `boundaries.mjs` and the `.claude/skills/*/scripts/*.sh` helpers.
+# `boundaries.mjs` and the other tracked infrastructure helpers.
 declare -A tracked_basenames=()
 tracked_count=0
 

@@ -18,10 +18,12 @@ export const RECONCILE_AUTO_DEPLOY = false;
 
 /**
  * `missing` — declared with no value in Dokploy. `optional-absent` — declared with a default and
- * no value in Dokploy, which is not drift. `undeclared` — a Dokploy key this app's manifest never
- * names. No state ever carries a value, only a key.
+ * no value in Dokploy, which is not drift. `build-arg-runtime-copy` — a Dokploy key whose value
+ * was baked into the image at build time; its runtime copy is informational. `undeclared` — a
+ * Dokploy key this app's manifest never names. No state ever carries a value, only a key.
  */
-export type EnvFindingState = "set" | "blank" | "missing" | "optional-absent" | "undeclared";
+export type EnvFindingState =
+  "set" | "blank" | "missing" | "optional-absent" | "undeclared" | "build-arg-runtime-copy";
 
 export interface EnvFinding {
   readonly key: string;
@@ -95,10 +97,12 @@ function normalizeComposePath(composePath: string): string {
 
 function diffEnv(
   desiredEnv: readonly DeployDesiredEnvVar[],
+  buildArgNames: readonly string[],
   actualEnv: readonly DokployComposeEnvKeyState[],
 ): EnvFinding[] {
   const actualBlankByKey = new Map(actualEnv.map((entry) => [entry.key, entry.blank]));
   const desiredKeys = new Set(desiredEnv.map((entry) => entry.name));
+  const buildArgKeys = new Set(buildArgNames);
   const findings: EnvFinding[] = [];
 
   for (const envVar of desiredEnv) {
@@ -113,7 +117,10 @@ function diffEnv(
 
   for (const actual of actualEnv) {
     if (!desiredKeys.has(actual.key)) {
-      findings.push({ key: actual.key, state: "undeclared" });
+      findings.push({
+        key: actual.key,
+        state: buildArgKeys.has(actual.key) ? "build-arg-runtime-copy" : "undeclared",
+      });
     }
   }
 
@@ -160,7 +167,11 @@ function diffSettings(desiredComposePath: string, actual: DokployCompose): Setti
 }
 
 function isEnvFindingInSync(finding: EnvFinding): boolean {
-  return finding.state === "set" || finding.state === "optional-absent";
+  return (
+    finding.state === "set" ||
+    finding.state === "optional-absent" ||
+    finding.state === "build-arg-runtime-copy"
+  );
 }
 
 /**
@@ -187,7 +198,7 @@ export function diffApp(
     );
   }
 
-  const envFindings = diffEnv(desired.env, detail.env);
+  const envFindings = diffEnv(desired.env, desired.buildArgNames, detail.env);
   const settingFindings = diffSettings(desired.composePath, detail);
 
   return {

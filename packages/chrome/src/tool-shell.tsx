@@ -1,5 +1,5 @@
 import type * as React from "react";
-import { useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { RiArrowLeftLine } from "@remixicon/react";
 
@@ -23,6 +23,14 @@ import { ToolSectionRail, type ToolSection } from "./tool-section-rail.js";
  * reason.
  */
 
+export type ToolPageWidth = "default" | "wide" | "full";
+
+export type ToolPageContainerProps = React.ComponentProps<"div"> & {
+  /** Explicit width takes precedence over the legacy `wide` flag. */
+  width?: ToolPageWidth;
+  wide?: boolean;
+};
+
 export type ToolShellProps = {
   /**
    * Rendered at the right of the title bar. When this and `homeHref` are both
@@ -40,6 +48,7 @@ export type ToolShellProps = {
   accountControl?: React.ReactNode | ((state: { collapsed: boolean }) => React.ReactNode);
   children: React.ReactNode;
   className?: string;
+  width?: ToolPageWidth;
   /**
    * Right-hand cluster of the footer — source links, data attribution, and
    * anything else that is specific to this tool. Use `ToolFooterLink` for the
@@ -79,6 +88,8 @@ export type ToolShellProps = {
    * the whole `<footer>`, including the `contentinfo` landmark.
    */
   showFooter?: boolean;
+  /** Section mode bounds the frame; children own their scrolling within `main`. */
+  scroll?: "page" | "section";
 };
 
 const DEFAULT_OWNER_NAME = "Gwen Phalan";
@@ -90,19 +101,17 @@ function resolveAccountControl(
   return typeof accountControl === "function" ? accountControl({ collapsed }) : accountControl;
 }
 
-export function ToolPageContainer({
-  className,
-  wide,
-  ...props
-}: React.ComponentProps<"div"> & {
-  /** Widens the container's cap from `max-w-5xl` to `max-w-7xl`, for a rail + content layout. */
-  wide?: boolean;
-}) {
+export function ToolPageContainer({ className, wide, width, ...props }: ToolPageContainerProps) {
+  const widthClasses: Record<ToolPageWidth, string> = {
+    default: "max-w-5xl",
+    wide: "max-w-7xl",
+    full: "max-w-none",
+  };
   return (
     <div
       className={cn(
         "relative mx-auto flex min-h-[100dvh] w-full flex-col gap-8 px-4 py-4 sm:px-6 lg:gap-10 lg:px-8 lg:py-6",
-        wide ? "max-w-7xl" : "max-w-5xl",
+        widthClasses[width ?? (wide ? "wide" : "default")],
         className,
       )}
       {...props}
@@ -168,10 +177,12 @@ export function ToolFooterLink({ className, ...props }: React.ComponentProps<"a"
 }
 
 function ToolFooter({
+  bounded,
   end,
   homeHref,
   ownerName,
 }: {
+  bounded: boolean;
   end: React.ReactNode | undefined;
   homeHref: string | undefined;
   ownerName: string;
@@ -180,7 +191,7 @@ function ToolFooter({
   const copyright = `${year} ${ownerName}`;
 
   return (
-    <footer className="py-1">
+    <footer className={cn("py-1", bounded && "shrink-0")}>
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-muted-foreground/85">
         <p>
           ©{" "}
@@ -209,6 +220,8 @@ export function ToolShell({
   sectionsHomeHref = "/",
   sectionsLabel = "Sections",
   showFooter = true,
+  scroll = "page",
+  width,
 }: ToolShellProps) {
   // An empty array falls back to the no-sections layout, not a rail with
   // nothing in it — a caller computing `sections` from permissions must not
@@ -220,7 +233,24 @@ export function ToolShell({
   // screen rather than a redesign. A rail replaces the title bar outright, so
   // it is forced off when `hasSections` even if both are supplied.
   const hasTitleBar = !hasSections && (accountControl !== undefined || homeLabel !== undefined);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
+  const railId = useId();
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const focusToggleOnTransition = useRef(false);
+  const railOpen = hasSections && !collapsed;
+  const sectionScroll = scroll === "section";
+
+  useEffect(() => {
+    if (focusToggleOnTransition.current) {
+      focusToggleOnTransition.current = false;
+      toggleRef.current?.focus();
+    }
+  }, [collapsed]);
+
+  function dismissRail() {
+    focusToggleOnTransition.current = true;
+    setCollapsed(true);
+  }
   // The no-sections layout has no rail and so no collapse concept: the
   // function form of `accountControl` always resolves with `collapsed:
   // false` there, never the state variable above (which this branch never
@@ -229,7 +259,10 @@ export function ToolShell({
 
   const main = (
     <main
-      className={cn("flex flex-1 flex-col gap-8 lg:gap-10", !hasSections && "justify-center")}
+      className={cn(
+        "flex flex-1 flex-col gap-8 lg:gap-10",
+        sectionScroll ? "min-h-0 min-w-0 overflow-hidden" : !hasSections && "justify-center",
+      )}
       id="main-content"
     >
       {children}
@@ -239,7 +272,9 @@ export function ToolShell({
   const skipLink = (
     <a
       className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:border focus:border-primary/45 focus:bg-background focus:px-3 focus:py-2 focus:text-sm"
-      href="#main-content"
+      aria-disabled={railOpen || undefined}
+      href={railOpen ? undefined : "#main-content"}
+      tabIndex={railOpen ? -1 : undefined}
     >
       Skip to main content
     </a>
@@ -254,30 +289,63 @@ export function ToolShell({
   // *collapsed* width rather than the expanded one. The rail is out of flow, so
   // this is the only thing reserving space for it; pinning the gutter to one
   // width is what stops expanding the rail from shoving the page sideways.
-  // Expanded, the rail spans onto the content instead.
+  // Expansion is transient: the scrim blocks the page until the rail closes.
   if (hasSections) {
     return (
-      <div className={cn("relative flex min-h-[100dvh] w-full pl-16", className)}>
+      <div
+        className={cn(
+          "relative flex min-h-[100dvh] w-full pl-16",
+          sectionScroll && "h-dvh min-h-0 overflow-hidden",
+          className,
+        )}
+      >
         <GraphBackground />
         {skipLink}
+
+        {railOpen ? (
+          <button
+            aria-label="Close sections"
+            className="fixed inset-0 z-40 bg-black/55 backdrop-blur-[1px]"
+            onClick={dismissRail}
+            tabIndex={-1}
+            type="button"
+          />
+        ) : null}
 
         <ToolSectionRail
           accountControl={resolvedAccountControl}
           collapsed={collapsed}
           homeLabel={homeLabel}
           logoSrc={logoSrc}
+          onDismiss={dismissRail}
+          onNavigate={() => {
+            focusToggleOnTransition.current = false;
+            setCollapsed(true);
+          }}
           onToggleCollapsed={() => {
+            focusToggleOnTransition.current = true;
             setCollapsed((wasCollapsed) => !wasCollapsed);
           }}
+          railId={railId}
           sections={sections}
           sectionsHomeHref={sectionsHomeHref}
           sectionsLabel={sectionsLabel}
+          toggleRef={toggleRef}
         />
 
-        <ToolPageContainer className="min-h-0 flex-1" wide>
+        <ToolPageContainer
+          className={cn("min-h-0 flex-1", sectionScroll && "h-full min-w-0 overflow-hidden")}
+          inert={railOpen}
+          width={width ?? "wide"}
+        >
           {main}
           {showFooter ? (
-            <ToolFooter end={footerEnd} homeHref={homeHref} ownerName={ownerName} />
+            <ToolFooter
+              bounded={sectionScroll}
+              end={footerEnd}
+              homeHref={homeHref}
+              ownerName={ownerName}
+            />
           ) : null}
         </ToolPageContainer>
       </div>
@@ -285,13 +353,16 @@ export function ToolShell({
   }
 
   return (
-    <ToolPageContainer className={className}>
+    <ToolPageContainer
+      className={cn(sectionScroll && "h-dvh min-h-0 min-w-0 overflow-hidden", className)}
+      width={width ?? "default"}
+    >
       <GraphBackground />
 
       {skipLink}
 
       {hasTitleBar ? (
-        <div className="flex items-center justify-between gap-4">
+        <div className={cn("flex items-center justify-between gap-4", sectionScroll && "shrink-0")}>
           {homeLabel === undefined ? (
             <span />
           ) : (
@@ -310,7 +381,14 @@ export function ToolShell({
 
       {main}
 
-      {showFooter ? <ToolFooter end={footerEnd} homeHref={homeHref} ownerName={ownerName} /> : null}
+      {showFooter ? (
+        <ToolFooter
+          bounded={sectionScroll}
+          end={footerEnd}
+          homeHref={homeHref}
+          ownerName={ownerName}
+        />
+      ) : null}
     </ToolPageContainer>
   );
 }

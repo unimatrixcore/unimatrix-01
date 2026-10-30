@@ -1,4 +1,4 @@
-import { RiAddLine, RiEraserLine, RiRefreshLine } from "@remixicon/react";
+import { RiKeyLine, RiPlugLine, RiAddLine, RiEraserLine, RiRefreshLine } from "@remixicon/react";
 import { useQuery } from "@tanstack/react-query";
 import {
   formatAge,
@@ -7,6 +7,21 @@ import {
   type SecretTier,
 } from "@unimatrix/shared";
 import {
+  Card,
+  CardHeader,
+  CardTitle,
+  ScrollArea,
+  ActionTooltip,
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+  Table,
+  TableHeader,
+  TableHead,
+  TableRow,
+  TableBody,
+  TableCell,
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -33,14 +48,13 @@ import {
 } from "@unimatrix/ui/editor";
 import { useId, useMemo, useState, type ReactNode } from "react";
 
-import { SectionPanel } from "@/features/sections/section-panel";
 import { useApiClient } from "@/lib/api-client";
 
 import {
-  describeSecretsError,
   useClearSecretValue,
   useRotateSecret,
   useSetSecretValue,
+  describeSecretsError,
 } from "./mutations";
 import { secretsQueryOptions } from "./queries";
 import {
@@ -50,15 +64,8 @@ import {
   type SecretRowDescription,
 } from "./row-state";
 
-/** The prefix every name in the integrations panel lives under. */
 const INTEGRATION_NAME_PREFIX = "integrations/";
 
-/**
- * No panel descriptions. This console has one operator, who knows what a
- * platform credential is; a sentence under each heading explaining the heading
- * is onboarding copy for a reader who does not exist, and it pushes the rows —
- * the only thing on the page worth reading — below the fold.
- */
 const PANELS: readonly {
   tier: SecretTier;
   title: string;
@@ -76,18 +83,6 @@ const PANELS: readonly {
   },
 ];
 
-/**
- * `/secrets` — what the system needs, and whether it has it.
- *
- * Two panels rather than one table with a tier column: platform and
- * integration credentials carry different action sets, and in a single table
- * the only way to learn why a row has no Clear button would be to read a badge
- * and remember the rule. Split into labelled panels, the rule is the layout.
- *
- * One request backs both. The tier on each row is what splits them, so a
- * failure and an empty result are both reported per panel — collapsing to one
- * card would change the shape of the page whenever the store blips.
- */
 export function SecretsPage() {
   const client = useApiClient();
   const { data, error, isPending } = useQuery(secretsQueryOptions(client));
@@ -100,14 +95,9 @@ export function SecretsPage() {
     [data],
   );
 
+  const [tier, setTier] = useState<SecretTier>("platform");
   const [isAddOpen, setIsAddOpen] = useState(false);
-  /**
-   * The row a dialog is open for, and which action it is about to take.
-   *
-   * One piece of state for three dialogs, and each is mounted only while it is
-   * that state's target — remounting is what guarantees a value typed for one
-   * credential is never still in a field when the next one opens.
-   */
+
   const [pending, setPending] = useState<{
     action: SecretRowAction;
     row: SecretRowDescription;
@@ -118,13 +108,29 @@ export function SecretsPage() {
   }
 
   return (
-    <div className="grid min-h-0 flex-1 content-start items-start gap-4 overflow-y-auto pb-2">
-      {PANELS.map((panel) => (
-        <SectionPanel
-          actions={
-            panel.tier === "integration" ? (
+    <Card
+      role="region"
+      aria-label="Secrets"
+      size="sm"
+      height="fill"
+      className="min-w-0 gap-0 rounded-none p-0 shadow-none ring-0"
+    >
+      <CardHeader className="flex h-11 shrink-0 flex-row items-center px-3 pt-4 pb-1">
+        <CardTitle className="text-lg leading-none font-semibold tracking-[-0.03em]">
+          <h1>Secrets</h1>
+        </CardTitle>
+      </CardHeader>
+      <Tabs
+        value={tier}
+        onValueChange={(value) => {
+          setTier(value as SecretTier);
+        }}
+        className="flex min-h-0 flex-1 flex-col gap-3 px-3 pt-3 pb-4"
+      >
+        <div className="grid shrink-0 grid-cols-1 items-center gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
+          <div className="col-start-1 row-start-2 flex items-center lg:row-start-1">
+            {tier === "integration" ? (
               <Button
-                className="gap-2"
                 onClick={() => {
                   setIsAddOpen(true);
                 }}
@@ -134,25 +140,55 @@ export function SecretsPage() {
                 <RiAddLine aria-hidden="true" className="size-4" />
                 Add credential
               </Button>
-            ) : // Platform names come from the registry, so there is nothing
-            // to add here — the panel's only entry point is a row.
-            null
-          }
-          className="min-w-0"
-          key={panel.tier}
-          title={panel.title}
-        >
-          <SecretsList
-            empty={panel.empty}
-            error={error}
-            isPending={isPending}
-            onAct={(action, row) => {
-              setPending({ action, row });
-            }}
-            rows={rows.filter((row) => row.tier === panel.tier)}
-          />
-        </SectionPanel>
-      ))}
+            ) : null}
+          </div>
+          <ScrollArea
+            variant="overlay"
+            orientation="horizontal"
+            className="col-start-1 row-start-1 h-9 w-full min-w-0 lg:col-start-2 lg:w-96"
+            viewportProps={{ "aria-label": "Credential collections", tabIndex: 0 }}
+          >
+            <TabsList variant="line" className="-translate-y-0.5 ml-auto w-max justify-end px-3">
+              <TabsTrigger value="platform">
+                <RiKeyLine aria-hidden="true" className="size-4" />
+                Platform credentials
+              </TabsTrigger>
+              <TabsTrigger value="integration">
+                <RiPlugLine aria-hidden="true" className="size-4" />
+                Integrations
+              </TabsTrigger>
+            </TabsList>
+          </ScrollArea>
+        </div>
+        {PANELS.map((panel) => (
+          <TabsContent
+            key={panel.tier}
+            value={panel.tier}
+            forceMount
+            hidden={tier !== panel.tier}
+            className="flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden"
+          >
+            <ScrollArea
+              variant="overlay"
+              orientation="both"
+              className="min-h-0 flex-1"
+              viewportProps={{ "aria-label": panel.title, tabIndex: 0 }}
+            >
+              <section aria-label={panel.title}>
+                <SecretsList
+                  empty={panel.empty}
+                  error={error}
+                  isPending={isPending}
+                  onAct={(action, row) => {
+                    setPending({ action, row });
+                  }}
+                  rows={rows.filter((row) => row.tier === panel.tier)}
+                />
+              </section>
+            </ScrollArea>
+          </TabsContent>
+        ))}
+      </Tabs>
 
       {isAddOpen ? (
         <AddCredentialDialog
@@ -170,23 +206,10 @@ export function SecretsPage() {
       {pending?.action === "clear-value" ? (
         <ClearValueDialog onClose={closeDialog} row={pending.row} />
       ) : null}
-    </div>
+    </Card>
   );
 }
 
-/**
- * Settings rows, not a table.
- *
- * Four credentials do not repay column headers: `Name`, `Status` and `Actions`
- * label content that is already self-evident, and the header row costs the same
- * vertical space as a credential. Every secrets UI worth copying — Actions
- * secrets, Vercel env vars — is a hairline-separated list for the same reason.
- *
- * What each row says is deliberately short: the name, its state, and one muted
- * line of "what is in there and how old is it". `consumedBy` is not on the row
- * — it matters at the moment you are about to clear something, so it lives in
- * that dialog and nowhere else.
- */
 function SecretsList({
   empty,
   error,
@@ -225,56 +248,57 @@ function SecretsList({
   }
 
   return (
-    <ul className="grid">
-      {rows.map((row) => (
-        <li
-          className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border py-3 first:pt-0 last:border-b-0 last:pb-0"
-          key={row.name}
-        >
-          <div className="grid min-w-0 gap-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="truncate font-mono text-sm text-foreground">{row.name}</span>
-              <StatusBadge row={row} />
+    <Table className="table-fixed">
+      <TableHeader>
+        <TableRow>
+          <TableHead>Credential</TableHead>
+          <TableHead className="w-20 sm:w-24">State</TableHead>
+          <TableHead className="w-20">
+            <span className="sr-only">Actions</span>
+          </TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {rows.map((row) => (
+          <TableRow key={row.name}>
+            <TableCell className="min-w-0 py-3">
+              <p title={row.name} className="truncate font-mono text-sm">
+                {row.name}
+              </p>
+              <RowMeta row={row} />
               {row.needsReseal ? (
-                // Outline and worded plainly. A row sealed under a superseded
-                // key still decrypts — this is work outstanding, not a fault,
-                // and colouring it as one would train the operator to ignore
-                // the colour that does mean a fault.
-                <Badge variant="outline">Sealed under an older key</Badge>
+                <p className="mt-1 text-xs text-muted-foreground">Sealed under an older key</p>
               ) : null}
-            </div>
-            <RowMeta row={row} />
-          </div>
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
-            {row.actions.map((action) => (
-              <RowActionButton
-                action={action}
-                key={action}
-                onClick={() => {
-                  onAct(action, row);
-                }}
-                row={row}
-              />
-            ))}
-          </div>
-        </li>
-      ))}
-    </ul>
+            </TableCell>
+            <TableCell>
+              <StatusBadge row={row} />
+            </TableCell>
+            <TableCell>
+              <div className="flex justify-end gap-1">
+                {row.actions.map((action) => (
+                  <RowActionButton
+                    key={action}
+                    action={action}
+                    row={row}
+                    onClick={() => {
+                      onAct(action, row);
+                    }}
+                  />
+                ))}
+              </div>
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }
 
-/**
- * One muted line under the name: the masked value, then how stale it is.
- * A row with no value has neither, and says so with a single em-dash rather
- * than two empty columns.
- */
 function RowMeta({ row }: { row: SecretRowDescription }) {
   if (row.rotatedAt === null) {
     return <p className="text-xs text-muted-foreground">No value stored</p>;
   }
 
-  // `formatAge` returns null for a timestamp it cannot read; the absolute date
-  // is the honest fallback, not a blank.
   const age = formatAge(row.rotatedAt) ?? formatPublishedDate(row.rotatedAt);
 
   return (
@@ -286,11 +310,6 @@ function RowMeta({ row }: { row: SecretRowDescription }) {
   );
 }
 
-/**
- * The status column, as a word. Colour alone never carries it: `Not set` is
- * the one an operator acts on, and it is deliberately not styled as an error —
- * an empty slot waiting for a value, not something broken.
- */
 function StatusBadge({ row }: { row: SecretRowDescription }) {
   if (row.status === "set") {
     return <Badge variant="secondary">{row.statusLabel}</Badge>;
@@ -303,31 +322,10 @@ function StatusBadge({ row }: { row: SecretRowDescription }) {
   );
 }
 
-/**
- * Icon *and* label. This is a tool an operator opens a few times a year, so
- * the cost of a wider column is nothing against the cost of guessing what a
- * glyph does to a credential.
- */
-const ROW_ACTION_STYLES: Record<
-  SecretRowAction,
-  {
-    icon: typeof RiAddLine;
-    variant: "default" | "destructive" | "outline";
-    className: string;
-  }
-> = {
-  // Filled, because it is the one action on a row that is waiting for the
-  // operator rather than one they might take.
-  "set-value": { icon: RiAddLine, variant: "default", className: "gap-2" },
-  rotate: { icon: RiRefreshLine, variant: "outline", className: "gap-2" },
-  // The `destructive` variant tints its fill and glyph but borders in
-  // `transparent`, so the red edge has to be added for the box to read as one
-  // — same as the content section's delete button.
-  "clear-value": {
-    icon: RiEraserLine,
-    variant: "destructive",
-    className: "gap-2 border border-destructive",
-  },
+const ROW_ACTION_STYLES = {
+  "set-value": { icon: RiAddLine, className: "" },
+  rotate: { icon: RiRefreshLine, className: "" },
+  "clear-value": { icon: RiEraserLine, className: "text-destructive hover:text-destructive" },
 };
 
 function RowActionButton({
@@ -340,39 +338,26 @@ function RowActionButton({
   row: SecretRowDescription;
 }) {
   const label = SECRET_ACTION_LABELS[action];
-  const { className, icon: Icon, variant } = ROW_ACTION_STYLES[action];
+  const { className, icon: Icon } = ROW_ACTION_STYLES[action];
 
   return (
-    <Button
-      // The accessible name leads with the visible label and adds the row it
-      // belongs to, which is the only thing distinguishing one Rotate from the
-      // next in a column of them.
-      aria-label={`${label} ${row.name}`}
-      className={className}
-      onClick={onClick}
-      size="sm"
-      variant={variant}
-    >
-      <Icon aria-hidden="true" className="size-4" />
-      {label}
-    </Button>
+    <ActionTooltip label={label}>
+      <Button
+        aria-label={`${label} ${row.name}`}
+        className={className}
+        onClick={onClick}
+        size="icon-sm"
+        variant="ghost"
+      >
+        <Icon aria-hidden="true" className="size-4" />
+      </Button>
+    </ActionTooltip>
   );
 }
 
-/**
- * The credential a dialog is acting on, named once and prominently — and the
- * one place `consumedBy` appears, because what breaks without a credential
- * matters when you are about to change it and never while it sits in a list.
- *
- * The platform note is here for the same reason. The page looks like a control
- * panel for the running system, and for this tier it is not one yet: nothing
- * reads a platform value out of the store, so writing one changes no running
- * service. Stated on the row it would be noise on every render; stated here it
- * lands exactly when the operator would otherwise expect an effect.
- */
 function DialogSubject({ row }: { row: SecretRowDescription }) {
   return (
-    <div className="grid gap-1 border border-border/60 px-3 py-2">
+    <div className="grid gap-1 bg-muted/50 px-3 py-2">
       <span className="font-mono text-sm text-foreground">{row.name}</span>
       {row.consumedBy === null ? null : (
         <p className="text-xs text-muted-foreground">{row.consumedBy}</p>

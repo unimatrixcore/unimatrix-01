@@ -1,5 +1,0 @@
-[
-  { "name": "Verify", "bucket": "skipping" },
-  { "name": "Images (api)", "bucket": "skipping" },
-  { "name": "CodeQL", "bucket": "skipping" }
-]
