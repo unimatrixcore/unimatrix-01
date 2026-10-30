@@ -14,6 +14,7 @@ export const DEPLOY_DESIRED_STATE: DeployDesiredState = [
     image: "ghcr.io/unimatrixcore/unimatrix-admin",
     containerPort: 8080,
     env: [{ name: "IMAGE_TAG", required: true }],
+    buildArgNames: ["VITE_API_BASE_URL", "VITE_AUTH_APP_URL", "VITE_CLERK_PUBLISHABLE_KEY"],
     publicStatus: false,
   },
   {
@@ -38,6 +39,7 @@ export const DEPLOY_DESIRED_STATE: DeployDesiredState = [
       { name: "SECRETS_SERVICE_TOKEN", required: true },
       { name: "SECRETS_TLS_CERT_BASE64", required: true },
     ],
+    buildArgNames: [],
     publicStatus: true,
   },
   {
@@ -48,6 +50,7 @@ export const DEPLOY_DESIRED_STATE: DeployDesiredState = [
     image: "ghcr.io/unimatrixcore/unimatrix-auth",
     containerPort: 8080,
     env: [{ name: "IMAGE_TAG", required: true }],
+    buildArgNames: ["VITE_API_BASE_URL", "VITE_CLERK_PUBLISHABLE_KEY"],
     publicStatus: false,
   },
   {
@@ -58,6 +61,7 @@ export const DEPLOY_DESIRED_STATE: DeployDesiredState = [
     image: "ghcr.io/unimatrixcore/unimatrix-cflop",
     containerPort: 8080,
     env: [{ name: "IMAGE_TAG", required: true }],
+    buildArgNames: [],
     publicStatus: true,
   },
   {
@@ -73,6 +77,7 @@ export const DEPLOY_DESIRED_STATE: DeployDesiredState = [
       { name: "IMAGE_TAG", required: true },
       { name: "SECRETS_TLS_CERT_BASE64", required: true },
     ],
+    buildArgNames: [],
     publicStatus: false,
   },
   {
@@ -88,6 +93,7 @@ export const DEPLOY_DESIRED_STATE: DeployDesiredState = [
       { name: "SECRETS_TLS_CERT_BASE64", required: true },
       { name: "SECRETS_TLS_KEY_BASE64", required: true },
     ],
+    buildArgNames: [],
     publicStatus: false,
   },
   {
@@ -98,6 +104,7 @@ export const DEPLOY_DESIRED_STATE: DeployDesiredState = [
     image: "ghcr.io/unimatrixcore/unimatrix-web",
     containerPort: 8080,
     env: [{ name: "IMAGE_TAG", required: true }],
+    buildArgNames: ["VITE_API_BASE_URL"],
     publicStatus: true,
   },
 ];
