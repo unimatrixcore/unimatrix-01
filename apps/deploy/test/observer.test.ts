@@ -156,6 +156,61 @@ void test("ambiguous, lookalike, and failed reads are unknown rather than down o
   });
 });
 
+void test("unknown samples do not erase the last matched identity or recreation time", async () => {
+  let time = 100;
+  let entries = [container()];
+  let fail = false;
+  const observer = createContainerObserver(
+    {
+      getContainers: () =>
+        fail ? Promise.reject(new Error("read failed")) : Promise.resolve(entries),
+    },
+    desired.slice(0, 1),
+    () => time,
+  );
+
+  await observer.poll();
+  time = 200;
+  entries = [container({ containerId: "second" })];
+  await observer.poll();
+
+  time = 300;
+  fail = true;
+  assert.equal((await observer.poll())[0]?.kind, "unknown");
+  time = 400;
+  fail = false;
+  let observed = (await observer.poll())[0];
+  assert.equal(observed?.kind, "matched");
+  if (observed?.kind === "matched") {
+    assert.equal(observed.firstObservedAt, 200);
+    assert.equal(observed.lastRecreatedAt, 200);
+  }
+
+  time = 500;
+  entries = [];
+  assert.equal((await observer.poll())[0]?.kind, "unknown");
+  time = 600;
+  entries = [container({ containerId: "third" })];
+  observed = (await observer.poll())[0];
+  assert.equal(observed?.kind, "matched");
+  if (observed?.kind === "matched") {
+    assert.equal(observed.firstObservedAt, 600);
+    assert.equal(observed.lastRecreatedAt, 600);
+  }
+
+  time = 700;
+  entries = [container({ containerId: "third" }), container({ containerId: "fourth" })];
+  assert.equal((await observer.poll())[0]?.kind, "unknown");
+  time = 800;
+  entries = [container({ containerId: "third" })];
+  observed = (await observer.poll())[0];
+  assert.equal(observed?.kind, "matched");
+  if (observed?.kind === "matched") {
+    assert.equal(observed.firstObservedAt, 600);
+    assert.equal(observed.lastRecreatedAt, 600);
+  }
+});
+
 void test("concurrent callers share a single in-flight Docker read", async () => {
   let reads = 0;
   let release: ((value: DokployContainer[]) => void) | undefined;

@@ -43,7 +43,7 @@ function matchesImageRepository(image: string, repository: string): boolean {
 function observeContainer(
   appDir: string,
   candidates: readonly DokployContainer[],
-  previous: ContainerObservation,
+  previous: MatchedContainerObservation | undefined,
   observedAt: number,
 ): ContainerObservation {
   if (candidates.length !== 1) {
@@ -60,8 +60,7 @@ function observeContainer(
     return { appDir, kind: "unknown", reason: "no-match", observedAt };
   }
 
-  const sameContainer =
-    previous.kind === "matched" && previous.containerId === container.containerId;
+  const sameContainer = previous?.containerId === container.containerId;
   return {
     appDir,
     kind: "matched",
@@ -73,7 +72,7 @@ function observeContainer(
     containerAgeMs: null,
     firstObservedAt: sameContainer ? previous.firstObservedAt : observedAt,
     lastRecreatedAt:
-      previous.kind === "matched" ? (sameContainer ? previous.lastRecreatedAt : observedAt) : null,
+      previous === undefined ? null : sameContainer ? previous.lastRecreatedAt : observedAt,
   };
 }
 
@@ -93,6 +92,7 @@ export function createContainerObserver(
     reason: "not-polled",
     observedAt: null,
   }));
+  const lastMatched = new Map<string, MatchedContainerObservation>();
   let inFlight: Promise<readonly ContainerObservation[]> | null = null;
 
   function poll(): Promise<readonly ContainerObservation[]> {
@@ -102,7 +102,6 @@ export function createContainerObserver(
       const observedAt = now();
       try {
         const containers = await client.getContainers();
-        const previous = new Map(snapshot.map((entry) => [entry.appDir, entry]));
         const imageCounts = new Map<string, number>();
         for (const service of desired) {
           imageCounts.set(service.image, (imageCounts.get(service.image) ?? 0) + 1);
@@ -120,11 +119,14 @@ export function createContainerObserver(
           const candidates = containers.filter((container) =>
             matchesImageRepository(container.image, service.image),
           );
-          const prior = previous.get(service.appDir);
-          if (prior === undefined) {
-            return { appDir: service.appDir, kind: "unknown", reason: "not-polled", observedAt };
-          }
-          return observeContainer(service.appDir, candidates, prior, observedAt);
+          const observation = observeContainer(
+            service.appDir,
+            candidates,
+            lastMatched.get(service.appDir),
+            observedAt,
+          );
+          if (observation.kind === "matched") lastMatched.set(service.appDir, observation);
+          return observation;
         });
       } catch {
         // A failed read is no evidence that the previously seen container is still running.
