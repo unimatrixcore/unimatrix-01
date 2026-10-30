@@ -52,12 +52,12 @@
     "@unimatrix/config-eslint": "workspace:*",
     "@unimatrix/config-typescript": "workspace:*",
     "@unimatrix/config-vitest": "workspace:*",
-    "@vitest/coverage-v8": "^4.1.10",
+    "@vitest/coverage-v8": "^4.1.11",
     "eslint": "^10.8.1",
     "fake-indexeddb": "^6.2.5",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   }
 }

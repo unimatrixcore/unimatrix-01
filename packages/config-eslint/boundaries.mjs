@@ -104,6 +104,7 @@ const ALLOWED_PACKAGE_IMPORTS = {
   "packages/content": [],
   "packages/db": [],
   "packages/auth": [],
+  "packages/unimatrix-tv": [],
   // A leaf, and listed even though it imports no sibling package: `default` is
   // "disallow", so a workspace with no policy of its own cannot even resolve its
   // own relative imports.

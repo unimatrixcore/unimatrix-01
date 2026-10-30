@@ -59,6 +59,7 @@ const PUBLISHED = summary({
 
 /** The panel for one collection — each owns its own selection and controls. */
 function panel(name: "Blog posts" | "Projects") {
+  fireEvent.mouseDown(screen.getByRole("tab", { name }), { button: 0, ctrlKey: false });
   return within(screen.getByRole("region", { name }));
 }
 
@@ -78,10 +79,13 @@ describe("PostsPage", () => {
     renderInRouter(<PostsPage />);
 
     expect(await screen.findByText("A post")).toBeInTheDocument();
+    panel("Projects");
     expect(screen.getByText("Shipped project")).toBeInTheDocument();
     // Drafts are the whole reason this page exists — they are absent from the
     // public list by design.
+    panel("Blog posts");
     expect(screen.getByText("draft")).toBeInTheDocument();
+    panel("Projects");
     expect(screen.getByText("published")).toBeInTheDocument();
     // One unfiltered request, not one per collection.
     expect(apiClient.adminListPosts).toHaveBeenCalledWith({});
@@ -92,9 +96,10 @@ describe("PostsPage", () => {
 
     renderInRouter(<PostsPage />);
 
-    // One prompt per collection, because each manages its own selection.
-    expect(await screen.findAllByText(/Select rows to manage them in bulk/u)).toHaveLength(2);
-    expect(screen.queryByRole("button", { name: "Publish" })).not.toBeInTheDocument();
+    // Each collection starts with no bulk selection.
+    await screen.findByText("A post");
+    expect(screen.queryByRole("toolbar", { name: "Selection actions" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Publish selected" })).not.toBeInTheDocument();
   });
 
   it("publishes exactly the selected rows", async () => {
@@ -105,7 +110,7 @@ describe("PostsPage", () => {
     renderInRouter(<PostsPage />);
 
     fireEvent.click(await screen.findByRole("checkbox", { name: "Select A post" }));
-    fireEvent.click(screen.getByRole("button", { name: "Publish" }));
+    fireEvent.click(screen.getByRole("button", { name: "Publish selected" }));
 
     await waitFor(() => {
       expect(apiClient.setPostsState).toHaveBeenCalledWith({
@@ -128,12 +133,14 @@ describe("PostsPage", () => {
     // selection would make a bulk action reach into a collection the admin was
     // not looking at.
     expect(panel("Blog posts").getByText("1 selected")).toBeInTheDocument();
-    expect(panel("Projects").getByText(/Select rows to manage them in bulk/u)).toBeInTheDocument();
+    expect(
+      panel("Projects").queryByRole("toolbar", { name: "Selection actions" }),
+    ).not.toBeInTheDocument();
 
     fireEvent.click(panel("Blog posts").getByRole("checkbox", { name: "Select all rows" }));
     expect(
-      panel("Blog posts").getByText(/Select rows to manage them in bulk/u),
-    ).toBeInTheDocument();
+      panel("Blog posts").queryByRole("toolbar", { name: "Selection actions" }),
+    ).not.toBeInTheDocument();
   });
 
   it("names the count in the delete confirmation and deletes nothing until it is confirmed", async () => {
@@ -146,7 +153,7 @@ describe("PostsPage", () => {
     await screen.findByText("A post");
     fireEvent.click(panel("Blog posts").getByRole("checkbox", { name: "Select A post" }));
     fireEvent.click(panel("Projects").getByRole("checkbox", { name: "Select Shipped project" }));
-    fireEvent.click(panel("Blog posts").getByRole("button", { name: "Delete" }));
+    fireEvent.click(panel("Blog posts").getByRole("button", { name: "Delete selected" }));
 
     const dialog = await screen.findByRole("alertdialog");
 
@@ -159,7 +166,7 @@ describe("PostsPage", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(apiClient.deletePosts).not.toHaveBeenCalled();
 
-    fireEvent.click(panel("Blog posts").getByRole("button", { name: "Delete" }));
+    fireEvent.click(panel("Blog posts").getByRole("button", { name: "Delete selected" }));
     fireEvent.click(
       within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Delete" }),
     );
@@ -175,7 +182,7 @@ describe("PostsPage", () => {
     renderInRouter(<PostsPage />);
 
     fireEvent.click(await screen.findByRole("checkbox", { name: "Select A post" }));
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete selected" }));
 
     const dialog = await screen.findByRole("alertdialog");
 
@@ -211,6 +218,7 @@ describe("PostsPage", () => {
 
     // The unrelated selection survives: deleting one row is not a reason to
     // discard a bulk selection the admin is still building.
+    panel("Blog posts");
     expect(screen.getByRole("checkbox", { name: "Select A post" })).toBeChecked();
   });
 
@@ -226,6 +234,7 @@ describe("PostsPage", () => {
     // of the dashboard whenever the API blips.
     expect(await screen.findAllByText("Posts could not be loaded.")).toHaveLength(2);
     expect(screen.getByRole("region", { name: "Blog posts" })).toBeInTheDocument();
+    panel("Projects");
     expect(screen.getByRole("region", { name: "Projects" })).toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });

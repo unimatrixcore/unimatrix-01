@@ -69,12 +69,13 @@ const INTEGRATION_UNLISTED: AdminSecretRow = {
 };
 
 function panel(name: "Platform credentials" | "Integrations") {
+  fireEvent.mouseDown(screen.getByRole("tab", { name }), { button: 0, ctrlKey: false });
   return within(screen.getByRole("region", { name }));
 }
 
-/** The `li` a credential's name sits in — the row, now that there is no `tr`. */
+/** The credential row containing the name. */
 function row(name: string): HTMLElement {
-  const element = screen.getByText(name).closest("li");
+  const element = screen.getByText(name).closest("tr");
 
   if (element === null) {
     throw new Error(`No row found for ${name}`);
@@ -114,25 +115,15 @@ describe("SecretsPage", () => {
     expect(
       panel("Platform credentials").queryByRole("button", { name: "Add credential" }),
     ).not.toBeInTheDocument();
-    expect(
-      panel("Integrations").getByRole("button", { name: "Add credential" }),
-    ).toBeInTheDocument();
+    panel("Integrations");
+    expect(screen.getByRole("button", { name: "Add credential" })).toBeInTheDocument();
   });
 
-  /**
-   * The faults the first build shipped, asserted as absences: an implementation
-   * note above the list, a panel description explaining its own heading, a KEK
-   * column reading `1` forever, a `Created` column nobody acts on, and the
-   * table chrome itself — four credentials do not repay column headers.
-   */
-  it("carries no implementation note, no panel description and no table", async () => {
+  it("uses fixed table columns without implementation notes", async () => {
     await renderPage();
-
     expect(screen.queryByText(/never display a credential/u)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Credentials the system itself runs on/u)).not.toBeInTheDocument();
-    expect(screen.queryByText(/the outside services this system calls/u)).not.toBeInTheDocument();
-    expect(screen.queryAllByRole("columnheader")).toHaveLength(0);
-    expect(screen.queryAllByRole("table")).toHaveLength(0);
+    expect(screen.getByRole("table")).toHaveClass("table-fixed");
+    expect(screen.getByRole("columnheader", { name: "Credential" })).toBeInTheDocument();
   });
 
   /**
@@ -157,10 +148,11 @@ describe("SecretsPage", () => {
   it("badges only the row sealed under an older key", async () => {
     await renderPage();
 
+    panel("Integrations");
     const badges = screen.getAllByText("Sealed under an older key");
 
     expect(badges).toHaveLength(1);
-    expect(badges[0]?.closest("li")).toHaveTextContent("integrations/stripe/api-key");
+    expect(badges[0]?.closest("tr")).toHaveTextContent("integrations/stripe/api-key");
   });
 
   it("offers Set value, not Rotate, for a name the store has nothing for", async () => {
@@ -223,6 +215,7 @@ describe("SecretsPage", () => {
   it("refuses a new name the store could never hold, before sending it", async () => {
     await renderPage();
 
+    panel("Integrations");
     fireEvent.click(screen.getByRole("button", { name: "Add credential" }));
 
     const dialog = await screen.findByRole("dialog");
@@ -250,6 +243,7 @@ describe("SecretsPage", () => {
   it("says the current value is never shown when rotating", async () => {
     await renderPage();
 
+    panel("Integrations");
     fireEvent.click(screen.getByRole("button", { name: "Rotate integrations/github/api-token" }));
 
     const dialog = await screen.findByRole("dialog");
@@ -274,6 +268,7 @@ describe("SecretsPage", () => {
   it("names what consumes a declared credential and says its row stays listed", async () => {
     await renderPage();
 
+    panel("Integrations");
     fireEvent.click(
       screen.getByRole("button", { name: "Clear value integrations/github/api-token" }),
     );
@@ -288,6 +283,7 @@ describe("SecretsPage", () => {
   it("says an unlisted credential's row disappears instead", async () => {
     await renderPage();
 
+    panel("Integrations");
     fireEvent.click(
       screen.getByRole("button", { name: "Clear value integrations/stripe/api-key" }),
     );
@@ -302,6 +298,7 @@ describe("SecretsPage", () => {
     apiClient.adminDeleteSecret.mockResolvedValue({ deleted: true });
     await renderPage();
 
+    panel("Integrations");
     fireEvent.click(
       screen.getByRole("button", { name: "Clear value integrations/github/api-token" }),
     );

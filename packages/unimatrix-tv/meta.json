@@ -1,0 +1,16 @@
+{
+  "category": "General",
+  "changelog": "- Initial release of Unimatrix-TV plugin for Jellyfin 12\n- Apple TV-styled library browsing, responsive shelves, and full-screen boot loading gate\n- Self-contained asset serving",
+  "description": "Unimatrix-TV presentation and UX refinement plugin for Jellyfin.",
+  "guid": "f6b0f02e-128b-4a57-b088-3e4b7b20e001",
+  "name": "Unimatrix TV",
+  "overview": "Apple TV-inspired library browsing, compact headers, and seamless boot gate.",
+  "owner": "unimatrix",
+  "targetAbi": "12.0.0.0",
+  "timestamp": "2026-10-13T01:00:00.0000000Z",
+  "version": "1.0.0.0",
+  "status": "Active",
+  "autoUpdate": false,
+  "imagePath": "/config/data/plugins/Unimatrix TV_1.0.0.0/logo.png",
+  "assemblies": []
+}

@@ -4,11 +4,12 @@
 `apps/deploy` is a Fastify service holding a typed Dokploy API client, a read-only reconcile report,
 and a settings-only apply (`src/reconcile/`, `pnpm --filter @unimatrix/deploy-app reconcile`): it
 diffs `src/reconcile/desired-state.gen.ts` against what Dokploy actually holds, prints drift, and can
-write `composePath`/`branch`/`autoDeploy` for one app at a time. It performs no probing, writes no
-env, and creates and deploys nothing — see `README.md` for what still has to happen by hand before
+write `composePath`/`branch`/`autoDeploy` for one app at a time. It performs no probing and creates
+and deploys nothing — see `README.md` for what still has to happen by hand before
 this stack deploys, and for apply's full refusal set. It also holds a read-only resolver against the
-secrets store (`src/secret-env/`, `reconcile secrets-status <app>`) that answers whether a declared
-app's secrets-store values resolve — it holds no write capability against the store, and
+secrets store (`src/secret-env/`, `reconcile secrets-status <app>`) that resolves declared
+values and applies them to Dokploy only through `secrets-apply` — it holds no write capability
+against the store, and
 `src/reconcile/` holds none of that resolver's read capability either; see §2's last two rules.
 
 ## 2. Rules
@@ -32,7 +33,7 @@ app's secrets-store values resolve — it holds no write capability against the 
   resource path, and `/api/openapi.json` 404s on v0.29.13, so schemas are hand-written rather than
   generated. Only add a procedure whose response has actually been observed —
   `docker.getContainers`, `settings.getDokployVersion`, `project.all`, `compose.one`, and
-  `compose.update` are the five this service carries. `DokployClientError` (`src/dokploy/client.ts`)
+  `compose.update` are the five this service carries. `DokployClientError` (`src/dokploy/transport.ts`)
   never carries a response-body fragment, on any property: `project.all` returns every project's
   whole environment-variable blob and `compose.one` returns one service's, both in plaintext.
 - **`callProcedure` hardcodes `method: "GET"` and stays read-only; `compose.update` is the one
@@ -41,11 +42,13 @@ app's secrets-store values resolve — it holds no write capability against the 
   included, and `void` on success is the only return shape that cannot carry it. A non-2xx body is
   reduced to the error `code` and the `zodError.fieldErrors` key names only — never the zod message,
   which can echo the offending value, and never the row.
-- **The only mutation this service performs is `compose.update` with a closed
+- **The settings mutation uses `compose.update` with a closed
   `{composePath?, branch?, autoDeploy?}` payload** (`DokployComposeSettingsUpdate`) —
   `compose.create` and `compose.deploy` remain absent, because `compose.create` needs an
   `environmentId` nothing in this repo declares and nothing here triggers a deploy. `env` has no
-  field on that type, so a caller cannot express an env write even by accident.
+  field on that type. `DokployEnvClient` is the separate env capability; it reveals a `SecretValue`
+  only for the wire payload. `src/reconcile/` must not import `dokploy/env-client`,
+  `dokploy/transport`, or `dokploy/env-line`; the transport exposes a general mutation primitive.
   `apps/deploy/src/reconcile/apply.ts`'s `applyAppSettings` refuses to write against this service's
   own compose entry (`RECONCILE_SELF_APP_DIR`, checked before any network call): `compose.update`
   there followed by any deploy would destroy the process performing the reconciliation mid-run, and
@@ -58,8 +61,8 @@ app's secrets-store values resolve — it holds no write capability against the 
   constant, never from the diff's `declared` string — the fork's `coerceSchema` treats `autoDeploy`
   as `z.coerce.boolean()`, under which the string `"false"` coerces to `true`.
 - **`compose.update` is the only HTTP route on v0.29.13 that can write a compose service's `env`.**
-  `compose.saveEnvironment` exists as a tRPC procedure but is absent from the exposed path map, so a
-  future env-apply PR must widen this same procedure rather than reaching for a narrower one.
+  `compose.saveEnvironment` exists as a tRPC procedure but is absent from the exposed path map, so the
+  sibling env client must use this same procedure rather than reaching for a narrower one.
 - **`src/reconcile/desired-state.gen.ts` is generated** — edit the relevant
   `apps/<app>/deploy.config.ts` and run `node ./infra/scripts/generate-deploy-config.mjs`, not this
   file. It carries no value from any source, only structure: a `secrets-store`-kind env entry names
@@ -72,7 +75,8 @@ app's secrets-store values resolve — it holds no write capability against the 
   carry a value. This is `docs/deployment.md`'s "never print a response body" rule applied one layer
   deeper than the client.
 - **`src/secret-env/`'s store token, base URL, and certificate are read lazily, only on the
-  `secrets-status` CLI path — never from `src/config.ts`.** `loadDeployRuntimeConfig()` runs on every
+  `secrets-status` or `secrets-apply` CLI path — never from `src/config.ts`.**
+  `loadDeployRuntimeConfig()` runs on every
   boot of this service and on every `reconcile report`/`reconcile apply` invocation; none of the three
   is a field on `DeployRuntimeConfig`, so a store left unconfigured cannot fail any of those.
   `store.ts`'s `loadSecretsPlatformReadToken` mirrors `loadDokployApiKey`'s shape: the token lives
@@ -87,5 +91,6 @@ app's secrets-store values resolve — it holds no write capability against the 
   `test/reconcile-value-isolation.test.ts` pins the same rule structurally by reading `src/reconcile/`
   off disk. `src/secret-env/status.ts` reads `DEPLOY_DESIRED_STATE` and `RECONCILE_SELF_APP_DIR`
   itself rather than taking either from a caller — data flows manifest → `secret-env`, never through
-  `reconcile`. This service holds no write capability against the store at all yet: every outcome
-  `secret-env` can produce is `resolved`/`unresolved`/`error`, never a value, a length, or a prefix.
+  `reconcile`. This service holds no write capability against the store. Apply outcomes carry only
+  closed states
+  and declared keys; resolved values remain in `SecretValue` wrappers inside the env capability.

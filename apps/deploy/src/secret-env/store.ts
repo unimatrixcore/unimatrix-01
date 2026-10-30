@@ -1,7 +1,7 @@
 import { createSecretsClient, type SecretsClient } from "@unimatrix/secrets/client";
 
 /**
- * Every field here is read lazily, only when `secrets-status` actually runs — never from
+ * Every field here is read lazily, only when `secrets-status` or `secrets-apply` runs — never from
  * `src/config.ts`, which `loadDeployRuntimeConfig()` parses on every boot of this service. A missing
  * or empty value throws, same as `loadDokployApiKey` (`src/dokploy/client.ts:23`); that is safe here
  * only because nothing on `server.ts`'s boot path or `reconcile report`/`reconcile apply` ever calls
@@ -19,7 +19,7 @@ export interface SecretsPlatformStoreEnv {
  * and handed straight into `createSecretsClient`'s config, where it lives only in the closure that
  * builds; it never reaches `runtimeConfig`, which `src/app.ts` decorates onto the Fastify instance
  * and is therefore reachable from every handler and log call. This service holds no such instance —
- * `secrets-status` is CLI-only — but the rule is the same one `loadDokployApiKey` follows.
+ * the secrets commands are CLI-only — but the rule is the same one `loadDokployApiKey` follows.
  */
 export function loadSecretsPlatformReadToken(env: SecretsPlatformStoreEnv = process.env): string {
   const value = env.SECRETS_PLATFORM_READ_TOKEN;
@@ -106,7 +106,7 @@ function resolveCaCertificatePem(
 }
 
 /**
- * Builds the one `SecretsClient` `secrets-status` uses, from the three lazily-read pieces above.
+ * Builds the `SecretsClient` the secrets commands use, from the three lazily-read pieces above.
  * Throws on any of them being absent, empty, or malformed — the CLI's caller turns that throw into a
  * refusal (`the store is not configured`) rather than letting it reach `server.ts` or `reconcile
  * report`/`reconcile apply`, neither of which ever calls this function.

@@ -15,6 +15,8 @@
 - Route knowledge — nav items, breadcrumb trails, sign-in hrefs — is passed in by the app, never computed here.
 - `./tool`'s `ToolShell` has two layouts. Supplying a non-empty `sections` moves the wordmark and `accountControl` into a collapsible section rail and removes the title bar; the footer strip renders below the content in both layouts unless `showFooter={false}` omits it — the `contentinfo` landmark count matches between the two layouts for a given `showFooter` value, but is not fixed at one; omitting `sections` (or passing an empty array) keeps today's title-bar-plus-footer layout.
 
+- `ToolShell scroll="section"` bounds the frame to the viewport and reserves title/footer space. Its children must carry `flex-1 min-h-0` and own pane scrolling; page mode keeps document scrolling and the no-rail centered layout.
+
 ## 4. Conventions
 Source-only, like `@unimatrix/e2e-helpers`. Consumers resolve `src/*.ts` through a Vite alias plus a tsconfig `paths` entry, so this package's tsconfig extends `base.json` rather than `library.json`: `composite` forbids the cross-package `paths` mapping onto `packages/ui/src`, and the emit would be dead weight nothing reads.
 

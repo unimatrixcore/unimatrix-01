@@ -17,7 +17,7 @@
   "dependencies": {
     "@fastify/cors": "^11.1.0",
     "@fastify/helmet": "^13.0.2",
-    "@fastify/multipart": "^10.1.0",
+    "@fastify/multipart": "^10.1.1",
     "@fastify/rate-limit": "^11.2.0",
     "@unimatrix/auth": "workspace:*",
     "@unimatrix/db": "workspace:*",

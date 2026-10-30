@@ -509,7 +509,7 @@ can a log line. What does distinguish them:
   `DOKPLOY_BASE_URL` and `DOKPLOY_API_KEY` — the service refuses to start
   without either
 - `SECRETS_TLS_CERT_BASE64` (set in Dokploy's UI): the store's certificate.
-  Read lazily, only when `secrets-status` runs (below) — an unset value here
+  Read lazily, only when `secrets-status` or `secrets-apply` runs (below) — an unset value here
   does not block this service's boot, unlike the two above
 - no volume — it holds no persistent state
 
@@ -528,7 +528,9 @@ read for this instance. See `apps/deploy/AGENTS.md`.
 what Dokploy actually holds and prints the drift — missing or ambiguously-named compose services,
 env keys that are unset/blank/undeclared (never a value, only a key and a state), and disagreement
 on `composePath`, `sourceType`, `branch`, or `autoDeploy`. Read-only: it calls only `project.all`
-and `compose.one`. It does not check a service's Domains entry or its `watchPaths`/`composeFile` —
+and `compose.one`. A Dokploy env key also declared as an image build arg is reported as a
+`build-arg-runtime-copy` without counting as drift; its runtime value cannot change the bundle.
+It does not check a service's Domains entry or its `watchPaths`/`composeFile` —
 see `apps/deploy/README.md`.
 
 `pnpm --filter @unimatrix/deploy-app reconcile apply <app>` writes `composePath`, `branch`, and
@@ -548,6 +550,12 @@ nothing and prints no value, only whether each declared name resolved. The token
 (`SECRETS_PLATFORM_READ_TOKEN`) arrives via `docker exec --env-file`, never as compose env, and the
 store connection is read lazily — a store left unconfigured cannot affect `report` or `apply`. See
 `apps/deploy/README.md`.
+
+`reconcile secrets-apply <app> [--overwrite]` applies resolved store values to Dokploy without
+triggering deployment. See `apps/deploy/README.md` for refusal rules, comparison semantics and exit
+codes. The correction window is until the next merge to `main`; do not edit Dokploy env concurrently
+with the read-modify-write operation.
+
 
 ## Traefik expectations
 

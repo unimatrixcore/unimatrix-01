@@ -1,3 +1,4 @@
+import { parseEnvLine } from "./env-line.js";
 import { z } from "zod";
 
 /**
@@ -77,19 +78,9 @@ export function readEnvKeyStates(env: string | null): readonly DokployComposeEnv
 
   const states = new Map<string, boolean>();
 
-  for (const rawLine of env.split(/\r?\n/u)) {
-    const line = rawLine.trim();
-
-    if (line.length === 0 || line.startsWith("#")) continue;
-
-    const separatorIndex = line.indexOf("=");
-    if (separatorIndex === -1) continue;
-
-    const key = line.slice(0, separatorIndex).trim();
-    if (key.length === 0) continue;
-
-    const blank = line.slice(separatorIndex + 1).trim().length === 0;
-    states.set(key, blank);
+  for (const line of env.split(/\r?\n/u)) {
+    const entry = parseEnvLine(line);
+    if (entry !== null) states.set(entry.key, entry.value.length === 0);
   }
 
   return [...states.entries()]
