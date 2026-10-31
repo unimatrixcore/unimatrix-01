@@ -1,11 +1,8 @@
 import type { FastifyError } from "fastify";
 import { hasZodFastifySchemaValidationErrors } from "fastify-type-provider-zod";
 
-/**
- * Trimmed to what this service can actually produce — no `UNAUTHORIZED` (no auth plugin) and no
- * `RATE_LIMITED` (no limiter). Compare `apps/secrets/src/lib/http/errors.ts`, which carries both.
- */
-export type DeployHttpErrorCode = "VALIDATION_ERROR" | "NOT_FOUND" | "INTERNAL_ERROR";
+export type DeployHttpErrorCode =
+  "VALIDATION_ERROR" | "NOT_FOUND" | "INTERNAL_ERROR" | "UNAUTHORIZED" | "FORBIDDEN";
 
 export interface DeployHttpErrorEnvelope {
   error: {
@@ -28,6 +25,12 @@ function createErrorEnvelope(code: DeployHttpErrorCode, message: string): Deploy
 
 export function createNotFoundErrorEnvelope(): DeployHttpErrorEnvelope {
   return createErrorEnvelope("NOT_FOUND", "Route not found");
+}
+
+export function createAuthErrorEnvelope(status: 401 | 403): DeployHttpErrorEnvelope {
+  return status === 401
+    ? createErrorEnvelope("UNAUTHORIZED", "Service authentication required")
+    : createErrorEnvelope("FORBIDDEN", "Insufficient service capability");
 }
 
 function getFastifyStatusCode(error: unknown): number | undefined {

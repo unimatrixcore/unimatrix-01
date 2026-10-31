@@ -1,4 +1,5 @@
 import Fastify, { LogController, type FastifyInstance, type FastifyServerOptions } from "fastify";
+import type { ServerOptions as HttpsServerOptions } from "node:https";
 
 import type { DeployRuntimeConfig } from "./config.js";
 import type { DokployClient } from "./dokploy/client.js";
@@ -7,7 +8,9 @@ import { buildLoggerOptions, type DeployLoggerStream } from "./lib/http/logging.
 import { registerModules } from "./modules/index.js";
 import { createContainerObserver, type ContainerObserver } from "./observe/observer.js";
 import { setupCorePlugins } from "./plugins/index.js";
+import { setupServiceTokenAuth } from "./plugins/auth.js";
 import { DEPLOY_DESIRED_STATE } from "./reconcile/desired-state.gen.js";
+import { openServiceTokenStore, type ServiceTokenStore } from "./service-tokens/store.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -22,6 +25,9 @@ export interface BuildDeployAppOptions {
   dokploy: DokployClient;
   /** Where log records go instead of stdout, so tests can assert on redaction. */
   loggerStream?: DeployLoggerStream;
+  https?: HttpsServerOptions;
+  /** Owned and closed by the app, including when supplied by a test. */
+  serviceTokens?: ServiceTokenStore;
 }
 
 /**
@@ -44,7 +50,7 @@ export function buildApp(
     forceCloseConnections: true,
     logController: new LogController({ disableRequestLogging: true }),
     logger: loggerOptions,
-    // No `trustProxy`, no `https`: nothing fronts this service and it serves no TLS of its own.
+    ...(options.https === undefined ? {} : { https: options.https }),
   } satisfies FastifyServerOptions;
 
   const app: FastifyInstance = Fastify(appOptions);
@@ -58,6 +64,12 @@ export function buildApp(
     }),
   );
   setupCorePlugins(app);
+  const serviceTokens = options.serviceTokens ?? openServiceTokenStore(config.databasePath);
+  app.addHook("onClose", () => {
+    serviceTokens.close();
+    return Promise.resolve();
+  });
+  setupServiceTokenAuth(app, serviceTokens);
 
   app.setErrorHandler((error, request, reply) => {
     const normalized = normalizeDeployError(error);

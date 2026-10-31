@@ -112,8 +112,10 @@ void test("TLS probe verifies the pin and hostname against a real listener", asy
     );
     const targets = resolveHealthProbeTargets(DEPLOY_DESIRED_STATE, {
       SECRETS_TLS_CERT_BASE64: Buffer.from(ca).toString("base64"),
+      DEPLOY_TLS_CERT_BASE64: Buffer.from(ca).toString("base64"),
     });
     assert.equal(targets.find((target) => target.app === "secrets")?.ca, ca);
+    assert.equal(targets.find((target) => target.app === "deploy")?.ca, ca);
     assert.ok(targets.every((target) => target.configured));
   } finally {
     server.closeAllConnections();
@@ -130,10 +132,14 @@ void test("missing or malformed trust configuration is unknown without relaxing 
   for (const value of [undefined, "", "!!", Buffer.from("not a certificate").toString("base64")]) {
     const targets = resolveHealthProbeTargets(DEPLOY_DESIRED_STATE, {
       SECRETS_TLS_CERT_BASE64: value,
+      DEPLOY_TLS_CERT_BASE64: value,
     });
     const secrets = targets.find((target) => target.app === "secrets");
     assert.equal(secrets?.configured, false);
     assert.equal(secrets?.url, "https://secrets:3001/health");
+    const deploy = targets.find((target) => target.app === "deploy");
+    assert.equal(deploy?.configured, false);
+    assert.equal(deploy?.url, "https://deploy:3001/health");
     assert.equal(targets.find((target) => target.app === "web")?.url, "http://web:8080/");
     assert.equal(targets.find((target) => target.app === "api")?.url, "http://api:3001/health");
   }

@@ -76,6 +76,8 @@ export const DEPLOY_DESIRED_STATE: DeployDesiredState = [
     image: "ghcr.io/unimatrixcore/unimatrix-deploy",
     containerPort: 3001,
     env: [
+      { name: "DEPLOY_TLS_CERT_BASE64", required: true },
+      { name: "DEPLOY_TLS_KEY_BASE64", required: true },
       { name: "DOKPLOY_API_KEY", required: true },
       { name: "DOKPLOY_BASE_URL", required: true },
       { name: "IMAGE_TAG", required: true },
@@ -83,7 +85,7 @@ export const DEPLOY_DESIRED_STATE: DeployDesiredState = [
     ],
     buildArgNames: [],
     publicStatus: false,
-    healthProbe: { url: "http://deploy:3001/health" },
+    healthProbe: { url: "https://deploy:3001/health", caCertificateEnv: "DEPLOY_TLS_CERT_BASE64" },
   },
   {
     appDir: "secrets",

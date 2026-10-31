@@ -7,8 +7,7 @@ type DeployLoggerOptions = Exclude<NonNullable<FastifyServerOptions["logger"]>, 
 /**
  * Trimmed to the headers this service can actually receive — no `apps/secrets` route ever runs
  * here, so its `cookie`/`proxy-authorization`/`set-cookie` redaction paths would be dead config
- * nothing could flag as stale. `authorization` stays: nothing here uses it today, but a future
- * caller-authenticated route is the one this scaffold's own AGENTS.md names as needing one.
+ * nothing could flag as stale. Caller service tokens are redacted from request headers.
  */
 const REDACTED_LOG_PATHS = ["req.headers.authorization"] as const;
 

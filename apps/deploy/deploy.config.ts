@@ -2,6 +2,7 @@ import { internalServiceUrl, nodeApiApp } from "@unimatrix/deploy-config";
 
 export default nodeApiApp({
   appDir: "deploy",
+  healthProbe: { scheme: "https", caCertificateEnv: "DEPLOY_TLS_CERT_BASE64" },
   packageName: "@unimatrix/deploy-app",
   dockerfileEnv: [
     { name: "NODE_ENV", value: "production" },
@@ -48,6 +49,17 @@ export default nodeApiApp({
       ],
     },
     {
+      name: "DEPLOY_TLS_CERT_BASE64",
+      value: { kind: "variable", name: "DEPLOY_TLS_CERT_BASE64" },
+      comment: [
+        "Base64 PEM certificate and private key, provisioned before deployment.",
+        "Production refuses to boot without both. The certificate SAN must",
+        "include deploy, the Compose DNS name used by pinned HTTPS clients.",
+        "Keep the private key out of images and caller configuration.",
+      ],
+    },
+    { name: "DEPLOY_TLS_KEY_BASE64", value: { kind: "variable", name: "DEPLOY_TLS_KEY_BASE64" } },
+    {
       name: "SECRETS_TLS_CERT_BASE64",
       value: { kind: "variable", name: "SECRETS_TLS_CERT_BASE64" },
       comment: [
@@ -69,9 +81,9 @@ export default nodeApiApp({
         "Access service-token secrets and a round trip out through Cloudflare and",
         "back. The cost of joining: a container holding an instance-wide",
         "delete-everything token sits on the same network every app Traefik",
-        "serves. Nothing routes *to* this service — no domain, no Traefik entry —",
-        "so membership is reachability from it, not to it, and /health is the",
-        "only route anything on that network could call. It is an attachable",
+        "serves. No domain or Traefik entry routes public traffic here; network",
+        "peers can reach it, so every request except GET /health requires a",
+        "deploy service token over TLS. It is an attachable",
         "swarm overlay, which is what lets a plain Compose stack join it",
         "(measured on the host, 2026-08-12, recorded in apps/api/deploy.config.ts).",
       ],
@@ -93,4 +105,5 @@ export default nodeApiApp({
       ],
     },
   ],
+  healthcheckScheme: "https",
 });

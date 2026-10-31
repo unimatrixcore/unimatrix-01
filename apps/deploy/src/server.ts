@@ -5,6 +5,7 @@ import { setupHealthMonitoring } from "./health-history/lifecycle.js";
 import { resolveHealthProbeTargets } from "./health-history/probe.js";
 import { DEPLOY_DESIRED_STATE } from "./reconcile/desired-state.gen.js";
 import { startContainerPolling } from "./observe/polling.js";
+import { loadDeployTlsOptions } from "./tls.js";
 
 // No .env file loading here, same reasoning as apps/secrets/src/server.ts: porting it would put a
 // plaintext Dokploy API key on a developer's disk. Local dev supplies DOKPLOY_BASE_URL and
@@ -14,7 +15,8 @@ const dokploy = createDokployClient({
   baseUrl: config.dokployBaseUrl,
   apiKey: loadDokployApiKey(),
 });
-const app = buildApp(config, { dokploy });
+const https = loadDeployTlsOptions();
+const app = buildApp(config, { dokploy, ...(https === undefined ? {} : { https }) });
 setupHealthMonitoring(
   app,
   config.databasePath,
