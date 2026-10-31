@@ -1,4 +1,4 @@
-import { parseEnvLine } from "./env-line.js";
+import { isSupportedEnvBlob, parseEnvLine } from "./env-line.js";
 import { z } from "zod";
 
 /**
@@ -68,13 +68,13 @@ export interface DokployComposeEnvKeyState {
  * {@link dokployComposeSchema}'s own `.transform()`, so the plaintext exists nowhere but this
  * function's parameter — the schema's parsed output has no field that could hold a value.
  *
- * Rules: split on `\r?\n`; trim each line; skip empty lines and `#` comment lines; skip a line with
- * no `=`; the key is everything before the first `=`, trimmed, and a line whose key trims empty is
- * skipped; `blank` is true when the remainder trims to empty; a duplicate key keeps the last
- * occurrence; the result is sorted by key.
+ * Refuse syntax the physical-line parser cannot identify safely: a line inside a multiline value
+ * could otherwise be disclosed as an undeclared key. Blankness uses the trimmed assignment;
+ * duplicate keys keep the last occurrence, and results are sorted by key.
  */
 export function readEnvKeyStates(env: string | null): readonly DokployComposeEnvKeyState[] {
   if (env === null) return [];
+  if (!isSupportedEnvBlob(env)) throw new Error("Unsupported Dokploy environment syntax.");
 
   const states = new Map<string, boolean>();
 

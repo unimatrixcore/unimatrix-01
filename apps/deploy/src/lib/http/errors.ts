@@ -5,6 +5,7 @@ export type DeployHttpErrorCode =
   | "VALIDATION_ERROR"
   | "NOT_FOUND"
   | "INTERNAL_ERROR"
+  | "UNAVAILABLE"
   | "UNAUTHORIZED"
   | "FORBIDDEN"
   | "RATE_LIMITED";
@@ -72,6 +73,14 @@ export function normalizeDeployError(error: unknown): NormalizedDeployHttpError 
   }
 
   const statusCode = getFastifyStatusCode(error);
+
+  if (statusCode === 503) {
+    return {
+      statusCode,
+      envelope: createErrorEnvelope("UNAVAILABLE", "Deployment read unavailable"),
+      logLevel: "warn",
+    };
+  }
 
   if (statusCode === 429) {
     return {

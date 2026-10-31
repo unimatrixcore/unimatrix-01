@@ -30,10 +30,6 @@ export interface BuildDeployAppOptions {
   serviceTokens?: ServiceTokenStore;
 }
 
-/**
- * 64 KiB, same ceiling as `apps/secrets` — `/health` is the only route today, so this bounds the
- * largest legitimate body a later route could take rather than anything this scaffold parses.
- */
 const REQUEST_BODY_LIMIT_BYTES = 65_536;
 
 export function buildApp(
