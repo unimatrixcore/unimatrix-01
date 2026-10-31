@@ -38,7 +38,10 @@ against the store, and
   resource path, and `/api/openapi.json` 404s on v0.29.13, so schemas are hand-written rather than
   generated. Only add a procedure whose response has actually been observed —
   `docker.getContainers`, `settings.getDokployVersion`, `project.all`, `compose.one`, and
-  `compose.update` are the five this service carries. `DokployClientError` (`src/dokploy/transport.ts`)
+  `compose.update` are implemented in `src/dokploy/client.ts`. The installed v0.30.10 deployment
+  reads (`deployment.allByCompose`, `deployment.readLogs`) are isolated in `src/dokploy/log-client.ts`;
+  raw log output must be reduced to closed diagnostic events inside that client's schema transform.
+  `DokployClientError` (`src/dokploy/transport.ts`)
   never carries a response-body fragment, on any property: `project.all` returns every project's
   whole environment-variable blob and `compose.one` returns one service's, both in plaintext.
 - **`callProcedure` hardcodes `method: "GET"` and stays read-only; `compose.update` is the one

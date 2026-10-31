@@ -7,6 +7,10 @@ import {
   deployAttemptReportContract,
   deployAttemptHistoryContract,
   deployRuntimeEvidenceSchema,
+  deployAttemptLogsQuerySchema,
+  deployAttemptLogsResponseSchema,
+  deployAttemptLogsContract,
+  adminDeployAttemptLogsContract,
 } from "../src/index.js";
 
 const intent = {
@@ -25,6 +29,44 @@ const intent = {
   },
 };
 describe("deployment attempt contracts", () => {
+  it("requires exact log selection and only bounded recognized event output", () => {
+    const query = { app: "api", attemptId: "00000000-0000-4000-8000-000000000000" };
+    expect(deployAttemptLogsQuerySchema.parse(query)).toEqual(query);
+    expect(deployAttemptLogsContract.path).toBe("/deployment/attempts/logs");
+    expect(adminDeployAttemptLogsContract.path).toBe("/deployment/admin/attempts/logs");
+    for (const invalid of [
+      { app: "api" },
+      { ...query, app: "../private" },
+      { ...query, tail: 1 },
+    ]) {
+      expect(deployAttemptLogsQuerySchema.safeParse(invalid).success).toBe(false);
+    }
+    const output = {
+      ...query,
+      policy: "recognized-events-only",
+      status: "available",
+      events: ["deployment-initialized", "deployment-failed"],
+      withheld: true,
+      truncated: false,
+    };
+    expect(deployAttemptLogsResponseSchema.parse(output)).toEqual(output);
+    for (const invalid of [
+      { ...output, text: "private credential" },
+      { ...output, events: ["private credential"] },
+      { ...output, events: Array.from({ length: 101 }, () => "deployment-failed") },
+    ]) {
+      expect(deployAttemptLogsResponseSchema.safeParse(invalid).success).toBe(false);
+    }
+    for (const reason of ["unassociated", "source-unavailable", "ambiguous"]) {
+      const unavailable = {
+        ...query,
+        policy: "recognized-events-only",
+        status: "unavailable",
+        reason,
+      };
+      expect(deployAttemptLogsResponseSchema.parse(unavailable)).toEqual(unavailable);
+    }
+  });
   it("uses static bounded mutation and history contracts", () => {
     expect(deployAttemptIntentContract.path).toBe("/deployment/attempts/intent");
     expect(deployAttemptReportContract.method).toBe("POST");

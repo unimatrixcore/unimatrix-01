@@ -23,12 +23,15 @@ const DEPLOY_ENV: ApiRuntimeEnv = {
   DEPLOY_BASE_URL: "http://deploy.internal:3001",
   DEPLOY_SERVICE_TOKEN: "internal-deploy-token",
 };
+const attemptId = "00000000-0000-4000-8000-000000000000";
+const logsUrl = `/deployment/admin/attempts/logs?app=api&attemptId=${attemptId}`;
 const URLS = [
   "/deployment/admin/declarations",
   "/deployment/admin/state",
   "/deployment/admin/health?app=api",
   "/deployment/admin/reconciliation",
   "/deployment/admin/attempts",
+  logsUrl,
 ] as const;
 
 function authHeaders(permissions: Record<string, string[]> = { auth: ["admin"] }) {
@@ -95,6 +98,17 @@ function health(app: string): DeployHealthHistoryResponse {
 
 function client(calls: unknown[] = []): DeployClient {
   return {
+    getAttemptLogs: (query) => {
+      calls.push(["attempt-logs", query]);
+      return Promise.resolve({
+        ...query,
+        status: "available",
+        policy: "recognized-events-only",
+        events: ["deployment-failed"],
+        withheld: true,
+        truncated: false,
+      });
+    },
     getDeclarations: (query) => {
       calls.push(["declarations", query]);
       return Promise.resolve({ apps: [] });
@@ -196,6 +210,7 @@ void test("verified admins receive read responses with validated selectors and n
       "/deployment/admin/state",
       "/deployment/admin/reconciliation",
       "/deployment/admin/attempts",
+      logsUrl,
     ];
     for (const url of urls) {
       const response = await app.inject({ url, headers });
@@ -225,6 +240,7 @@ void test("verified admins receive read responses with validated selectors and n
       ["state", {}],
       ["reconciliation", {}],
       ["attempts", { limit: 50 }],
+      ["attempt-logs", { app: "api", attemptId }],
     ]);
   } finally {
     await cleanup();
@@ -248,6 +264,10 @@ void test("invalid or client-controlled proxy selectors never reach the deployme
       "/deployment/admin/attempts?limit=0",
       "/deployment/admin/attempts?limit=not-a-number",
       "/deployment/admin/attempts?app=api&url=https://example.com",
+      "/deployment/admin/attempts/logs?app=api",
+      `/deployment/admin/attempts/logs?attemptId=${attemptId}`,
+      "/deployment/admin/attempts/logs?app=api&attemptId=invalid",
+      `${logsUrl}&url=https://example.com`,
     ]) {
       const response = await app.inject({ url, headers: authHeaders() });
       assert.equal(response.statusCode, 400, url);
@@ -273,6 +293,7 @@ void test("upstream failures become generic 502 errors without leaking values to
     getHealth: fail,
     getReconciliation: fail,
     getAttempts: fail,
+    getAttemptLogs: fail,
   };
   const { app, cleanup } = createTestApp(undefined, {
     deployClient,

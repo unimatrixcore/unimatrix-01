@@ -4,6 +4,8 @@ import {
   deployAttemptQuerySchema,
   deployAttemptResponseSchema,
   deployAttemptHistoryResponseSchema,
+  deployAttemptLogsQuerySchema,
+  deployAttemptLogsResponseSchema,
 } from "../schemas/deployment-attempts.js";
 import { defineApiContract } from "./api-contract.js";
 
@@ -24,4 +26,10 @@ export const deployAttemptHistoryContract = defineApiContract({
   path: "/deployment/attempts",
   querySchema: deployAttemptQuerySchema,
   responseSchema: deployAttemptHistoryResponseSchema,
+});
+export const deployAttemptLogsContract = defineApiContract({
+  method: "GET",
+  path: "/deployment/attempts/logs",
+  querySchema: deployAttemptLogsQuerySchema,
+  responseSchema: deployAttemptLogsResponseSchema,
 });

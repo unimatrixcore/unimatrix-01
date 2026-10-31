@@ -5,6 +5,8 @@ import {
 import {
   deployAttemptHistoryResponseSchema,
   deployAttemptQuerySchema,
+  deployAttemptLogsQuerySchema,
+  deployAttemptLogsResponseSchema,
 } from "../schemas/deployment-attempts.js";
 import {
   deployHealthHistoryQuerySchema,
@@ -48,6 +50,14 @@ export type AdminDeployStateContract = typeof adminDeployStateContract;
 export type AdminDeployHealthHistoryContract = typeof adminDeployHealthHistoryContract;
 export type AdminDeployReconciliationContract = typeof adminDeployReconciliationContract;
 export type AdminDeployAttemptHistoryContract = typeof adminDeployAttemptHistoryContract;
+
+export const adminDeployAttemptLogsContract = defineApiContract({
+  method: "GET",
+  path: "/deployment/admin/attempts/logs",
+  querySchema: deployAttemptLogsQuerySchema,
+  responseSchema: deployAttemptLogsResponseSchema,
+});
+export type AdminDeployAttemptLogsContract = typeof adminDeployAttemptLogsContract;
 
 export const adminDeployDeclarationsContract = defineApiContract({
   method: "GET",

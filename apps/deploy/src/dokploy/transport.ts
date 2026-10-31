@@ -15,6 +15,7 @@ export interface CreateDokployClientOptions {
   apiKey: string;
   fetch?: typeof globalThis.fetch;
   timeoutMs?: number;
+  maxResponseBytes?: number;
 }
 
 export interface DokployTransport {
@@ -65,7 +66,28 @@ export function createDokployTransport(options: CreateDokployClientOptions): Dok
     let body: unknown;
 
     try {
-      body = await response.json();
+      if (options.maxResponseBytes === undefined) {
+        body = await response.json();
+      } else {
+        const reader = response.body?.getReader();
+        if (reader === undefined) throw new Error("Missing response");
+        const chunks: Uint8Array[] = [];
+        let size = 0;
+        try {
+          for (;;) {
+            const result = await reader.read();
+            if (result.done) break;
+            const value: unknown = result.value;
+            if (!(value instanceof Uint8Array)) throw new Error("Invalid response chunk");
+            size += value.byteLength;
+            if (size > options.maxResponseBytes) throw new Error("Response limit");
+            chunks.push(value);
+          }
+          body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        } finally {
+          await reader.cancel().catch(() => undefined);
+        }
+      }
     } catch {
       throw new DokployClientError(
         `Dokploy procedure ${procedurePath} did not return a JSON body.`,

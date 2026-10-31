@@ -101,6 +101,55 @@ function client(options: Partial<DeployClientConfig> = {}) {
 }
 
 describe("deployment transport", () => {
+  it("selects exact attempt logs and rejects mismatched, raw or unbounded output", async () => {
+    mode = "selected";
+    requests = [];
+    const query = { app: "api", attemptId: "00000000-0000-4000-8000-000000000000" };
+    const output = {
+      ...query,
+      status: "available",
+      policy: "recognized-events-only",
+      events: ["deployment-failed"],
+      withheld: true,
+      truncated: true,
+    };
+    selectedResponse = output;
+    expect(await client().getAttemptLogs(query)).toEqual(output);
+    expect(requests).toEqual([
+      {
+        url: `/deployment/attempts/logs?app=api&attemptId=${query.attemptId}`,
+        authorization: "Bearer test-token",
+      },
+    ]);
+    for (const invalid of [
+      { ...output, app: "web" },
+      { ...output, attemptId: "11111111-1111-4111-8111-111111111111" },
+      { ...output, text: "private credential" },
+      { ...output, events: ["private credential"] },
+      { ...output, events: Array.from({ length: 101 }, () => "deployment-failed") },
+    ]) {
+      selectedResponse = invalid;
+      await expect(client().getAttemptLogs(query)).rejects.toThrow("Deployment read unavailable");
+    }
+    const unavailable = {
+      ...query,
+      status: "unavailable",
+      policy: "recognized-events-only",
+      reason: "source-unavailable",
+    };
+    selectedResponse = unavailable;
+    expect(await client().getAttemptLogs(query)).toEqual(unavailable);
+    requests = [];
+    for (const invalid of [
+      { ...query, app: "../private" },
+      { ...query, attemptId: "invalid" },
+    ]) {
+      await expect(client().getAttemptLogs(invalid)).rejects.toBeInstanceOf(DeployClientError);
+    }
+    expect(requests).toHaveLength(0);
+    mode = "error";
+    await expect(client().getAttemptLogs(query)).rejects.toThrow("Deployment read unavailable");
+  });
   it("rejects declaration records for another app and credential-bearing sources", async () => {
     requests = [];
     mode = "selected";

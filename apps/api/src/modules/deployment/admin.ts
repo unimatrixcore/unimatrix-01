@@ -11,6 +11,8 @@ import {
   deployHealthHistoryQuerySchema,
   deployReconciliationQuerySchema,
   deployAttemptQuerySchema,
+  adminDeployAttemptLogsContract,
+  deployAttemptLogsQuerySchema,
 } from "@unimatrix/shared";
 import type { FastifyPluginAsync } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
@@ -44,6 +46,19 @@ export const adminDeploymentModule: FastifyPluginAsync<AdminDeploymentModuleOpti
     }
   }
 
+  app.withTypeProvider<ZodTypeProvider>().route({
+    method: adminDeployAttemptLogsContract.method,
+    url: adminDeployAttemptLogsContract.path,
+    preHandler: requireAdminSection("deploys"),
+    schema: {
+      querystring: deployAttemptLogsQuerySchema,
+      response: { 200: adminDeployAttemptLogsContract.responseSchema },
+    },
+    handler: (request) => {
+      getRequiredAuthUserId(request);
+      return read(() => deployClient.getAttemptLogs(request.query));
+    },
+  });
   app.withTypeProvider<ZodTypeProvider>().route({
     method: adminDeployDeclarationsContract.method,
     url: adminDeployDeclarationsContract.path,

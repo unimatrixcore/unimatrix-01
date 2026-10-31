@@ -166,6 +166,7 @@ test("acknowledges every durable intent and claim before a shared project mutati
     const queueIndex = calls.findIndex(
       ({ path, body }) => path === "/api/compose.deploy" && body.composeId === `compose-${app}`,
     );
+    assert.equal(calls[queueIndex].body.title, `unimatrix-attempt:${idFor(app)}`);
     assert.deepEqual(calls[queueIndex - 1].body, {
       attemptId: idFor(app),
       stage: "queue",

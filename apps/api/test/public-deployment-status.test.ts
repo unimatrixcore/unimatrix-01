@@ -62,6 +62,13 @@ function client(overrides: Partial<DeployClient> = {}): DeployClient {
       }),
     getDeclarations: () => Promise.resolve({ apps: [] }),
     getAttempts: () => Promise.resolve({ attempts: [] }),
+    getAttemptLogs: (query) =>
+      Promise.resolve({
+        ...query,
+        status: "unavailable",
+        policy: "recognized-events-only",
+        reason: "unassociated",
+      }),
     ...overrides,
   };
 }

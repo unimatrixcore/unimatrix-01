@@ -24,6 +24,34 @@ A later match retains the timeout and records late landing separately. History r
 30 days after their deadline, returns at most 100 per read, and refuses new intents at 10,000 retained
 records rather than evicting unresolved evidence. Preserve the deploy data volume across replacement.
 
+## Attempt logs
+
+Internal readers select an app and attempt UUID through the static logs contract in
+`packages/shared/src/contracts/deployment-attempts.ts`. The API exposes the corresponding
+`/deployment/admin/attempts/logs` read only to the `deploys` admin section, with `no-store` responses.
+Neither endpoint accepts a caller-supplied Dokploy ID or file path.
+
+Recording-enabled CI queues with the exact title `unimatrix-attempt:<attempt UUID>`. Retrieval
+requires a unique title match on the declared app's repository-owned compose service. It never
+substitutes the latest deployment, a matching image or a time window. Duplicate matches and shared
+log paths are ambiguous. An absent marker, including on older attempts or after Dokploy prunes its
+history, is explicitly unassociated. Missing files, empty responses and failed source reads are
+unavailable. Attempt retention does not extend Dokploy's log retention.
+
+The output policy is `recognized-events-only`. `apps/deploy/src/dokploy/log-client.ts` maps exact
+whole lines to fixed event codes; arbitrary text, paths, titles, error bodies and substrings are
+withheld. These events describe source messages, not independently verified deployment outcomes.
+The response contains at most 100 events from the last 100 source lines. A sentinel line makes
+tail truncation explicit; unrecognized nonempty lines set `withheld`. Source responses exceeding
+the byte or text bound are unavailable rather than partially parsed. This policy does not attempt
+to redact arbitrary output or disclose raw logs.
+
+Read-only checks on unimatrix-03 on 2026-10-31 observed `deployment.allByCompose` returning
+deployment rows and `deployment.readLogs` returning a JSON string on the installed v0.30.10.
+The installed source prunes older rows/files when creating deployments. A production deployment
+with the UUID title marker has not been exercised; verify it during the controlled activation trial
+below. Existing unmarked deployments cannot establish that association.
+
 ## Host-local runtime bridge
 
 Run `apps/deploy/src/cli/runtime-evidence.ts` from a trusted checkout on the Docker host using the
