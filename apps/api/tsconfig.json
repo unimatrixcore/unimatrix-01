@@ -9,6 +9,7 @@
       "@unimatrix/content": ["../../packages/content/src/index.ts"],
       "@unimatrix/content/node": ["../../packages/content/src/node.ts"],
       "@unimatrix/db": ["../../packages/db/src/index.ts"],
+      "@unimatrix/deploy-client": ["../../packages/deploy-client/src/index.ts"],
       "@unimatrix/deploy-config": ["../../packages/deploy-config/src/index.ts"],
       "@unimatrix/secrets": ["../../packages/secrets/src/index.ts"],
       "@unimatrix/secrets/client": ["../../packages/secrets/src/client.ts"],

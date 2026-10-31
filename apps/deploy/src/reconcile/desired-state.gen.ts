@@ -34,6 +34,8 @@ export const DEPLOY_DESIRED_STATE: DeployDesiredState = [
       },
       { name: "CLERK_SECRET_KEY", required: true, secretName: "platform/clerk-secret-key" },
       { name: "CORS_ALLOWED_ORIGINS", required: true },
+      { name: "DEPLOY_SERVICE_TOKEN", required: true },
+      { name: "DEPLOY_TLS_CERT_BASE64", required: true },
       { name: "IMAGE_TAG", required: true },
       { name: "SECRETS_INTEGRATIONS_MANAGE_TOKEN", required: true },
       { name: "SECRETS_PLATFORM_WRITE_TOKEN", required: true },

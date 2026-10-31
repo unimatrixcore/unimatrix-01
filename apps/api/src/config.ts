@@ -1,3 +1,4 @@
+import { X509Certificate } from "node:crypto";
 import { isIP } from "node:net";
 
 /**
@@ -102,6 +103,12 @@ export interface ApiSecretsStoreConfig {
   caCertificatePem: string | null;
 }
 
+export interface ApiDeployServiceConfig {
+  baseUrl: string;
+  serviceToken: string;
+  caCertificatePem: string | null;
+}
+
 export interface ApiRuntimeConfig {
   host: string;
   port: number;
@@ -111,6 +118,7 @@ export interface ApiRuntimeConfig {
   cors: ApiCorsConfig;
   clerk: ApiClerkConfig | null;
   secretsStore: ApiSecretsStoreConfig | null;
+  deployService: ApiDeployServiceConfig | null;
   maxUploadBytes: number;
   /**
    * Cumulative ceiling on the bytes one user may keep in `user_documents`
@@ -132,6 +140,9 @@ export interface ApiRuntimeEnv {
   CLERK_SECRET_KEY?: string | undefined;
   CLERK_PUBLISHABLE_KEY?: string | undefined;
   CLERK_JWT_KEY?: string | undefined;
+  DEPLOY_BASE_URL?: string | undefined;
+  DEPLOY_SERVICE_TOKEN?: string | undefined;
+  DEPLOY_TLS_CERT_BASE64?: string | undefined;
   SECRETS_BASE_URL?: string | undefined;
   SECRETS_SERVICE_TOKEN?: string | undefined;
   SECRETS_INTEGRATIONS_MANAGE_TOKEN?: string | undefined;
@@ -777,6 +788,73 @@ function parseSecretsStoreConfig(env: ApiRuntimeEnv): ApiSecretsStoreConfig | nu
   );
 }
 
+function parseDeployServiceConfig(
+  env: ApiRuntimeEnv,
+  nodeEnv: ApiNodeEnv,
+): ApiDeployServiceConfig | null {
+  const baseUrl = readOptionalTrimmedValue("DEPLOY_BASE_URL", env.DEPLOY_BASE_URL);
+  const serviceToken = readOptionalTrimmedValue("DEPLOY_SERVICE_TOKEN", env.DEPLOY_SERVICE_TOKEN);
+  const certificate = readOptionalTrimmedValue(
+    "DEPLOY_TLS_CERT_BASE64",
+    env.DEPLOY_TLS_CERT_BASE64,
+  );
+
+  if (baseUrl === undefined && serviceToken === undefined && certificate === undefined) {
+    return null;
+  }
+  if (baseUrl === undefined || serviceToken === undefined) {
+    throw createApiConfigError(
+      "DEPLOY_BASE_URL and DEPLOY_SERVICE_TOKEN must be set together; DEPLOY_TLS_CERT_BASE64 requires both.",
+    );
+  }
+
+  let url: URL;
+  try {
+    url = new URL(baseUrl);
+  } catch {
+    throw createApiConfigError("DEPLOY_BASE_URL must be a valid http:// or https:// origin.");
+  }
+  if (
+    !/^https?:\/\/[^\s/?#@\\]+\/?$/iu.test(baseUrl) ||
+    (url.protocol !== "http:" && url.protocol !== "https:") ||
+    url.username !== "" ||
+    url.password !== "" ||
+    url.pathname !== "/" ||
+    url.search !== "" ||
+    url.hash !== ""
+  ) {
+    throw createApiConfigError(
+      "DEPLOY_BASE_URL must be an http:// or https:// origin without credentials, path, query, or fragment.",
+    );
+  }
+  if (nodeEnv === "production" && url.protocol !== "https:") {
+    throw createApiConfigError("DEPLOY_BASE_URL must use https:// in production.");
+  }
+  if (url.protocol === "https:" && certificate === undefined) {
+    throw createApiConfigError(
+      "DEPLOY_TLS_CERT_BASE64 must be set when DEPLOY_BASE_URL is https://.",
+    );
+  }
+  if (url.protocol === "http:" && certificate !== undefined) {
+    throw createApiConfigError(
+      "DEPLOY_TLS_CERT_BASE64 must not be set when DEPLOY_BASE_URL is http://.",
+    );
+  }
+
+  const caCertificatePem =
+    certificate === undefined ? null : Buffer.from(certificate, "base64").toString("utf8");
+  if (caCertificatePem !== null) {
+    try {
+      new X509Certificate(caCertificatePem);
+    } catch {
+      throw createApiConfigError(
+        "DEPLOY_TLS_CERT_BASE64 must be a base64-encoded PEM certificate.",
+      );
+    }
+  }
+  return { baseUrl: url.origin, serviceToken, caCertificatePem };
+}
+
 export function loadApiRuntimeConfig(env: ApiRuntimeEnv = process.env): ApiRuntimeConfig {
   const nodeEnv = parseNodeEnv(env.NODE_ENV);
 
@@ -789,6 +867,7 @@ export function loadApiRuntimeConfig(env: ApiRuntimeEnv = process.env): ApiRunti
     cors: parseCorsAllowedOrigins(env.CORS_ALLOWED_ORIGINS),
     clerk: parseClerkConfig(env, nodeEnv),
     secretsStore: parseSecretsStoreConfig(env),
+    deployService: parseDeployServiceConfig(env, nodeEnv),
     maxUploadBytes: parseByteCount(
       "MAX_UPLOAD_BYTES",
       env.MAX_UPLOAD_BYTES,

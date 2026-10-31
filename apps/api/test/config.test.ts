@@ -1,3 +1,4 @@
+import { rootCertificates } from "node:tls";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -38,6 +39,7 @@ void test("loadApiRuntimeConfig uses documented defaults", () => {
     },
     clerk: null,
     secretsStore: null,
+    deployService: null,
     maxUploadBytes: 5_242_880,
     maxUserStorageBytes: 52_428_800,
     runDatabaseMigrations: false,
@@ -94,6 +96,7 @@ void test("loadApiRuntimeConfig trims and validates explicit values", () => {
         jwtKey: "jwt_key_123",
       },
       secretsStore: null,
+      deployService: null,
       maxUploadBytes: 5_242_880,
       maxUserStorageBytes: 52_428_800,
       runDatabaseMigrations: false,
@@ -677,5 +680,141 @@ void test("loadApiRuntimeConfig throws when the two admin tokens are the same va
         SECRETS_PLATFORM_WRITE_TOKEN: "svc_shared_admin_token",
       }),
     /SECRETS_PLATFORM_WRITE_TOKEN must not equal SECRETS_INTEGRATIONS_MANAGE_TOKEN/,
+  );
+});
+
+void test("deploy service config is optional, including in production", () => {
+  assert.equal(loadApiRuntimeConfig({}).deployService, null);
+  assert.equal(
+    loadApiRuntimeConfig({
+      NODE_ENV: "production",
+      CLERK_SECRET_KEY: "key",
+      CLERK_PUBLISHABLE_KEY: "key",
+      CLERK_JWT_KEY: "key",
+    }).deployService,
+    null,
+  );
+});
+
+void test("deploy service config accepts local HTTP and pinned HTTPS origins", () => {
+  assert.deepEqual(
+    loadApiRuntimeConfig({
+      DEPLOY_BASE_URL: " http://localhost:3003/ ",
+      DEPLOY_SERVICE_TOKEN: " token ",
+    }).deployService,
+    {
+      baseUrl: "http://localhost:3003",
+      serviceToken: "token",
+      caCertificatePem: null,
+    },
+  );
+  assert.deepEqual(
+    loadApiRuntimeConfig({
+      DEPLOY_BASE_URL: "HTTPS://deploy:3001",
+      DEPLOY_SERVICE_TOKEN: "token",
+      DEPLOY_TLS_CERT_BASE64: Buffer.from(rootCertificates[0]!).toString("base64"),
+    }).deployService,
+    {
+      baseUrl: "https://deploy:3001",
+      serviceToken: "token",
+      caCertificatePem: rootCertificates[0],
+    },
+  );
+});
+
+void test("deploy service config rejects incomplete and blank credentials without exposing values", () => {
+  for (const env of [
+    { DEPLOY_BASE_URL: "http://deploy:3001" },
+    { DEPLOY_SERVICE_TOKEN: "private-token" },
+    { DEPLOY_TLS_CERT_BASE64: Buffer.from(rootCertificates[0]!).toString("base64") },
+    { DEPLOY_BASE_URL: "" },
+    { DEPLOY_SERVICE_TOKEN: " " },
+    { DEPLOY_TLS_CERT_BASE64: " " },
+  ]) {
+    assert.throws(
+      () => loadApiRuntimeConfig(env),
+      (error: Error) => {
+        assert.match(error.message, /DEPLOY_/u);
+        assert.doesNotMatch(error.message, /private-token/u);
+        return true;
+      },
+    );
+  }
+});
+
+void test("deploy service config rejects non-origin URLs and never prints URL credentials", () => {
+  for (const url of [
+    "invalid",
+    "ftp://deploy",
+    "https://name:private-token@deploy",
+    "http://@deploy",
+    "http://deploy/path",
+    "http://deploy?x=1",
+    "http://deploy#fragment",
+    "http://deploy/path/..",
+    "http://deploy?",
+    "http://deploy#",
+    "http://deploy\\path",
+  ]) {
+    assert.throws(
+      () => loadApiRuntimeConfig({ DEPLOY_BASE_URL: url, DEPLOY_SERVICE_TOKEN: "token" }),
+      (error: Error) => {
+        assert.match(error.message, /DEPLOY_BASE_URL/u);
+        assert.doesNotMatch(error.message, /private-token/u);
+        return true;
+      },
+    );
+  }
+});
+
+void test("deploy service config requires HTTPS in production and certificate pins only with HTTPS", () => {
+  assert.throws(
+    () =>
+      loadApiRuntimeConfig({
+        NODE_ENV: "production",
+        CLERK_SECRET_KEY: "key",
+        CLERK_PUBLISHABLE_KEY: "key",
+        CLERK_JWT_KEY: "key",
+        DEPLOY_BASE_URL: "http://deploy",
+        DEPLOY_SERVICE_TOKEN: "token",
+      }),
+    /DEPLOY_BASE_URL must use https/u,
+  );
+  assert.throws(
+    () =>
+      loadApiRuntimeConfig({ DEPLOY_BASE_URL: "https://deploy", DEPLOY_SERVICE_TOKEN: "token" }),
+    /DEPLOY_TLS_CERT_BASE64 must be set/u,
+  );
+  assert.throws(
+    () =>
+      loadApiRuntimeConfig({
+        DEPLOY_BASE_URL: "http://deploy",
+        DEPLOY_SERVICE_TOKEN: "token",
+        DEPLOY_TLS_CERT_BASE64: Buffer.from(rootCertificates[0]!).toString("base64"),
+      }),
+    /DEPLOY_TLS_CERT_BASE64 must not be set/u,
+  );
+  assert.throws(
+    () =>
+      loadApiRuntimeConfig({
+        DEPLOY_BASE_URL: "https://deploy",
+        DEPLOY_SERVICE_TOKEN: "token",
+        DEPLOY_TLS_CERT_BASE64: Buffer.from("invalid").toString("base64"),
+      }),
+    /DEPLOY_TLS_CERT_BASE64 must be a base64-encoded PEM/u,
+  );
+});
+
+void test("deploy certificate parser rejects malformed X509 content before boot", () => {
+  assert.throws(
+    () =>
+      loadApiRuntimeConfig({
+        DEPLOY_BASE_URL: "https://deploy",
+        DEPLOY_SERVICE_TOKEN: "private-token",
+        DEPLOY_TLS_CERT_BASE64: Buffer.from(
+          "-----BEGIN CERTIFICATE-----\ninvalid\n-----END CERTIFICATE-----",
+        ).toString("base64"),
+      }),
+    /DEPLOY_TLS_CERT_BASE64 must be a base64-encoded PEM/u,
   );
 });

@@ -26,6 +26,12 @@ export default nodeApiApp({
     },
   ],
   composeEnv: [
+    {
+      name: "DEPLOY_BASE_URL",
+      value: { kind: "generated", name: "DEPLOY_BASE_URL", value: internalServiceUrl("deploy") },
+    },
+    { name: "DEPLOY_SERVICE_TOKEN", value: { kind: "variable", name: "DEPLOY_SERVICE_TOKEN" } },
+    { name: "DEPLOY_TLS_CERT_BASE64", value: { kind: "variable", name: "DEPLOY_TLS_CERT_BASE64" } },
     { name: "HOST", value: { kind: "literal", value: "0.0.0.0" } },
     { name: "PORT", value: { kind: "literal", value: "3001" } },
     { name: "NODE_ENV", value: { kind: "literal", value: "production" } },
