@@ -100,8 +100,9 @@ display, but the response has no creation timestamp, so exact container age is u
 first observation time measures only how long this service has seen that ID. Observations reset on
 service restart and do not establish that a requested image or configuration was deployed.
 
-The snapshot is internal to the service. The later authenticated deployment-state read will expose
-it to callers.
+`GET /deployment/state` returns the snapshot for all declared apps, or one selected by `?app=api`.
+Container freshness is `missing` before observation, `fresh` for less than 30 seconds, and `stale`
+after that. A stale matched record describes the last observation, not current running state.
 
 ## Internal health history
 
@@ -121,7 +122,9 @@ ending sooner if another observation arrives. Missing intervals and stale observ
 Uptime is up time divided by observed up-or-down time; coverage is observed time divided by the
 whole window. With no observed time, uptime is null. Daily summaries use UTC boundaries and include
 the elapsed portion of today. The internal snapshot includes the 30-day summary, 14 daily summaries
-and the most recent 60 probes; it is not an HTTP route.
+and the most recent 60 probes. `GET /deployment/health?app=api` returns that snapshot, including
+`missing`, `fresh` or `stale` freshness at the 60-second sampling boundary. A fresh `unknown`
+sample is distinct from missing history or a stale sample.
 
 Production uses `/data/deploy.sqlite` on the `deploy-data` Compose volume, separate from the API
 and secrets databases. Preserve that volume across redeploys. `DEPLOY_DATABASE_PATH` selects a different
@@ -131,6 +134,23 @@ stops and awaits pending probes before closing SQLite.
 
 Check reachability from the deploy container after network or certificate changes; a public URL
 succeeding does not establish that these internal targets are reachable.
+
+## Authenticated reads
+
+The deployment read contracts live in `packages/shared/src/contracts/deployment.ts`. Each route
+requires a deploy token with `read` or `manage` capability and returns `Cache-Control: no-store`.
+App selectors are validated query parameters; an undeclared app returns 404. These routes are
+internal service interfaces. Browser consumers reach deployment data through the API.
+
+`GET /deployment/reconciliation` collects a read-only diff on demand, optionally limited by
+`?app=api`. Per-app read failures return `outcome: error` with `reason: read-failed`, while failure
+to read the project inventory returns 503. Env findings contain only keys and closed states.
+Responses exceeding the shared schema bounds return 503 rather than a partial diff. The same
+failure response applies when an observation or health snapshot cannot be validated or read.
+
+The state route reads the process-local container snapshot, and the health route reads SQLite;
+neither triggers an upstream poll. Reconciliation reads do not apply configuration or schedule
+work. Existing per-peer request limits apply to all of these routes.
 
 ## Reconcile report
 
@@ -149,6 +169,8 @@ duplicates a declared image build arg.
 It does not mask unrelated undeclared keys. Dokploy's `env` blob is
 reduced to that before it reaches reconciliation (`readEnvKeyStates`,
 `src/dokploy/schemas.ts`).
+Unsupported env syntax, including multiline quoted assignments, yields a read failure rather
+than allowing value text to be mistaken for an undeclared key.
 
 It deliberately does not check a service's Domains entry (out of scope — `packages/deploy-config`
 holds no domain data at all) or its `watchPaths`/`composeFile` (inert while `autoDeploy` is off, and

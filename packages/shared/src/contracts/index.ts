@@ -1,6 +1,7 @@
 export * from "./admin-secrets.js";
 export * from "./api-contract.js";
 export * from "./content.js";
+export * from "./deployment.js";
 export * from "./health.js";
 export * from "./integrations.js";
 export * from "./secrets.js";
