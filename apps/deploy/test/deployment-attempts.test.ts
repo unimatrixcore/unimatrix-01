@@ -539,3 +539,75 @@ void test("legacy attempts without queue timing remain readable but cannot estab
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+void test("expired attempts without queue claims do not poison subsequent landing across restarts", () => {
+  for (const tagResult of [null, "started", "acknowledged", "unknown"] as const) {
+    const directory = mkdtempSync(join(tmpdir(), "attempt-unclaimed-expiry-"));
+    try {
+      const path = join(directory, "db.sqlite");
+      let store = openRawStore(path);
+      const abandoned = store.intent(intent, "reporter", before, now);
+      if (tagResult !== null) {
+        store.report(
+          { attemptId: abandoned.id, stage: "tag-write", result: "started" },
+          "reporter",
+          now,
+        );
+        if (tagResult !== "started")
+          store.report(
+            { attemptId: abandoned.id, stage: "tag-write", result: tagResult },
+            "reporter",
+            now,
+          );
+      }
+      store.close();
+      store = openRawStore(path);
+      const later = abandoned.deadlineAt;
+      const next = store.intent({ ...intent, runId: "124" }, "reporter", before, later);
+      assert.equal(next.correlation, "pending");
+      if (tagResult === "acknowledged")
+        assert.throws(
+          () =>
+            store.report(
+              { attemptId: abandoned.id, stage: "queue", result: "started" },
+              "reporter",
+              later,
+            ),
+          /conflicts/u,
+        );
+      for (const stage of ["tag-write", "queue"] as const)
+        for (const result of ["started", "acknowledged"] as const)
+          store.report({ attemptId: next.id, stage, result }, "reporter", later);
+      store.observe([{ ...evidence, observedAt: later + 1 }], later + 1);
+      const records = store.list("api", 100, later + 1);
+      assert.equal(records.find((record) => record.id === next.id)!.outcome, "landed");
+      assert.equal(records.find((record) => record.id === abandoned.id)!.outcome, "timed-out");
+      assert.equal(
+        store.intent({ ...intent, runId: "125" }, "reporter", before, later + 2).correlation,
+        "pending",
+      );
+      store.close();
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  }
+});
+
+void test("an expired queue claim still makes later requests ambiguous even without a completion report", () => {
+  const store = openRawStore(":memory:");
+  try {
+    const first = store.intent(intent, "reporter", before, now);
+    for (const result of ["started", "acknowledged"] as const)
+      store.report({ attemptId: first.id, stage: "tag-write", result }, "reporter", now);
+    store.report({ attemptId: first.id, stage: "queue", result: "started" }, "reporter", now);
+    const next = store.intent({ ...intent, runId: "124" }, "reporter", before, first.deadlineAt);
+    assert.equal(next.correlation, "ambiguous");
+    assert.equal(
+      store.list("api", 100, first.deadlineAt).find((record) => record.id === first.id)!
+        .correlation,
+      "ambiguous",
+    );
+  } finally {
+    store.close();
+  }
+});

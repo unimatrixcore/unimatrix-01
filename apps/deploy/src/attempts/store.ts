@@ -48,7 +48,12 @@ function validateTime(now: number): void {
   }
 }
 function canExplainTransition(record: DeployAttemptRecord): boolean {
-  return record.outcome !== "failed" && record.outcome !== "landed" && record.lateLandedAt === null;
+  return (
+    record.outcome !== "failed" &&
+    record.outcome !== "landed" &&
+    record.lateLandedAt === null &&
+    (record.outcome !== "timed-out" || record.queue !== null)
+  );
 }
 
 export function openDeploymentAttemptStore(path: string): DeploymentAttemptStore {
