@@ -54,6 +54,7 @@ export const deployAttemptResponseSchema = deployAttemptIntentSchema.extend({
   baseline: deployAttemptBaselineSchema.nullable(),
   tagWrite: resultSchema.nullable(),
   queue: resultSchema.nullable(),
+  queueClaimedAt: timestampSchema.nullable().default(null),
   outcome: z.enum(["incomplete", "queued", "landed", "failed", "timed-out"]),
   correlation: z.enum(["pending", "ambiguous", "verified"]),
   after: afterSchema.nullable(),

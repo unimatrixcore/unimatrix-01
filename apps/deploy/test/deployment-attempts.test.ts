@@ -474,3 +474,68 @@ void test("expired intent cannot authorize a new deployment mutation", () => {
     store.close();
   }
 });
+
+void test("recreation observed before the durable queue claim cannot establish landing after restart", () => {
+  const directory = mkdtempSync(join(tmpdir(), "attempt-queue-time-"));
+  try {
+    const path = join(directory, "db.sqlite");
+    let store = openRawStore(path);
+    const record = store.intent(intent, "reporter", before, now);
+    store.report({ attemptId: record.id, stage: "tag-write", result: "started" }, "reporter", now);
+    store.report(
+      { attemptId: record.id, stage: "tag-write", result: "acknowledged" },
+      "reporter",
+      now,
+    );
+    const queue = { attemptId: record.id, stage: "queue" } as const;
+    store.report({ ...queue, result: "started" }, "reporter", now + 2000);
+    store.report({ ...queue, result: "acknowledged" }, "reporter", now + 3000);
+    store.close();
+    store = openRawStore(path);
+    store.observe([evidence], now + 3001);
+    const unchanged = store.list("api", 1, now + 3001)[0]!;
+    assert.equal(unchanged.outcome, "queued");
+    assert.equal(unchanged.landedAt, null);
+    assert.equal(unchanged.after, null);
+    assert.equal(unchanged.queueClaimedAt, now + 2000);
+    store.report({ ...queue, result: "acknowledged" }, "reporter", now + 3002);
+    assert.equal(store.list("api", 1, now + 3002)[0]!.queueClaimedAt, now + 2000);
+    store.observe([{ ...evidence, observedAt: now + 4000 }], now + 4000);
+    assert.equal(store.list("api", 1, now + 4000)[0]!.outcome, "landed");
+    store.close();
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+void test("legacy attempts without queue timing remain readable but cannot establish landing", () => {
+  const directory = mkdtempSync(join(tmpdir(), "attempt-legacy-queue-"));
+  try {
+    const path = join(directory, "db.sqlite");
+    const store = openDeploymentAttemptStore(path);
+    const record = store.intent(intent, "reporter", before, now);
+    store.report(
+      { attemptId: record.id, stage: "tag-write", result: "acknowledged" },
+      "reporter",
+      now,
+    );
+    store.report({ attemptId: record.id, stage: "queue", result: "acknowledged" }, "reporter", now);
+    const db = new Database(path);
+    const legacy = { ...store.list("api", 1, now)[0]! };
+    const { queueClaimedAt, ...withoutClaim } = legacy;
+    assert.equal(queueClaimedAt, now);
+    db.prepare("UPDATE deployment_attempts SET record = ? WHERE id = ?").run(
+      JSON.stringify(withoutClaim),
+      record.id,
+    );
+    db.close();
+    store.observe([evidence], now + 1000);
+    const preserved = store.list("api", 1, now + 1000)[0]!;
+    assert.equal(preserved.queueClaimedAt, null);
+    assert.equal(preserved.outcome, "queued");
+    assert.equal(preserved.after, null);
+    store.close();
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

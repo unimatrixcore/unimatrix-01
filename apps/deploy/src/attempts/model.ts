@@ -23,6 +23,8 @@ export function applyRuntimeEvidence(
     record.baseline.containerId === evidence.containerId ||
     evidence.observedAt < record.requestedAt ||
     evidence.observedAt < record.baseline.observedAt ||
+    record.queueClaimedAt === null ||
+    evidence.observedAt < record.queueClaimedAt ||
     record.outcome === "failed" ||
     record.outcome === "landed" ||
     record.lateLandedAt !== null ||

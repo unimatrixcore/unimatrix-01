@@ -143,6 +143,7 @@ export function openDeploymentAttemptStore(path: string): DeploymentAttemptStore
             baseline: before,
             tagWrite: null,
             queue: null,
+            queueClaimedAt: null,
             outcome: "incomplete",
             correlation: "pending",
             after: null,
@@ -174,6 +175,7 @@ export function openDeploymentAttemptStore(path: string): DeploymentAttemptStore
         if (field === "queue" && record.tagWrite !== "acknowledged") throw conflict();
         if (parsed.result === "started") {
           if (record[field] !== null || now >= record.deadlineAt) throw conflict();
+          if (field === "queue") record.queueClaimedAt = now;
         } else if (record[field] !== "started" && record[field] !== parsed.result) {
           throw conflict();
         }

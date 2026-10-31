@@ -12,6 +12,8 @@ automatically replayed. Retry the idempotent intent or terminal report, not a Do
 Cancellation between a claim and a mutation can therefore leave a record that needs investigation.
 A queue claim without its terminal acknowledgment or unknown-result report cannot establish landing,
 even if a matching image appears; the record expires if that report never arrives.
+Landing evidence must be observed at or after the persisted queue-claim timestamp. Older records
+without that timestamp remain readable but cannot establish landing.
 
 Outcomes are `incomplete`, `queued`, `landed`, `failed` or `timed-out`. Acknowledged queueing is
 separate from image landing and health. Transport failures and server failures leave an unknown
