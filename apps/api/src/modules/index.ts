@@ -1,7 +1,9 @@
 import type { FastifyPluginAsync } from "fastify";
+import { createDeployClient } from "@unimatrix/deploy-client";
 
 import { contentModule } from "./content/index.js";
 import { publicDeploymentModule, type PublicDeploymentModuleOptions } from "./deployment/index.js";
+import { adminDeploymentModule } from "./deployment/admin.js";
 import { healthModule } from "./health/index.js";
 import { integrationsModule } from "./integrations/index.js";
 import { secretsAdminModule } from "./secrets/index.js";
@@ -11,7 +13,22 @@ export const registerModules: FastifyPluginAsync<PublicDeploymentModuleOptions> 
   app,
   options,
 ) => {
-  app.register(publicDeploymentModule, options);
+  const config = app.runtimeConfig.deployService;
+  const deployClient =
+    options.deployClient ??
+    (config === null
+      ? undefined
+      : createDeployClient({
+          baseUrl: config.baseUrl,
+          serviceToken: config.serviceToken,
+          ...(config.caCertificatePem === null
+            ? {}
+            : { caCertificatePem: config.caCertificatePem }),
+        }));
+  app.register(publicDeploymentModule, deployClient === undefined ? {} : { deployClient });
+  if (app.runtimeConfig.clerk !== null && config !== null && deployClient !== undefined) {
+    app.register(adminDeploymentModule, { deployClient });
+  }
   app.register(healthModule);
 
   // Registered unconditionally: its public read routes back the public site's

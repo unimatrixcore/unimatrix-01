@@ -24,3 +24,12 @@ never its private key). See the deploy service's [TLS and token setup](../deploy
 Local development may omit the whole deployment-service configuration; the public route then
 returns 503. Local HTTP is supported only outside production. Production connectivity and
 credential provisioning must be checked during rollout; repository tests exercise local TLS.
+
+`GET /deployment/admin/state`, `/deployment/admin/health`,
+`/deployment/admin/reconciliation`, and `/deployment/admin/attempts` require a verified Clerk
+session with the shared `deploys` section permission (`auth:admin`). These routes register
+only when Clerk and the deployment service are configured. They reuse the deployment-service
+response schemas, including the env-value-free state and reconciliation results.
+Each accepts an `app` query selector; health requires it. Attempt history also accepts `limit`
+(1–100, default 50). Unknown query fields are rejected. Responses use `no-store`; upstream
+failures return a generic 502 without upstream error details.

@@ -83,6 +83,10 @@ describe("APP_SLUGS", () => {
 });
 
 describe("ADMIN_SECTIONS", () => {
+  it("includes the deploys section", () => {
+    expect(ADMIN_SECTIONS).toContain("deploys");
+  });
+
   it("includes the secrets section", () => {
     expect(ADMIN_SECTIONS).toContain("secrets");
   });
@@ -132,7 +136,7 @@ describe("canAccessAdminSection", () => {
   });
 
   it("denies an unknown section reaching it from an untyped boundary", () => {
-    expect(canAccessAdminSection({ permissions: { auth: ["admin"] } }, "deploys" as never)).toBe(
+    expect(canAccessAdminSection({ permissions: { auth: ["admin"] } }, "unknown" as never)).toBe(
       false,
     );
   });

@@ -1,0 +1,338 @@
+import assert from "node:assert/strict";
+import { createSign, generateKeyPairSync } from "node:crypto";
+import { once } from "node:events";
+import { mkdtempSync, rmSync } from "node:fs";
+import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+
+import type { DeployClient } from "@unimatrix/deploy-client";
+import type { DeployHealthHistoryResponse, DeployReconciliationResponse } from "@unimatrix/shared";
+
+import { buildApp, type BuildApiAppOptions } from "../src/app.js";
+import { loadApiRuntimeConfig, type ApiRuntimeEnv } from "../src/config.js";
+
+const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+const CLERK_ENV: ApiRuntimeEnv = {
+  CLERK_SECRET_KEY: "sk_test_dummy",
+  CLERK_PUBLISHABLE_KEY: "pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk",
+  CLERK_JWT_KEY: publicKey.export({ format: "pem", type: "spki" }).toString(),
+};
+const DEPLOY_ENV: ApiRuntimeEnv = {
+  DEPLOY_BASE_URL: "http://deploy.internal:3001",
+  DEPLOY_SERVICE_TOKEN: "internal-deploy-token",
+};
+const URLS = [
+  "/deployment/admin/state",
+  "/deployment/admin/health?app=api",
+  "/deployment/admin/reconciliation",
+  "/deployment/admin/attempts",
+] as const;
+
+function authHeaders(permissions: Record<string, string[]> = { auth: ["admin"] }) {
+  const issuedAt = Math.floor(Date.now() / 1000);
+  const header = { alg: "RS256", kid: "admin-deployment-test-key", typ: "JWT" };
+  const payload = {
+    azp: "http://localhost",
+    exp: issuedAt + 60,
+    iat: issuedAt,
+    iss: "https://example.clerk.accounts.dev",
+    nbf: issuedAt - 5,
+    sid: "sess_admin_deployment",
+    sub: "user_2cccccccccccccccccccccccccc",
+    v: 2,
+    permissions,
+  };
+  const input = [header, payload]
+    .map((value) => Buffer.from(JSON.stringify(value)).toString("base64url"))
+    .join(".");
+  const signature = createSign("RSA-SHA256").update(input).sign(privateKey, "base64url");
+  return { authorization: `Bearer ${input}.${signature}` };
+}
+
+function createTestApp(
+  env: ApiRuntimeEnv = { ...CLERK_ENV, ...DEPLOY_ENV },
+  options: BuildApiAppOptions = {},
+) {
+  const directory = mkdtempSync(join(tmpdir(), "unimatrix-admin-deployment-"));
+  const previousDatabaseUrl = process.env.DATABASE_URL;
+  process.env.DATABASE_URL = join(directory, "api.sqlite");
+  const app = buildApp(
+    loadApiRuntimeConfig({ NODE_ENV: "test", LOG_LEVEL: "error", ...env }),
+    options,
+  );
+  if (previousDatabaseUrl === undefined) delete process.env.DATABASE_URL;
+  else process.env.DATABASE_URL = previousDatabaseUrl;
+  return {
+    app,
+    cleanup: async () => {
+      await app.close();
+      rmSync(directory, { recursive: true, force: true });
+    },
+  };
+}
+
+function health(app: string): DeployHealthHistoryResponse {
+  return {
+    app,
+    current: { app, state: "unknown", checkedAt: null },
+    summary: {
+      from: 0,
+      to: 100,
+      upMs: 0,
+      downMs: 0,
+      unknownMs: 100,
+      uptimePercent: null,
+      coveragePercent: 0,
+    },
+    days: [],
+    recent: [],
+    freshness: "missing",
+  };
+}
+
+function client(calls: unknown[] = []): DeployClient {
+  return {
+    getState: (query) => {
+      calls.push(["state", query]);
+      return Promise.resolve({ checkedAt: 100, apps: [] });
+    },
+    getHealth: (app) => {
+      calls.push(["health", app]);
+      return Promise.resolve(health(app));
+    },
+    getReconciliation: (query) => {
+      calls.push(["reconciliation", query]);
+      return Promise.resolve({
+        checkedAt: 100,
+        results: [
+          {
+            appDir: "api",
+            outcome: "diffed",
+            diff: {
+              appDir: "api",
+              verdict: "matched",
+              composeId: "compose-api",
+              envFindings: [{ key: "API_KEY", state: "set" }],
+              settingFindings: [],
+              inSync: true,
+            },
+          },
+        ],
+      });
+    },
+    getAttempts: (query) => {
+      calls.push(["attempts", query]);
+      return Promise.resolve({ attempts: [] });
+    },
+  };
+}
+
+void test("admin deployment routes require both Clerk and deploy-service configuration", async () => {
+  for (const env of [{}, CLERK_ENV, DEPLOY_ENV]) {
+    const calls: unknown[] = [];
+    const { app, cleanup } = createTestApp(env, { deployClient: client(calls) });
+    try {
+      for (const url of URLS) {
+        const response = await app.inject({ url, headers: authHeaders() });
+        assert.equal(response.statusCode, 404, url);
+      }
+      assert.deepEqual(calls, []);
+    } finally {
+      await cleanup();
+    }
+  }
+});
+
+void test("every admin deployment read rejects anonymous and non-admin sessions before upstream calls", async () => {
+  const calls: unknown[] = [];
+  const { app, cleanup } = createTestApp(undefined, { deployClient: client(calls) });
+  try {
+    for (const url of URLS) {
+      const anonymous = await app.inject({ url });
+      assert.equal(anonymous.statusCode, 401, url);
+      assert.equal(anonymous.headers["cache-control"], "no-store");
+      assert.equal(
+        (await app.inject({ url, headers: authHeaders({ auth: ["editor"] }) })).statusCode,
+        403,
+        url,
+      );
+      assert.equal(
+        (await app.inject({ url, headers: authHeaders({ admin: ["admin"] }) })).statusCode,
+        403,
+        url,
+      );
+    }
+    assert.deepEqual(calls, []);
+  } finally {
+    await cleanup();
+  }
+});
+
+void test("verified admins receive read responses with validated selectors and no caching", async () => {
+  const calls: unknown[] = [];
+  const { app, cleanup } = createTestApp(undefined, { deployClient: client(calls) });
+  try {
+    const headers = authHeaders();
+    const urls = [
+      "/deployment/admin/state?app=api",
+      "/deployment/admin/health?app=api",
+      "/deployment/admin/reconciliation?app=api",
+      "/deployment/admin/attempts?app=api&limit=12",
+      "/deployment/admin/state",
+      "/deployment/admin/reconciliation",
+      "/deployment/admin/attempts",
+    ];
+    for (const url of urls) {
+      const response = await app.inject({ url, headers });
+      assert.equal(response.statusCode, 200, response.body);
+      assert.equal(response.headers["cache-control"], "no-store");
+      assert.doesNotMatch(response.body, /internal-deploy-token|actorUserId|"value"|"env"/u);
+      if (url.includes("reconciliation")) {
+        const result = response.json<DeployReconciliationResponse>().results[0];
+        assert.ok(result?.outcome === "diffed" && result.diff.verdict === "matched");
+        assert.deepEqual(result.diff.envFindings, [{ key: "API_KEY", state: "set" }]);
+      }
+    }
+    assert.deepEqual(calls, [
+      ["state", { app: "api" }],
+      ["health", "api"],
+      ["reconciliation", { app: "api" }],
+      ["attempts", { app: "api", limit: 12 }],
+      ["state", {}],
+      ["reconciliation", {}],
+      ["attempts", { limit: 50 }],
+    ]);
+  } finally {
+    await cleanup();
+  }
+});
+
+void test("invalid or client-controlled proxy selectors never reach the deployment service", async () => {
+  const calls: unknown[] = [];
+  const { app, cleanup } = createTestApp(undefined, { deployClient: client(calls) });
+  try {
+    for (const url of [
+      "/deployment/admin/state?app=../secrets",
+      "/deployment/admin/state?path=/compose.update",
+      "/deployment/admin/state?actorUserId=admin",
+      "/deployment/admin/health",
+      "/deployment/admin/health?app=api&app=web",
+      "/deployment/admin/reconciliation?app=API",
+      "/deployment/admin/attempts?limit=101",
+      "/deployment/admin/attempts?limit=0",
+      "/deployment/admin/attempts?limit=not-a-number",
+      "/deployment/admin/attempts?app=api&url=https://example.com",
+    ]) {
+      const response = await app.inject({ url, headers: authHeaders() });
+      assert.equal(response.statusCode, 400, url);
+      assert.equal(response.headers["cache-control"], "no-store");
+    }
+    assert.deepEqual(calls, []);
+    assert.equal(
+      (await app.inject({ method: "POST", url: URLS[0], headers: authHeaders() })).statusCode,
+      404,
+    );
+  } finally {
+    await cleanup();
+  }
+});
+
+void test("upstream failures become generic 502 errors without leaking values to responses or logs", async () => {
+  const marker = "upstream-private-value";
+  const logs: string[] = [];
+  const fail = () => Promise.reject(new Error(marker));
+  const deployClient: DeployClient = {
+    getState: fail,
+    getHealth: fail,
+    getReconciliation: fail,
+    getAttempts: fail,
+  };
+  const { app, cleanup } = createTestApp(undefined, {
+    deployClient,
+    loggerStream: {
+      write: (chunk) => {
+        logs.push(chunk);
+      },
+    },
+  });
+  try {
+    for (const url of URLS) {
+      const response = await app.inject({ url, headers: authHeaders() });
+      assert.equal(response.statusCode, 502, url);
+      assert.equal(
+        response.json<{ error: { message: string } }>().error.message,
+        "Deployment reads unavailable",
+      );
+      assert.equal(response.headers["cache-control"], "no-store");
+      assert.doesNotMatch(response.body, new RegExp(marker, "u"));
+    }
+    assert.doesNotMatch(logs.join(""), new RegExp(marker, "u"));
+  } finally {
+    await cleanup();
+  }
+});
+
+void test("configured transport sends only fixed read paths and its own bearer token, rejecting env-bearing responses", async () => {
+  const requests: { url: string | undefined; authorization: string | undefined }[] = [];
+  let malformed = false;
+  const upstream = createServer((request, response) => {
+    requests.push({ url: request.url, authorization: request.headers.authorization });
+    response.setHeader("Content-Type", "application/json");
+    response.end(
+      JSON.stringify({
+        checkedAt: 100,
+        apps: [],
+        ...(malformed ? { env: { API_KEY: "upstream-private-value" } } : {}),
+      }),
+    );
+  });
+  upstream.listen(0, "127.0.0.1");
+  await once(upstream, "listening");
+  const address = upstream.address();
+  assert.ok(address !== null && typeof address !== "string");
+  const logs: string[] = [];
+  const { app, cleanup } = createTestApp(
+    {
+      ...CLERK_ENV,
+      ...DEPLOY_ENV,
+      DEPLOY_BASE_URL: `http://127.0.0.1:${address.port}`,
+    },
+    {
+      loggerStream: {
+        write: (chunk) => {
+          logs.push(chunk);
+        },
+      },
+    },
+  );
+  try {
+    const headers = authHeaders();
+    const response = await app.inject({ url: "/deployment/admin/state?app=api", headers });
+    assert.equal(response.statusCode, 200, response.body);
+    assert.deepEqual(response.json(), { checkedAt: 100, apps: [] });
+    assert.deepEqual(requests, [
+      {
+        url: "/deployment/state?app=api",
+        authorization: "Bearer internal-deploy-token",
+      },
+    ]);
+    assert.notEqual(requests[0]?.authorization, headers.authorization);
+
+    malformed = true;
+    const rejected = await app.inject({ url: "/deployment/admin/state?app=api", headers });
+    assert.equal(rejected.statusCode, 502, rejected.body);
+    assert.equal(rejected.headers["cache-control"], "no-store");
+    assert.doesNotMatch(rejected.body + logs.join(""), /upstream-private-value/u);
+    assert.equal(requests.length, 2);
+  } finally {
+    await cleanup();
+    await new Promise<void>((resolve, reject) => {
+      upstream.close((error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+  }
+});
