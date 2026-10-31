@@ -49,7 +49,7 @@ const ALLOWED_PACKAGE_IMPORTS = {
   // granularity, so this grant is workspace-wide even though only that script
   // uses it; `@unimatrix/content` stays a devDependency of `apps/api` so it is
   // absent from the deployable image.
-  "apps/api": ["auth", "content", "db", "deploy-config", "secrets", "shared"],
+  "apps/api": ["auth", "content", "db", "deploy-client", "deploy-config", "secrets", "shared"],
   // Never `db`: this service's SQLite file lives on its own volume, not
   // packages/db's (single-writer, already owned by the API container) — see
   // apps/secrets/AGENTS.md.
@@ -73,6 +73,7 @@ const ALLOWED_PACKAGE_IMPORTS = {
   // routes through `@unimatrix/shared`.
   "apps/admin": ["api-client", "app-config", "auth", "chrome", "deploy-config", "shared", "ui"],
   "packages/api-client": ["shared"],
+  "packages/deploy-client": ["shared"],
   // Env validation for the Vite apps' config boundaries. A leaf on purpose:
   // `zod` is its only dependency and stays its implementation detail — apps
   // compose schemas through `envSchema` instead of importing zod themselves.

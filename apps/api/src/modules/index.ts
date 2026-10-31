@@ -1,12 +1,17 @@
 import type { FastifyPluginAsync } from "fastify";
 
 import { contentModule } from "./content/index.js";
+import { publicDeploymentModule, type PublicDeploymentModuleOptions } from "./deployment/index.js";
 import { healthModule } from "./health/index.js";
 import { integrationsModule } from "./integrations/index.js";
 import { secretsAdminModule } from "./secrets/index.js";
 import { userDataModule } from "./user-data/index.js";
 
-export const registerModules: FastifyPluginAsync = (app) => {
+export const registerModules: FastifyPluginAsync<PublicDeploymentModuleOptions> = (
+  app,
+  options,
+) => {
+  app.register(publicDeploymentModule, options);
   app.register(healthModule);
 
   // Registered unconditionally: its public read routes back the public site's

@@ -1,3 +1,4 @@
+import type { DeployClient } from "@unimatrix/deploy-client";
 import type { DatabaseInstance } from "@unimatrix/db";
 import Fastify, { LogController, type FastifyInstance, type FastifyServerOptions } from "fastify";
 import { isResponseSerializationError } from "fastify-type-provider-zod";
@@ -16,6 +17,7 @@ declare module "fastify" {
 }
 
 export interface BuildApiAppOptions {
+  deployClient?: DeployClient;
   /** Where log records go instead of stdout, so tests can assert on redaction. */
   loggerStream?: ApiLoggerStream;
   /** Test seam: the `fetch` the integration-credentials plugin uses instead of the global. */
@@ -103,7 +105,10 @@ export function buildApp(
     reply.status(404).send(envelope);
   });
 
-  app.register(registerModules);
+  app.register(
+    registerModules,
+    options.deployClient === undefined ? {} : { deployClient: options.deployClient },
+  );
 
   return app;
 }

@@ -2,6 +2,9 @@ services:
   api:
     image: ghcr.io/unimatrixcore/unimatrix-api:${IMAGE_TAG}
     environment:
+      DEPLOY_BASE_URL: https://deploy:3001
+      DEPLOY_SERVICE_TOKEN: ${DEPLOY_SERVICE_TOKEN}
+      DEPLOY_TLS_CERT_BASE64: ${DEPLOY_TLS_CERT_BASE64}
       HOST: 0.0.0.0
       PORT: 3001
       NODE_ENV: production

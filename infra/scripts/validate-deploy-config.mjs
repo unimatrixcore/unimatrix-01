@@ -31,6 +31,7 @@
 // and on a `node-api` config with no probe
 // entry — the smaller fix of skipping the probe when there is no entry would
 // fail *open* for every future node-api app, which this script must never do.
+import { rootCertificates } from "node:tls";
 import { readdirSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -67,6 +68,7 @@ const PLACEHOLDERS = {
   SECRETS_INTEGRATIONS_MANAGE_TOKEN: "svc_placeholder_integrations_manage",
   SECRETS_PLATFORM_WRITE_TOKEN: "svc_placeholder_platform_write",
   SECRETS_TLS_CERT_BASE64: placeholderPem("CERTIFICATE"),
+  DEPLOY_TLS_CERT_BASE64: Buffer.from(rootCertificates[0]).toString("base64"),
   SECRETS_TLS_KEY_BASE64: placeholderPem("PRIVATE KEY"),
 };
 const DEFAULT_PLACEHOLDER = "placeholder";
