@@ -191,8 +191,90 @@ answers `400 Automatic deployments are disabled for this compose` while
 `autoDeploy` is off. The instance-wide key is what the safety control costs.
 
 **A 200 is an acknowledgement, not a deploy.** The job logs `queued` and claims
-nothing more; see "A deploy is queued, not applied" below for the only signal
-that says otherwise.
+nothing more; see "A deploy is queued, not applied" below for the distinction
+between recreation and verified image correlation.
+
+### Deployment-attempt ingestion and image correlation
+
+This is the implementation contract for attempt recording. The current CI workflow queues
+deployments directly in Dokploy; `apps/deploy/src/observe/observer.ts` observes container IDs and
+image strings. Neither implements the durable reporting and immutable correlation required here.
+
+**CI keeps orchestration; the deploy service owns attempt records and outcome observation.**
+CI reports intent before queuing work and reports the request result afterwards. Reporting must
+not queue a deployment, change project env, or retry a Dokploy mutation. Future manual redeploy
+and rollback operations record through the same attempt model. Direct Dokploy UI operations are
+out of band: a container change without a recorded request remains an observation, with no
+invented trigger, requested image, or successful attempt. Dokploy history polling is not the
+ingestion mechanism.
+
+The reporting sequence must satisfy these invariants:
+
+1. Publish carries forward each app's image repository, full commit SHA, platform and immutable
+   published manifest digest from the successful push. Capture the digest for that publication;
+   looking up the SHA tag later can resolve to a different image after a rebuild.
+2. Before CI changes a project's tag or calls `compose.deploy`, persist an intent for each affected
+   app in the deploy-owned database. Keep a stable attempt ID, authenticated reporter identity,
+   workflow run ID and run attempt, app, trigger, requested image identity and request time. Capture
+   the before-container identity and observation time independently of caller claims. A missing
+   baseline is explicit. Failure to acknowledge durable intent stops the associated deployment
+   writes; recording is therefore an availability dependency even though orchestration stays in CI.
+3. Reporting retries reuse the same logical request key, including repository, workflow run ID,
+   run attempt and app. Identical retries return the existing record; conflicting image data is rejected.
+   Rerunning the workflow is a new attempt. A duplicate report must never trigger another deploy.
+4. Report tag-write failures and per-app queue responses against those records. A 200 establishes
+   only queue acknowledgement. A transport failure after sending a mutation is an unknown request
+   result, because the operation may have been accepted. Never turn it into a definite rejection
+   or automatically replay the mutation. A tag write without a subsequent queue request is not
+   queued work.
+5. Missing completion reports, including CI cancellation, leave durable incomplete records.
+   Recovery after a service restart uses those records and fresh observations, not process-local
+   observer state. Attempt expiry must not depend on a final CI callback arriving.
+
+Reporting uses validated, bounded contracts and the deploy service's authenticated mutation
+boundary. Read tokens cannot write attempts. The reporter cannot submit a `landed` verdict or
+choose its own trusted identity. No env blob, credential, raw Dokploy response or arbitrary log
+text belongs in an attempt. Shared HTTP contracts use static paths with validated bodies/queries.
+The authenticated route from GitHub-hosted CI to this unrouted service requires implementation
+and reachability verification; this contract does not provision a public deploy-service endpoint.
+
+**Landed requires both a changed container ID and an exact immutable image match.** Store the
+requested repository, platform, digest kind and digest separately from display tags and commit metadata. The
+runtime evidence must identify the image used by that specific observed container. Docker image
+config IDs, platform manifest digests and multi-platform index digests are different identities:
+compare the same kind of digest, or verify the content-addressed relationship between them. A
+registry lookup of the container's tag does not establish what that container is running.
+
+The current `docker.getContainers` schema supplies only an image string. A runtime digest source
+and its association with the container must be observed and validated before extending the client.
+Missing digest evidence, an ambiguous app mapping, an unchanged ID, or a missing before-container
+baseline cannot produce `landed`. This also applies when redeploying the image already running.
+An image match proves image content, not runtime env, secrets, routing or health; verify those
+separately where a runbook depends on them.
+
+Keep request acknowledgement, image outcome and service health separate. A definite request
+rejection or verified attempt-specific execution failure can establish failure; an unhealthy
+container alone cannot. A deadline without sufficient landing evidence means timed out, not proof
+that Dokploy stopped processing. Retain the timeout and any later matching observation separately
+so a late rollout does not erase the missed deadline. The recorded seven-minute delay below is
+not a timeout policy; the recording feature must specify and test its deadline and retention bounds.
+
+Overlapping requests must not borrow each other's recreation evidence. Persist their identities
+and ordering; when two requests could explain the same container transition, retain ambiguous
+correlation rather than marking either landed. This includes repeated requests for the same
+digest and cancellation followed by another CI run. CI's shared project tag can change while
+Dokploy work is queued, so a matching time window or CI title is insufficient. Self-deployment
+must survive the observer being replaced: persist its baseline before queuing and resume from
+durable state; an observation gap cannot become evidence of success. Retention must preserve
+unresolved evidence through its deadline and bound both records and returned histories.
+
+Before enabling attempt recording, verify publication digest capture, runtime digest observation,
+authenticated CI reporting, restart recovery and the failure cases above. Exercise a same-tag
+rebuild with a different digest and a same-image redeploy without recreation; neither may land.
+No live digest source or
+end-to-end attempt reporting has been verified by this documentation change. Per-attempt log
+retrieval and rollback execution remain separate features; a local attempt ID alone does not
+establish an upstream log identity or permission to change the project-wide image tag.
 
 ### Rolling back
 
@@ -207,8 +289,9 @@ So a rollback is one edit and one deploy:
    a `ghcr.io/unimatrixcore/unimatrix-<app>` tag under its SHA.
 2. Set `IMAGE_TAG` to that SHA in the Dokploy project's environment UI, keeping
    it the only variable there.
-3. Redeploy the affected services and confirm each container was **recreated**
-   — see "A deploy is queued, not applied" below.
+3. Redeploy the affected services and confirm each container was **recreated** and runs the
+   intended immutable image — see "A deploy is queued, not applied" below. A matching SHA tag
+   alone cannot distinguish images published by separate builds of that commit.
 
 Reverting on `main` and merging works too and is slower: it goes through CI,
 publishes a new image, and writes the new SHA. Reach for that when the revert
@@ -770,18 +853,24 @@ after the 200, while `docker ps` reported it `Up N minutes (healthy)` throughout
 That is one observation rather than a bound — treat the lag as minutes of
 unpredictable length, not as a figure to code a timeout against.
 
-The signal that a deploy landed is that the container was **recreated**:
+First establish whether the container was **recreated**:
 
 ```bash
 docker ps --filter name=<service> --format '{{.CreatedAt}}'
 ```
 
-Read it before the deploy and again after; the value changing tells you a deploy
-landed, though not which configuration it carried. A restart does not move it, so
-a crash loop cannot fake the signal. An empty result means the container is
+Read it before the deploy and again after; the value changing is recreation evidence,
+not proof that the requested image or configuration landed. A restart does not move it, so
+a crash loop cannot fake recreation. An empty result means the container is
 between the old one and the new one — `docker ps` lists running containers only —
 and looks identical to a mistyped service name, so confirm the filter matches
 before the deploy rather than after.
+
+For a recorded attempt, compare full before/after container IDs and independently verify that
+the new container uses the requested immutable image digest, following "Deployment-attempt
+ingestion and image correlation" above. The current observer cannot provide that digest evidence.
+For an env-only change, image identity still cannot prove which runtime values took effect;
+use the operation's own readback checks before acting on the new configuration.
 
 A 200 is not the signal, and neither is a healthy status: the old container goes
 on reporting healthy while it runs the configuration you believe you replaced.
