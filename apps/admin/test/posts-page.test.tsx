@@ -28,6 +28,8 @@ vi.mock("@unimatrix/ui/editor", async () => {
   return { ...actual, toast: { success: toastSuccess, error: toastError } };
 });
 
+const { PostsPage } = await import("@/features/content/posts-page");
+
 function summary(overrides: Partial<ContentPostSummary> = {}): ContentPostSummary {
   return {
     id: "11111111-1111-4111-8111-111111111111",
@@ -74,8 +76,6 @@ describe("PostsPage", () => {
   });
 
   it("lists every post in every publication state", async () => {
-    const { PostsPage } = await import("@/features/content/posts-page");
-
     renderInRouter(<PostsPage />);
 
     expect(await screen.findByText("A post")).toBeInTheDocument();
@@ -92,8 +92,6 @@ describe("PostsPage", () => {
   });
 
   it("keeps bulk actions hidden until something is selected", async () => {
-    const { PostsPage } = await import("@/features/content/posts-page");
-
     renderInRouter(<PostsPage />);
 
     // Each collection starts with no bulk selection.
@@ -104,8 +102,6 @@ describe("PostsPage", () => {
 
   it("publishes exactly the selected rows", async () => {
     apiClient.setPostsState.mockResolvedValue({ affected: 1 });
-
-    const { PostsPage } = await import("@/features/content/posts-page");
 
     renderInRouter(<PostsPage />);
 
@@ -122,8 +118,6 @@ describe("PostsPage", () => {
   });
 
   it("keeps each collection's select-all to its own rows", async () => {
-    const { PostsPage } = await import("@/features/content/posts-page");
-
     renderInRouter(<PostsPage />);
 
     await screen.findByText("A post");
@@ -145,8 +139,6 @@ describe("PostsPage", () => {
 
   it("names the count in the delete confirmation and deletes nothing until it is confirmed", async () => {
     apiClient.deletePosts.mockResolvedValue({ affected: 2 });
-
-    const { PostsPage } = await import("@/features/content/posts-page");
 
     renderInRouter(<PostsPage />);
 
@@ -177,8 +169,6 @@ describe("PostsPage", () => {
   });
 
   it("uses the singular in the confirmation for one post and names it", async () => {
-    const { PostsPage } = await import("@/features/content/posts-page");
-
     renderInRouter(<PostsPage />);
 
     fireEvent.click(await screen.findByRole("checkbox", { name: "Select A post" }));
@@ -196,8 +186,6 @@ describe("PostsPage", () => {
    */
   it("deletes only the row its own delete button belongs to", async () => {
     apiClient.deletePosts.mockResolvedValue({ affected: 1 });
-
-    const { PostsPage } = await import("@/features/content/posts-page");
 
     renderInRouter(<PostsPage />);
 
@@ -225,8 +213,6 @@ describe("PostsPage", () => {
   it("reports a failed load in both panels instead of rendering an empty table", async () => {
     apiClient.adminListPosts.mockRejectedValue(new Error("network down"));
 
-    const { PostsPage } = await import("@/features/content/posts-page");
-
     renderInRouter(<PostsPage />);
 
     // One request backs both collections, but the failure is reported inside
@@ -241,8 +227,6 @@ describe("PostsPage", () => {
 
   it("says so when there is nothing to manage", async () => {
     apiClient.adminListPosts.mockResolvedValue({ posts: [] });
-
-    const { PostsPage } = await import("@/features/content/posts-page");
 
     renderInRouter(<PostsPage />);
 

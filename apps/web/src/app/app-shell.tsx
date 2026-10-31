@@ -154,8 +154,6 @@ export function AppShell({ children }: AppShellProps) {
     [pathname],
   );
 
-  if (pathname === "/status") return children;
-
   return (
     <PublicShell
       breadcrumbItems={breadcrumbItems}

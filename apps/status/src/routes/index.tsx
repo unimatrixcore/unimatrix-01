@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 
 import { publicStatusQueryOptions } from "@/features/status/queries/public-status";
 
-export const Route = createFileRoute("/status")({
+export const Route = createFileRoute("/")({
   loader: ({ context }) => {
     void context.queryClient.prefetchQuery(publicStatusQueryOptions());
   },

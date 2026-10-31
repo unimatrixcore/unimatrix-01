@@ -1,0 +1,4 @@
+services:
+  status:
+    image: ghcr.io/unimatrixcore/unimatrix-status:${IMAGE_TAG}
+    restart: unless-stopped

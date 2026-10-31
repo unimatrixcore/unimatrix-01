@@ -18,6 +18,8 @@ bin/
 obj/
 apps/web/test-results/
 apps/cflop/test-results/
+apps/status/test-results/
+apps/status/playwright-report/
 
 # lighthouse reports (written by infra/scripts/lighthouse.mjs, never uploaded)
 .lighthouse/

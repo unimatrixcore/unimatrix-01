@@ -165,6 +165,7 @@ describe("deployment transport", () => {
   });
 });
 
+// RSA fixture generation can exceed five seconds during hosted-runner builds.
 it("pins the live TLS certificate, verifies hostname, and sends no token after failed handshakes", async () => {
   const directory = mkdtempSync(join(tmpdir(), "deploy-client-tls-"));
   function pair(name: string) {
@@ -227,4 +228,4 @@ it("pins the live TLS certificate, verifies hostname, and sends no token after f
     );
     rmSync(directory, { recursive: true, force: true });
   }
-});
+}, 20_000);

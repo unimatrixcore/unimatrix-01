@@ -115,6 +115,7 @@ jobs:
         run: |
           pnpm --filter @unimatrix/web exec playwright install --with-deps chromium
           pnpm --filter @unimatrix/cflop exec playwright install --with-deps chromium
+          pnpm --filter @unimatrix/status exec playwright install --with-deps chromium
 
       # Runs before the expensive steps: formatting is the cheapest thing that
       # can be wrong, so failing here saves a full build/test cycle.
@@ -138,7 +139,9 @@ jobs:
         run: pnpm typecheck
 
       - name: Test
-        run: pnpm test
+        # Each workspace starts its own test workers; avoid multiplying those
+        # pools across ten simultaneous suites on the hosted runner.
+        run: pnpm test --concurrency=2
 
       # Reads the `coverage/coverage-summary.json` the step above writes, so it
       # has to follow it. Catches a floor left far below what its workspace
@@ -205,7 +208,7 @@ jobs:
       # check also has to be armed as required on `main`, or the image is built
       # and its result ignored.
       matrix:
-        app: [admin, api, auth, cflop, deploy, secrets, web]
+        app: [admin, api, auth, cflop, deploy, secrets, status, web]
 
     steps:
       - name: Check out repository
@@ -235,6 +238,10 @@ jobs:
       - name: cflop serving contract
         if: matrix.app == 'cflop'
         run: bash ./infra/scripts/check-cflop-serving.sh "unimatrix-cflop:ci"
+
+      - name: status serving contract
+        if: matrix.app == 'status'
+        run: bash ./infra/scripts/check-status-serving.sh "unimatrix-status:ci"
 
   # A separate job from `images` rather than a push step inside it, because
   # `Images (<app>)` is a required check and must keep meaning "this image
@@ -279,7 +286,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        app: [admin, api, auth, cflop, deploy, secrets, web]
+        app: [admin, api, auth, cflop, deploy, secrets, status, web]
 
     steps:
       - name: Check out repository
@@ -491,6 +498,17 @@ jobs:
             if [ -z "${project_written[${project_of[$app]}]:-}" ]; then
               failures+=("${app}: skipped — its project's IMAGE_TAG write failed, so a deploy would run the previous commit")
               continue
+            fi
+
+            # Web must not take over the status hostname during the service cutover.
+            if [ "$app" = "web" ]; then
+              status="$(call GET "/api/domain.byComposeId?composeId=${compose_id}" "" "${work}/web-domains.json")"
+              if [ "$status" != "200" ] || ! jq -e \
+                'type == "array" and all(.[]; .host != "status.unimatrix-01.dev")' \
+                "${work}/web-domains.json" > /dev/null; then
+                failures+=("web: held until status.unimatrix-01.dev moves to the status service")
+                continue
+              fi
             fi
 
             status="$(call POST /api/compose.deploy \
