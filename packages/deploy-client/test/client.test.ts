@@ -29,6 +29,7 @@ const health = {
 let server: Server;
 let baseUrl: string;
 let mode = "ok";
+let selectedResponse: unknown;
 let requests: { url: string | undefined; authorization: string | undefined }[];
 
 beforeAll(async () => {
@@ -64,18 +65,20 @@ beforeAll(async () => {
           : mode === "schema"
             ? JSON.stringify({ secret: "private upstream text" })
             : JSON.stringify(
-                request.url === "/deployment/state"
-                  ? state
-                  : {
-                      ...health,
-                      ...(mode === "wrong-app" ? { app: "other" } : {}),
-                      ...(mode === "wrong-current"
-                        ? { current: { ...health.current, app: "other" } }
-                        : {}),
-                      ...(mode === "wrong-recent"
-                        ? { recent: [{ app: "other", checkedAt: 123, state: "up" }] }
-                        : {}),
-                    },
+                mode === "selected"
+                  ? selectedResponse
+                  : request.url?.startsWith("/deployment/state")
+                    ? state
+                    : {
+                        ...health,
+                        ...(mode === "wrong-app" ? { app: "other" } : {}),
+                        ...(mode === "wrong-current"
+                          ? { current: { ...health.current, app: "other" } }
+                          : {}),
+                        ...(mode === "wrong-recent"
+                          ? { recent: [{ app: "other", checkedAt: 123, state: "up" }] }
+                          : {}),
+                      },
               ),
     );
   });
@@ -98,6 +101,111 @@ function client(options: Partial<DeployClientConfig> = {}) {
 }
 
 describe("deployment transport", () => {
+  it("reads selected state, reconciliation and bounded attempt history through static paths", async () => {
+    mode = "selected";
+    requests = [];
+    selectedResponse = state;
+    expect(await client().getState({ app: "api" })).toEqual(state);
+    const reconciliation = { checkedAt: 123, results: [] };
+    selectedResponse = reconciliation;
+    expect(await client().getReconciliation({ app: "api" })).toEqual(reconciliation);
+    expect(await client().getReconciliation()).toEqual(reconciliation);
+    selectedResponse = { attempts: [] };
+    expect(await client().getAttempts({ app: "api", limit: 3 })).toEqual({ attempts: [] });
+    expect(await client().getAttempts()).toEqual({ attempts: [] });
+    expect(requests).toEqual([
+      { url: "/deployment/state?app=api", authorization: "Bearer test-token" },
+      { url: "/deployment/reconciliation?app=api", authorization: "Bearer test-token" },
+      { url: "/deployment/reconciliation", authorization: "Bearer test-token" },
+      { url: "/deployment/attempts?app=api&limit=3", authorization: "Bearer test-token" },
+      { url: "/deployment/attempts?limit=50", authorization: "Bearer test-token" },
+    ]);
+    for (const operation of [
+      () => client().getState({ app: "../private" }),
+      () => client().getReconciliation({ app: "../private" }),
+      () => client().getAttempts({ app: "../private" }),
+      () => client().getAttempts({ limit: 0 }),
+      () => client().getAttempts({ limit: 101 }),
+    ]) {
+      await expect(operation()).rejects.toBeInstanceOf(DeployClientError);
+    }
+    expect(requests).toHaveLength(5);
+  });
+
+  it("rejects state and reconciliation records outside their selected app or parent", async () => {
+    mode = "selected";
+    const container = {
+      appDir: "api",
+      kind: "unknown",
+      reason: "not-polled",
+      observedAt: null,
+      freshness: "missing",
+    };
+    selectedResponse = {
+      checkedAt: 123,
+      apps: [{ appDir: "api", publicStatus: false, container }],
+    };
+    expect((await client().getState({ app: "api" })).apps).toHaveLength(1);
+    await expect(client().getState({ app: "web" })).rejects.toBeInstanceOf(DeployClientError);
+    selectedResponse = {
+      checkedAt: 123,
+      apps: [{ appDir: "api", publicStatus: false, container: { ...container, appDir: "web" } }],
+    };
+    await expect(client().getState()).rejects.toBeInstanceOf(DeployClientError);
+    for (const result of [
+      { appDir: "web", outcome: "error", reason: "read-failed" },
+      { appDir: "web", outcome: "diffed", diff: { appDir: "web", verdict: "missing" } },
+      { appDir: "api", outcome: "diffed", diff: { appDir: "web", verdict: "missing" } },
+    ]) {
+      selectedResponse = { checkedAt: 123, results: [result] };
+      await expect(client().getReconciliation({ app: "api" })).rejects.toBeInstanceOf(
+        DeployClientError,
+      );
+    }
+    selectedResponse = {
+      checkedAt: 123,
+      results: [{ appDir: "api", outcome: "diffed", diff: { appDir: "api", verdict: "missing" } }],
+    };
+    expect((await client().getReconciliation({ app: "api" })).results).toHaveLength(1);
+  });
+
+  it("rejects attempt records outside their selected app or requested limit", async () => {
+    mode = "selected";
+    const attempt = {
+      id: "00000000-0000-4000-8000-000000000000",
+      repository: "unimatrixcore/unimatrix-01",
+      runId: "123",
+      runAttempt: 1,
+      app: "api",
+      trigger: "ci",
+      image: {
+        repository: "ghcr.io/unimatrixcore/unimatrix-api",
+        tag: "main",
+        commit: "a".repeat(40),
+        platform: "linux/amd64",
+        digestKind: "manifest",
+        digest: `sha256:${"b".repeat(64)}`,
+      },
+      reporterId: "ci",
+      requestedAt: 1,
+      deadlineAt: 100,
+      baseline: null,
+      tagWrite: null,
+      queue: null,
+      queueClaimedAt: null,
+      outcome: "incomplete",
+      correlation: "pending",
+      after: null,
+      landedAt: null,
+      lateLandedAt: null,
+    };
+    selectedResponse = { attempts: [attempt] };
+    expect(await client().getAttempts({ app: "api", limit: 1 })).toEqual(selectedResponse);
+    await expect(client().getAttempts({ app: "web" })).rejects.toBeInstanceOf(DeployClientError);
+    selectedResponse = { attempts: [attempt, attempt] };
+    await expect(client().getAttempts({ limit: 1 })).rejects.toBeInstanceOf(DeployClientError);
+  });
+
   it("authenticates static contract reads and validates health selection", async () => {
     mode = "ok";
     requests = [];

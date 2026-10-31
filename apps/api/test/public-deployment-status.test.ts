@@ -49,6 +49,8 @@ function client(overrides: Partial<DeployClient> = {}): DeployClient {
   return {
     getState: () => Promise.resolve(state()),
     getHealth: (app) => Promise.resolve(health(app)),
+    getReconciliation: () => Promise.resolve({ checkedAt: 0, results: [] }),
+    getAttempts: () => Promise.resolve({ attempts: [] }),
     ...overrides,
   };
 }

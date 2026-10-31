@@ -2,11 +2,15 @@ import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 
 import {
+  deployAttemptHistoryContract,
   deployHealthHistoryContract,
+  deployReconciliationContract,
   deployStateContract,
   type ApiContract,
+  type ApiContractQuery,
   type ApiContractResponse,
   type DeployHealthHistoryResponse,
+  type DeployReconciliationResponse,
   type DeployStateResponse,
 } from "@unimatrix/shared";
 
@@ -18,9 +22,18 @@ export interface DeployClientConfig {
 }
 
 export interface DeployClient {
-  getState(): Promise<DeployStateResponse>;
+  getState(query?: DeployAppQuery): Promise<DeployStateResponse>;
   getHealth(app: string): Promise<DeployHealthHistoryResponse>;
+  getReconciliation(query?: DeployAppQuery): Promise<DeployReconciliationResponse>;
+  getAttempts(query?: DeployAttemptHistoryQuery): Promise<DeployAttemptHistoryResponse>;
 }
+
+export type DeployAppQuery = ApiContractQuery<typeof deployStateContract>;
+export type DeployAttemptHistoryQuery = Omit<
+  ApiContractQuery<typeof deployAttemptHistoryContract>,
+  "limit"
+> & { limit?: number };
+export type DeployAttemptHistoryResponse = ApiContractResponse<typeof deployAttemptHistoryContract>;
 
 export class DeployClientError extends Error {
   constructor() {
@@ -57,13 +70,15 @@ export function createDeployClient(config: DeployClientConfig): DeployClient {
 
   async function read<TContract extends ApiContract>(
     contract: TContract,
-    query: Record<string, string>,
+    query: Record<string, string | number | undefined>,
   ): Promise<ApiContractResponse<TContract>> {
     try {
       const parsedQuery: unknown = contract.querySchema?.parse(query);
       const url = new URL(contract.path, origin);
-      for (const [key, value] of Object.entries(parsedQuery as Record<string, string>)) {
-        url.searchParams.set(key, value);
+      for (const [key, value] of Object.entries(
+        parsedQuery as Record<string, string | number | undefined>,
+      )) {
+        if (value !== undefined) url.searchParams.set(key, String(value));
       }
       const body = await new Promise<string>((resolve, reject) => {
         const request = origin.protocol === "https:" ? httpsRequest : httpRequest;
@@ -117,13 +132,48 @@ export function createDeployClient(config: DeployClientConfig): DeployClient {
   }
 
   return {
-    getState: () => read(deployStateContract, {}),
+    getState: async (query = {}) => {
+      const result = await read(deployStateContract, query);
+      if (
+        result.apps.some(
+          (entry) =>
+            (query.app !== undefined && entry.appDir !== query.app) ||
+            entry.container.appDir !== entry.appDir,
+        )
+      ) {
+        throw new DeployClientError();
+      }
+      return result;
+    },
     getHealth: async (app) => {
       const result = await read(deployHealthHistoryContract, { app });
       if (
         result.app !== app ||
         result.current.app !== app ||
         result.recent.some((entry) => entry.app !== app)
+      ) {
+        throw new DeployClientError();
+      }
+      return result;
+    },
+    getReconciliation: async (query = {}) => {
+      const result = await read(deployReconciliationContract, query);
+      if (
+        result.results.some(
+          (entry) =>
+            (query.app !== undefined && entry.appDir !== query.app) ||
+            (entry.outcome === "diffed" && entry.diff.appDir !== entry.appDir),
+        )
+      ) {
+        throw new DeployClientError();
+      }
+      return result;
+    },
+    getAttempts: async (query = {}) => {
+      const result = await read(deployAttemptHistoryContract, query);
+      if (
+        result.attempts.length > (query.limit ?? 50) ||
+        result.attempts.some((entry) => query.app !== undefined && entry.app !== query.app)
       ) {
         throw new DeployClientError();
       }

@@ -1,4 +1,4 @@
-import { createDeployClient, type DeployClient } from "@unimatrix/deploy-client";
+import type { DeployClient } from "@unimatrix/deploy-client";
 import { publicDeploymentStatusContract } from "@unimatrix/shared";
 import type { FastifyPluginAsync } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
@@ -13,19 +13,7 @@ export const publicDeploymentModule: FastifyPluginAsync<PublicDeploymentModuleOp
   app,
   options,
 ) => {
-  const config = app.runtimeConfig.deployService;
-  const client =
-    options.deployClient ??
-    (config === null
-      ? null
-      : createDeployClient({
-          baseUrl: config.baseUrl,
-          serviceToken: config.serviceToken,
-          ...(config.caCertificatePem === null
-            ? {}
-            : { caCertificatePem: config.caCertificatePem }),
-        }));
-  const read = createPublicStatusReader(client);
+  const read = createPublicStatusReader(options.deployClient ?? null);
   app.withTypeProvider<ZodTypeProvider>().route({
     method: publicDeploymentStatusContract.method,
     url: publicDeploymentStatusContract.path,

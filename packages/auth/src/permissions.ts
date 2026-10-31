@@ -111,7 +111,7 @@ export function isAdmin(
  * out: naming them here would pre-commit decisions that have not been taken
  * yet.
  */
-export const ADMIN_SECTIONS = ["content", "secrets"] as const;
+export const ADMIN_SECTIONS = ["content", "secrets", "deploys"] as const;
 
 /** A gated section of the admin app. */
 export type AdminSection = (typeof ADMIN_SECTIONS)[number];
@@ -130,6 +130,7 @@ export type AdminSection = (typeof ADMIN_SECTIONS)[number];
 const ADMIN_SECTION_PERMISSIONS: Record<AdminSection, { appSlug: AppSlug; role: Role }> = {
   content: { appSlug: "auth", role: "admin" },
   secrets: { appSlug: "auth", role: "admin" },
+  deploys: { appSlug: "auth", role: "admin" },
 };
 
 /**
