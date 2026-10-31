@@ -1,5 +1,5 @@
 import { requireAdminSection } from "@unimatrix/auth/server";
-import type { DeployClient } from "@unimatrix/deploy-client";
+import { DeployClientError, type DeployClient } from "@unimatrix/deploy-client";
 import {
   adminDeployDeclarationsContract,
   deployDeclarationsQuerySchema,
@@ -13,6 +13,8 @@ import {
   deployAttemptQuerySchema,
   adminDeployAttemptLogsContract,
   deployAttemptLogsQuerySchema,
+  adminDeployManualRedeployContract,
+  deployManualRedeployRequestSchema,
 } from "@unimatrix/shared";
 import type { FastifyPluginAsync } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
@@ -45,6 +47,37 @@ export const adminDeploymentModule: FastifyPluginAsync<AdminDeploymentModuleOpti
       });
     }
   }
+
+  app.withTypeProvider<ZodTypeProvider>().route({
+    method: adminDeployManualRedeployContract.method,
+    url: adminDeployManualRedeployContract.path,
+    preHandler: requireAdminSection("deploys"),
+    schema: {
+      body: deployManualRedeployRequestSchema,
+      response: { 200: adminDeployManualRedeployContract.responseSchema },
+    },
+    handler: async (request) => {
+      const actorUserId = getRequiredAuthUserId(request);
+      try {
+        return await deployClient.redeploy({ ...request.body, actorUserId });
+      } catch (error) {
+        const statusCode = error instanceof DeployClientError ? error.statusCode : undefined;
+        throw new ApiError({
+          statusCode: statusCode ?? 502,
+          code:
+            statusCode === 404
+              ? "NOT_FOUND"
+              : statusCode === 409
+                ? "CLIENT_ERROR"
+                : "INTERNAL_ERROR",
+          message:
+            statusCode === 409
+              ? "Deployment request conflicts with deployment policy or pending work"
+              : "Deployment request unavailable",
+        });
+      }
+    },
+  });
 
   app.withTypeProvider<ZodTypeProvider>().route({
     method: adminDeployAttemptLogsContract.method,

@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import type { DeployClient } from "@unimatrix/deploy-client";
+import { DeployClientError, type DeployClient } from "@unimatrix/deploy-client";
 import type { DeployHealthHistoryResponse, DeployReconciliationResponse } from "@unimatrix/shared";
 
 import { buildApp, type BuildApiAppOptions } from "../src/app.js";
@@ -96,8 +96,39 @@ function health(app: string): DeployHealthHistoryResponse {
   };
 }
 
+const manualRequest = { app: "api", requestId: "11111111-1111-4111-8111-111111111111" };
+function manualAttempt(
+  input = { ...manualRequest, actorUserId: "user_2cccccccccccccccccccccccccc" },
+) {
+  return {
+    ...input,
+    id: attemptId,
+    repository: "unimatrixcore/unimatrix-01",
+    runId: null,
+    runAttempt: null,
+    trigger: "manual" as const,
+    image: null,
+    reporterId: "api-service",
+    requestedAt: 1,
+    deadlineAt: 100,
+    baseline: null,
+    tagWrite: null,
+    queue: "acknowledged" as const,
+    queueClaimedAt: 1,
+    outcome: "queued" as const,
+    correlation: "pending" as const,
+    after: null,
+    landedAt: null,
+    lateLandedAt: null,
+  };
+}
+
 function client(calls: unknown[] = []): DeployClient {
   return {
+    redeploy: (input) => {
+      calls.push(["redeploy", input]);
+      return Promise.resolve(manualAttempt(input));
+    },
     getAttemptLogs: (query) => {
       calls.push(["attempt-logs", query]);
       return Promise.resolve({
@@ -163,6 +194,17 @@ void test("admin deployment routes require both Clerk and deploy-service configu
         const response = await app.inject({ url, headers: authHeaders() });
         assert.equal(response.statusCode, 404, url);
       }
+      assert.equal(
+        (
+          await app.inject({
+            method: "POST",
+            url: "/deployment/admin/redeploy",
+            headers: authHeaders(),
+            payload: manualRequest,
+          })
+        ).statusCode,
+        404,
+      );
       assert.deepEqual(calls, []);
     } finally {
       await cleanup();
@@ -288,6 +330,7 @@ void test("upstream failures become generic 502 errors without leaking values to
   const logs: string[] = [];
   const fail = () => Promise.reject(new Error(marker));
   const deployClient: DeployClient = {
+    redeploy: fail,
     getDeclarations: fail,
     getState: fail,
     getHealth: fail,
@@ -380,5 +423,78 @@ void test("configured transport sends only fixed read paths and its own bearer t
         else resolve();
       });
     });
+  }
+});
+
+void test("manual redeploy authenticates admins, rejects actor spoofing and forwards verified attribution", async () => {
+  const calls: unknown[] = [];
+  const { app, cleanup } = createTestApp(undefined, { deployClient: client(calls) });
+  const request = {
+    method: "POST" as const,
+    url: "/deployment/admin/redeploy",
+    payload: manualRequest,
+  };
+  try {
+    assert.equal((await app.inject(request)).statusCode, 401);
+    assert.equal(
+      (await app.inject({ ...request, headers: authHeaders({ auth: ["editor"] }) })).statusCode,
+      403,
+    );
+    for (const payload of [
+      { ...manualRequest, actorUserId: "spoofed" },
+      { ...manualRequest, composeId: "arbitrary" },
+      { ...manualRequest, app: "../api" },
+      { ...manualRequest, requestId: "invalid" },
+    ]) {
+      assert.equal(
+        (await app.inject({ ...request, payload, headers: authHeaders() })).statusCode,
+        400,
+      );
+    }
+    assert.deepEqual(calls, []);
+    const response = await app.inject({ ...request, headers: authHeaders() });
+    assert.equal(response.statusCode, 200, response.body);
+    assert.equal(response.headers["cache-control"], "no-store");
+    assert.deepEqual(response.json(), manualAttempt());
+    assert.deepEqual(calls, [
+      ["redeploy", { ...manualRequest, actorUserId: "user_2cccccccccccccccccccccccccc" }],
+    ]);
+  } finally {
+    await cleanup();
+  }
+});
+
+void test("manual redeploy returns safe refusal statuses and hides unknown upstream errors", async () => {
+  for (const failure of [
+    new DeployClientError(404),
+    new DeployClientError(409),
+    new Error("private-upstream-value"),
+  ]) {
+    const logs: string[] = [];
+    const deployClient = client();
+    deployClient.redeploy = () => Promise.reject(failure);
+    const { app, cleanup } = createTestApp(undefined, {
+      deployClient,
+      loggerStream: {
+        write: (chunk) => {
+          logs.push(chunk);
+        },
+      },
+    });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/deployment/admin/redeploy",
+        payload: manualRequest,
+        headers: authHeaders(),
+      });
+      assert.equal(
+        response.statusCode,
+        failure instanceof DeployClientError ? failure.statusCode : 502,
+      );
+      assert.doesNotMatch(response.body + logs.join(""), /private-upstream-value/u);
+    } finally {
+      await cleanup();
+    }
   }
 });

@@ -85,6 +85,35 @@ next request without a restart. For rotation with overlap, issue a new caller na
 consumer, then revoke the old name. A revoked name may be reissued, but its old token stays revoked.
 Preserve `deploy-data`: losing the database invalidates issued credentials as well as health history.
 
+## Manual redeploys
+
+Verified admins with Deploys access can POST `{app, requestId}` to
+`/deployment/admin/redeploy` on the API. Use a new UUID for each deliberate request and reuse it
+when retrying that request. The API forwards the verified session user over its authenticated
+service connection; its deploy token needs `manage` capability. The browser holds no Dokploy key.
+
+The internal `/deployment/redeploy` route accepts only a declared app, request UUID and attributed
+user. It refuses `deploy`, missing or ambiguous matches, foreign repositories and non-GitHub
+sources. It persists a reservation before queueing `compose.deploy` with the attempt UUID marker.
+Retries return the same retained record without another mutation, even if Dokploy is unavailable.
+Idempotency ends when a resolved record expires from history. Neither service nor project
+`IMAGE_TAG` is rewritten: Dokploy deploys its configured image, which may differ from the running image.
+
+Manual records have an unspecified image and no CI run identity or tag-write result. Acknowledged
+queueing yields `queued`; transport/server failures retain `unknown`, while definite client
+rejection yields `failed`. A changed full container ID observed after the queue claim can record
+`recreated`, with the actual observed image, when the baseline is fresh and correlation is unambiguous. This resolves
+the overlap guard but cannot establish that the configured image or runtime values landed.
+Manual attempts never claim `landed`. The 30-minute deadline yields `timed-out`, which does not
+prove Dokploy stopped; later recreation is recorded separately without erasing the timeout.
+Unresolved attempts keep blocking new manual requests for the app, including after timeout and
+normal history retention. Inspect associated logs and runtime state separately. CI may
+still record overlapping work, making correlation ambiguous.
+
+Production manual queueing and UUID association have not been exercised. Before activation,
+verify the API's manage token, a controlled queue request, idempotent retry, attributed history and
+associated logs; check runtime image/configuration and health separately.
+
 ## Container observation
 
 Deployment attempts are persisted separately from the process-local container snapshot. See

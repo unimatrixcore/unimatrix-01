@@ -108,7 +108,7 @@ export function createDokployTransport(options: CreateDokployClientOptions): Dok
   }
 
   /**
-   * The one mutation path this service has. Never `await response.json()`/`.text()` on a 200: the
+   * The mutation transport discards successful bodies. Never `await response.json()`/`.text()` on a 200: the
    * fork's `update` procedure does `db.update(compose).set(...).where(...)` and returns the whole
    * updated row, `env` plaintext included — reading it would put a secret blob in a value this
    * function returns, the exact thing `callProcedure` above is built to avoid on the read side.

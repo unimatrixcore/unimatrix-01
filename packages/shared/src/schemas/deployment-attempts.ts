@@ -26,6 +26,16 @@ export const deployAttemptIntentSchema = z.strictObject({
   trigger: z.enum(["ci", "manual", "rollback"]),
   image: deployRequestedImageSchema,
 });
+export const deployManualRedeployRequestSchema = z.strictObject({
+  app: appSchema,
+  requestId: z.uuid(),
+});
+export const deployManualRedeployInputSchema = deployManualRedeployRequestSchema.extend({
+  actorUserId: z.string().min(1).max(128),
+});
+export type DeployManualRedeployRequest = z.output<typeof deployManualRedeployRequestSchema>;
+export type DeployManualRedeployInput = z.output<typeof deployManualRedeployInputSchema>;
+
 export const deployAttemptReportSchema = z.strictObject({
   attemptId: z.uuid(),
   stage: z.enum(["tag-write", "queue"]),
@@ -46,21 +56,57 @@ export const deployRuntimeEvidenceSchema = z.strictObject({
   image: deployRuntimeImageSchema,
 });
 const afterSchema = deployRuntimeEvidenceSchema.omit({ app: true });
-export const deployAttemptResponseSchema = deployAttemptIntentSchema.extend({
-  id: z.uuid(),
-  reporterId: z.string().min(1).max(128),
-  requestedAt: timestampSchema,
-  deadlineAt: timestampSchema,
-  baseline: deployAttemptBaselineSchema.nullable(),
-  tagWrite: resultSchema.nullable(),
-  queue: resultSchema.nullable(),
-  queueClaimedAt: timestampSchema.nullable().default(null),
-  outcome: z.enum(["incomplete", "queued", "landed", "failed", "timed-out"]),
-  correlation: z.enum(["pending", "ambiguous", "verified"]),
-  after: afterSchema.nullable(),
-  landedAt: timestampSchema.nullable(),
-  lateLandedAt: timestampSchema.nullable(),
-});
+export const deployAttemptResponseSchema = deployAttemptIntentSchema
+  .extend({
+    runId: runIdSchema.nullable(),
+    runAttempt: z.number().int().min(1).max(1_000_000).nullable(),
+    image: deployRequestedImageSchema.nullable(),
+    actorUserId: z.string().min(1).max(128).optional(),
+    requestId: z.uuid().optional(),
+    id: z.uuid(),
+    reporterId: z.string().min(1).max(128),
+    requestedAt: timestampSchema,
+    deadlineAt: timestampSchema,
+    baseline: deployAttemptBaselineSchema.nullable(),
+    tagWrite: resultSchema.nullable(),
+    queue: resultSchema.nullable(),
+    queueClaimedAt: timestampSchema.nullable().default(null),
+    outcome: z.enum(["incomplete", "queued", "landed", "recreated", "failed", "timed-out"]),
+    recreatedAt: timestampSchema.nullable().optional(),
+    correlation: z.enum(["pending", "ambiguous", "verified"]),
+    after: afterSchema.nullable(),
+    landedAt: timestampSchema.nullable(),
+    lateLandedAt: timestampSchema.nullable(),
+  })
+  .refine((record) => {
+    if (record.image === null) {
+      return (
+        record.trigger === "manual" &&
+        record.runId === null &&
+        record.runAttempt === null &&
+        record.actorUserId !== undefined &&
+        record.requestId !== undefined &&
+        record.tagWrite === null &&
+        record.outcome !== "landed" &&
+        record.correlation !== "verified" &&
+        ((record.recreatedAt == null && record.after === null && record.outcome !== "recreated") ||
+          (record.recreatedAt != null &&
+            record.after !== null &&
+            record.recreatedAt === record.after.observedAt &&
+            (record.outcome === "recreated" || record.outcome === "timed-out"))) &&
+        record.landedAt === null &&
+        record.lateLandedAt === null
+      );
+    }
+    return (
+      record.recreatedAt == null &&
+      record.outcome !== "recreated" &&
+      record.runId !== null &&
+      record.runAttempt !== null &&
+      record.actorUserId === undefined &&
+      record.requestId === undefined
+    );
+  }, "Attempt identity must match its target-image provenance");
 export const deployAttemptHistoryResponseSchema = z.strictObject({
   attempts: z.array(deployAttemptResponseSchema).max(100),
 });

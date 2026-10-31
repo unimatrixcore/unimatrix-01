@@ -27,15 +27,18 @@ export function applyRuntimeEvidence(
     evidence.observedAt < record.queueClaimedAt ||
     record.outcome === "failed" ||
     record.outcome === "landed" ||
+    record.outcome === "recreated" ||
+    record.recreatedAt != null ||
     record.lateLandedAt !== null ||
     record.correlation === "ambiguous" ||
     record.queue === null ||
     record.queue === "started" ||
     record.queue === "rejected" ||
-    record.image.repository !== evidence.image.repository ||
-    record.image.platform !== evidence.image.platform ||
-    record.image.digestKind !== evidence.image.digestKind ||
-    record.image.digest !== evidence.image.digest
+    (record.image !== null &&
+      (record.image.repository !== evidence.image.repository ||
+        record.image.platform !== evidence.image.platform ||
+        record.image.digestKind !== evidence.image.digestKind ||
+        record.image.digest !== evidence.image.digest))
   )
     return;
 
@@ -44,6 +47,14 @@ export function applyRuntimeEvidence(
     observedAt: evidence.observedAt,
     image: evidence.image,
   };
+  if (record.image === null) {
+    record.recreatedAt = evidence.observedAt;
+    record.outcome =
+      record.outcome === "timed-out" || evidence.observedAt >= record.deadlineAt
+        ? "timed-out"
+        : "recreated";
+    return;
+  }
   record.correlation = "verified";
   if (record.outcome === "timed-out" || evidence.observedAt >= record.deadlineAt) {
     record.outcome = "timed-out";

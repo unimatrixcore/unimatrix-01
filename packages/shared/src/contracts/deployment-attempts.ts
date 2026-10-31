@@ -1,5 +1,6 @@
 import {
   deployAttemptIntentSchema,
+  deployManualRedeployInputSchema,
   deployAttemptReportSchema,
   deployAttemptQuerySchema,
   deployAttemptResponseSchema,
@@ -32,4 +33,11 @@ export const deployAttemptLogsContract = defineApiContract({
   path: "/deployment/attempts/logs",
   querySchema: deployAttemptLogsQuerySchema,
   responseSchema: deployAttemptLogsResponseSchema,
+});
+
+export const deployManualRedeployContract = defineApiContract({
+  method: "POST",
+  path: "/deployment/redeploy",
+  bodySchema: deployManualRedeployInputSchema,
+  responseSchema: deployAttemptResponseSchema,
 });

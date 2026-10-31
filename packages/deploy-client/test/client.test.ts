@@ -30,11 +30,27 @@ let server: Server;
 let baseUrl: string;
 let mode = "ok";
 let selectedResponse: unknown;
+let wireRequests: { method: string | undefined; body: string; contentType: string | undefined }[] =
+  [];
 let requests: { url: string | undefined; authorization: string | undefined }[];
 
 beforeAll(async () => {
   server = createServer((request, response) => {
     requests.push({ url: request.url, authorization: request.headers.authorization });
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk: Buffer) => chunks.push(chunk));
+    request.on("end", () =>
+      wireRequests.push({
+        method: request.method,
+        body: Buffer.concat(chunks).toString("utf8"),
+        contentType: request.headers["content-type"],
+      }),
+    );
+    if (mode === "not-found" || mode === "conflict") {
+      response.writeHead(mode === "not-found" ? 404 : 409);
+      response.end("private upstream text");
+      return;
+    }
     if (mode === "timeout") return;
     if (mode === "body-timeout") {
       response.writeHead(200);
@@ -101,6 +117,100 @@ function client(options: Partial<DeployClientConfig> = {}) {
 }
 
 describe("deployment transport", () => {
+  it("posts only authenticated manual redeploy inputs and validates returned attribution", async () => {
+    mode = "selected";
+    requests = [];
+    wireRequests = [];
+    const input = {
+      app: "api",
+      requestId: "11111111-1111-4111-8111-111111111111",
+      actorUserId: "verified-user",
+    };
+    const attempt = {
+      ...input,
+      id: "00000000-0000-4000-8000-000000000000",
+      repository: "unimatrixcore/unimatrix-01",
+      runId: null,
+      runAttempt: null,
+      trigger: "manual",
+      image: null,
+      reporterId: "api-service",
+      requestedAt: 1,
+      deadlineAt: 100,
+      baseline: null,
+      tagWrite: null,
+      queue: "acknowledged",
+      queueClaimedAt: 1,
+      outcome: "queued",
+      correlation: "pending",
+      after: null,
+      landedAt: null,
+      lateLandedAt: null,
+    };
+    selectedResponse = attempt;
+    expect(await client().redeploy(input)).toEqual(attempt);
+    expect(requests).toEqual([{ url: "/deployment/redeploy", authorization: "Bearer test-token" }]);
+    expect(wireRequests).toEqual([
+      { method: "POST", contentType: "application/json", body: JSON.stringify(input) },
+    ]);
+    const recreated = {
+      ...attempt,
+      baseline: { containerId: "a".repeat(64), observedAt: 1 },
+      outcome: "recreated",
+      recreatedAt: 2,
+      after: {
+        containerId: "b".repeat(64),
+        observedAt: 2,
+        image: {
+          repository: "ghcr.io/unimatrixcore/unimatrix-api",
+          platform: "linux/amd64",
+          digestKind: "manifest",
+          digest: `sha256:${"c".repeat(64)}`,
+        },
+      },
+    };
+    selectedResponse = recreated;
+    expect(await client().redeploy(input)).toEqual(recreated);
+    for (const invalid of [
+      { ...attempt, app: "web" },
+      { ...attempt, actorUserId: "another-user" },
+      { ...attempt, requestId: "22222222-2222-4222-8222-222222222222" },
+      { ...attempt, env: "private upstream text" },
+    ]) {
+      selectedResponse = invalid;
+      await expect(client().redeploy(input)).rejects.toBeInstanceOf(DeployClientError);
+    }
+    requests = [];
+    for (const invalid of [
+      { ...input, composeId: "arbitrary-id" },
+      { ...input, app: "../api" },
+      { ...input, actorUserId: "" },
+    ])
+      await expect(client().redeploy(invalid)).rejects.toBeInstanceOf(DeployClientError);
+    expect(requests).toHaveLength(0);
+    for (const [failure, statusCode] of [
+      ["not-found", 404],
+      ["conflict", 409],
+      ["error", undefined],
+      ["redirect", undefined],
+      ["timeout", undefined],
+    ] as const) {
+      mode = failure;
+      requests = [];
+      let error: unknown;
+      try {
+        await client({ timeoutMs: 50 }).redeploy(input);
+      } catch (caught) {
+        error = caught;
+      }
+      expect(error).toBeInstanceOf(DeployClientError);
+      expect(error).toHaveProperty("statusCode", statusCode);
+      expect(error).not.toHaveProperty("cause");
+      expect(String(error)).not.toContain("private upstream text");
+      expect(requests).toHaveLength(1);
+    }
+  });
+
   it("selects exact attempt logs and rejects mismatched, raw or unbounded output", async () => {
     mode = "selected";
     requests = [];

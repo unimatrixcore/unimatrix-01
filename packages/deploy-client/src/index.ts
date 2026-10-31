@@ -3,12 +3,14 @@ import { request as httpsRequest } from "node:https";
 
 import {
   deployAttemptHistoryContract,
+  deployManualRedeployContract,
   deployAttemptLogsContract,
   deployDeclarationsContract,
   deployHealthHistoryContract,
   deployReconciliationContract,
   deployStateContract,
   type ApiContract,
+  type ApiContractBody,
   type ApiContractQuery,
   type ApiContractResponse,
   type DeployHealthHistoryResponse,
@@ -27,6 +29,7 @@ export interface DeployClientConfig {
 }
 
 export interface DeployClient {
+  redeploy(input: DeployManualRedeployInput): Promise<DeployManualRedeployResponse>;
   getDeclarations(query?: DeployAppQuery): Promise<DeployDeclarationsResponse>;
   getState(query?: DeployAppQuery): Promise<DeployStateResponse>;
   getHealth(app: string): Promise<DeployHealthHistoryResponse>;
@@ -36,6 +39,8 @@ export interface DeployClient {
 }
 
 export type DeployAppQuery = ApiContractQuery<typeof deployStateContract>;
+export type DeployManualRedeployInput = ApiContractBody<typeof deployManualRedeployContract>;
+export type DeployManualRedeployResponse = ApiContractResponse<typeof deployManualRedeployContract>;
 export type DeployAttemptHistoryQuery = Omit<
   ApiContractQuery<typeof deployAttemptHistoryContract>,
   "limit"
@@ -43,9 +48,12 @@ export type DeployAttemptHistoryQuery = Omit<
 export type DeployAttemptHistoryResponse = ApiContractResponse<typeof deployAttemptHistoryContract>;
 
 export class DeployClientError extends Error {
-  constructor() {
+  readonly statusCode: 404 | 409 | undefined;
+
+  constructor(statusCode?: 404 | 409) {
     super("Deployment read unavailable");
     this.name = "DeployClientError";
+    this.statusCode = statusCode;
   }
 }
 
@@ -75,15 +83,18 @@ export function createDeployClient(config: DeployClientConfig): DeployClient {
   const timeoutMs = config.timeoutMs ?? 5000;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) throw new DeployClientError();
 
-  async function read<TContract extends ApiContract>(
+  async function send<TContract extends ApiContract>(
     contract: TContract,
     query: Record<string, string | number | undefined>,
+    input?: unknown,
   ): Promise<ApiContractResponse<TContract>> {
     try {
       const parsedQuery: unknown = contract.querySchema?.parse(query);
+      const payload =
+        input === undefined ? undefined : JSON.stringify(contract.bodySchema?.parse(input));
       const url = new URL(contract.path, origin);
       for (const [key, value] of Object.entries(
-        parsedQuery as Record<string, string | number | undefined>,
+        (parsedQuery ?? {}) as Record<string, string | number | undefined>,
       )) {
         if (value !== undefined) url.searchParams.set(key, String(value));
       }
@@ -94,13 +105,25 @@ export function createDeployClient(config: DeployClientConfig): DeployClient {
           {
             agent: false,
             method: contract.method,
-            headers: { accept: "application/json", authorization: `Bearer ${config.serviceToken}` },
+            headers: {
+              accept: "application/json",
+              authorization: `Bearer ${config.serviceToken}`,
+              ...(payload === undefined ? {} : { "content-type": "application/json" }),
+            },
             ...(origin.protocol === "https:" ? { ca: config.caCertificatePem } : {}),
           },
           (response) => {
             if (response.statusCode !== 200) {
               response.destroy();
-              reject(new DeployClientError());
+              reject(
+                new DeployClientError(
+                  contract.method === deployManualRedeployContract.method &&
+                    contract.path === deployManualRedeployContract.path &&
+                    (response.statusCode === 404 || response.statusCode === 409)
+                    ? response.statusCode
+                    : undefined,
+                ),
+              );
               return;
             }
             const chunks: Buffer[] = [];
@@ -129,32 +152,46 @@ export function createDeployClient(config: DeployClientConfig): DeployClient {
         req.on("error", () => {
           reject(new DeployClientError());
         });
-        req.end();
+        req.end(payload);
       });
       return contract.responseSchema.parse(JSON.parse(body)) as ApiContractResponse<TContract>;
-    } catch {
+    } catch (error) {
       // Native transport and validation failures may contain upstream values or credentials.
+      if (error instanceof DeployClientError) throw error;
       throw new DeployClientError();
     }
   }
 
   return {
+    redeploy: async (input) => {
+      const result = await send(deployManualRedeployContract, {}, input);
+      if (
+        result.app !== input.app ||
+        result.requestId !== input.requestId ||
+        result.actorUserId !== input.actorUserId ||
+        result.trigger !== "manual" ||
+        result.image !== null
+      ) {
+        throw new DeployClientError();
+      }
+      return result;
+    },
     getAttemptLogs: async (query) => {
-      const result = await read(deployAttemptLogsContract, query);
+      const result = await send(deployAttemptLogsContract, query);
       if (result.app !== query.app || result.attemptId !== query.attemptId) {
         throw new DeployClientError();
       }
       return result;
     },
     getDeclarations: async (query = {}) => {
-      const result = await read(deployDeclarationsContract, query);
+      const result = await send(deployDeclarationsContract, query);
       if (result.apps.some((entry) => query.app !== undefined && entry.appDir !== query.app)) {
         throw new DeployClientError();
       }
       return result;
     },
     getState: async (query = {}) => {
-      const result = await read(deployStateContract, query);
+      const result = await send(deployStateContract, query);
       if (
         result.apps.some(
           (entry) =>
@@ -167,7 +204,7 @@ export function createDeployClient(config: DeployClientConfig): DeployClient {
       return result;
     },
     getHealth: async (app) => {
-      const result = await read(deployHealthHistoryContract, { app });
+      const result = await send(deployHealthHistoryContract, { app });
       if (
         result.app !== app ||
         result.current.app !== app ||
@@ -178,7 +215,7 @@ export function createDeployClient(config: DeployClientConfig): DeployClient {
       return result;
     },
     getReconciliation: async (query = {}) => {
-      const result = await read(deployReconciliationContract, query);
+      const result = await send(deployReconciliationContract, query);
       if (
         result.results.some(
           (entry) =>
@@ -191,7 +228,7 @@ export function createDeployClient(config: DeployClientConfig): DeployClient {
       return result;
     },
     getAttempts: async (query = {}) => {
-      const result = await read(deployAttemptHistoryContract, query);
+      const result = await send(deployAttemptHistoryContract, query);
       if (
         result.attempts.length > (query.limit ?? 50) ||
         result.attempts.some((entry) => query.app !== undefined && entry.app !== query.app)
