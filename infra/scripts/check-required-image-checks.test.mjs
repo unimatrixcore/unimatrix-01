@@ -115,3 +115,37 @@ test("fails closed if pagination never terminates", async () => {
     /pagination limit/,
   );
 });
+
+test("authenticates every upstream page with the supplied token", async (t) => {
+  const token = "read-only-token-canary";
+  const requests = [];
+  await checkRequiredImageChecks({
+    root: fixture(t),
+    token,
+    fetchImpl: async (url, options) => {
+      requests.push(url);
+      assert.equal(options.headers.Authorization, `Bearer ${token}`);
+      assert.equal(new URL(url).origin, "https://api.github.com");
+      assert.equal(new URL(url).pathname, "/repos/unimatrixcore/unimatrix-01/rules/branches/main");
+      assert.equal(options.redirect, "error");
+      return response(
+        requests.length === 1
+          ? Array.from({ length: 100 }, () => ({ type: "pull_request" }))
+          : [rule("Images (api)", "Images (new-app)")],
+      );
+    },
+  });
+  assert.equal(requests.length, 2);
+  await assert.rejects(
+    checkRequiredImageChecks({
+      root: fixture(t),
+      token,
+      fetchImpl: async () => new Response(token, { status: 403 }),
+    }),
+    (error) => {
+      assert.match(error.message, /HTTP 403/);
+      assert.ok(!error.message.includes(token));
+      return true;
+    },
+  );
+});

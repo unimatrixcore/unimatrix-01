@@ -50,12 +50,13 @@ export function requiredContexts(rules) {
   return contexts;
 }
 
-export async function readRequiredContexts(fetchImpl = fetch) {
+export async function readRequiredContexts(fetchImpl = fetch, token) {
   const contexts = new Set();
   // Query the upstream repository even on fork PRs: the merge target's policy is the gate.
   for (let page = 1; page <= 100; page += 1) {
     const response = await fetchImpl(`${endpoint}?per_page=100&page=${page}`, {
       headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": "unimatrix-required-image-checks",
@@ -82,9 +83,9 @@ export async function readRequiredContexts(fetchImpl = fetch) {
   );
 }
 
-export async function checkRequiredImageChecks({ root = repoRoot, fetchImpl = fetch } = {}) {
+export async function checkRequiredImageChecks({ root = repoRoot, fetchImpl = fetch, token } = {}) {
   const expected = imageCheckContexts(root);
-  const required = await readRequiredContexts(fetchImpl);
+  const required = await readRequiredContexts(fetchImpl, token);
   const missing = expected.filter((context) => !required.has(context));
   if (missing.length > 0) {
     throw new Error(
@@ -97,7 +98,7 @@ export async function checkRequiredImageChecks({ root = repoRoot, fetchImpl = fe
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    const contexts = await checkRequiredImageChecks();
+    const contexts = await checkRequiredImageChecks({ token: process.env.GITHUB_TOKEN });
     console.log(
       `check-required-image-checks: OK (${contexts.length} image checks required on main).`,
     );
