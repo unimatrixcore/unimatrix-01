@@ -407,6 +407,9 @@ importers:
 
   apps/deploy:
     dependencies:
+      '@fastify/rate-limit':
+        specifier: ^11.2.0
+        version: 11.2.0
       '@unimatrix/secrets':
         specifier: workspace:*
         version: link:../../packages/secrets

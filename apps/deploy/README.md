@@ -2,7 +2,13 @@
 
 A Fastify service deployed from `apps/deploy/Dockerfile` through
 `infra/docker/deploy-compose.yaml`. It is unrouted — no domain, no Traefik
-entry — and `GET /health` is the only route it answers.
+entry. `GET /health` is anonymous; every other request requires a deploy service token,
+including requests to unmatched URLs. Production serves HTTPS.
+
+All requests share a per-peer IP limit of 60 per minute, including anonymous health checks and
+unmatched URLs. The limiter runs before token lookup and body parsing; exhausted callers receive
+429 with `Retry-After`. Forwarded IP headers do not change the peer identity. The in-memory limit
+resets on process restart.
 
 ## The irreducible bootstrap set
 
@@ -25,6 +31,59 @@ the first time:
 
 Follow the [new-app onboarding checklist](../../docs/deployment.md#new-app-onboarding) and the
 [deploy service configuration](../../docs/deployment.md#deploy-service) before the first deploy.
+
+### TLS
+
+Set `DEPLOY_TLS_CERT_BASE64` and `DEPLOY_TLS_KEY_BASE64` to base64-encoded PEM material before
+deploying the production image. Both are required in production. Generate the pair once on a trusted
+host, preserve it across redeploys, and keep the key out of Git, images and caller configuration.
+The certificate SAN must include `deploy`, the Compose DNS name callers verify:
+
+```bash
+umask 077
+openssl req -x509 -newkey rsa:3072 -sha256 -nodes -days 365 \
+  -keyout deploy-key.pem -out deploy-cert.pem -subj '/CN=deploy' \
+  -addext 'subjectAltName=DNS:deploy'
+base64 -w0 deploy-cert.pem > deploy-cert.base64
+base64 -w0 deploy-key.pem > deploy-key.base64
+```
+
+Transfer the encoded values securely into the deploy service's Dokploy environment. Callers receive
+only the certificate and use `createDeployPinnedAgent` from `src/tls.ts` for HTTPS requests; its
+certificate replaces the trust store and hostname verification stays enabled. Use `https://deploy:3001`
+on the shared network. Never substitute the container healthcheck's disabled loopback verification
+for a network request. Certificate rotation requires updating caller pins with the server pair;
+check expiry and arrange that coordinated rollout before the certificate expires.
+
+With neither TLS variable set, development and tests may use HTTP. Setting only one, an empty value,
+invalid PEM, or a mismatched pair fails startup. The reconciliation CLI does not load HTTP TLS
+configuration or caller credentials.
+
+The caller-authentication and TLS rollout has not been verified in production. Before rollout,
+provision the pair and confirm a request from a network peer succeeds with the matching pin and
+fails with the wrong pin; confirm anonymous `/health` is 200 and an unmatched anonymous URL is 401.
+
+### Service tokens
+
+The host-local CLI uses the deploy database without needing the Dokploy key or TLS material:
+
+```bash
+docker exec <deploy-container> node dist/cli/service-token.js \
+  issue --name api --capability read
+docker exec <deploy-container> node dist/cli/service-token.js list
+docker exec <deploy-container> node dist/cli/service-token.js revoke --name api
+```
+
+Locally, use `pnpm --filter @unimatrix/deploy-app token` with the same arguments. `issue` prints
+the token once; only its SHA-256 digest is stored. Give the plaintext only to its named caller and
+send it as `Authorization: Bearer <token>` over pinned HTTPS. `list` returns metadata without token
+values or digests. These credentials are separate from secrets-store tokens and the Dokploy key.
+
+Choose `read` for observation callers and `manage` for callers permitted to mutate; `manage` also
+permits reads. Protected routes enforce the required capability. Revocation takes effect on the
+next request without a restart. For rotation with overlap, issue a new caller name, switch the
+consumer, then revoke the old name. A revoked name may be reissued, but its old token stays revoked.
+Preserve `deploy-data`: losing the database invalidates issued credentials as well as health history.
 
 ## Container observation
 
@@ -52,8 +111,8 @@ have a five-second deadline, accept only 2xx responses, and follow no redirects.
 and upstream error text are discarded. These requests measure internal app reachability; they do
 not measure Cloudflare or Traefik availability.
 
-Secrets health uses its declared HTTPS target and `SECRETS_TLS_CERT_BASE64` as the trust store,
-with hostname verification enabled and no bearer token. A missing or malformed pin produces an
+Secrets and deploy health use their declared HTTPS targets and certificate env variables as the
+trust store, with hostname verification enabled and no bearer token. A missing or malformed pin produces an
 unknown observation. A completed probe that fails HTTP, connection, TLS or deadline checks is down.
 
 SQLite stores at most one observation per app per minute, retaining 30 days plus one minute for
@@ -70,10 +129,8 @@ file; local development defaults to `local/deploy.sqlite` relative to the servic
 The service initializes its schema on startup and refuses unsupported schema versions. Shutdown
 stops and awaits pending probes before closing SQLite.
 
-Internal reachability was checked from the live deploy container on 2026-10-30: every generated
-app target returned 200, including secrets with certificate and hostname verification enabled.
-Recheck from that container after network or certificate changes; a public URL succeeding does
-not establish that these internal targets are reachable.
+Check reachability from the deploy container after network or certificate changes; a public URL
+succeeding does not establish that these internal targets are reachable.
 
 ## Reconcile report
 

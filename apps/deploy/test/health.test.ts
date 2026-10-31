@@ -10,6 +10,7 @@ const BASE_ENV: DeployRuntimeEnv = {
   NODE_ENV: "test",
   DOKPLOY_BASE_URL: "http://dokploy:3000",
   DOKPLOY_API_KEY: "dokploy_test_key",
+  DEPLOY_DATABASE_PATH: ":memory:",
 };
 
 const stubDokployClient: DokployClient = {
@@ -58,7 +59,7 @@ void test("GET /health rejects unexpected query parameters", async () => {
   }
 });
 
-void test("GET /missing-route answers 404", async () => {
+void test("GET /missing-route requires authentication", async () => {
   const app = createTestApp();
   try {
     const response = await app.inject({
@@ -66,11 +67,11 @@ void test("GET /missing-route answers 404", async () => {
       url: "/missing-route",
     });
 
-    assert.equal(response.statusCode, 404);
+    assert.equal(response.statusCode, 401);
     assert.deepEqual(response.json(), {
       error: {
-        code: "NOT_FOUND",
-        message: "Route not found",
+        code: "UNAUTHORIZED",
+        message: "Service authentication required",
       },
     });
   } finally {

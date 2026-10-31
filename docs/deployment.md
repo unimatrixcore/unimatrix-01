@@ -557,8 +557,10 @@ can a log line. What does distinguish them:
 - no Domains page entry — this service is deliberately unrouted, same as the
   secrets service
 - required environment variables (set in Dokploy's UI, not in the file):
-  `DOKPLOY_BASE_URL` and `DOKPLOY_API_KEY` — the service refuses to start
-  without either
+  `DOKPLOY_BASE_URL`, `DOKPLOY_API_KEY`, `DEPLOY_TLS_CERT_BASE64` and
+  `DEPLOY_TLS_KEY_BASE64` — production startup requires all of them. Follow the
+  [deploy TLS setup](../apps/deploy/README.md#tls) before rollout; the certificate SAN includes
+  `deploy`, and network callers pin its certificate with hostname verification enabled.
 - `DOKPLOY_BASE_URL` uses the internal Dokploy address `http://dokploy:3000` on
   `dokploy-network`; verify name resolution and API reachability from the deployed container
 - `SECRETS_TLS_CERT_BASE64` (set in Dokploy's UI): the store's certificate.
@@ -566,21 +568,23 @@ can a log line. What does distinguish them:
   An unset or malformed pin makes secrets health unknown without blocking service startup;
   the secrets CLI still refuses an unconfigured connection.
 - persistent storage: `deploy-data` mounted at `/data`, with `DEPLOY_DATABASE_PATH=/data/deploy.sqlite`.
-  Preserve this volume across redeploys; it holds bounded health history and is separate from the
+  Preserve this volume across redeploys; it holds caller-token digests and bounded health history and is separate from the
   API and secrets volumes. Confirm the actual Compose-prefixed volume name and mount on the host.
 
 The collector probes internal app targets every 60 seconds and retains 30 days of observations.
 Uptime excludes unknown intervals and is accompanied by coverage; see
 [internal health history](../apps/deploy/README.md#internal-health-history) for interval semantics
-and the internal reachability check. Missing observations must not be interpreted as healthy.
+and probe verification. Missing observations must not be interpreted as healthy.
 
 It joins `dokploy-network`: it exists to call Dokploy's own API, and joining
 is what lets it reach that API by service name rather than round-tripping out
 through Cloudflare. The cost, stated plainly: a container holding an
 unscoped, instance-wide Dokploy API key sits on the same network every app
-Traefik serves. Nothing routes to this service across that network — no
-domain, no Traefik entry — so membership is reachability *from* it, and
-`/health` is the only route anything on that network could call. It also
+Traefik serves. No domain or Traefik entry routes public traffic here, but network peers can reach
+it. Only `GET /health` is anonymous; all other requests, including unmatched URLs, require a
+deploy-owned bearer service token over HTTPS. Issue and revoke tokens with the
+[host-local CLI](../apps/deploy/README.md#service-tokens); use `read` for observations and `manage`
+for mutations. These credentials are separate from secrets-store tokens and the Dokploy key. It also
 joins `unimatrix-secrets`, alongside the secrets service and the API: the
 same container now also sits on the network carrying every secrets-store
 read for this instance. See `apps/deploy/AGENTS.md`.

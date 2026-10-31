@@ -23,6 +23,12 @@ services:
       # service's read token is never declared here (see the network comment)
       # and no code path can write through it.
       SECRETS_BASE_URL: https://secrets:3001
+      # Base64 PEM certificate and private key, provisioned before deployment.
+      # Production refuses to boot without both. The certificate SAN must
+      # include deploy, the Compose DNS name used by pinned HTTPS clients.
+      # Keep the private key out of images and caller configuration.
+      DEPLOY_TLS_CERT_BASE64: ${DEPLOY_TLS_CERT_BASE64}
+      DEPLOY_TLS_KEY_BASE64: ${DEPLOY_TLS_KEY_BASE64}
       # The store's certificate only, never its key — supplying it replaces
       # this service's trust store for connections to the secrets store
       # rather than widening it. The health probe also uses this pin; missing
@@ -36,9 +42,9 @@ services:
       # Access service-token secrets and a round trip out through Cloudflare and
       # back. The cost of joining: a container holding an instance-wide
       # delete-everything token sits on the same network every app Traefik
-      # serves. Nothing routes *to* this service — no domain, no Traefik entry —
-      # so membership is reachability from it, not to it, and /health is the
-      # only route anything on that network could call. It is an attachable
+      # serves. No domain or Traefik entry routes public traffic here; network
+      # peers can reach it, so every request except GET /health requires a
+      # deploy service token over TLS. It is an attachable
       # swarm overlay, which is what lets a plain Compose stack join it
       # (measured on the host, 2026-08-12, recorded in apps/api/deploy.config.ts).
       dokploy-network:

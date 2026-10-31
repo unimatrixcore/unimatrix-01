@@ -24,12 +24,16 @@ against the store, and
   imports it directly, before anything is built, and `@unimatrix/shared`'s main entry resolves only
   through `dist` — the same reasoning as `apps/secrets/src/config.ts`. (Its `./secrets-registry`
   subpath points at `src` instead, for the same reason: `deploy.config.ts` files load the same way.)
-- **`/health` is the only route, and adding a second one means adding caller authentication
-  first.** This service is unrouted — no domain, no Traefik entry — but that is not what makes it
-  private: it holds a manage-scoped Dokploy token and sits on `dokploy-network` alongside every app
-  Traefik serves, and on `unimatrix-secrets` alongside `apps/secrets` and `apps/api` — the same
-  container that can delete every application on the instance now also sits on the network carrying
-  every secrets-store read for this instance.
+- **Only `GET /health` is anonymous; unmatched URLs also require a deploy service token.** Network
+  membership proves no caller identity. Protected routes enforce `read` or `manage` against the
+  verified token identity; `manage` includes reads. Never accept a caller identity or capability
+  from request input. Tokens belong to this service's SQLite store, never the secrets token store;
+  plaintext appears only at host-local issuance and on the authenticated wire, never in logs.
+- **Production requires pinned HTTPS.** `src/tls.ts` loads the certificate/key separately from
+  `runtimeConfig`; private key material must stay off that decorated object. The certificate SAN
+  must include `deploy`, because hostname verification stays enabled in network clients. The
+  generated Docker healthcheck alone skips verification on its loopback connection. Keep host-local
+  reconciliation and token-management CLIs independent of HTTP TLS configuration.
 - **Dokploy is tRPC-derived: every call is `GET|POST /api/<router>.<procedure>`**, never a REST
   resource path, and `/api/openapi.json` 404s on v0.29.13, so schemas are hand-written rather than
   generated. Only add a procedure whose response has actually been observed —
