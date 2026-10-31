@@ -5,6 +5,11 @@ A Fastify service deployed from `apps/deploy/Dockerfile` through
 entry. `GET /health` is anonymous; every other request requires a deploy service token,
 including requests to unmatched URLs. Production serves HTTPS.
 
+All requests share a per-peer IP limit of 60 per minute, including anonymous health checks and
+unmatched URLs. The limiter runs before token lookup and body parsing; exhausted callers receive
+429 with `Retry-After`. Forwarded IP headers do not change the peer identity. The in-memory limit
+resets on process restart.
+
 ## The irreducible bootstrap set
 
 Three credentials can never come from the secrets store this service will

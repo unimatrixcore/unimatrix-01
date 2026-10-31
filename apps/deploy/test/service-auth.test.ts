@@ -195,3 +195,96 @@ void test("capability hook fails closed without an authenticated caller", async 
   );
   assert.equal(status, 401);
 });
+
+void test("one peer budget bounds authenticated and unmatched requests before token lookup", async () => {
+  const { app, store, read } = fixture();
+  const authenticate = store.authenticate.bind(store);
+  let lookups = 0;
+  store.authenticate = (token) => {
+    lookups += 1;
+    return authenticate(token);
+  };
+  try {
+    for (let index = 0; index < 60; index += 1) {
+      const matched = index % 2 === 0;
+      const response = await app.inject({
+        url: matched ? "/test/read" : `/missing-${String(index)}`,
+        headers: { authorization: `Bearer ${read}`, "x-forwarded-for": `192.0.2.${String(index)}` },
+      });
+      assert.equal(response.statusCode, matched ? 200 : 404);
+    }
+    assert.equal(lookups, 60);
+    const response = await app.inject({
+      method: "POST",
+      url: "/test/write",
+      headers: {
+        authorization: `Bearer ${read}`,
+        "content-type": "application/json",
+      },
+      payload: "{broken",
+    });
+    assert.equal(response.statusCode, 429);
+    assert.deepEqual(response.json(), {
+      error: { code: "RATE_LIMITED", message: "Too many requests" },
+    });
+    assert.ok(Number(response.headers["retry-after"]) > 0);
+    assert.equal(
+      lookups,
+      60,
+      "limited requests cannot authenticate or update last-used timestamps",
+    );
+    assert.equal(
+      (
+        await app.inject({
+          url: "/test/read",
+          remoteAddress: "192.0.2.200",
+          headers: { authorization: `Bearer ${read}` },
+        })
+      ).statusCode,
+      200,
+    );
+    assert.equal(lookups, 61);
+  } finally {
+    await app.close();
+  }
+});
+
+void test("unknown credentials cannot bypass the peer limit by changing URL or token", async () => {
+  const { app, store } = fixture();
+  const authenticate = store.authenticate.bind(store);
+  let lookups = 0;
+  store.authenticate = (token) => {
+    lookups += 1;
+    return authenticate(token);
+  };
+  try {
+    for (let index = 0; index < 60; index += 1) {
+      const response = await app.inject({
+        url: `/unknown-${String(index)}`,
+        headers: { authorization: `Bearer udt_${String(index).padStart(43, "a")}` },
+      });
+      assert.equal(response.statusCode, 401);
+    }
+    assert.equal((await app.inject("/another-unknown-url")).statusCode, 429);
+    assert.equal(lookups, 60);
+  } finally {
+    await app.close();
+  }
+});
+
+void test("anonymous health requests consume the same bounded peer budget", async () => {
+  const { app } = fixture();
+  try {
+    for (let index = 0; index < 60; index += 1) {
+      assert.equal((await app.inject("/health")).statusCode, 200);
+    }
+    assert.equal((await app.inject("/health")).statusCode, 429);
+    assert.equal((await app.inject("/test/read")).statusCode, 429);
+    assert.equal(
+      (await app.inject({ url: "/health", remoteAddress: "192.0.2.200" })).statusCode,
+      200,
+    );
+  } finally {
+    await app.close();
+  }
+});

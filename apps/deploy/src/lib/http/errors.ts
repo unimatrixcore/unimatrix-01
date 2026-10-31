@@ -2,7 +2,12 @@ import type { FastifyError } from "fastify";
 import { hasZodFastifySchemaValidationErrors } from "fastify-type-provider-zod";
 
 export type DeployHttpErrorCode =
-  "VALIDATION_ERROR" | "NOT_FOUND" | "INTERNAL_ERROR" | "UNAUTHORIZED" | "FORBIDDEN";
+  | "VALIDATION_ERROR"
+  | "NOT_FOUND"
+  | "INTERNAL_ERROR"
+  | "UNAUTHORIZED"
+  | "FORBIDDEN"
+  | "RATE_LIMITED";
 
 export interface DeployHttpErrorEnvelope {
   error: {
@@ -67,6 +72,14 @@ export function normalizeDeployError(error: unknown): NormalizedDeployHttpError 
   }
 
   const statusCode = getFastifyStatusCode(error);
+
+  if (statusCode === 429) {
+    return {
+      statusCode,
+      envelope: createErrorEnvelope("RATE_LIMITED", "Too many requests"),
+      logLevel: "warn",
+    };
+  }
 
   if (statusCode === 404) {
     return { statusCode, envelope: createNotFoundErrorEnvelope(), logLevel: "info" };
