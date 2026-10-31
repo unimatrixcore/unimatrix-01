@@ -2,6 +2,8 @@ export { Badge } from "./components/ui/badge.js";
 export { Button } from "./components/ui/button.js";
 export { Card } from "./components/ui/card.js";
 export { GraphBackground } from "./components/graph-background.js";
+export { HealthHistory } from "./components/health-history.js";
+export type { HealthHistoryDay, HealthHistoryProps } from "./components/health-history.js";
 export {
   DropdownMenu,
   DropdownMenuCheckboxItem,

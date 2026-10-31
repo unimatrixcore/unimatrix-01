@@ -240,7 +240,7 @@ void test("health reads distinguish missing, down, fresh unknown and stale sampl
     const down = await read();
     assert.equal(down.current.state, "down");
     assert.equal(down.freshness, "fresh");
-    assert.equal(down.days.length, 14);
+    assert.equal(down.days.length, 30);
     assert.equal(down.recent.length, 60);
     now += PROBE_INTERVAL_MS;
     const stale = await read();

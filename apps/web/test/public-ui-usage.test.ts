@@ -74,6 +74,7 @@ describe("public UI package usage", () => {
       'export { Button } from "./components/ui/button.js";',
       'export { Card } from "./components/ui/card.js";',
       'export { GraphBackground } from "./components/graph-background.js";',
+      'export { HealthHistory } from "./components/health-history.js";',
       'export { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from "./components/ui/dropdown-menu.js";',
       'export { Kbd, KbdGroup } from "./components/ui/kbd.js";',
       'export { Separator } from "./components/ui/separator.js";',

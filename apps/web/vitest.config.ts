@@ -39,13 +39,7 @@ export default defineConfig({
   },
   test: {
     coverage: createCoverageConfig({
-      // Re-measured after the CMS and Clerk auth left for `apps/admin`
-      // (2026-08-02): 52.38%/50% statements/functions, rounded down to 52/50.
-      // The drop from the prior 59/60 is the CMS's own well-tested code
-      // leaving alongside it, not a new gap — the remaining `*.lazy.tsx` route
-      // components are still only exercised by the Playwright smoke suite,
-      // same as before the move.
-      thresholds: { statements: 52, functions: 50 },
+      thresholds: { statements: 59, functions: 54 },
     }),
     environment: "jsdom",
     include: ["test/**/*.test.ts", "test/**/*.test.tsx"],

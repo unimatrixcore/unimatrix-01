@@ -56,7 +56,7 @@ void test("history persists across reopen, expires freshness, and replaces a sam
     assert.equal(snapshot.recent.length, 1);
     assert.equal(snapshot.summary.downMs, 1_000);
     assert.equal(snapshot.summary.upMs, 0);
-    assert.equal(snapshot.days.length, 14);
+    assert.equal(snapshot.days.length, 30);
     assert.equal(store.snapshot("api", NOW + PROBE_INTERVAL_MS + 1_000).current.state, "unknown");
     assert.throws(() => store.snapshot("other", NOW), /declared app/);
     assert.throws(() => store.snapshot("api", NaN), /valid timestamp/);
@@ -99,7 +99,7 @@ void test("retention prunes on reopen and write, removes undeclared apps, and bo
     assert.equal(store.snapshot("api", later).recent.length, 1);
     const midnight = Math.ceil(later / DAY_MS) * DAY_MS;
     const days = store.snapshot("api", midnight).days;
-    assert.equal(days.length, 14);
+    assert.equal(days.length, 30);
     assert.equal(days.at(-1)?.coveragePercent, 0);
   } finally {
     store.close();
@@ -140,6 +140,10 @@ void test("UTC daily summaries split an observation at midnight", () => {
   try {
     store.record({ app: "api", checkedAt: midnight - 30_000, state: "up" }, midnight - 30_000);
     const days = store.snapshot("api", midnight + 30_000).days;
+    assert.equal(days.length, 30);
+    assert.equal(days[0]?.from, midnight - 29 * DAY_MS);
+    assert.equal(days.at(-1)?.from, midnight);
+    assert.equal(days.at(-1)?.to, midnight + 30_000);
     assert.equal(days.at(-2)?.upMs, 30_000);
     assert.equal(days.at(-1)?.upMs, 30_000);
     assert.equal(days.at(-1)?.coveragePercent, 100);

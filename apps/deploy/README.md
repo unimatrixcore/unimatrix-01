@@ -121,7 +121,8 @@ intervals crossing the window boundary. Each observation covers at most the foll
 ending sooner if another observation arrives. Missing intervals and stale observations are unknown.
 Uptime is up time divided by observed up-or-down time; coverage is observed time divided by the
 whole window. With no observed time, uptime is null. Daily summaries use UTC boundaries and include
-the elapsed portion of today. The internal snapshot includes the 30-day summary, 14 daily summaries
+the elapsed portion of today. The internal snapshot includes the rolling 30-day summary, daily
+summaries for today and the preceding 29 UTC days,
 and the most recent 60 probes. `GET /deployment/health?app=api` returns that snapshot, including
 `missing`, `fresh` or `stale` freshness at the 60-second sampling boundary. A fresh `unknown`
 sample is distinct from missing history or a stale sample.
