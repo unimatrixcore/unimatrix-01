@@ -28,6 +28,32 @@ interface CachedApp {
   health: DeployHealthHistoryResponse | null;
 }
 
+function publicHistory(
+  health: DeployHealthHistoryResponse | null,
+): Pick<PublicDeploymentStatusResponse["apps"][number], "history" | "summary"> {
+  const days = health?.days ?? [];
+  let observedMs = 0;
+  let upMs = 0;
+  let durationMs = 0;
+  for (const day of days) {
+    observedMs += day.upMs + day.downMs;
+    upMs += day.upMs;
+    durationMs += day.to - day.from;
+  }
+  return {
+    history: days.map(({ from, to, uptimePercent, coveragePercent }) => ({
+      from: Math.floor(from / SAMPLE_MS) * SAMPLE_MS,
+      to: Math.floor(to / SAMPLE_MS) * SAMPLE_MS,
+      uptimePercent,
+      coveragePercent,
+    })),
+    summary: {
+      uptimePercent: observedMs === 0 ? null : (100 * upMs) / observedMs,
+      coveragePercent: durationMs === 0 ? 0 : (100 * observedMs) / durationMs,
+    },
+  };
+}
+
 export function createPublicStatusReader(client: DeployClient | null, now = Date.now) {
   let cached: CachedApp[] | null = null;
   let expiresAt = 0;
@@ -87,6 +113,7 @@ export function createPublicStatusReader(client: DeployClient | null, now = Date
           displayName,
           state,
           lastCheckedAt: checkedAt === null ? null : Math.floor(checkedAt / SAMPLE_MS) * SAMPLE_MS,
+          ...publicHistory(health),
         };
       }),
     };

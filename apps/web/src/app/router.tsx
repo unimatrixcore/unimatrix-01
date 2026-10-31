@@ -6,11 +6,13 @@ import { routeTree } from "@/routes/routeTree.gen";
 
 export type AppRouterContext = {
   queryClient: QueryClient;
+  hostname: string;
 };
 
 export interface CreateAppRouterOptions {
   history?: RouterHistory;
   queryClient?: QueryClient;
+  hostname?: string;
 }
 
 export function createAppRouter(options: CreateAppRouterOptions = {}) {
@@ -18,6 +20,7 @@ export function createAppRouter(options: CreateAppRouterOptions = {}) {
     ...(options.history ? { history: options.history } : {}),
     context: {
       queryClient: options.queryClient ?? queryClient,
+      hostname: options.hostname ?? (typeof window === "undefined" ? "" : window.location.hostname),
     } satisfies AppRouterContext,
     routeTree,
   });

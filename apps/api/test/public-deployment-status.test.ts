@@ -89,7 +89,13 @@ void test("public route requires no Clerk and returns only coarse allowed fields
       ["Unimatrix", "API"],
     );
     for (const entry of body.apps) {
-      assert.deepEqual(Object.keys(entry).sort(), ["displayName", "lastCheckedAt", "state"]);
+      assert.deepEqual(Object.keys(entry).sort(), [
+        "displayName",
+        "history",
+        "lastCheckedAt",
+        "state",
+        "summary",
+      ]);
       assert.equal(entry.state, "down");
       assert.equal(entry.lastCheckedAt % 60_000, 0);
     }
@@ -97,6 +103,63 @@ void test("public route requires no Clerk and returns only coarse allowed fields
   } finally {
     await app.close();
   }
+});
+
+void test("public history keeps only daily availability and weights its displayed window", async () => {
+  const read = createPublicStatusReader(
+    client({
+      getHealth: (app) =>
+        Promise.resolve(
+          health(app, {
+            summary: {
+              from: 0,
+              to: 180_123,
+              upMs: 180_123,
+              downMs: 0,
+              unknownMs: 0,
+              uptimePercent: 100,
+              coveragePercent: 100,
+            },
+            days: [
+              {
+                from: 0,
+                to: 60_000,
+                upMs: 30_000,
+                downMs: 30_000,
+                unknownMs: 0,
+                uptimePercent: 50,
+                coveragePercent: 100,
+              },
+              {
+                from: 60_000,
+                to: 180_123,
+                upMs: 0,
+                downMs: 0,
+                unknownMs: 120_123,
+                uptimePercent: null,
+                coveragePercent: 0,
+              },
+            ],
+            recent: [{ app, checkedAt: 120_123, state: "up" }],
+          }),
+        ),
+    }),
+    () => 130_000,
+  );
+  const result = await read();
+  for (const app of result.apps) {
+    assert.deepEqual(app.history, [
+      { from: 0, to: 60_000, uptimePercent: 50, coveragePercent: 100 },
+      { from: 60_000, to: 180_000, uptimePercent: null, coveragePercent: 0 },
+    ]);
+    assert.deepEqual(app.summary, {
+      uptimePercent: 50,
+      coveragePercent: (100 * 60_000) / 180_123,
+    });
+  }
+  assert.ok(!JSON.stringify(result).includes("recent"));
+  assert.ok(!JSON.stringify(result).includes("upMs"));
+  assert.ok(!JSON.stringify(result).includes("private"));
 });
 
 void test("coalesces concurrent refreshes and expires cached evidence at the probe boundary", async () => {
@@ -145,6 +208,11 @@ void test("missing, stale, future, unknown, mismatched and failed probes are deg
     );
     const result = await read();
     assert.ok(result.apps.every((entry) => entry.state === "degraded"));
+    if (observation === null || observation.app === "private") {
+      assert.ok(result.apps.every((entry) => entry.history.length === 0));
+      assert.ok(result.apps.every((entry) => entry.summary.uptimePercent === null));
+      assert.ok(result.apps.every((entry) => entry.summary.coveragePercent === 0));
+    }
     assert.ok(!JSON.stringify(result).includes("PRIVATE HOST"));
   }
 });

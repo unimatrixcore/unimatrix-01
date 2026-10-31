@@ -71,7 +71,7 @@ export const deployHealthHistoryResponseSchema = z.strictObject({
     checkedAt: timestampSchema.nullable(),
   }),
   summary: healthSummarySchema,
-  days: z.array(healthSummarySchema).max(14),
+  days: z.array(healthSummarySchema).max(30),
   recent: z.array(healthObservationSchema).max(60),
   freshness: freshnessSchema,
 });

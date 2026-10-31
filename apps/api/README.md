@@ -6,8 +6,12 @@ The API is a Fastify service deployed from `apps/api/Dockerfile` through
 The image is built by CI, not on the deploy host — see
 the [new-app onboarding checklist](../../docs/deployment.md#new-app-onboarding).
 
-`GET /deployment/status` is public and returns only display names, `up`/`down`/`degraded`,
-and last-probe timestamps rounded down to the minute (`null` before any observation).
+`GET /deployment/status` is public and returns display names, `up`/`down`/`degraded`,
+last-probe timestamps rounded down to the minute (`null` before any observation), and daily
+availability for today and the preceding 29 UTC days. Public history contains only minute-rounded
+window bounds, uptime and coverage percentages. Its summary weights observed durations across
+those daily windows. Missing observations retain null uptime and zero coverage; a failed health
+read returns an empty history and an unknown summary.
 Only declarations with `publicStatus: true` are included. `up` and `down` require a fresh
 probe less than a minute old; unknown, stale, missing, or failed probes are `degraded`.
 The API caches internal reads for 15 seconds and coalesces concurrent refreshes; it still

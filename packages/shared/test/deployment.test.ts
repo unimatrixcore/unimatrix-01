@@ -160,7 +160,7 @@ describe("deployment read contracts", () => {
       );
     }
     expect(
-      deployHealthHistoryResponseSchema.safeParse({ ...history, days: Array(15).fill(summary) })
+      deployHealthHistoryResponseSchema.safeParse({ ...history, days: Array(31).fill(summary) })
         .success,
     ).toBe(false);
     expect(

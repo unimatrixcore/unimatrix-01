@@ -103,7 +103,7 @@ export function openHealthHistoryStore(
             : { app, state: "unknown", checkedAt: latest?.checkedAt ?? null };
         const today = Math.floor(now / DAY_MS) * DAY_MS;
         const days: HealthSummary[] = [];
-        for (let offset = 13; offset >= 0; offset -= 1) {
+        for (let offset = 29; offset >= 0; offset -= 1) {
           const dayStart = today - offset * DAY_MS;
           const dayEnd = Math.min(dayStart + DAY_MS, now);
           days.push(summarizeHealth(observations, dayStart, dayEnd));

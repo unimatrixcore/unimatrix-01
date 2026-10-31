@@ -86,6 +86,10 @@ export function createWebViteConfig(mode: string): UserConfig {
     resolve: {
       alias: [
         {
+          find: /^@unimatrix\/chrome\/tool$/,
+          replacement: fileURLToPath(new URL("../../packages/chrome/src/tool.ts", import.meta.url)),
+        },
+        {
           find: "@",
           replacement: fileURLToPath(new URL("./src", import.meta.url)),
         },
