@@ -147,15 +147,42 @@ requires a deploy token with `read` or `manage` capability and returns `Cache-Co
 App selectors are validated query parameters; an undeclared app returns 404. These routes are
 internal service interfaces. Browser consumers reach deployment data through the API.
 
-`GET /deployment/reconciliation` collects a read-only diff on demand, optionally limited by
-`?app=api`. Per-app read failures return `outcome: error` with `reason: read-failed`, while failure
-to read the project inventory returns 503. Env findings contain only keys and closed states.
-Responses exceeding the shared schema bounds return 503 rather than a partial diff. The same
-failure response applies when an observation or health snapshot cannot be validated or read.
+`GET /deployment/reconciliation` returns the latest scheduled detection snapshot, optionally
+limited by `?app=api`. Its `checkedAt` is the response time; `observedAt` identifies the completed
+check. Status and scheduling metadata describe the entire run even when `?app` filters its results.
+`status`, `freshness`, `nextRunAt` and `intervalMs` distinguish an unchecked service, an
+active check, a completed check and failed reads. Freshness describes the recency of a completed
+attempt, including a failed attempt; `status: read-failed` means at least one app could not be
+checked. Other successfully checked apps retain their findings. Env findings contain only keys
+and closed states.
+Per-app read failures return `outcome: error` with `reason: read-failed`; an inventory failure
+replaces the snapshot with that result for every app. Invalid or oversized detection results also
+become failed-read results rather than retaining old success. An invalid response snapshot returns
+503, as do observation or health snapshots that cannot be validated or read.
 
-The state route reads the process-local container snapshot, and the health route reads SQLite;
-neither triggers an upstream poll. Reconciliation reads do not apply configuration or schedule
-work. Existing per-peer request limits apply to all of these routes.
+The state and reconciliation routes read process-local snapshots, and the health route reads
+SQLite. Reads do not trigger upstream polling or apply configuration. Existing per-peer request
+limits apply to all of these routes.
+
+## Scheduled drift detection
+
+The policy is `scheduled-detection-explicit-apply`. The service checks drift when it starts
+listening, then schedules the next check 15 minutes after the previous one finishes. Checks do not
+overlap; shutdown stops the schedule and awaits an active check. The snapshot resets on restart,
+so `not-checked` is distinct from an in-sync result. A failed read replaces the affected findings
+with an error rather than presenting the previous result as a successful check.
+
+Detection uses the same key-state and settings diff as `reconcile report`. It does not read the
+secrets store or compare stored secret values with Dokploy values: a `set` key establishes
+presence only. It creates no service, writes no settings or env, and triggers no deploy.
+Undeclared keys and emergency Dokploy edits remain untouched. Resolve drift through the
+host-local settings or secrets apply commands below, or by deliberately updating the declaration
+or Dokploy configuration. The next scheduled check observes the result; applying configuration
+does not refresh this snapshot or prove that a container uses it.
+
+Production scheduling has not been verified. After rollout, confirm a completed check and its
+next-run time through the authenticated route, then confirm a subsequent check advances the
+observation time without changing Dokploy configuration.
 
 ## Reconcile report
 

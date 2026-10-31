@@ -12,7 +12,6 @@ import {
 import { PROBE_INTERVAL_MS } from "../../health-history/model.js";
 import { CONTAINER_POLL_INTERVAL_MS } from "../../observe/polling.js";
 import { requireDeployCapability } from "../../plugins/auth.js";
-import { collectReconcileRun } from "../../reconcile/collect.js";
 import { DEPLOY_DESIRED_STATE } from "../../reconcile/desired-state.gen.js";
 
 function selectApps(app: string | undefined) {
@@ -107,16 +106,14 @@ export const deploymentModule: FastifyPluginAsync = (app) => {
       querystring: deployReconciliationQuerySchema,
       response: { 200: deployReconciliationContract.responseSchema },
     },
-    handler: async (request) => {
+    handler: (request) => {
       const selected = selectApps(request.query.app);
       try {
-        const run = await collectReconcileRun(app.dokploy, selected);
+        const snapshot = app.reconciliationDetector.snapshot();
         return deployReconciliationContract.responseSchema.parse({
-          checkedAt: Date.now(),
-          results: run.results.map((result) =>
-            result.outcome === "error"
-              ? { appDir: result.appDir, outcome: "error", reason: "read-failed" }
-              : result,
+          ...snapshot,
+          results: snapshot.results.filter((result) =>
+            selected.some((service) => service.appDir === result.appDir),
           ),
         });
       } catch {
