@@ -7,9 +7,12 @@ import {
   deployAttemptIntentSchema,
   deployAttemptReportSchema,
   deployAttemptQuerySchema,
+  deployAttemptLogsContract,
+  deployAttemptLogsQuerySchema,
 } from "@unimatrix/shared";
 
 import { requireDeployCapability } from "../../plugins/auth.js";
+import { readAttemptLogs } from "../../attempts/logs.js";
 import { DEPLOY_DESIRED_STATE } from "../../reconcile/desired-state.gen.js";
 
 function declaredApp(app: string) {
@@ -36,6 +39,30 @@ export const deploymentAttemptsModule: FastifyPluginAsync = (app) => {
   const routes = app.withTypeProvider<ZodTypeProvider>();
   routes.addHook("onRequest", async (_request, reply) => {
     reply.header("Cache-Control", "no-store");
+  });
+  routes.route({
+    method: deployAttemptLogsContract.method,
+    url: deployAttemptLogsContract.path,
+    preHandler: requireDeployCapability("read"),
+    schema: {
+      querystring: deployAttemptLogsQuerySchema,
+      response: { 200: deployAttemptLogsContract.responseSchema },
+    },
+    handler: async (request) => {
+      declaredApp(request.query.app);
+      try {
+        const attempt = app.deploymentAttempts.get(
+          request.query.app,
+          request.query.attemptId,
+          Date.now(),
+        );
+        if (attempt === undefined)
+          throw Object.assign(new Error("Attempt not found"), { statusCode: 404 });
+        return await readAttemptLogs(attempt, app.dokploy, app.deploymentLogs);
+      } catch (error) {
+        safeFailure(error);
+      }
+    },
   });
   routes.route({
     method: deployAttemptIntentContract.method,

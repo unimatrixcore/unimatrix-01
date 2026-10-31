@@ -256,7 +256,7 @@ export async function deployCi({
       });
     const result = await call("/api/compose.deploy", {
       composeId: mapping.compose,
-      title: `CI ${tag}`,
+      title: enabled ? `unimatrix-attempt:${intents.get(app)}` : `CI ${tag}`,
     });
     await result.response?.body?.cancel().catch(() => undefined);
     if (enabled)

@@ -34,6 +34,7 @@ export interface DeploymentAttemptStore {
   report(input: DeployAttemptReport, reporterId: string, now: number): DeployAttemptRecord;
   observe(evidence: readonly DeployRuntimeEvidence[], now: number): void;
   list(app: string | undefined, limit: number, now: number): DeployAttemptRecord[];
+  get(app: string, attemptId: string, now: number): DeployAttemptRecord | undefined;
   close(): void;
 }
 
@@ -211,6 +212,9 @@ export function openDeploymentAttemptStore(path: string): DeploymentAttemptStore
           .reverse()
           .slice(0, limit);
       }),
+      get: db.transaction((app: string, attemptId: string, now: number) =>
+        maintain(now).find((record) => record.id === attemptId && record.app === app),
+      ),
       close() {
         db.close();
       },

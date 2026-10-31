@@ -65,6 +65,35 @@ export const deployAttemptHistoryResponseSchema = z.strictObject({
   attempts: z.array(deployAttemptResponseSchema).max(100),
 });
 
+export const deployAttemptLogsQuerySchema = z.strictObject({
+  app: appSchema,
+  attemptId: z.uuid(),
+});
+const logSelection = {
+  app: appSchema,
+  attemptId: z.uuid(),
+  policy: z.literal("recognized-events-only"),
+};
+export const deployAttemptLogsResponseSchema = z.discriminatedUnion("status", [
+  z.strictObject({
+    ...logSelection,
+    status: z.literal("available"),
+    events: z
+      .array(z.enum(["deployment-initialized", "deployment-completed", "deployment-failed"]))
+      .max(100),
+    withheld: z.boolean(),
+    truncated: z.boolean(),
+  }),
+  z.strictObject({
+    ...logSelection,
+    status: z.literal("unavailable"),
+    reason: z.enum(["unassociated", "source-unavailable", "ambiguous"]),
+  }),
+]);
+
+export type DeployAttemptLogsQuery = z.output<typeof deployAttemptLogsQuerySchema>;
+export type DeployAttemptLogsResponse = z.output<typeof deployAttemptLogsResponseSchema>;
+
 export type DeployAttemptIntent = z.output<typeof deployAttemptIntentSchema>;
 export type DeployAttemptReport = z.output<typeof deployAttemptReportSchema>;
 export type DeployAttemptRecord = z.output<typeof deployAttemptResponseSchema>;

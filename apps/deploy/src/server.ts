@@ -1,6 +1,7 @@
 import { buildApp } from "./app.js";
 import { loadDeployRuntimeConfig } from "./config.js";
 import { createDokployClient, loadDokployApiKey } from "./dokploy/client.js";
+import { createDokployLogClient } from "./dokploy/log-client.js";
 import { setupHealthMonitoring } from "./health-history/lifecycle.js";
 import { resolveHealthProbeTargets } from "./health-history/probe.js";
 import { DEPLOY_DESIRED_STATE } from "./reconcile/desired-state.gen.js";
@@ -11,12 +12,18 @@ import { loadDeployTlsOptions } from "./tls.js";
 // plaintext Dokploy API key on a developer's disk. Local dev supplies DOKPLOY_BASE_URL and
 // DOKPLOY_API_KEY on the command line — see README.md.
 const config = loadDeployRuntimeConfig();
-const dokploy = createDokployClient({
+const dokployOptions = {
   baseUrl: config.dokployBaseUrl,
   apiKey: loadDokployApiKey(),
-});
+};
+const dokploy = createDokployClient(dokployOptions);
+const deploymentLogs = createDokployLogClient(dokployOptions);
 const https = loadDeployTlsOptions();
-const app = buildApp(config, { dokploy, ...(https === undefined ? {} : { https }) });
+const app = buildApp(config, {
+  dokploy,
+  deploymentLogs,
+  ...(https === undefined ? {} : { https }),
+});
 setupHealthMonitoring(
   app,
   config.databasePath,

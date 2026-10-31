@@ -21,6 +21,7 @@ function storeFixture(observe: DeploymentAttemptStore["observe"]) {
     intent: () => assert.fail("unused"),
     report: () => assert.fail("unused"),
     list: () => assert.fail("unused"),
+    get: () => assert.fail("unused"),
     observe,
     close() {
       closed = true;
