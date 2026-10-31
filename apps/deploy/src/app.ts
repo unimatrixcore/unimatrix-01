@@ -11,6 +11,8 @@ import { setupCorePlugins } from "./plugins/index.js";
 import { setupServiceTokenAuth } from "./plugins/auth.js";
 import { DEPLOY_DESIRED_STATE } from "./reconcile/desired-state.gen.js";
 import { openServiceTokenStore, type ServiceTokenStore } from "./service-tokens/store.js";
+import { setupDeploymentAttempts, type RuntimeEvidenceReader } from "./attempts/lifecycle.js";
+import type { DeploymentAttemptStore } from "./attempts/store.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -28,6 +30,8 @@ export interface BuildDeployAppOptions {
   https?: HttpsServerOptions;
   /** Owned and closed by the app, including when supplied by a test. */
   serviceTokens?: ServiceTokenStore;
+  deploymentAttempts?: DeploymentAttemptStore;
+  readRuntimeEvidence?: RuntimeEvidenceReader;
 }
 
 const REQUEST_BODY_LIMIT_BYTES = 65_536;
@@ -66,6 +70,12 @@ export function buildApp(
     return Promise.resolve();
   });
   setupServiceTokenAuth(app, serviceTokens);
+  setupDeploymentAttempts(
+    app,
+    config.databasePath,
+    options.deploymentAttempts,
+    options.readRuntimeEvidence,
+  );
 
   app.setErrorHandler((error, request, reply) => {
     const normalized = normalizeDeployError(error);
