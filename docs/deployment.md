@@ -861,10 +861,11 @@ docker ps --filter name=<service> --format '{{.CreatedAt}}'
 
 Read it before the deploy and again after; the value changing is recreation evidence,
 not proof that the requested image or configuration landed. A restart does not move it, so
-a crash loop cannot fake recreation. An empty result means the container is
-between the old one and the new one — `docker ps` lists running containers only —
-and looks identical to a mistyped service name, so confirm the filter matches
-before the deploy rather than after.
+a crash loop cannot fake recreation. An empty result can indicate a rollout transition or a
+stopped replacement — `docker ps` lists running containers only. Inspect
+`docker ps -a --filter name=<service>` and the service logs for stopped or restarting containers
+before treating the result as a transition. A mistyped service name can produce the same empty
+result, so confirm the filter matches before the deploy rather than after.
 
 For a recorded attempt, compare full before/after container IDs and independently verify that
 the new container uses the requested immutable image digest, following "Deployment-attempt
