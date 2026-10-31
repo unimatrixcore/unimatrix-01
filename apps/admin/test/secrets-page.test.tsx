@@ -28,6 +28,8 @@ vi.mock("@unimatrix/ui/editor", async () => {
   return { ...actual, toast: { success: toastSuccess, error: toastError } };
 });
 
+const { SecretsPage } = await import("@/features/secrets/secrets-page");
+
 function metadata(overrides: Partial<SecretMetadata> = {}): SecretMetadata {
   return {
     name: "platform/clerk-secret-key",
@@ -85,8 +87,6 @@ function row(name: string): HTMLElement {
 }
 
 async function renderPage() {
-  const { SecretsPage } = await import("@/features/secrets/secrets-page");
-
   renderInRouter(<SecretsPage />);
 
   return screen.findByText("platform/clerk-secret-key");
@@ -331,8 +331,6 @@ describe("SecretsPage", () => {
   it("reports a failed load in both panels instead of rendering empty tables", async () => {
     apiClient.adminListSecrets.mockRejectedValue(new Error("network down"));
 
-    const { SecretsPage } = await import("@/features/secrets/secrets-page");
-
     renderInRouter(<SecretsPage />);
 
     expect(await screen.findAllByText("Credentials could not be loaded.")).toHaveLength(2);
@@ -341,8 +339,6 @@ describe("SecretsPage", () => {
 
   it("invites the operator to act rather than describing an empty list", async () => {
     apiClient.adminListSecrets.mockResolvedValue({ secrets: [], activeKekVersion: 1 });
-
-    const { SecretsPage } = await import("@/features/secrets/secrets-page");
 
     renderInRouter(<SecretsPage />);
 

@@ -237,6 +237,10 @@ jobs:
         if: matrix.app == 'cflop'
         run: bash ./infra/scripts/check-cflop-serving.sh "unimatrix-cflop:ci"
 
+      - name: status serving contract
+        if: matrix.app == 'status'
+        run: bash ./infra/scripts/check-status-serving.sh "unimatrix-status:ci"
+
   # A separate job from `images` rather than a push step inside it, because
   # `Images (<app>)` is a required check and must keep meaning "this image
   # builds" — folding a registry push into it would make the same check mean
@@ -492,6 +496,17 @@ jobs:
             if [ -z "${project_written[${project_of[$app]}]:-}" ]; then
               failures+=("${app}: skipped — its project's IMAGE_TAG write failed, so a deploy would run the previous commit")
               continue
+            fi
+
+            # Web must not take over the status hostname during the service cutover.
+            if [ "$app" = "web" ]; then
+              status="$(call GET "/api/domain.byComposeId?composeId=${compose_id}" "" "${work}/web-domains.json")"
+              if [ "$status" != "200" ] || ! jq -e \
+                'type == "array" and all(.[]; .host != "status.unimatrix-01.dev")' \
+                "${work}/web-domains.json" > /dev/null; then
+                failures+=("web: held until status.unimatrix-01.dev moves to the status service")
+                continue
+              fi
             fi
 
             status="$(call POST /api/compose.deploy \
