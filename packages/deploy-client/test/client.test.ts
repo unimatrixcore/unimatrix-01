@@ -106,7 +106,16 @@ describe("deployment transport", () => {
     requests = [];
     selectedResponse = state;
     expect(await client().getState({ app: "api" })).toEqual(state);
-    const reconciliation = { checkedAt: 123, results: [] };
+    const reconciliation = {
+      checkedAt: 123,
+      policy: "scheduled-detection-explicit-apply",
+      status: "checked",
+      observedAt: 100,
+      nextRunAt: 900100,
+      intervalMs: 900000,
+      freshness: "fresh",
+      results: [],
+    };
     selectedResponse = reconciliation;
     expect(await client().getReconciliation({ app: "api" })).toEqual(reconciliation);
     expect(await client().getReconciliation()).toEqual(reconciliation);
@@ -157,13 +166,28 @@ describe("deployment transport", () => {
       { appDir: "web", outcome: "diffed", diff: { appDir: "web", verdict: "missing" } },
       { appDir: "api", outcome: "diffed", diff: { appDir: "web", verdict: "missing" } },
     ]) {
-      selectedResponse = { checkedAt: 123, results: [result] };
+      selectedResponse = {
+        checkedAt: 123,
+        policy: "scheduled-detection-explicit-apply",
+        status: "checked",
+        observedAt: 100,
+        nextRunAt: 900100,
+        intervalMs: 900000,
+        freshness: "fresh",
+        results: [result],
+      };
       await expect(client().getReconciliation({ app: "api" })).rejects.toBeInstanceOf(
         DeployClientError,
       );
     }
     selectedResponse = {
       checkedAt: 123,
+      policy: "scheduled-detection-explicit-apply",
+      status: "checked",
+      observedAt: 100,
+      nextRunAt: 900100,
+      intervalMs: 900000,
+      freshness: "fresh",
       results: [{ appDir: "api", outcome: "diffed", diff: { appDir: "api", verdict: "missing" } }],
     };
     expect((await client().getReconciliation({ app: "api" })).results).toHaveLength(1);

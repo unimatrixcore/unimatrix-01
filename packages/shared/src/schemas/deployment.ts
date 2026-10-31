@@ -118,26 +118,31 @@ const appDiffSchema = z.discriminatedUnion("verdict", [
   }),
 ]);
 
+export const deployReconciliationResultSchema = z.discriminatedUnion("outcome", [
+  z.strictObject({
+    appDir: appIdentifierSchema,
+    outcome: z.literal("error"),
+    reason: z.literal("read-failed"),
+  }),
+  z.strictObject({
+    appDir: appIdentifierSchema,
+    outcome: z.literal("diffed"),
+    diff: appDiffSchema,
+  }),
+]);
+
 export const deployReconciliationResponseSchema = z.strictObject({
   checkedAt: timestampSchema,
-  results: z
-    .array(
-      z.discriminatedUnion("outcome", [
-        z.strictObject({
-          appDir: appIdentifierSchema,
-          outcome: z.literal("error"),
-          reason: z.literal("read-failed"),
-        }),
-        z.strictObject({
-          appDir: appIdentifierSchema,
-          outcome: z.literal("diffed"),
-          diff: appDiffSchema,
-        }),
-      ]),
-    )
-    .max(100),
+  policy: z.literal("scheduled-detection-explicit-apply"),
+  status: z.enum(["not-checked", "checking", "checked", "read-failed"]),
+  observedAt: timestampSchema.nullable(),
+  nextRunAt: timestampSchema.nullable(),
+  intervalMs: z.number().int().positive().safe(),
+  freshness: freshnessSchema,
+  results: z.array(deployReconciliationResultSchema).max(100),
 });
 
 export type DeployStateResponse = z.output<typeof deployStateResponseSchema>;
 export type DeployHealthHistoryResponse = z.output<typeof deployHealthHistoryResponseSchema>;
 export type DeployReconciliationResponse = z.output<typeof deployReconciliationResponseSchema>;
+export type DeployReconciliationResult = z.output<typeof deployReconciliationResultSchema>;

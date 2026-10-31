@@ -30,7 +30,7 @@ export interface ReconcileRun {
  * without it; the caller (`../cli/reconcile.ts`) is what turns either into an exit code.
  */
 export async function collectReconcileRun(
-  client: DokployClient,
+  client: Pick<DokployClient, "getProjects" | "getCompose">,
   desired: DeployDesiredState,
 ): Promise<ReconcileRun> {
   const projects = await client.getProjects();

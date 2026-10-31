@@ -673,6 +673,15 @@ joins `unimatrix-secrets`, alongside the secrets service and the API: the
 same container now also sits on the network carrying every secrets-store
 read for this instance. See `apps/deploy/AGENTS.md`.
 
+Drift detection runs when the service starts listening and then 15 minutes after each completed
+check. The policy is scheduled detection with explicit settings and secret applies. It uses no secrets-store
+token, writes no configuration, and triggers no deploy; emergency Dokploy edits and undeclared env
+keys are reported and left intact. The authenticated reconciliation route reads the latest
+process-local snapshot without starting another check. Its status, observation time, freshness
+and next-run metadata distinguish unchecked, checking and failed reads from an in-sync result;
+the snapshot resets on restart. See
+[scheduled drift detection](../apps/deploy/README.md#scheduled-drift-detection).
+
 `pnpm --filter @unimatrix/deploy-app reconcile report` diffs every app's `deploy.config.ts` against
 what Dokploy actually holds and prints the drift — missing or ambiguously-named compose services,
 env keys that are unset/blank/undeclared (never a value, only a key and a state), and disagreement
@@ -680,7 +689,8 @@ on `composePath`, `sourceType`, `branch`, or `autoDeploy`. Read-only: it calls o
 and `compose.one`. A Dokploy env key also declared as an image build arg is reported as a
 `build-arg-runtime-copy` without counting as drift; its runtime value cannot change the bundle.
 It does not check a service's Domains entry or its `watchPaths`/`composeFile` —
-see `apps/deploy/README.md`.
+see `apps/deploy/README.md`. Neither the report nor scheduled detection compares secret values:
+a nonblank key establishes presence, not agreement with the secrets store.
 
 `pnpm --filter @unimatrix/deploy-app reconcile apply <app>` writes `composePath`, `branch`, and
 `autoDeploy` for one app when they drift — a single `compose.update` call, settings only, refusing

@@ -63,7 +63,16 @@ function state(container: unknown) {
 }
 
 function reconciliation(diff: unknown) {
-  return { checkedAt: 123, results: [{ appDir: "api", outcome: "diffed", diff }] };
+  return {
+    checkedAt: 123,
+    policy: "scheduled-detection-explicit-apply",
+    status: "checked",
+    observedAt: 100,
+    nextRunAt: 900100,
+    intervalMs: 900000,
+    freshness: "fresh",
+    results: [{ appDir: "api", outcome: "diffed", diff }],
+  };
 }
 
 describe("deployment read contracts", () => {
@@ -195,13 +204,13 @@ describe("deployment read contracts", () => {
     }
     expect(
       deployReconciliationResponseSchema.safeParse({
-        checkedAt: 123,
+        ...reconciliation(matchedDiff),
         results: [{ appDir: "api", outcome: "error", reason: "read-failed" }],
       }).success,
     ).toBe(true);
     expect(
       deployReconciliationResponseSchema.safeParse({
-        checkedAt: 123,
+        ...reconciliation(matchedDiff),
         results: [{ appDir: "api", outcome: "error", reason: "secret-bearing error" }],
       }).success,
     ).toBe(false);
@@ -236,7 +245,7 @@ describe("deployment read contracts", () => {
   it("bounds reconciliation results, findings and strings", () => {
     expect(
       deployReconciliationResponseSchema.safeParse({
-        checkedAt: 123,
+        ...reconciliation(matchedDiff),
         results: Array(101).fill({ appDir: "api", outcome: "error", reason: "read-failed" }),
       }).success,
     ).toBe(false);
@@ -249,6 +258,36 @@ describe("deployment read contracts", () => {
     ]) {
       expect(
         deployReconciliationResponseSchema.safeParse(reconciliation({ ...matchedDiff, ...fields }))
+          .success,
+      ).toBe(false);
+    }
+  });
+
+  it("exposes only the selected reconciliation policy with bounded schedule metadata", () => {
+    for (const status of ["not-checked", "checking", "checked", "read-failed"]) {
+      expect(
+        deployReconciliationResponseSchema.safeParse({
+          ...reconciliation(matchedDiff),
+          status,
+          observedAt: null,
+          nextRunAt: null,
+          freshness: "missing",
+          results: [],
+        }).success,
+      ).toBe(true);
+    }
+    for (const fields of [
+      { policy: "scheduled-correction" },
+      { status: "corrected" },
+      { observedAt: -1 },
+      { nextRunAt: 1.5 },
+      { intervalMs: 0 },
+      { intervalMs: Number.MAX_SAFE_INTEGER + 1 },
+      { freshness: "unknown" },
+      { corrected: true },
+    ]) {
+      expect(
+        deployReconciliationResponseSchema.safeParse({ ...reconciliation(matchedDiff), ...fields })
           .success,
       ).toBe(false);
     }

@@ -106,6 +106,12 @@ function client(calls: unknown[] = []): DeployClient {
       calls.push(["reconciliation", query]);
       return Promise.resolve({
         checkedAt: 100,
+        policy: "scheduled-detection-explicit-apply",
+        status: "checked",
+        observedAt: 100,
+        nextRunAt: 900100,
+        intervalMs: 900000,
+        freshness: "fresh",
         results: [
           {
             appDir: "api",
@@ -190,7 +196,14 @@ void test("verified admins receive read responses with validated selectors and n
       assert.equal(response.headers["cache-control"], "no-store");
       assert.doesNotMatch(response.body, /internal-deploy-token|actorUserId|"value"|"env"/u);
       if (url.includes("reconciliation")) {
-        const result = response.json<DeployReconciliationResponse>().results[0];
+        const reconciliation = response.json<DeployReconciliationResponse>();
+        assert.equal(reconciliation.policy, "scheduled-detection-explicit-apply");
+        assert.equal(reconciliation.status, "checked");
+        assert.equal(reconciliation.observedAt, 100);
+        assert.equal(reconciliation.nextRunAt, 900100);
+        assert.equal(reconciliation.intervalMs, 900000);
+        assert.equal(reconciliation.freshness, "fresh");
+        const result = reconciliation.results[0];
         assert.ok(result?.outcome === "diffed" && result.diff.verdict === "matched");
         assert.deepEqual(result.diff.envFindings, [{ key: "API_KEY", state: "set" }]);
       }

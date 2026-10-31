@@ -49,7 +49,17 @@ function client(overrides: Partial<DeployClient> = {}): DeployClient {
   return {
     getState: () => Promise.resolve(state()),
     getHealth: (app) => Promise.resolve(health(app)),
-    getReconciliation: () => Promise.resolve({ checkedAt: 0, results: [] }),
+    getReconciliation: () =>
+      Promise.resolve({
+        checkedAt: 0,
+        policy: "scheduled-detection-explicit-apply",
+        status: "not-checked",
+        observedAt: null,
+        nextRunAt: null,
+        intervalMs: 900000,
+        freshness: "missing",
+        results: [],
+      }),
     getAttempts: () => Promise.resolve({ attempts: [] }),
     ...overrides,
   };

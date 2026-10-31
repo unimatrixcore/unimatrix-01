@@ -267,6 +267,36 @@ void test("missing health persistence returns a generic unavailable response", a
   }
 });
 
+void test("reconciliation HTTP reads expose cached metadata without triggering Dokploy calls", async () => {
+  const { app, client, headers, calls } = fixture();
+  try {
+    const read = () => app.inject({ url: "/deployment/reconciliation?app=api", headers });
+    const initial = (await read()).json<DeployReconciliationResponse>();
+    assert.equal(initial.status, "not-checked");
+    assert.equal(initial.freshness, "missing");
+    assert.equal(initial.observedAt, null);
+    assert.deepEqual(initial.results, []);
+    assert.equal(calls.projects, 0);
+    await app.reconciliationDetector.poll();
+    const cached = (await read()).json<DeployReconciliationResponse>();
+    assert.equal(cached.policy, "scheduled-detection-explicit-apply");
+    assert.equal(cached.status, "checked");
+    assert.equal(cached.results.length, 1);
+    client.getProjects = () => Promise.reject(new Error("must not read on request"));
+    assert.deepEqual((await read()).json<DeployReconciliationResponse>().results, cached.results);
+    assert.equal(calls.projects, 1);
+    assert.equal(calls.mutation, 0);
+    app.reconciliationDetector.snapshot = () => {
+      throw new Error(CANARY);
+    };
+    const failed = await read();
+    assert.equal(failed.statusCode, 503);
+    assert.ok(!failed.body.includes(CANARY));
+  } finally {
+    await app.close();
+  }
+});
+
 void test("reconciliation reads expose missing, ambiguous, drift and sanitized per-app failure", async () => {
   const { app, client, headers, calls, logs } = fixture();
   try {
@@ -275,6 +305,7 @@ void test("reconciliation reads expose missing, ambiguous, drift and sanitized p
         await app.inject({ url: "/deployment/reconciliation?app=api", headers })
       ).json<DeployReconciliationResponse>();
     const readDiff = async () => {
+      await app.reconciliationDetector.poll();
       const result = (await read()).results[0]!;
       assert.ok(result.outcome === "diffed");
       return result.diff;
@@ -298,6 +329,7 @@ void test("reconciliation reads expose missing, ambiguous, drift and sanitized p
     );
     assert.ok(drift.envFindings.some((finding: { state: string }) => finding.state === "blank"));
     client.getCompose = () => Promise.reject(new Error(CANARY));
+    await app.reconciliationDetector.poll();
     const failure = await read();
     assert.deepEqual(failure.results, [{ appDir: "api", outcome: "error", reason: "read-failed" }]);
     assert.ok(!JSON.stringify(failure).includes(CANARY));
@@ -312,8 +344,10 @@ void test("upstream failures and oversized output produce safe unavailable respo
   const { app, client, headers, logs } = fixture();
   try {
     client.getProjects = () => Promise.reject(new Error(CANARY));
+    await app.reconciliationDetector.poll();
     const unavailable = await app.inject({ url: "/deployment/reconciliation", headers });
-    assert.equal(unavailable.statusCode, 503);
+    assert.equal(unavailable.statusCode, 200);
+    assert.equal(unavailable.json<DeployReconciliationResponse>().status, "read-failed");
     assert.ok(!unavailable.body.includes(CANARY));
     app.containerObserver.getSnapshot = () => [
       {
@@ -360,6 +394,7 @@ void test("Dokploy plaintext env values never cross reconciliation HTTP or loggi
   });
   const { app, headers, logs } = fixture(true, client);
   try {
+    await app.reconciliationDetector.poll();
     const response = await app.inject({ url: "/deployment/reconciliation?app=api", headers });
     assert.equal(response.statusCode, 200, response.body);
     assert.ok(response.body.includes("CLERK_SECRET_KEY"));
@@ -370,6 +405,7 @@ void test("Dokploy plaintext env values never cross reconciliation HTTP or loggi
       `${CANARY} invalid key=value`,
     ]) {
       env = unsupported;
+      await app.reconciliationDetector.poll();
       const refused = await app.inject({ url: "/deployment/reconciliation?app=api", headers });
       assert.equal(refused.statusCode, 200);
       assert.deepEqual(refused.json<DeployReconciliationResponse>().results, [

@@ -10,6 +10,10 @@ import { createContainerObserver, type ContainerObserver } from "./observe/obser
 import { setupCorePlugins } from "./plugins/index.js";
 import { setupServiceTokenAuth } from "./plugins/auth.js";
 import { DEPLOY_DESIRED_STATE } from "./reconcile/desired-state.gen.js";
+import {
+  createReconciliationDetector,
+  type ReconciliationDetector,
+} from "./reconcile/detection.js";
 import { openServiceTokenStore, type ServiceTokenStore } from "./service-tokens/store.js";
 import { setupDeploymentAttempts, type RuntimeEvidenceReader } from "./attempts/lifecycle.js";
 import type { DeploymentAttemptStore } from "./attempts/store.js";
@@ -19,6 +23,7 @@ declare module "fastify" {
     runtimeConfig: DeployRuntimeConfig;
     dokploy: DokployClient;
     containerObserver: ContainerObserver;
+    reconciliationDetector: ReconciliationDetector;
   }
 }
 
@@ -57,6 +62,13 @@ export function buildApp(
 
   app.decorate("runtimeConfig", config);
   app.decorate("dokploy", options.dokploy);
+  const detector = createReconciliationDetector(options.dokploy, DEPLOY_DESIRED_STATE);
+  app.decorate("reconciliationDetector", detector);
+  app.addHook("onListen", () => {
+    detector.start();
+    return Promise.resolve();
+  });
+  app.addHook("onClose", () => detector.stop());
   app.decorate(
     "containerObserver",
     createContainerObserver(options.dokploy, DEPLOY_DESIRED_STATE, Date.now, () => {
