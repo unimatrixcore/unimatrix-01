@@ -66,6 +66,7 @@ const ALLOWED_PACKAGE_IMPORTS = {
   // a slot, and cube is the move engine and diagram geometry — no transport,
   // no content, and its own `.` entry carries no dependency at all.
   "apps/cflop": ["chrome", "cube", "deploy-config", "e2e-helpers", "ui"],
+  "apps/status": ["api-client", "app-config", "chrome", "deploy-config", "shared", "ui"],
   "apps/auth": ["app-config", "auth", "chrome", "deploy-config", "ui"],
   // `api-client` and `shared` were added when the CMS moved onto this origin:
   // the content section calls the API through `@unimatrix/api-client` and

@@ -1,4 +1,4 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 
 import { selectFeaturedProjects, toBlogEntry, toProjectEntry } from "@/features/content/entries";
 import { publishedPostsQueryOptions } from "@/features/content/queries/content-posts";
@@ -8,11 +8,6 @@ import { homeContent } from "@/features/content/site-content";
 const HOME_BLOG_ENTRY_COUNT = 2;
 
 export const Route = createFileRoute("/")({
-  beforeLoad: ({ context }) => {
-    if (context.hostname === "status.unimatrix-01.dev") {
-      redirect({ to: "/status", replace: true, throw: true });
-    }
-  },
   loader: async ({ context }) => {
     // Both collections are needed to paint the page, and the two requests are
     // independent, so they go out together rather than in series.

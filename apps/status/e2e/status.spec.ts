@@ -29,8 +29,9 @@ test("status uses the approved layout and 30 accessible daily bars on desktop an
     if (message.type() === "error") errors.push(message.text());
   });
   await page.route("**/deployment/status", (route) => route.fulfill({ json: publicStatus() }));
-  await page.goto("/status");
+  await page.goto("/");
   await expect(page.getByRole("heading", { name: "Unimatrix Status" })).toBeVisible();
+  await expect(page).toHaveURL("http://localhost:4177/");
   await expect(page.getByRole("heading", { name: "All services operational" })).toBeVisible();
   const history = page.getByRole("group", { name: "Unimatrix daily uptime" });
   await expect(history.getByRole("button")).toHaveCount(30);
@@ -65,7 +66,7 @@ test("refresh replaces previous healthy data with an unavailable state and can r
       ? route.fulfill({ status: 503, json: { message: "Unavailable" } })
       : route.fulfill({ json: publicStatus("degraded") }),
   );
-  await page.goto("/status");
+  await page.goto("/");
   await expect(page.getByRole("heading", { name: "Some services degraded" })).toBeVisible();
   fail = true;
   await page.getByRole("button", { name: "Refresh status", exact: true }).click();
@@ -76,19 +77,12 @@ test("refresh replaces previous healthy data with an unavailable state and can r
   await expect(page.getByRole("heading", { name: "Some services degraded" })).toBeVisible();
 });
 
-test("the status hostname root reaches status without requesting homepage content", async ({
-  page,
-}) => {
-  let contentRequests = 0;
-  await page.route("http://status.unimatrix-01.dev/**", async (route) => {
-    const url = new URL(route.request().url());
-    if (url.pathname.includes("/content/")) contentRequests++;
-    const response = await page.request.get(`http://localhost:4173${url.pathname}${url.search}`);
-    await route.fulfill({ response });
-  });
+test("root reload preserves the standalone status surface", async ({ page }) => {
   await page.route("**/deployment/status", (route) => route.fulfill({ json: publicStatus() }));
-  await page.goto("http://status.unimatrix-01.dev/");
-  await expect(page).toHaveURL("http://status.unimatrix-01.dev/status");
+  await page.goto("/");
   await expect(page.getByRole("heading", { name: "Unimatrix Status" })).toBeVisible();
-  expect(contentRequests).toBe(0);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Unimatrix Status" })).toBeVisible();
+  await expect(page).toHaveURL("http://localhost:4177/");
+  await expect(page).toHaveTitle("Unimatrix Status");
 });

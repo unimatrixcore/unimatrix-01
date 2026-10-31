@@ -24,6 +24,10 @@ export const DEFAULT_API_CORS_ALLOWED_ORIGINS = [
   "http://127.0.0.1:5175",
   "http://localhost:4175",
   "http://127.0.0.1:4175",
+  "http://localhost:5177",
+  "http://127.0.0.1:5177",
+  "http://localhost:4177",
+  "http://127.0.0.1:4177",
 ] as const;
 
 export type ApiNodeEnv = (typeof API_NODE_ENVS)[number];

@@ -115,6 +115,7 @@ jobs:
         run: |
           pnpm --filter @unimatrix/web exec playwright install --with-deps chromium
           pnpm --filter @unimatrix/cflop exec playwright install --with-deps chromium
+          pnpm --filter @unimatrix/status exec playwright install --with-deps chromium
 
       # Runs before the expensive steps: formatting is the cheapest thing that
       # can be wrong, so failing here saves a full build/test cycle.
@@ -205,7 +206,7 @@ jobs:
       # check also has to be armed as required on `main`, or the image is built
       # and its result ignored.
       matrix:
-        app: [admin, api, auth, cflop, deploy, secrets, web]
+        app: [admin, api, auth, cflop, deploy, secrets, status, web]
 
     steps:
       - name: Check out repository
@@ -279,7 +280,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        app: [admin, api, auth, cflop, deploy, secrets, web]
+        app: [admin, api, auth, cflop, deploy, secrets, status, web]
 
     steps:
       - name: Check out repository

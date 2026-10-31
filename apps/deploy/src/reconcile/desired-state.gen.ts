@@ -110,6 +110,18 @@ export const DEPLOY_DESIRED_STATE: DeployDesiredState = [
     },
   },
   {
+    appDir: "status",
+    packageName: "@unimatrix/status",
+    kind: "static-spa",
+    composePath: "infra/docker/status-compose.yaml",
+    image: "ghcr.io/unimatrixcore/unimatrix-status",
+    containerPort: 8080,
+    env: [{ name: "IMAGE_TAG", required: true }],
+    buildArgNames: ["VITE_API_BASE_URL"],
+    publicStatus: false,
+    healthProbe: { url: "http://status:8080/" },
+  },
+  {
     appDir: "web",
     packageName: "@unimatrix/web",
     kind: "static-spa",

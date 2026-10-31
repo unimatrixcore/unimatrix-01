@@ -14,7 +14,6 @@ import { Route as AboutRouteImport } from './about'
 import { Route as AdminRouteImport } from './admin'
 import { Route as BlogRouteImport } from './blog'
 import { Route as ProjectsRouteImport } from './projects'
-import { Route as StatusRouteImport } from './status'
 import { Route as AdminSplatRouteImport } from './admin.$'
 import { Route as BlogSlugRouteImport } from './blog_.$slug'
 import { Route as ProjectsSlugRouteImport } from './projects_.$slug'
@@ -44,11 +43,6 @@ const ProjectsRoute = ProjectsRouteImport.update({
   path: '/projects',
   getParentRoute: () => rootRouteImport,
 } as any).lazy(() => import('./projects.lazy').then((d) => d.Route))
-const StatusRoute = StatusRouteImport.update({
-  id: '/status',
-  path: '/status',
-  getParentRoute: () => rootRouteImport,
-} as any).lazy(() => import('./status.lazy').then((d) => d.Route))
 const AdminSplatRoute = AdminSplatRouteImport.update({
   id: '/$',
   path: '/$',
@@ -71,7 +65,6 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRouteWithChildren
   '/blog': typeof BlogRoute
   '/projects': typeof ProjectsRoute
-  '/status': typeof StatusRoute
   '/admin/$': typeof AdminSplatRoute
   '/blog/$slug': typeof BlogSlugRoute
   '/projects/$slug': typeof ProjectsSlugRoute
@@ -82,7 +75,6 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminRouteWithChildren
   '/blog': typeof BlogRoute
   '/projects': typeof ProjectsRoute
-  '/status': typeof StatusRoute
   '/admin/$': typeof AdminSplatRoute
   '/blog/$slug': typeof BlogSlugRoute
   '/projects/$slug': typeof ProjectsSlugRoute
@@ -94,7 +86,6 @@ export interface FileRoutesById {
   '/admin': typeof AdminRouteWithChildren
   '/blog': typeof BlogRoute
   '/projects': typeof ProjectsRoute
-  '/status': typeof StatusRoute
   '/admin/$': typeof AdminSplatRoute
   '/blog_/$slug': typeof BlogSlugRoute
   '/projects_/$slug': typeof ProjectsSlugRoute
@@ -107,7 +98,6 @@ export interface FileRouteTypes {
     | '/admin'
     | '/blog'
     | '/projects'
-    | '/status'
     | '/admin/$'
     | '/blog/$slug'
     | '/projects/$slug'
@@ -118,7 +108,6 @@ export interface FileRouteTypes {
     | '/admin'
     | '/blog'
     | '/projects'
-    | '/status'
     | '/admin/$'
     | '/blog/$slug'
     | '/projects/$slug'
@@ -129,7 +118,6 @@ export interface FileRouteTypes {
     | '/admin'
     | '/blog'
     | '/projects'
-    | '/status'
     | '/admin/$'
     | '/blog_/$slug'
     | '/projects_/$slug'
@@ -141,7 +129,6 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRouteWithChildren
   BlogRoute: typeof BlogRoute
   ProjectsRoute: typeof ProjectsRoute
-  StatusRoute: typeof StatusRoute
   BlogSlugRoute: typeof BlogSlugRoute
   ProjectsSlugRoute: typeof ProjectsSlugRoute
 }
@@ -181,13 +168,6 @@ declare module '@tanstack/react-router' {
       path: '/projects'
       fullPath: '/projects'
       preLoaderRoute: typeof ProjectsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/status': {
-      id: '/status'
-      path: '/status'
-      fullPath: '/status'
-      preLoaderRoute: typeof StatusRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/$': {
@@ -230,7 +210,6 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRouteWithChildren,
   BlogRoute: BlogRoute,
   ProjectsRoute: ProjectsRoute,
-  StatusRoute: StatusRoute,
   BlogSlugRoute: BlogSlugRoute,
   ProjectsSlugRoute: ProjectsSlugRoute,
 }

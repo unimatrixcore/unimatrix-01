@@ -158,6 +158,7 @@ updates:
       - /apps/cflop
       - /apps/deploy
       - /apps/secrets
+      - /apps/status
       - /apps/web
     schedule:
       interval: daily
