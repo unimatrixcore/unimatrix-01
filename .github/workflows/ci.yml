@@ -139,7 +139,9 @@ jobs:
         run: pnpm typecheck
 
       - name: Test
-        run: pnpm test
+        # Each workspace starts its own test workers; avoid multiplying those
+        # pools across ten simultaneous suites on the hosted runner.
+        run: pnpm test --concurrency=2
 
       # Reads the `coverage/coverage-summary.json` the step above writes, so it
       # has to follow it. Catches a floor left far below what its workspace
