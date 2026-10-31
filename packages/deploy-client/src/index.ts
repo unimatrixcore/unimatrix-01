@@ -3,6 +3,7 @@ import { request as httpsRequest } from "node:https";
 
 import {
   deployAttemptHistoryContract,
+  deployDeclarationsContract,
   deployHealthHistoryContract,
   deployReconciliationContract,
   deployStateContract,
@@ -10,6 +11,7 @@ import {
   type ApiContractQuery,
   type ApiContractResponse,
   type DeployHealthHistoryResponse,
+  type DeployDeclarationsResponse,
   type DeployReconciliationResponse,
   type DeployStateResponse,
 } from "@unimatrix/shared";
@@ -22,6 +24,7 @@ export interface DeployClientConfig {
 }
 
 export interface DeployClient {
+  getDeclarations(query?: DeployAppQuery): Promise<DeployDeclarationsResponse>;
   getState(query?: DeployAppQuery): Promise<DeployStateResponse>;
   getHealth(app: string): Promise<DeployHealthHistoryResponse>;
   getReconciliation(query?: DeployAppQuery): Promise<DeployReconciliationResponse>;
@@ -132,6 +135,13 @@ export function createDeployClient(config: DeployClientConfig): DeployClient {
   }
 
   return {
+    getDeclarations: async (query = {}) => {
+      const result = await read(deployDeclarationsContract, query);
+      if (result.apps.some((entry) => query.app !== undefined && entry.appDir !== query.app)) {
+        throw new DeployClientError();
+      }
+      return result;
+    },
     getState: async (query = {}) => {
       const result = await read(deployStateContract, query);
       if (

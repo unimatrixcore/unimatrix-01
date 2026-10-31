@@ -1,4 +1,8 @@
 import {
+  deployDeclarationsQuerySchema,
+  deployDeclarationsResponseSchema,
+} from "../schemas/deployment-declarations.js";
+import {
   deployHealthHistoryQuerySchema,
   deployHealthHistoryResponseSchema,
   deployReconciliationQuerySchema,
@@ -32,3 +36,12 @@ export const deployReconciliationContract = defineApiContract({
 export type DeployStateContract = typeof deployStateContract;
 export type DeployHealthHistoryContract = typeof deployHealthHistoryContract;
 export type DeployReconciliationContract = typeof deployReconciliationContract;
+
+export const deployDeclarationsContract = defineApiContract({
+  method: "GET",
+  path: "/deployment/declarations",
+  querySchema: deployDeclarationsQuerySchema,
+  responseSchema: deployDeclarationsResponseSchema,
+});
+
+export type DeployDeclarationsContract = typeof deployDeclarationsContract;

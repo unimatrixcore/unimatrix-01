@@ -147,6 +147,17 @@ requires a deploy token with `read` or `manage` capability and returns `Cache-Co
 App selectors are validated query parameters; an undeclared app returns 404. These routes are
 internal service interfaces. Browser consumers reach deployment data through the API.
 
+`GET /deployment/declarations` returns committed deployment metadata, optionally selected by
+`?app=api`. The API exposes it at `GET /deployment/admin/declarations` to verified admins with
+Deploys access. The generated `src/declarations/manifest.gen.ts` carries compose literals,
+generated public values, Dockerfile env defaults, build-arg defaults and variable/secret source
+names. Defaults describe declarations, not the running environment or the image's actual build
+inputs. The endpoint reads neither process env values, Dokploy env values nor the secrets store;
+secret references reveal no value, mask, length or store-availability claim. Metadata describes the
+declaration artifact bundled in the running deploy-service image, not the latest repository checkout.
+Keep credentials out
+of committed literals and defaults. Reconciliation retains its separate value-free manifest.
+
 `GET /deployment/reconciliation` returns the latest scheduled detection snapshot, optionally
 limited by `?app=api`. Its `checkedAt` is the response time; `observedAt` identifies the completed
 check. Status and scheduling metadata describe the entire run even when `?app` filters its results.

@@ -24,6 +24,7 @@ const DEPLOY_ENV: ApiRuntimeEnv = {
   DEPLOY_SERVICE_TOKEN: "internal-deploy-token",
 };
 const URLS = [
+  "/deployment/admin/declarations",
   "/deployment/admin/state",
   "/deployment/admin/health?app=api",
   "/deployment/admin/reconciliation",
@@ -94,6 +95,10 @@ function health(app: string): DeployHealthHistoryResponse {
 
 function client(calls: unknown[] = []): DeployClient {
   return {
+    getDeclarations: (query) => {
+      calls.push(["declarations", query]);
+      return Promise.resolve({ apps: [] });
+    },
     getState: (query) => {
       calls.push(["state", query]);
       return Promise.resolve({ checkedAt: 100, apps: [] });
@@ -182,6 +187,8 @@ void test("verified admins receive read responses with validated selectors and n
   try {
     const headers = authHeaders();
     const urls = [
+      "/deployment/admin/declarations?app=api",
+      "/deployment/admin/declarations",
       "/deployment/admin/state?app=api",
       "/deployment/admin/health?app=api",
       "/deployment/admin/reconciliation?app=api",
@@ -209,6 +216,8 @@ void test("verified admins receive read responses with validated selectors and n
       }
     }
     assert.deepEqual(calls, [
+      ["declarations", { app: "api" }],
+      ["declarations", {}],
       ["state", { app: "api" }],
       ["health", "api"],
       ["reconciliation", { app: "api" }],
@@ -227,6 +236,8 @@ void test("invalid or client-controlled proxy selectors never reach the deployme
   const { app, cleanup } = createTestApp(undefined, { deployClient: client(calls) });
   try {
     for (const url of [
+      "/deployment/admin/declarations?extra=1",
+      "/deployment/admin/declarations?app=../secrets",
       "/deployment/admin/state?app=../secrets",
       "/deployment/admin/state?path=/compose.update",
       "/deployment/admin/state?actorUserId=admin",
@@ -257,6 +268,7 @@ void test("upstream failures become generic 502 errors without leaking values to
   const logs: string[] = [];
   const fail = () => Promise.reject(new Error(marker));
   const deployClient: DeployClient = {
+    getDeclarations: fail,
     getState: fail,
     getHealth: fail,
     getReconciliation: fail,

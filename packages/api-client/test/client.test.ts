@@ -1,6 +1,6 @@
 import type { ApiClientFetch } from "../src/config.js";
 
-import { healthContract } from "@unimatrix/shared";
+import { adminDeployDeclarationsContract, healthContract } from "@unimatrix/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ApiClientError, createApiClient } from "../src/client.js";
@@ -34,6 +34,29 @@ afterEach(() => {
 });
 
 describe("api client", () => {
+  it("reads deployment declarations through the authenticated admin contract", async () => {
+    const fetchMock = vi.fn<ApiClientFetch>(() =>
+      Promise.resolve(
+        createResponse({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ apps: [] }),
+        }),
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: "https://api.example.test",
+      fetch: fetchMock,
+      getAuthToken: () => "admin-session",
+    });
+    expect(
+      await client.request(adminDeployDeclarationsContract, { query: { app: "api" } }),
+    ).toEqual({ apps: [] });
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.example.test/deployment/admin/declarations?app=api",
+    );
+  });
+
   it("joins the base url and contract path correctly", async () => {
     const fetchMock = vi.fn(() => Promise.resolve(createResponse({ ok: true, status: 200 })));
     const client = createApiClient({

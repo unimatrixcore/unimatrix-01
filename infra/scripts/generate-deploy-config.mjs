@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 //
 // Writes apps/<app>/Dockerfile and infra/docker/<app>-compose.yaml from each
-// apps/<app>/deploy.config.ts, plus one apps/deploy/src/reconcile/desired-state.gen.ts
+// apps/<app>/deploy.config.ts, plus reconciliation and declaration manifests
 // from every app's config together. Two modes, one script, so they can never
 // diverge:
 //
@@ -47,12 +47,12 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const appsDir = join(repoRoot, "apps");
 const composeDir = join(repoRoot, "infra", "docker");
 const desiredStatePath = join(appsDir, "deploy", "src", "reconcile", "desired-state.gen.ts");
+const declarationsPath = join(appsDir, "deploy", "src", "declarations", "manifest.gen.ts");
 
 const mode = process.argv.includes("--check") ? "check" : "stage";
 
-const { dockerfileFor, composeFor, deployDesiredStateModule } = await import(
-  pathToFileURL(join(repoRoot, "packages", "deploy-config", "src", "index.ts")).href
-);
+const { dockerfileFor, composeFor, deployDesiredStateModule, deployDeclarationsModule } =
+  await import(pathToFileURL(join(repoRoot, "packages", "deploy-config", "src", "index.ts")).href);
 
 const prettierConfigPath = join(repoRoot, ".prettierrc.json");
 const prettierConfig = await prettier.resolveConfig(prettierConfigPath);
@@ -235,21 +235,23 @@ async function main() {
     }
   }
 
-  const desiredStateContent = await prettier.format(deployDesiredStateModule(configs), {
-    ...prettierConfig,
-    filepath: desiredStatePath,
-  });
-  const existingDesiredState = readFileIfPresent(desiredStatePath);
+  for (const { path, source } of [
+    { path: desiredStatePath, source: deployDesiredStateModule(configs) },
+    { path: declarationsPath, source: deployDeclarationsModule(configs) },
+  ]) {
+    const content = await prettier.format(source, { ...prettierConfig, filepath: path });
+    const existing = readFileIfPresent(path);
 
-  if (existingDesiredState !== desiredStateContent) {
-    if (mode === "check") {
-      mismatches += 1;
-      console.log(`  DIFF  ${relative(repoRoot, desiredStatePath)}`);
-      console.log(diffLines(existingDesiredState ?? "", desiredStateContent));
-    } else {
-      mkdirSync(dirname(desiredStatePath), { recursive: true });
-      writeFileSync(desiredStatePath, desiredStateContent);
-      written.push(desiredStatePath);
+    if (existing !== content) {
+      if (mode === "check") {
+        mismatches += 1;
+        console.log(`  DIFF  ${relative(repoRoot, path)}`);
+        console.log(diffLines(existing ?? "", content));
+      } else {
+        mkdirSync(dirname(path), { recursive: true });
+        writeFileSync(path, content);
+        written.push(path);
+      }
     }
   }
 

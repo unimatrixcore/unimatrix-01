@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type {
+  DeployDeclarationsResponse,
   DeployStateResponse,
   DeployHealthHistoryResponse,
   DeployReconciliationResponse,
@@ -19,7 +20,12 @@ import { openServiceTokenStore } from "../src/service-tokens/store.js";
 
 const NOW = 1_800_000_000_000;
 const CANARY = "secret-canary-never-return-or-log";
-const PATHS = ["/deployment/state", "/deployment/health?app=api", "/deployment/reconciliation"];
+const PATHS = [
+  "/deployment/declarations",
+  "/deployment/state",
+  "/deployment/health?app=api",
+  "/deployment/reconciliation",
+];
 
 function projects(names: readonly string[]): DokployProject[] {
   return [
@@ -167,6 +173,8 @@ void test("query validation and unknown apps fail before upstream reads", async 
   const { app, headers, calls } = fixture();
   try {
     for (const url of [
+      "/deployment/declarations?extra=1",
+      "/deployment/declarations?app=api&app=admin",
       "/deployment/state?extra=1",
       "/deployment/state?app=",
       "/deployment/health",
@@ -175,7 +183,7 @@ void test("query validation and unknown apps fail before upstream reads", async 
       "/deployment/reconciliation?app=api&app=admin",
     ])
       assert.equal((await app.inject({ url, headers })).statusCode, 400, url);
-    for (const path of ["state", "health", "reconciliation"]) {
+    for (const path of ["declarations", "state", "health", "reconciliation"]) {
       assert.equal(
         (await app.inject({ url: `/deployment/${path}?app=nonexistent`, headers })).statusCode,
         404,
@@ -414,6 +422,34 @@ void test("Dokploy plaintext env values never cross reconciliation HTTP or loggi
       assert.ok(!refused.body.includes(CANARY));
     }
     assert.ok(!logs.join("").includes(CANARY));
+  } finally {
+    await app.close();
+  }
+});
+
+void test("declarations expose committed defaults and secret references without upstream reads", async (context) => {
+  context.mock.property(process, "env", { ...process.env, CLERK_SECRET_KEY: CANARY });
+  const { app, headers, calls, logs } = fixture();
+  try {
+    const response = await app.inject({ url: "/deployment/declarations?app=api", headers });
+    assert.equal(response.statusCode, 200, response.body);
+    const result = response.json<DeployDeclarationsResponse>();
+    assert.equal(result.apps.length, 1);
+    const declaration = result.apps[0]!;
+    assert.equal(declaration.appDir, "api");
+    assert.equal(declaration.configPath, "apps/api/deploy.config.ts");
+    assert.ok(declaration.env.some((entry) => entry.source.kind === "secrets-store"));
+    assert.ok(declaration.env.some((entry) => entry.source.kind === "literal"));
+    assert.ok(
+      declaration.dockerfileEnv.some(
+        (entry) => entry.name === "NODE_ENV" && entry.value === "production",
+      ),
+    );
+    assert.deepEqual(calls, { containers: 0, projects: 0, compose: 0, mutation: 0 });
+    assert.doesNotMatch(
+      response.body + logs.join(""),
+      /maskedPrefix|secret-canary-never-return-or-log/u,
+    );
   } finally {
     await app.close();
   }
