@@ -7,3 +7,5 @@ export * from "./user-data.js";
 export * from "./public-status.js";
 
 export * from "./deployment-attempts.js";
+
+export * from "./deployment-declarations.js";

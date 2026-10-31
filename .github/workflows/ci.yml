@@ -53,6 +53,8 @@ jobs:
         run: bash ./infra/scripts/check-app-wiring.sh
 
       - name: Required image checks
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           node --test ./infra/scripts/check-required-image-checks.test.mjs
           node ./infra/scripts/check-required-image-checks.mjs

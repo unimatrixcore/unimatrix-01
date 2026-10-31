@@ -60,6 +60,7 @@ function client(overrides: Partial<DeployClient> = {}): DeployClient {
         freshness: "missing",
         results: [],
       }),
+    getDeclarations: () => Promise.resolve({ apps: [] }),
     getAttempts: () => Promise.resolve({ attempts: [] }),
     ...overrides,
   };

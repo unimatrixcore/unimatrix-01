@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   adminDeployAttemptHistoryContract,
+  adminDeployDeclarationsContract,
   adminDeployHealthHistoryContract,
   adminDeployReconciliationContract,
   adminDeployStateContract,
   deployAttemptHistoryContract,
+  deployDeclarationsContract,
   deployHealthHistoryContract,
   deployReconciliationContract,
   deployStateContract,
@@ -13,6 +15,7 @@ import {
 
 describe("admin deployment read contracts", () => {
   it.each([
+    [adminDeployDeclarationsContract, deployDeclarationsContract, "/deployment/admin/declarations"],
     [adminDeployStateContract, deployStateContract, "/deployment/admin/state"],
     [adminDeployHealthHistoryContract, deployHealthHistoryContract, "/deployment/admin/health"],
     [

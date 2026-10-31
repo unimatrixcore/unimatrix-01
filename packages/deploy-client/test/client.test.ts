@@ -101,9 +101,57 @@ function client(options: Partial<DeployClientConfig> = {}) {
 }
 
 describe("deployment transport", () => {
+  it("rejects declaration records for another app and credential-bearing sources", async () => {
+    requests = [];
+    mode = "selected";
+    const declaration = {
+      appDir: "api",
+      packageName: "@unimatrix/api",
+      kind: "node-api",
+      configPath: "apps/api/deploy.config.ts",
+      composePath: "infra/docker/api-compose.yaml",
+      image: "ghcr.io/unimatrixcore/api",
+      containerPort: 3001,
+      publicStatus: true,
+      healthProbe: { url: "http://api:3001/health" },
+      env: [
+        {
+          name: "KEY",
+          source: {
+            kind: "secrets-store",
+            name: "KEY",
+            secretName: "platform/key",
+            required: true,
+          },
+        },
+      ],
+      buildArgs: [],
+      dockerfileEnv: [],
+    };
+    selectedResponse = { apps: [declaration] };
+    expect((await client().getDeclarations({ app: "api" })).apps).toHaveLength(1);
+    await expect(client().getDeclarations({ app: "web" })).rejects.toBeInstanceOf(
+      DeployClientError,
+    );
+    selectedResponse = {
+      apps: [
+        {
+          ...declaration,
+          env: [
+            { name: "KEY", source: { ...declaration.env[0]?.source, value: "private credential" } },
+          ],
+        },
+      ],
+    };
+    await expect(client().getDeclarations()).rejects.toThrow("Deployment read unavailable");
+  });
+
   it("reads selected state, reconciliation and bounded attempt history through static paths", async () => {
     mode = "selected";
     requests = [];
+    selectedResponse = { apps: [] };
+    expect(await client().getDeclarations({ app: "api" })).toEqual({ apps: [] });
+    expect(await client().getDeclarations()).toEqual({ apps: [] });
     selectedResponse = state;
     expect(await client().getState({ app: "api" })).toEqual(state);
     const reconciliation = {
@@ -123,6 +171,8 @@ describe("deployment transport", () => {
     expect(await client().getAttempts({ app: "api", limit: 3 })).toEqual({ attempts: [] });
     expect(await client().getAttempts()).toEqual({ attempts: [] });
     expect(requests).toEqual([
+      { url: "/deployment/declarations?app=api", authorization: "Bearer test-token" },
+      { url: "/deployment/declarations", authorization: "Bearer test-token" },
       { url: "/deployment/state?app=api", authorization: "Bearer test-token" },
       { url: "/deployment/reconciliation?app=api", authorization: "Bearer test-token" },
       { url: "/deployment/reconciliation", authorization: "Bearer test-token" },
@@ -130,6 +180,7 @@ describe("deployment transport", () => {
       { url: "/deployment/attempts?limit=50", authorization: "Bearer test-token" },
     ]);
     for (const operation of [
+      () => client().getDeclarations({ app: "../private" }),
       () => client().getState({ app: "../private" }),
       () => client().getReconciliation({ app: "../private" }),
       () => client().getAttempts({ app: "../private" }),
@@ -138,7 +189,7 @@ describe("deployment transport", () => {
     ]) {
       await expect(operation()).rejects.toBeInstanceOf(DeployClientError);
     }
-    expect(requests).toHaveLength(5);
+    expect(requests).toHaveLength(7);
   });
 
   it("rejects state and reconciliation records outside their selected app or parent", async () => {

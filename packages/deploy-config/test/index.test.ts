@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   composeFor,
+  deployDeclarationsModule,
   deployDesiredStateModule,
   dockerfileFor,
   type InternalServiceUrlOptions,
@@ -10,6 +11,7 @@ import {
   staticSpaApp,
   validateAppConfig,
 } from "../src/index.js";
+import type { DeployDeclaration } from "../src/index.js";
 
 const TEST_SECRET = {
   name: "platform/clerk-secret-key",
@@ -26,6 +28,103 @@ const API_FROM_LINES = {
   base: "FROM node:${NODE_VERSION}-alpine AS base",
   runtime: "FROM node:${NODE_VERSION}-alpine AS runtime",
 };
+
+function declarationsFrom(source: string): DeployDeclaration[] {
+  return JSON.parse(
+    source
+      .slice(source.indexOf(" = ") + 3)
+      .trim()
+      .slice(0, -1),
+  ) as DeployDeclaration[];
+}
+
+describe("deployDeclarationsModule", () => {
+  it("preserves declared sources and committed defaults without copying registry data or runtime values", () => {
+    const config = nodeApiApp({
+      appDir: "api",
+      packageName: "@unimatrix/api",
+      dockerfileEnv: [{ name: "NODE_ENV", value: "production", comment: ["not metadata"] }],
+      composeEnv: [
+        { name: "HOST", value: { kind: "literal", value: "0.0.0.0" } },
+        { name: "COMPUTED", value: { kind: "generated", name: "COMPUTED", value: "a,b" } },
+        { name: "OPTIONAL", value: { kind: "variable", name: "PLATFORM_OPTIONAL", default: "" } },
+        { name: "TOKEN", value: { kind: "variable", name: "PLATFORM_TOKEN" } },
+        {
+          name: "KEY",
+          value: { kind: "secrets-store", name: "PLATFORM_KEY", secret: TEST_SECRET },
+        },
+      ],
+      volumes: [],
+    });
+    const source = deployDeclarationsModule([config]);
+    const declarations = declarationsFrom(source);
+    expect(declarations).toEqual([
+      {
+        appDir: "api",
+        packageName: "@unimatrix/api",
+        kind: "node-api",
+        configPath: "apps/api/deploy.config.ts",
+        composePath: "infra/docker/api-compose.yaml",
+        image: "ghcr.io/unimatrixcore/unimatrix-api",
+        containerPort: 3001,
+        publicStatus: false,
+        healthProbe: { url: "http://api:3001/health" },
+        env: [
+          { name: "COMPUTED", source: { kind: "generated", name: "COMPUTED", value: "a,b" } },
+          { name: "HOST", source: { kind: "literal", value: "0.0.0.0" } },
+          { name: "IMAGE_TAG", source: { kind: "variable", name: "IMAGE_TAG", required: true } },
+          {
+            name: "KEY",
+            source: {
+              kind: "secrets-store",
+              name: "PLATFORM_KEY",
+              secretName: TEST_SECRET.name,
+              required: true,
+            },
+          },
+          {
+            name: "OPTIONAL",
+            source: {
+              kind: "variable",
+              name: "PLATFORM_OPTIONAL",
+              required: false,
+              defaultValue: "",
+            },
+          },
+          { name: "TOKEN", source: { kind: "variable", name: "PLATFORM_TOKEN", required: true } },
+        ],
+        dockerfileEnv: [{ name: "NODE_ENV", value: "production" }],
+        buildArgs: [],
+      },
+    ]);
+    expect(source).not.toContain(TEST_SECRET.consumedBy);
+    expect(source).not.toContain("not metadata");
+    expect(deployDesiredStateModule([config])).not.toContain("0.0.0.0");
+    expect(deployDesiredStateModule([config])).not.toContain("a,b");
+  });
+
+  it("sorts apps and build args while preserving absent defaults separately from declared values", () => {
+    const web = staticSpaApp({
+      appDir: "web",
+      packageName: "@unimatrix/web",
+      publicStatus: true,
+      buildArgs: [{ name: "Z", default: 'https://example.com/"quoted"' }, { name: "A" }],
+    });
+    const admin = staticSpaApp({ appDir: "admin", packageName: "@unimatrix/admin", buildArgs: [] });
+    const source = deployDeclarationsModule([web, admin]);
+    const declarations = declarationsFrom(source);
+    expect(declarations.map(({ appDir }) => appDir)).toEqual(["admin", "web"]);
+    expect(declarations[1]).toMatchObject({
+      publicStatus: true,
+      dockerfileEnv: [],
+      buildArgs: [{ name: "A" }, { name: "Z", defaultValue: 'https://example.com/"quoted"' }],
+    });
+    expect(source.startsWith("// GENERATED")).toBe(true);
+    expect(source).toContain('import type { DeployDeclaration } from "@unimatrix/deploy-config";');
+    expect(source).not.toMatch(/^import \{/mu);
+    expect(deployDesiredStateModule([web])).not.toContain("https://example.com/");
+  });
+});
 
 describe("staticSpaApp / dockerfileFor / composeFor", () => {
   it("omits ARG/ENV entirely for an app with no build args", () => {

@@ -1,6 +1,8 @@
 import type { FastifyPluginAsync } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import {
+  deployDeclarationsContract,
+  deployDeclarationsQuerySchema,
   deployStateContract,
   deployStateQuerySchema,
   deployHealthHistoryContract,
@@ -8,6 +10,8 @@ import {
   deployReconciliationContract,
   deployReconciliationQuerySchema,
 } from "@unimatrix/shared";
+
+import { DEPLOY_DECLARATIONS } from "../../declarations/manifest.gen.js";
 
 import { PROBE_INTERVAL_MS } from "../../health-history/model.js";
 import { CONTAINER_POLL_INTERVAL_MS } from "../../observe/polling.js";
@@ -37,6 +41,27 @@ export const deploymentModule: FastifyPluginAsync = (app) => {
   const routes = app.withTypeProvider<ZodTypeProvider>();
   routes.addHook("onRequest", async (_request, reply) => {
     reply.header("Cache-Control", "no-store");
+  });
+  routes.route({
+    method: deployDeclarationsContract.method,
+    url: deployDeclarationsContract.path,
+    preHandler: requireDeployCapability("read"),
+    schema: {
+      querystring: deployDeclarationsQuerySchema,
+      response: { 200: deployDeclarationsContract.responseSchema },
+    },
+    handler: (request) => {
+      const selected = selectApps(request.query.app);
+      try {
+        return deployDeclarationsContract.responseSchema.parse({
+          apps: DEPLOY_DECLARATIONS.filter((declaration) =>
+            selected.some((service) => service.appDir === declaration.appDir),
+          ),
+        });
+      } catch {
+        throw unavailable();
+      }
+    },
   });
   routes.route({
     method: deployStateContract.method,

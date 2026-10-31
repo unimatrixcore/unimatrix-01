@@ -1,6 +1,8 @@
 import { requireAdminSection } from "@unimatrix/auth/server";
 import type { DeployClient } from "@unimatrix/deploy-client";
 import {
+  adminDeployDeclarationsContract,
+  deployDeclarationsQuerySchema,
   adminDeployStateContract,
   adminDeployHealthHistoryContract,
   adminDeployReconciliationContract,
@@ -42,6 +44,19 @@ export const adminDeploymentModule: FastifyPluginAsync<AdminDeploymentModuleOpti
     }
   }
 
+  app.withTypeProvider<ZodTypeProvider>().route({
+    method: adminDeployDeclarationsContract.method,
+    url: adminDeployDeclarationsContract.path,
+    preHandler: requireAdminSection("deploys"),
+    schema: {
+      querystring: deployDeclarationsQuerySchema,
+      response: { 200: adminDeployDeclarationsContract.responseSchema },
+    },
+    handler: (request) => {
+      getRequiredAuthUserId(request);
+      return read(() => deployClient.getDeclarations(request.query));
+    },
+  });
   app.withTypeProvider<ZodTypeProvider>().route({
     method: adminDeployStateContract.method,
     url: adminDeployStateContract.path,

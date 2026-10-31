@@ -852,3 +852,111 @@ export function deployDesiredStateModule(configs: readonly DeployAppConfig[]): s
 
   return lines.join("\n");
 }
+
+export type DeployDeclarationSource =
+  | { readonly kind: "literal"; readonly value: string }
+  | { readonly kind: "generated"; readonly name: string; readonly value: string }
+  | {
+      readonly kind: "variable";
+      readonly name: string;
+      readonly required: boolean;
+      readonly defaultValue?: string;
+    }
+  | {
+      readonly kind: "secrets-store";
+      readonly name: string;
+      readonly secretName: string;
+      readonly required: true;
+    };
+
+/** Public, committed declaration data. Runtime env and stored credentials have no input here. */
+export interface DeployDeclaration {
+  readonly appDir: string;
+  readonly packageName: string;
+  readonly kind: DeployAppConfig["kind"];
+  readonly configPath: string;
+  readonly composePath: string;
+  readonly image: string;
+  readonly containerPort: number;
+  readonly publicStatus: boolean;
+  readonly healthProbe: DeployDesiredService["healthProbe"];
+  readonly env: readonly {
+    readonly name: string;
+    readonly source: DeployDeclarationSource;
+  }[];
+  readonly dockerfileEnv: readonly { readonly name: string; readonly value: string }[];
+  readonly buildArgs: readonly { readonly name: string; readonly defaultValue?: string }[];
+}
+
+function declarationSource(value: DeployComposeValue): DeployDeclarationSource {
+  switch (value.kind) {
+    case "literal":
+      return { kind: value.kind, value: value.value };
+    case "generated":
+      return { kind: value.kind, name: value.name, value: value.value };
+    case "variable":
+      return {
+        kind: value.kind,
+        name: value.name,
+        required: value.default === undefined,
+        ...(value.default === undefined ? {} : { defaultValue: value.default }),
+      };
+    case "secrets-store":
+      return { kind: value.kind, name: value.name, secretName: value.secret.name, required: true };
+  }
+}
+
+/** Kept outside reconciliation so declaration values cannot enter its reports or apply inputs. */
+export function deployDeclarationsModule(configs: readonly DeployAppConfig[]): string {
+  const declarations: DeployDeclaration[] = [...configs]
+    .sort((a, b) => a.appDir.localeCompare(b.appDir))
+    .map((config) => {
+      const desired = desiredServiceForConfig(config);
+      return {
+        appDir: config.appDir,
+        packageName: config.packageName,
+        kind: config.kind,
+        configPath: `apps/${config.appDir}/deploy.config.ts`,
+        composePath: desired.composePath,
+        image: desired.image,
+        containerPort: desired.containerPort,
+        publicStatus: desired.publicStatus,
+        healthProbe: desired.healthProbe,
+        env: [
+          {
+            name: IMAGE_TAG_VARIABLE,
+            source: declarationSource({ kind: "variable", name: IMAGE_TAG_VARIABLE }),
+          },
+          ...(config.kind === "node-api"
+            ? config.composeEnv.map((entry) => ({
+                name: entry.name,
+                source: declarationSource(entry.value),
+              }))
+            : []),
+        ].sort((a, b) => a.name.localeCompare(b.name)),
+        dockerfileEnv:
+          config.kind === "node-api"
+            ? config.dockerfileEnv
+                .map(({ name, value }) => ({ name, value }))
+                .sort((a, b) => a.name.localeCompare(b.name))
+            : [],
+        buildArgs:
+          config.kind === "static-spa"
+            ? config.buildArgs
+                .map(({ name, default: defaultValue }) => ({
+                  name,
+                  ...(defaultValue === undefined ? {} : { defaultValue }),
+                }))
+                .sort((a, b) => a.name.localeCompare(b.name))
+            : [],
+      };
+    });
+  return [
+    "// GENERATED — edit the relevant apps/<app>/deploy.config.ts and run",
+    "// `node ./infra/scripts/generate-deploy-config.mjs`, not this file.",
+    'import type { DeployDeclaration } from "@unimatrix/deploy-config";',
+    "",
+    `export const DEPLOY_DECLARATIONS: readonly DeployDeclaration[] = ${JSON.stringify(declarations, null, 2)};`,
+    "",
+  ].join("\n");
+}
