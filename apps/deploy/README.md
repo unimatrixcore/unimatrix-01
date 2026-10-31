@@ -87,6 +87,10 @@ Preserve `deploy-data`: losing the database invalidates issued credentials as we
 
 ## Container observation
 
+Deployment attempts are persisted separately from the process-local container snapshot. See
+[deployment attempt setup](../../docs/deployment-attempts.md) for CI activation, the host-local
+immutable image bridge, outcome semantics and the remaining production verification gates.
+
 The running service samples Dokploy's `docker.getContainers` every 30 seconds and keeps the latest
 observation in memory for each app in `src/reconcile/desired-state.gen.ts`. A container is associated
 with an app only when its image repository matches that app's declared image uniquely. Missing or

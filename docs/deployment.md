@@ -196,9 +196,9 @@ between recreation and verified image correlation.
 
 ### Deployment-attempt ingestion and image correlation
 
-This is the implementation contract for attempt recording. The current CI workflow queues
-deployments directly in Dokploy; `apps/deploy/src/observe/observer.ts` observes container IDs and
-image strings. Neither implements the durable reporting and immutable correlation required here.
+This is the implementation contract for attempt recording. CI queues deployments directly in
+Dokploy and supports durable reporting through the deploy service. Activation and the host-local
+runtime evidence bridge are covered in [deployment attempt setup](deployment-attempts.md).
 
 **CI keeps orchestration; the deploy service owns attempt records and outcome observation.**
 CI reports intent before queuing work and reports the request result afterwards. Reporting must
@@ -235,8 +235,8 @@ Reporting uses validated, bounded contracts and the deploy service's authenticat
 boundary. Read tokens cannot write attempts. The reporter cannot submit a `landed` verdict or
 choose its own trusted identity. No env blob, credential, raw Dokploy response or arbitrary log
 text belongs in an attempt. Shared HTTP contracts use static paths with validated bodies/queries.
-The authenticated route from GitHub-hosted CI to this unrouted service requires implementation
-and reachability verification; this contract does not provision a public deploy-service endpoint.
+The restricted authenticated ingress from GitHub-hosted CI requires provisioning and reachability
+verification before activation; it must expose only the reporting mutations, never internal reads.
 
 **Landed requires both a changed container ID and an exact immutable image match.** Store the
 requested repository, platform, digest kind and digest separately from display tags and commit metadata. The
@@ -271,8 +271,9 @@ unresolved evidence through its deadline and bound both records and returned his
 Before enabling attempt recording, verify publication digest capture, runtime digest observation,
 authenticated CI reporting, restart recovery and the failure cases above. Exercise a same-tag
 rebuild with a different digest and a same-image redeploy without recreation; neither may land.
-No live digest source or
-end-to-end attempt reporting has been verified by this documentation change. Per-attempt log
+The runtime bridge was checked read-only on unimatrix-03 on 2026-10-30: each declared app produced
+a full container ID and a verified platform-manifest/config relationship. Authenticated CI ingress,
+publication digest capture in Actions and end-to-end reporting remain activation gates. Per-attempt log
 retrieval and rollback execution remain separate features; a local attempt ID alone does not
 establish an upstream log identity or permission to change the project-wide image tag.
 
