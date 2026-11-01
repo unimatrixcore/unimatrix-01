@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { DeployDesiredState } from "@unimatrix/deploy-config";
+import type { DeployAttemptRuntimeEvidence } from "@unimatrix/shared";
 
 import type { DokployContainer } from "../src/dokploy/schemas.js";
 import { createContainerObserver } from "../src/observe/observer.js";
@@ -293,4 +294,119 @@ void test("runtime metadata attaches only to the same app and exact container id
   );
   const unmatched = (await other.poll())[0];
   if (unmatched?.kind === "matched") assert.equal(unmatched.startedAt, null);
+});
+
+void test("runtime metadata resolves only unique full identities from valid abbreviated IDs", async (t) => {
+  const fullId = "a".repeat(64);
+  const evidence: DeployAttemptRuntimeEvidence = {
+    app: "api",
+    containerId: fullId,
+    observedAt: 100,
+    metadata: {
+      name: "actual-container",
+      startedAt: 10,
+      health: "healthy",
+      imageTag: null,
+      commit: null,
+      commitSubject: null,
+    },
+    image: {
+      repository: desired[0]!.image,
+      platform: "linux/amd64",
+      digestKind: "manifest",
+      digest: `sha256:${"b".repeat(64)}`,
+    },
+  };
+  const cases = [
+    { name: "12-character prefix", id: fullId.slice(0, 12), entries: [evidence], matches: true },
+    { name: "longer prefix", id: fullId.slice(0, 63), entries: [evidence], matches: true },
+    { name: "too short", id: fullId.slice(0, 11), entries: [evidence], matches: false },
+    { name: "unrelated ID", id: "b".repeat(12), entries: [evidence], matches: false },
+    { name: "non-hex prefix", id: "container-id", entries: [evidence], matches: false },
+    { name: "overlong ID", id: "a".repeat(65), entries: [evidence], matches: false },
+    {
+      name: "evidence must contain a full ID",
+      id: fullId.slice(0, 12),
+      entries: [{ ...evidence, containerId: fullId.slice(0, 63) }],
+      matches: false,
+    },
+    {
+      name: "different app",
+      id: fullId.slice(0, 12),
+      entries: [{ ...evidence, app: "web" }],
+      matches: false,
+    },
+    {
+      name: "different repository even with exact ID",
+      id: fullId,
+      entries: [{ ...evidence, image: { ...evidence.image, repository: desired[1]!.image } }],
+      matches: false,
+    },
+    {
+      name: "duplicate exact evidence",
+      id: fullId,
+      entries: [evidence, evidence],
+      matches: false,
+    },
+    {
+      name: "duplicate abbreviated evidence",
+      id: fullId.slice(0, 12),
+      entries: [evidence, evidence],
+      matches: false,
+    },
+    {
+      name: "colliding full IDs",
+      id: fullId.slice(0, 12),
+      entries: [evidence, { ...evidence, containerId: "a".repeat(63) + "b" }],
+      matches: false,
+    },
+  ];
+  for (const scenario of cases) {
+    await t.test(scenario.name, async () => {
+      const observer = createContainerObserver(
+        { getContainers: () => Promise.resolve([container({ containerId: scenario.id })]) },
+        desired.slice(0, 1),
+        () => 100,
+        undefined,
+        () => Promise.resolve(scenario.entries),
+      );
+      const observed = (await observer.poll())[0];
+      assert.equal(observed?.kind, "matched");
+      if (observed?.kind !== "matched") assert.fail("Expected a container observation");
+      assert.equal(observed.containerId, scenario.id);
+      assert.equal(observed.startedAt, scenario.matches ? 10 : null);
+      assert.equal(observed.health, scenario.matches ? "healthy" : null);
+      assert.equal(observed.runtimeMetadataObservedAt, scenario.matches ? 100 : null);
+      assert.equal(observed.firstObservedAt, 100);
+      assert.equal(observed.lastRecreatedAt, null);
+    });
+  }
+  await t.test("temporary missing evidence does not imply container recreation", async () => {
+    let time = 100;
+    let entries = [evidence];
+    const observer = createContainerObserver(
+      { getContainers: () => Promise.resolve([container({ containerId: fullId.slice(0, 12) })]) },
+      desired.slice(0, 1),
+      () => time,
+      undefined,
+      () => Promise.resolve(entries),
+    );
+    await observer.poll();
+    entries = [];
+    time = 200;
+    const missing = (await observer.poll())[0];
+    assert.equal(missing?.kind, "matched");
+    if (missing?.kind !== "matched") assert.fail("Expected a container observation");
+    assert.equal(missing.startedAt, null);
+    assert.equal(missing.firstObservedAt, 100);
+    assert.equal(missing.lastRecreatedAt, null);
+    entries = [evidence];
+    time = 300;
+    const restored = (await observer.poll())[0];
+    assert.equal(restored?.kind, "matched");
+    if (restored?.kind !== "matched") assert.fail("Expected a container observation");
+    assert.equal(restored.startedAt, 10);
+    assert.equal(restored.firstObservedAt, 100);
+    assert.equal(restored.lastRecreatedAt, null);
+  });
 });
