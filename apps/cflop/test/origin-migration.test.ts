@@ -11,6 +11,8 @@ function fragment(entries: unknown): string {
 describe("browser origin migration", () => {
   beforeEach(() => {
     localStorage.clear();
+    sessionStorage.clear();
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
@@ -126,6 +128,187 @@ describe("browser origin migration", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  function at(href: string) {
+    const replace = vi.fn();
+    const reload = vi.fn();
+    const replaceState = vi.fn();
+    const storage = localStorage;
+    const session = sessionStorage;
+    vi.stubGlobal("window", {
+      location: { href, origin: new URL(href).origin, replace, reload },
+      localStorage: storage,
+      sessionStorage: session,
+      history: { state: null, replaceState },
+    });
+    return { replace, reload, replaceState };
+  }
+
+  function startProbe(href = "https://cflop.us/learn?set=pll#case") {
+    const navigation = at(href);
+    expect(handleOriginMigration(document.createElement("div"))).toBe(true);
+    return new URL(navigation.replace.mock.calls[0]![0] as string);
+  }
+
+  function bridgeResult(bridge: URL) {
+    const navigation = at(bridge.href);
+    expect(handleOriginMigration(document.createElement("div"))).toBe(true);
+    return new URL(navigation.replace.mock.calls[0]![0] as string);
+  }
+
+  it("checks both old origins before initializing an empty destination, then stops probing", () => {
+    const original = "https://cflop.us/learn?set=pll#case";
+    const first = startProbe(original);
+    expect(first.origin + first.pathname).toBe("https://cflop.unimatrix-01.dev/origin-migration");
+    expect(first.searchParams.get("attempt")).toMatch(/^[a-f0-9-]{36}$/);
+    expect(localStorage.length).toBe(0);
+    const firstResult = bridgeResult(first);
+    const afterFirst = at(firstResult.href);
+    expect(handleOriginMigration(document.createElement("div"))).toBe(true);
+    const second = new URL(afterFirst.replace.mock.calls[0]![0] as string);
+    expect(second.origin + second.pathname).toBe("https://cube.unimatrix-01.dev/origin-migration");
+    const secondResult = bridgeResult(second);
+    const afterSecond = at(secondResult.href);
+    expect(handleOriginMigration(document.createElement("div"))).toBe(false);
+    expect(afterSecond.replaceState).toHaveBeenCalledWith(null, "", original);
+    expect(sessionStorage.length).toBe(0);
+    at(original);
+    expect(handleOriginMigration(document.createElement("div"))).toBe(false);
+    vi.unstubAllGlobals();
+  });
+
+  it("imports bridge progress before rendering and leaves its source copy intact", () => {
+    const bridge = startProbe();
+    localStorage.setItem("cube-trainer:progress:oll", '{"oll-1":"known"}');
+    const result = bridgeResult(bridge);
+    expect(localStorage.getItem("cube-trainer:progress:oll")).toBe('{"oll-1":"known"}');
+    localStorage.clear();
+    const navigation = at(result.href);
+    expect(handleOriginMigration(document.createElement("div"))).toBe(false);
+    expect(localStorage.getItem("cflop:progress:oll")).toBe('{"oll-1":"known"}');
+    expect(navigation.replace).not.toHaveBeenCalled();
+    expect(navigation.replaceState).toHaveBeenCalledWith(
+      null,
+      "",
+      "https://cflop.us/learn?set=pll#case",
+    );
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps destination values if another tab writes while a bridge is open", () => {
+    const bridge = startProbe();
+    localStorage.setItem("cflop:progress:oll", '{"oll-1":"known"}');
+    const result = bridgeResult(bridge);
+    localStorage.setItem("cflop:progress:oll", '{"oll-2":"known"}');
+    at(result.href);
+    expect(handleOriginMigration(document.createElement("div"))).toBe(false);
+    expect(localStorage.getItem("cflop:progress:oll")).toBe('{"oll-2":"known"}');
+    vi.unstubAllGlobals();
+  });
+
+  it("does not probe either old origin when destination already has data", () => {
+    localStorage.setItem("cube-trainer:algorithm-set", "malformed");
+    const navigation = at("https://cflop.us/drill");
+    expect(handleOriginMigration(document.createElement("div"))).toBe(false);
+    expect(navigation.replace).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it("rejects unsolicited bridge results without importing their data", () => {
+    const bridge = startProbe();
+    localStorage.setItem("cflop:progress:oll", '{"oll-1":"known"}');
+    const result = bridgeResult(bridge);
+    localStorage.clear();
+    sessionStorage.clear();
+    at(result.href);
+    const root = document.createElement("div");
+    expect(handleOriginMigration(root)).toBe(true);
+    expect(root.textContent).toContain("Your saved progress could not be transferred");
+    expect(localStorage.length).toBe(0);
+    vi.unstubAllGlobals();
+  });
+
+  it("does not turn an interrupted probe into a navigation loop", () => {
+    startProbe();
+    const navigation = at("https://cflop.us/learn?set=pll#case");
+    const root = document.createElement("div");
+    const render = vi.fn();
+    expect(handleOriginMigration(root, render)).toBe(true);
+    expect(navigation.replace).not.toHaveBeenCalled();
+    root.querySelector("a")!.click();
+    expect(render).toHaveBeenCalledOnce();
+    expect(localStorage.length).toBe(0);
+    expect(navigation.reload).not.toHaveBeenCalled();
+    root.querySelector("button")!.click();
+    expect(navigation.replace).toHaveBeenCalledWith(
+      expect.stringContaining("/origin-migration?attempt="),
+    );
+    vi.unstubAllGlobals();
+  });
+
+  it("offers a usable skip if session storage is unavailable", () => {
+    at("https://cflop.us/drill?set=pll#case");
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("Blocked", "SecurityError");
+    });
+    const root = document.createElement("div");
+    const render = vi.fn();
+    expect(handleOriginMigration(root, render)).toBe(true);
+    root.querySelector("a")!.click();
+    expect(render).toHaveBeenCalledOnce();
+    vi.unstubAllGlobals();
+  });
+
+  it("retains a retryable pending source when the completion marker cannot be written", () => {
+    const firstResult = bridgeResult(startProbe());
+    const afterFirst = at(firstResult.href);
+    expect(handleOriginMigration(document.createElement("div"))).toBe(true);
+    const second = new URL(afterFirst.replace.mock.calls[0]![0] as string);
+    const secondResult = bridgeResult(second);
+    const navigation = at(secondResult.href);
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("Full", "QuotaExceededError");
+    });
+    const root = document.createElement("div");
+    expect(handleOriginMigration(root)).toBe(true);
+    expect(sessionStorage.getItem("cflop:origin-migration-pending:v1")).not.toBeNull();
+    root.querySelector("button")!.click();
+    expect(navigation.replace).toHaveBeenCalledWith(second.href);
+    vi.unstubAllGlobals();
+  });
+
+  it("retains the previous source if starting the next source fails", () => {
+    const first = startProbe();
+    const firstResult = bridgeResult(first);
+    const navigation = at(firstResult.href);
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("Full", "QuotaExceededError");
+    });
+    const root = document.createElement("div");
+    expect(handleOriginMigration(root)).toBe(true);
+    root.querySelector("button")!.click();
+    expect(navigation.replace).toHaveBeenCalledWith(first.href);
+    vi.unstubAllGlobals();
+  });
+
+  it("rejects bridge metadata targeting another origin", () => {
+    const hash =
+      "#cflop-probe=" +
+      encodeURIComponent(
+        JSON.stringify({
+          version: 1,
+          sourceIndex: 0,
+          nonce: crypto.randomUUID(),
+          returnHref: "https://evil.test/",
+        }),
+      );
+    const navigation = at("https://cflop.unimatrix-01.dev/origin-migration" + hash);
+    const root = document.createElement("div");
+    expect(handleOriginMigration(root)).toBe(true);
+    expect(navigation.replace).not.toHaveBeenCalled();
+    expect(root.querySelector("a")!.href).toContain("https://cflop.us/");
+    vi.unstubAllGlobals();
   });
 
   it("does nothing on local development origins", () => {

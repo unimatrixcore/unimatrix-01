@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './__root'
 import { Route as IndexRouteImport } from './index'
 import { Route as DrillRouteImport } from './drill'
 import { Route as LearnRouteImport } from './learn'
+import { Route as OriginMigrationRouteImport } from './origin-migration'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -28,35 +29,44 @@ const LearnRoute = LearnRouteImport.update({
   path: '/learn',
   getParentRoute: () => rootRouteImport,
 } as any).lazy(() => import('./learn.lazy').then((d) => d.Route))
+const OriginMigrationRoute = OriginMigrationRouteImport.update({
+  id: '/origin-migration',
+  path: '/origin-migration',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() => import('./origin-migration.lazy').then((d) => d.Route))
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/drill': typeof DrillRoute
   '/learn': typeof LearnRoute
+  '/origin-migration': typeof OriginMigrationRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/drill': typeof DrillRoute
   '/learn': typeof LearnRoute
+  '/origin-migration': typeof OriginMigrationRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/drill': typeof DrillRoute
   '/learn': typeof LearnRoute
+  '/origin-migration': typeof OriginMigrationRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/drill' | '/learn'
+  fullPaths: '/' | '/drill' | '/learn' | '/origin-migration'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/drill' | '/learn'
-  id: '__root__' | '/' | '/drill' | '/learn'
+  to: '/' | '/drill' | '/learn' | '/origin-migration'
+  id: '__root__' | '/' | '/drill' | '/learn' | '/origin-migration'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DrillRoute: typeof DrillRoute
   LearnRoute: typeof LearnRoute
+  OriginMigrationRoute: typeof OriginMigrationRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -82,6 +92,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LearnRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/origin-migration': {
+      id: '/origin-migration'
+      path: '/origin-migration'
+      fullPath: '/origin-migration'
+      preLoaderRoute: typeof OriginMigrationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -89,6 +106,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DrillRoute: DrillRoute,
   LearnRoute: LearnRoute,
+  OriginMigrationRoute: OriginMigrationRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

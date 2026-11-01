@@ -30,10 +30,13 @@ for (const tag of document.querySelectorAll("[data-prerendered-head]")) {
   tag.remove();
 }
 
-if (!handleOriginMigration(rootElement)) {
-  ReactDOM.createRoot(rootElement).render(
+const appRoot = rootElement;
+function renderApp(): void {
+  ReactDOM.createRoot(appRoot).render(
     <React.StrictMode>
       <RouterProvider router={router} />
     </React.StrictMode>,
   );
 }
+
+if (!handleOriginMigration(rootElement, renderApp)) renderApp();
