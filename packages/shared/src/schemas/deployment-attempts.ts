@@ -33,6 +33,26 @@ export const deployAttemptIntentSchema = z.strictObject({
     .nullable()
     .optional(),
 });
+export const deployAttemptBatchIntentSchema = z
+  .strictObject({ intents: z.array(deployAttemptIntentSchema).min(1).max(64) })
+  .refine(
+    ({ intents }) => new Set(intents.map((intent) => intent.app)).size === intents.length,
+    "A reservation batch requires unique applications",
+  )
+  .refine(({ intents }) => {
+    const first = intents[0];
+    if (first === undefined) return false;
+    return intents.every(
+      (intent) =>
+        intent.repository === first.repository &&
+        intent.runId === first.runId &&
+        intent.runAttempt === first.runAttempt,
+    );
+  }, "A reservation batch belongs to one repository and CI run attempt");
+export const deployAttemptIntentRequestSchema = z.union([
+  deployAttemptIntentSchema,
+  deployAttemptBatchIntentSchema,
+]);
 export const deployManualRedeployRequestSchema = z.strictObject({
   app: appSchema,
   requestId: z.uuid(),
@@ -204,6 +224,13 @@ export const deployAttemptResponseSchema = deployAttemptIntentSchema
 export const deployAttemptHistoryResponseSchema = z.strictObject({
   attempts: z.array(deployAttemptResponseSchema).max(100),
 });
+export const deployAttemptBatchIntentResponseSchema = z.strictObject({
+  attempts: z.array(deployAttemptResponseSchema).min(1).max(64),
+});
+export const deployAttemptIntentResponseSchema = z.union([
+  deployAttemptResponseSchema,
+  deployAttemptBatchIntentResponseSchema,
+]);
 
 export const deployAttemptLogsQuerySchema = z.strictObject({
   app: appSchema,
@@ -262,6 +289,10 @@ export type DeployAttemptLogsQuery = z.output<typeof deployAttemptLogsQuerySchem
 export type DeployAttemptLogsResponse = z.output<typeof deployAttemptLogsResponseSchema>;
 
 export type DeployAttemptIntent = z.output<typeof deployAttemptIntentSchema>;
+export type DeployAttemptBatchIntent = z.output<typeof deployAttemptBatchIntentSchema>;
+export type DeployAttemptBatchIntentResponse = z.output<
+  typeof deployAttemptBatchIntentResponseSchema
+>;
 export type DeployAttemptReport = z.output<typeof deployAttemptReportSchema>;
 export type DeployAttemptRecord = z.output<typeof deployAttemptResponseSchema>;
 export type DeployAttemptBaseline = z.output<typeof deployAttemptBaselineSchema>;

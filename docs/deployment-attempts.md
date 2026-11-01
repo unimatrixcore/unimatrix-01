@@ -13,6 +13,12 @@ execution, the service refreshes that baseline from the runtime bridge and persi
 with the exclusive tag-write claim. This keeps sequential CI batches independent of intent age.
 Current evidence must be unique and younger than 30 seconds; missing or stale evidence refuses
 before any mutation. A claimed attempt never replaces its baseline on retry.
+The same protected intent path accepts a batch through `deployAttemptBatchIntentContract`.
+Its app names must be unique and its repository, run ID and run attempt must agree throughout.
+Every declaration is checked before one transaction reserves the set. A conflict or an existing
+attempt that has begun execution aborts the entire transaction; untouched exact retries preserve
+their IDs. Install batch-capable server code before changing CI to this contract, and never
+downgrade a rejected batch to separate reservations.
 An unexecuted intent can expire without leaving queued work. The execution route
 durably claims each service tag write and queue request before sending it. Claims are exclusive: an interrupted claim is never
 automatically replayed. Retrying a retained execution or rollback request returns its record without replaying a mutation.
@@ -49,6 +55,12 @@ A later match retains the timeout and records late landing separately. History r
 records for 30 days after their deadline and preserves unresolved
 records beyond that window. Reads return at most 100 records; new intents are refused at 10,000
 retained records rather than evicting unresolved evidence. Preserve the deploy data volume across replacement.
+
+For a finished CI job that left only unused reservations, use the
+[host-local cancellation command](../apps/deploy/README.md#cancel-unused-ci-reservations).
+It verifies the exact run cohort and refuses started or uncertain operations atomically. Keep the
+originating job and its retries stopped during recovery; cancellation does not fence a new intent
+that arrives afterward.
 
 ## Attempt logs
 
