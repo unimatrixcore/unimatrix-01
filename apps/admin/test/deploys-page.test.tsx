@@ -529,9 +529,11 @@ describe("DeploysPage", () => {
       const invalidate = vi.spyOn(client, "invalidateQueries");
       fireEvent.click(redeploy);
       await waitFor(() => {
-        expect(request).toHaveBeenCalledWith(adminDeployManualRedeployContract, {
-          body: { app: "api", requestId: requestUuid },
-        });
+        expect(
+          request.mock.calls
+            .filter(([contract]) => contract === adminDeployManualRedeployContract)
+            .map(([, options]): unknown => options),
+        ).toEqual([{ body: { app: "api", requestId: requestUuid } }]);
         expect(invalidate).toHaveBeenCalledWith({ queryKey: ["admin", "deploys"] });
         expect(screen.getByText("Deploys", { selector: 'button[role="tab"]' })).toHaveAttribute(
           "data-state",
@@ -575,9 +577,11 @@ describe("DeploysPage", () => {
     ).toHaveLength(0);
     fireEvent.click(within(menu).getByRole("menuitem", { name: /release-previous/u }));
     await waitFor(() => {
-      expect(request).toHaveBeenCalledWith(adminDeployRollbackContract, {
-        body: { app: "api", requestId: requestUuid, targetAttemptId: olderId },
-      });
+      expect(
+        request.mock.calls
+          .filter(([contract]) => contract === adminDeployRollbackContract)
+          .map(([, options]): unknown => options),
+      ).toEqual([{ body: { app: "api", requestId: requestUuid, targetAttemptId: olderId } }]);
     });
   });
 
@@ -609,9 +613,11 @@ describe("DeploysPage", () => {
     expect(screen.getByText(/Rollback of the deploy service/u)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /^Redeploy/u }));
     await waitFor(() => {
-      expect(request).toHaveBeenCalledWith(adminDeployManualRedeployContract, {
-        body: { app: "deploy", requestId: requestUuid },
-      });
+      expect(
+        request.mock.calls
+          .filter(([contract]) => contract === adminDeployManualRedeployContract)
+          .map(([, options]): unknown => options),
+      ).toEqual([{ body: { app: "deploy", requestId: requestUuid } }]);
     });
   });
 
