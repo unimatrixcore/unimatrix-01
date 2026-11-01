@@ -6,6 +6,8 @@ import Database from "better-sqlite3";
 import {
   deployAttemptIntentSchema,
   deployManualRedeployInputSchema,
+  deployRollbackInputSchema,
+  type DeployRollbackInput,
   type DeployManualRedeployInput,
   deployAttemptReportSchema,
   deployAttemptResponseSchema,
@@ -31,7 +33,29 @@ export interface ManualRedeployReservation {
   created: boolean;
 }
 
+export interface DeploymentExecutionClaim {
+  attempt: DeployAttemptRecord;
+  claimed: boolean;
+}
+
 export interface DeploymentAttemptStore {
+  findRollback(
+    input: DeployRollbackInput,
+    reporterId: string,
+    now: number,
+  ): DeployAttemptRecord | undefined;
+  reserveRollback(
+    input: DeployRollbackInput,
+    reporterId: string,
+    baseline: DeployAttemptBaseline | null,
+    now: number,
+  ): ManualRedeployReservation;
+  claimExecution(
+    app: string,
+    attemptId: string,
+    reporterId: string,
+    now: number,
+  ): DeploymentExecutionClaim;
   findManual(
     input: DeployManualRedeployInput,
     reporterId: string,
@@ -66,14 +90,17 @@ function validateTime(now: number): void {
     throw new Error("Invalid deployment observation time.");
   }
 }
-function canExplainTransition(record: DeployAttemptRecord): boolean {
+function hasUnresolvedWork(record: DeployAttemptRecord): boolean {
   return (
     record.outcome !== "failed" &&
     record.outcome !== "landed" &&
     record.outcome !== "recreated" &&
     record.recreatedAt == null &&
     record.lateLandedAt === null &&
-    (record.outcome !== "timed-out" || record.queue !== null)
+    (record.outcome !== "timed-out" ||
+      record.queue !== null ||
+      record.tagWrite === "started" ||
+      record.tagWrite === "unknown")
   );
 }
 
@@ -107,7 +134,7 @@ export function openDeploymentAttemptStore(path: string): DeploymentAttemptStore
       const retained: DeployAttemptRecord[] = [];
       for (const record of records) {
         expireAttempt(record, now);
-        if (record.deadlineAt < now - ATTEMPT_RETENTION_MS && !canExplainTransition(record)) {
+        if (record.deadlineAt < now - ATTEMPT_RETENTION_MS && !hasUnresolvedWork(record)) {
           db.prepare("DELETE FROM deployment_attempts WHERE id = ?").run(record.id);
         } else {
           writeRecord(record);
@@ -131,7 +158,114 @@ export function openDeploymentAttemptStore(path: string): DeploymentAttemptStore
       if (attempt.app !== input.app || attempt.reporterId !== reporterId) throw conflict();
       return attempt;
     };
+    const readRollback = (
+      input: DeployRollbackInput,
+      reporterId: string,
+    ): DeployAttemptRecord | undefined => {
+      if (reporterId.length === 0 || reporterId.length > 128) throw conflict();
+      const row = db
+        .prepare("SELECT record FROM deployment_attempts WHERE request_key = ?")
+        .get(JSON.stringify(["rollback", input.actorUserId, input.requestId])) as
+        { record: string } | undefined;
+      if (row === undefined) return undefined;
+      const attempt = deployAttemptResponseSchema.parse(JSON.parse(row.record));
+      if (
+        attempt.app !== input.app ||
+        attempt.reporterId !== reporterId ||
+        attempt.targetAttemptId !== input.targetAttemptId
+      )
+        throw conflict();
+      return attempt;
+    };
     return {
+      findRollback: db.transaction(
+        (input: DeployRollbackInput, reporterId: string, now: number) => {
+          const parsed = deployRollbackInputSchema.parse(input);
+          maintain(now);
+          return readRollback(parsed, reporterId);
+        },
+      ),
+      reserveRollback: db.transaction(
+        (
+          input: DeployRollbackInput,
+          reporterId: string,
+          baseline: DeployAttemptBaseline | null,
+          now: number,
+        ): ManualRedeployReservation => {
+          const parsed = deployRollbackInputSchema.parse(input);
+          const before = deployAttemptBaselineSchema.nullable().parse(baseline);
+          if (before !== null && before.observedAt > now) throw conflict();
+          const records = maintain(now);
+          const existing = readRollback(parsed, reporterId);
+          if (existing !== undefined) return { attempt: existing, created: false };
+          const target = records.find(
+            (record) => record.id === parsed.targetAttemptId && record.app === parsed.app,
+          );
+          if (
+            target === undefined ||
+            target.outcome !== "landed" ||
+            target.correlation !== "verified" ||
+            target.landedAt === null ||
+            target.image === null
+          )
+            throw conflict();
+          if (records.some((record) => record.app === parsed.app && hasUnresolvedWork(record)))
+            throw conflict();
+          if (records.length >= MAX_ATTEMPT_RECORDS)
+            throw Object.assign(new Error("Deployment attempt capacity exhausted."), {
+              statusCode: 503,
+            });
+          const attempt: DeployAttemptRecord = {
+            ...parsed,
+            repository: target.repository,
+            runId: null,
+            runAttempt: null,
+            trigger: "rollback",
+            image: target.image,
+            id: randomUUID(),
+            reporterId,
+            requestedAt: now,
+            deadlineAt: now + ATTEMPT_DEADLINE_MS,
+            baseline: before,
+            tagWrite: null,
+            queue: null,
+            queueClaimedAt: null,
+            outcome: "incomplete",
+            correlation: "pending",
+            after: null,
+            landedAt: null,
+            lateLandedAt: null,
+          };
+          db.prepare(
+            "INSERT INTO deployment_attempts (id, request_key, requested_at, record) VALUES (?, ?, ?, ?)",
+          ).run(
+            attempt.id,
+            JSON.stringify(["rollback", parsed.actorUserId, parsed.requestId]),
+            now,
+            JSON.stringify(attempt),
+          );
+          return { attempt, created: true };
+        },
+      ),
+      claimExecution: db.transaction(
+        (app: string, attemptId: string, reporterId: string, now: number) => {
+          const attempt = maintain(now).find(
+            (record) => record.id === attemptId && record.app === app,
+          );
+          if (attempt === undefined || attempt.reporterId !== reporterId || attempt.image === null)
+            throw conflict();
+          if (attempt.tagWrite !== null) return { attempt, claimed: false };
+          if (
+            now >= attempt.deadlineAt ||
+            attempt.outcome !== "incomplete" ||
+            attempt.correlation !== "pending"
+          )
+            throw conflict();
+          attempt.tagWrite = "started";
+          writeRecord(attempt);
+          return { attempt, claimed: true };
+        },
+      ),
       findManual: db.transaction(
         (input: DeployManualRedeployInput, reporterId: string, now: number) => {
           const parsed = deployManualRedeployInputSchema.parse(input);
@@ -162,7 +296,12 @@ export function openDeploymentAttemptStore(path: string): DeploymentAttemptStore
             .get(key) as { record: string } | undefined;
           if (existing !== undefined) {
             const record = deployAttemptResponseSchema.parse(JSON.parse(existing.record));
-            if (record.image === null || record.runId === null || record.runAttempt === null)
+            if (
+              record.image === null ||
+              record.runId === null ||
+              record.runAttempt === null ||
+              record.trigger !== "ci"
+            )
               throw conflict();
             const priorIntent: DeployAttemptIntent = {
               repository: record.repository,
@@ -200,15 +339,10 @@ export function openDeploymentAttemptStore(path: string): DeploymentAttemptStore
             landedAt: null,
             lateLandedAt: null,
           };
-          // Unresolved requests for the same app can explain a later recreation even after
-          // their deadline: timeout does not cancel Dokploy's queued work.
-          for (const previous of records) {
-            if (previous.app === record.app && canExplainTransition(previous)) {
-              previous.correlation = "ambiguous";
-              record.correlation = "ambiguous";
-              writeRecord(previous);
-            }
-          }
+          if (
+            records.some((previous) => previous.app === record.app && hasUnresolvedWork(previous))
+          )
+            throw conflict();
           db.prepare(
             "INSERT INTO deployment_attempts (id, request_key, requested_at, record) VALUES (?, ?, ?, ?)",
           ).run(record.id, key, now, JSON.stringify(record));
@@ -229,7 +363,7 @@ export function openDeploymentAttemptStore(path: string): DeploymentAttemptStore
           const records = maintain(now);
           const existing = readManual(parsed, reporterId);
           if (existing !== undefined) return { attempt: existing, created: false };
-          if (records.some((record) => record.app === parsed.app && canExplainTransition(record)))
+          if (records.some((record) => record.app === parsed.app && hasUnresolvedWork(record)))
             throw conflict();
           if (records.length >= MAX_ATTEMPT_RECORDS)
             throw Object.assign(new Error("Deployment attempt capacity exhausted."), {

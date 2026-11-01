@@ -4,6 +4,7 @@ import { request as httpsRequest } from "node:https";
 import {
   deployAttemptHistoryContract,
   deployManualRedeployContract,
+  deployRollbackContract,
   deployAttemptLogsContract,
   deployDeclarationsContract,
   deployHealthHistoryContract,
@@ -29,6 +30,7 @@ export interface DeployClientConfig {
 }
 
 export interface DeployClient {
+  rollback(input: DeployRollbackInput): Promise<DeployRollbackResponse>;
   redeploy(input: DeployManualRedeployInput): Promise<DeployManualRedeployResponse>;
   getDeclarations(query?: DeployAppQuery): Promise<DeployDeclarationsResponse>;
   getState(query?: DeployAppQuery): Promise<DeployStateResponse>;
@@ -41,6 +43,8 @@ export interface DeployClient {
 export type DeployAppQuery = ApiContractQuery<typeof deployStateContract>;
 export type DeployManualRedeployInput = ApiContractBody<typeof deployManualRedeployContract>;
 export type DeployManualRedeployResponse = ApiContractResponse<typeof deployManualRedeployContract>;
+export type DeployRollbackInput = ApiContractBody<typeof deployRollbackContract>;
+export type DeployRollbackResponse = ApiContractResponse<typeof deployRollbackContract>;
 export type DeployAttemptHistoryQuery = Omit<
   ApiContractQuery<typeof deployAttemptHistoryContract>,
   "limit"
@@ -117,8 +121,9 @@ export function createDeployClient(config: DeployClientConfig): DeployClient {
               response.destroy();
               reject(
                 new DeployClientError(
-                  contract.method === deployManualRedeployContract.method &&
-                    contract.path === deployManualRedeployContract.path &&
+                  contract.method === "POST" &&
+                    (contract.path === deployManualRedeployContract.path ||
+                      contract.path === deployRollbackContract.path) &&
                     (response.statusCode === 404 || response.statusCode === 409)
                     ? response.statusCode
                     : undefined,
@@ -163,6 +168,20 @@ export function createDeployClient(config: DeployClientConfig): DeployClient {
   }
 
   return {
+    rollback: async (input) => {
+      const result = await send(deployRollbackContract, {}, input);
+      if (
+        result.app !== input.app ||
+        result.requestId !== input.requestId ||
+        result.actorUserId !== input.actorUserId ||
+        result.targetAttemptId !== input.targetAttemptId ||
+        result.trigger !== "rollback" ||
+        result.image === null
+      ) {
+        throw new DeployClientError();
+      }
+      return result;
+    },
     redeploy: async (input) => {
       const result = await send(deployManualRedeployContract, {}, input);
       if (

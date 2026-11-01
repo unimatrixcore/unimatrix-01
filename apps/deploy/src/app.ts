@@ -19,6 +19,7 @@ import {
 import { openServiceTokenStore, type ServiceTokenStore } from "./service-tokens/store.js";
 import { setupDeploymentAttempts, type RuntimeEvidenceReader } from "./attempts/lifecycle.js";
 import type { DeploymentAttemptStore } from "./attempts/store.js";
+import type { ImageTagWriter } from "./secret-env/image-tag.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -26,6 +27,7 @@ declare module "fastify" {
     dokploy: DokployClient;
     deploymentLogs: DokployLogClient | undefined;
     redeployment: DokployRedeployClient | undefined;
+    imageTags: ImageTagWriter | undefined;
     containerObserver: ContainerObserver;
     reconciliationDetector: ReconciliationDetector;
   }
@@ -36,6 +38,7 @@ export interface BuildDeployAppOptions {
   dokploy: DokployClient;
   deploymentLogs?: DokployLogClient;
   redeployment?: DokployRedeployClient;
+  imageTags?: ImageTagWriter;
   /** Where log records go instead of stdout, so tests can assert on redaction. */
   loggerStream?: DeployLoggerStream;
   https?: HttpsServerOptions;
@@ -70,6 +73,7 @@ export function buildApp(
   app.decorate("dokploy", options.dokploy);
   app.decorate("deploymentLogs", options.deploymentLogs);
   app.decorate("redeployment", options.redeployment);
+  app.decorate("imageTags", options.imageTags);
   const detector = createReconciliationDetector(options.dokploy, DEPLOY_DESIRED_STATE);
   app.decorate("reconciliationDetector", detector);
   app.addHook("onListen", () => {

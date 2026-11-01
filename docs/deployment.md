@@ -45,10 +45,12 @@ Compose services; the local-only `lab` must never gain deployment artifacts.
    `autoDeploy` off: CI publishes the image before queuing deployment. **Manual before merge:** the
    reconciler reports missing/ambiguous services and settings drift, but creates no service; CI's
    `Deploy` job detects a missing match only after merge.
-6. In that service's environment, set the literal `IMAGE_TAG=${{project.IMAGE_TAG}}` reference and
-   supply its declared runtime variables. Keep project-level env limited to `IMAGE_TAG`, because CI
-   replaces that blob. Provision external networks, pinned TLS, service tokens and durable volumes
+6. Supply the service's declared runtime variables. Coordinated execution writes its own literal
+   `IMAGE_TAG` before queueing the first deployment; it preserves unrelated service env and leaves
+   project env untouched. Provision external networks, pinned TLS, service tokens and durable volumes
    before the first deploy where the app requires them; use the service-specific sections below.
+   Bootstrap the first container from a reviewed published image and confirm fresh host-bridge
+   evidence before coordinated execution; a missing baseline refuses execution.
    **Manual:** CI validates config structure, not Dokploy env, network reachability or durable
    storage. `reconcile report` checks env key states without exposing values; explicit
    `secrets-apply` can fill declared store-backed values but triggers no deploy.
@@ -115,16 +117,12 @@ nothing is built on the deploy host: each stack pulls
 `ghcr.io/unimatrixcore/unimatrix-<app>:${IMAGE_TAG}`, and `IMAGE_TAG` is the
 only thing deciding which commit production runs.
 
-**Each Compose service needs `IMAGE_TAG=${{project.IMAGE_TAG}}` in its own
-environment variables, once.** Dokploy does not inherit project-level variables
-into a Compose stack. It writes the stack's `.env` from the *service's* own env
-alone, expanding `${{project.X}}` references out of the project blob as it goes,
-and then runs `docker compose … up` under `env -i`, so nothing ambient reaches
-the substitution either. Without that one line `${IMAGE_TAG}` resolves to an
-empty string and the deploy fails on `invalid reference format` — loudly, with
-the previous container still running. (Read from `getCreateEnvFileCommand`,
-`prepareEnvironmentVariables` and `getBuildComposeCommand` in Dokploy v0.29.13;
-not measured against the instance.)
+**Image selection is service-scoped.** The deploy service writes
+`IMAGE_TAG=<published tag>@<platform manifest digest>` into the selected Compose service's env.
+The digest pins the actual image even if the tag is rebuilt. An existing
+`IMAGE_TAG=${{project.IMAGE_TAG}}` assignment is replaced on that service's first coordinated
+execution. Sibling services and project env stay unchanged. Dokploy prepares Compose substitution
+from service env; a missing tag before that first execution fails the image reference.
 
 ### A new app's package is private until someone makes it public by hand
 
@@ -151,33 +149,27 @@ version, so this is once per app, not once per deploy.
 
 CI's `Deploy` job (`.github/workflows/ci.yml`) runs after `Publish`, on a push
 to `main` and nowhere else — a `workflow_dispatch` from a feature branch
-publishes a SHA-tagged image but can never point production at it. It makes two
-writes over Dokploy's REST API, in this order:
+publishes a SHA-tagged image but can never point production at it. CI validates each publication
+and reserves every app's attempt through the authenticated deploy service before execution.
+It then calls `POST /deployment/execute` once per app, with `deploy` last. The service resolves
+the declared repository-owned compose service, writes and verifies that service's digest-pinned
+`IMAGE_TAG`, and queues `compose.deploy` under the durable attempt ID. CI makes no Dokploy mutations.
+Missing activation or reporting configuration fails closed; there is no direct-write fallback.
 
-1. `POST /api/project.update` sets the project's environment to
-   `IMAGE_TAG=<commit sha>`, once per project the compose services span.
-2. `POST /api/compose.deploy`, one call per service and sequentially, which is
-   what makes Dokploy pull the newly tagged images.
+Rollback and CI share SQLite reservations per app. Unresolved queueing or uncertain tag writes
+block another request, including after timeout. A rollback changes only the selected service;
+the next main CI deployment replaces its tag with the newly published image after the prior
+attempt resolves. There is no persistent rollback hold. Do not edit Dokploy env or run
+`secrets-apply` concurrently with execution: external env writers do not participate in these
+reservations and Dokploy has no conditional env update. Execution requires a baseline less than
+30 seconds old; missing or stale evidence refuses mutations rather than queueing unresolvable work.
 
-Which service is which is resolved per run from `GET /api/project.all`, by
-matching each `infra/docker/<app>-compose.yaml` to a Dokploy compose service of
-the same name. A service that is missing, renamed, or duplicated fails the job
-by name rather than being skipped, and a project whose tag write failed has its
-services skipped rather than deployed at the previous commit's tag.
-
-**Project-level environment holds `IMAGE_TAG` and nothing else**, and each
-service reads it through the one-line reference described under "Published GHCR
-images" above. `project.update` is a partial that Dokploy spreads over the row,
-so the write above *replaces* the whole blob — a second variable stored at
-project level would be deleted on the next merge. CI deliberately never reads the blob back
-to merge into it, because that would pull whatever it holds into a public
-repository's runner, so this invariant is the only thing protecting anything
-kept there. Per-service variables (`CORS_ALLOWED_ORIGINS`, `CLERK_*`, the
-`SECRETS_*` set) live on the service and are untouched by any of this.
+Bootstrap the execution-capable deploy service and the restricted ingress described in
+[deployment attempt setup](deployment-attempts.md) before enabling CI. A merge alone cannot provision
+that infrastructure or replace an older service that lacks `/deployment/execute`.
 
 **`autoDeploy` must stay off on every service** (one per `infra/docker/*-compose.yaml`). With it on, Dokploy deploys
-on a push of its own accord, at whatever `IMAGE_TAG` the project holds at that
-moment — which during a CI run is the previous commit. Watch paths are no
+on a push of its own accord, using the service's configured tag before coordinated execution. Watch paths are no
 defence: `shouldDeploy` returns true when a service's watch-path list is empty,
 so a service with none set redeploys on every push to `main`. It is a
 Dokploy-side setting; `pnpm --filter @unimatrix/deploy-app reconcile report` (`apps/deploy/README.md`)
@@ -196,13 +188,12 @@ between recreation and verified image correlation.
 
 ### Deployment-attempt ingestion and image correlation
 
-This is the implementation contract for attempt recording. CI queues deployments directly in
-Dokploy and supports durable reporting through the deploy service. Activation and the host-local
+CI reserves attempts and delegates tag writes and queueing to the deploy service. Activation and the host-local
 runtime evidence bridge are covered in [deployment attempt setup](deployment-attempts.md).
 
-**CI keeps orchestration; the deploy service owns attempt records and outcome observation.**
-CI reports intent before queuing work and reports the request result afterwards. Reporting must
-not queue a deployment, change project env, or retry a Dokploy mutation. Manual redeploys record
+**CI keeps orchestration; the deploy service owns execution, records and outcome observation.**
+Intent/report endpoints record state only. The separate execution endpoint claims and performs each
+mutation once; retrying a request returns its retained record without replaying a mutation. Manual redeploys record
 through the same history with an unspecified target image; see
 [manual redeploys](../apps/deploy/README.md#manual-redeploys). Direct Dokploy UI operations are
 out of band: a container change without a recorded request remains an observation, with no
@@ -214,7 +205,7 @@ The reporting sequence must satisfy these invariants:
 1. Publish carries forward each app's image repository, full commit SHA, platform and immutable
    published manifest digest from the successful push. Capture the digest for that publication;
    looking up the SHA tag later can resolve to a different image after a rebuild.
-2. Before CI changes a project's tag or calls `compose.deploy`, persist an intent for each affected
+2. Before execution changes a service's tag or calls `compose.deploy`, persist an intent for each affected
    app in the deploy-owned database. Keep a stable attempt ID, authenticated reporter identity,
    workflow run ID and run attempt, app, trigger, requested image identity and request time. Capture
    the before-container identity and observation time independently of caller claims. A missing
@@ -223,12 +214,12 @@ The reporting sequence must satisfy these invariants:
 3. Reporting retries reuse the same logical request key, including repository, workflow run ID,
    run attempt and app. Identical retries return the existing record; conflicting image data is rejected.
    Rerunning the workflow is a new attempt. A duplicate report must never trigger another deploy.
-4. Report tag-write failures and per-app queue responses against those records. A 200 establishes
+4. Execution persists tag-write failures and per-app queue responses against those records. A 200 establishes
    only queue acknowledgement. A transport failure after sending a mutation is an unknown request
    result, because the operation may have been accepted. Never turn it into a definite rejection
    or automatically replay the mutation. A tag write without a subsequent queue request is not
    queued work.
-5. Missing completion reports, including CI cancellation, leave durable incomplete records.
+5. Interrupted execution can leave durable incomplete records.
    Recovery after a service restart uses those records and fresh observations, not process-local
    observer state. Attempt expiry must not depend on a final CI callback arriving.
 
@@ -237,7 +228,7 @@ boundary. Read tokens cannot write attempts. The reporter cannot submit a `lande
 choose its own trusted identity. No env blob, credential, raw Dokploy response or arbitrary log
 text belongs in an attempt. Shared HTTP contracts use static paths with validated bodies/queries.
 The restricted authenticated ingress from GitHub-hosted CI requires provisioning and reachability
-verification before activation; it must expose only the reporting mutations, never internal reads.
+verification before activation; it must expose only CI intent and execution mutations, never internal reads or rollback.
 
 **Landed requires both a changed container ID and an exact immutable image match.** Store the
 requested repository, platform, digest kind and digest separately from display tags and commit metadata. The
@@ -263,8 +254,8 @@ not a timeout policy; the recording feature must specify and test its deadline a
 Overlapping requests must not borrow each other's recreation evidence. Persist their identities
 and ordering; when two requests could explain the same container transition, retain ambiguous
 correlation rather than marking either landed. This includes repeated requests for the same
-digest and cancellation followed by another CI run. CI's shared project tag can change while
-Dokploy work is queued, so a matching time window or CI title is insufficient. Self-deployment
+digest and cancellation followed by another CI run. Reservations refuse new unresolved work for
+the app; legacy ambiguous records remain ambiguous. A matching time window or CI title is insufficient. Self-deployment
 must survive the observer being replaced: persist its baseline before queuing and resume from
 durable state; an observation gap cannot become evidence of success. Retention must preserve
 unresolved evidence through its deadline and bound both records and returned histories.
@@ -275,8 +266,8 @@ rebuild with a different digest and a same-image redeploy without recreation; ne
 The runtime bridge was checked read-only on unimatrix-03 on 2026-10-30: each declared app produced
 a full container ID and a verified platform-manifest/config relationship. Authenticated CI ingress,
 publication digest capture in Actions and end-to-end reporting remain activation gates. Rollback
-execution remains a separate feature; a local attempt ID alone does not
-establish an upstream log identity or permission to change the project-wide image tag.
+execution selects only retained, verified landed attempts; a local attempt ID alone does not
+establish an upstream log identity.
 
 ### Rolling back
 
@@ -285,15 +276,29 @@ Dokploy has **no rollback for Compose services** — its rollback path resolves
 the commit does not roll production back either, because the running version is
 whatever `IMAGE_TAG` says, not whatever `main` says.
 
-So a rollback is one edit and one deploy:
+A verified admin with Deploys access sends `{app, requestId, targetAttemptId}` to
+`POST /deployment/admin/rollback` on the API. Choose the target from that app's retained history:
+only `outcome: landed` with verified immutable image correlation qualifies. The API adds the verified
+session user; no image tag, digest or Dokploy ID is accepted from the browser. Keep the request UUID
+when retrying the same operation. `deploy` refuses rollback because replacing its observer can
+interrupt the request; CI self-deployment remains supported and runs last.
 
-1. Pick the commit to go back to. Any commit whose `Publish` run succeeded has
-   a `ghcr.io/unimatrixcore/unimatrix-<app>` tag under its SHA.
-2. Set `IMAGE_TAG` to that SHA in the Dokploy project's environment UI, keeping
-   it the only variable there.
-3. Redeploy the affected services and confirm each container was **recreated** and runs the
-   intended immutable image — see "A deploy is queued, not applied" below. A matching SHA tag
-   alone cannot distinguish images published by separate builds of that commit.
+The service copies the target's image into a new attributed rollback attempt, reserves the app,
+then writes the selected service's digest-pinned tag and queues deployment. Siblings' configured
+tags are unchanged. Queue acknowledgement does not prove landing; verify the recreated container's
+immutable image and health separately. The next main CI deployment resumes normal delivery and
+replaces this service's rollback tag once the outstanding request resolves.
+
+Unknown tag-write or queue results require investigation, never mutation replay. Queued attempts
+remain reserved until matching runtime evidence resolves them; a missed queue callback can require
+host-level investigation even when the container changed. Expired intents with no mutation claim
+release automatically. Do not delete unresolved records merely to unblock CI. Out-of-band Dokploy
+edits and `secrets-apply` must be kept outside the execution window.
+
+Service rollback, CI supersession and production ingress have not been exercised live. Before
+activation, run a controlled rollback, verify sibling tags remain unchanged, retry the same request,
+and confirm a subsequent CI deployment replaces the rollback target. Local tests use simulated
+Dokploy responses; they do not establish production reachability or Docker pull behavior.
 
 Reverting on `main` and merging works too and is slower: it goes through CI,
 publishes a new image, and writes the new SHA. Reach for that when the revert
@@ -309,7 +314,7 @@ application type (not the plain Dockerfile application type).
 
 - application type: Compose
 - compose path: `infra/docker/web-compose.yaml`
-- no service-level environment variables — `VITE_API_BASE_URL` is baked into
+- no app runtime environment variables — `VITE_API_BASE_URL` is baked into
   the published image (see "SPA build args are baked into the published image")
 - Domains page: route `site.example.com` to the `web` service, container port
   `8080`
@@ -366,7 +371,7 @@ UI. The ordered procedure is under "Secrets service" below.
 
 - application type: Compose
 - compose path: `infra/docker/cflop-compose.yaml`
-- no environment variables required
+- no app runtime environment variables required
 - Domains page: route `cflop.unimatrix-01.dev` to the `cflop` service,
   container port `8080`
 
@@ -431,7 +436,7 @@ visitor arrives with an empty profile.
 
 - application type: Compose
 - compose path: `infra/docker/auth-compose.yaml`
-- no service-level environment variables — `VITE_API_BASE_URL` and
+- no app runtime environment variables — `VITE_API_BASE_URL` and
   `VITE_CLERK_PUBLISHABLE_KEY` are baked into the published image (see "SPA
   build args are baked into the published image")
 - Domains page: route `auth.unimatrix-01.dev` to the `auth` service,
@@ -448,7 +453,7 @@ the API service to include
 
 - application type: Compose
 - compose path: `infra/docker/admin-compose.yaml`
-- no service-level environment variables — `VITE_CLERK_PUBLISHABLE_KEY`,
+- no app runtime environment variables — `VITE_CLERK_PUBLISHABLE_KEY`,
   `VITE_API_BASE_URL` and `VITE_AUTH_APP_URL` are baked into the published
   image (see "SPA build args are baked into the published image")
 - Domains page: route `admin.unimatrix-01.dev` to the `admin` service,

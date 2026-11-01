@@ -1,6 +1,8 @@
 import {
   deployAttemptIntentSchema,
   deployManualRedeployInputSchema,
+  deployRollbackInputSchema,
+  deployExecuteInputSchema,
   deployAttemptReportSchema,
   deployAttemptQuerySchema,
   deployAttemptResponseSchema,
@@ -39,5 +41,19 @@ export const deployManualRedeployContract = defineApiContract({
   method: "POST",
   path: "/deployment/redeploy",
   bodySchema: deployManualRedeployInputSchema,
+  responseSchema: deployAttemptResponseSchema,
+});
+
+export const deployRollbackContract = defineApiContract({
+  method: "POST",
+  path: "/deployment/rollback",
+  bodySchema: deployRollbackInputSchema,
+  responseSchema: deployAttemptResponseSchema,
+});
+
+export const deployExecuteContract = defineApiContract({
+  method: "POST",
+  path: "/deployment/execute",
+  bodySchema: deployExecuteInputSchema,
   responseSchema: deployAttemptResponseSchema,
 });

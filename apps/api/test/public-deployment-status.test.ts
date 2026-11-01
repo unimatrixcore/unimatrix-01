@@ -47,6 +47,7 @@ function health(
 }
 function client(overrides: Partial<DeployClient> = {}): DeployClient {
   return {
+    rollback: () => Promise.reject(new Error("Unused rollback")),
     redeploy: () => Promise.reject(new Error("Unused redeploy")),
     getState: () => Promise.resolve(state()),
     getHealth: (app) => Promise.resolve(health(app)),

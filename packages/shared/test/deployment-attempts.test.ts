@@ -16,6 +16,12 @@ import {
   deployManualRedeployContract,
   adminDeployManualRedeployContract,
   deployAttemptResponseSchema,
+  deployRollbackRequestSchema,
+  deployRollbackInputSchema,
+  deployExecuteInputSchema,
+  deployRollbackContract,
+  deployExecuteContract,
+  adminDeployRollbackContract,
 } from "../src/index.js";
 
 const intent = {
@@ -142,6 +148,106 @@ it("manual redeploy contracts separate verified actor attribution from browser i
   expect(deployManualRedeployContract.path).toBe("/deployment/redeploy");
   expect(adminDeployManualRedeployContract.path).toBe("/deployment/admin/redeploy");
   expect(deployManualRedeployContract.method).toBe("POST");
+});
+
+it("rollback selects recorded provenance instead of caller-supplied images or actor identity", () => {
+  const request = {
+    app: "api",
+    requestId: "00000000-0000-4000-8000-000000000001",
+    targetAttemptId: "00000000-0000-4000-8000-000000000002",
+  };
+  expect(deployRollbackRequestSchema.parse(request)).toEqual(request);
+  for (const invalid of [
+    { ...request, actorUserId: "spoofed" },
+    { ...request, image: intent.image },
+    { ...request, targetAttemptId: "arbitrary-tag" },
+  ]) {
+    expect(deployRollbackRequestSchema.safeParse(invalid).success).toBe(false);
+  }
+  expect(deployRollbackInputSchema.safeParse(request).success).toBe(false);
+  expect(deployRollbackInputSchema.parse({ ...request, actorUserId: "verified" }).actorUserId).toBe(
+    "verified",
+  );
+  expect(deployRollbackContract.path).toBe("/deployment/rollback");
+  expect(adminDeployRollbackContract.path).toBe("/deployment/admin/rollback");
+  expect(deployExecuteContract.path).toBe("/deployment/execute");
+  const execute = { app: "api", attemptId: request.targetAttemptId };
+  expect(deployExecuteInputSchema.parse(execute)).toEqual(execute);
+  expect(deployExecuteInputSchema.safeParse({ ...execute, image: intent.image }).success).toBe(
+    false,
+  );
+  for (const trigger of ["manual", "rollback"]) {
+    expect(deployAttemptIntentSchema.safeParse({ ...intent, trigger }).success).toBe(false);
+  }
+});
+
+it("rollback attempts retain target provenance and verified actor without fictitious CI identity", () => {
+  const record = {
+    ...intent,
+    runId: null,
+    runAttempt: null,
+    trigger: "rollback",
+    targetAttemptId: "00000000-0000-4000-8000-000000000001",
+    actorUserId: "verified",
+    requestId: "00000000-0000-4000-8000-000000000002",
+    id: "00000000-0000-4000-8000-000000000003",
+    reporterId: "api-service",
+    requestedAt: 1,
+    deadlineAt: 100,
+    baseline: null,
+    tagWrite: "acknowledged",
+    queue: "acknowledged",
+    queueClaimedAt: 1,
+    outcome: "queued",
+    correlation: "pending",
+    after: null,
+    landedAt: null,
+    lateLandedAt: null,
+  };
+  expect(deployAttemptResponseSchema.parse(record)).toEqual(record);
+  for (const invalid of [
+    { ...record, runId: "123" },
+    { ...record, runAttempt: 1 },
+    { ...record, actorUserId: undefined },
+    { ...record, requestId: undefined },
+    { ...record, targetAttemptId: undefined },
+    { ...record, trigger: "ci" },
+    { ...record, image: null },
+  ]) {
+    expect(deployAttemptResponseSchema.safeParse(invalid).success).toBe(false);
+  }
+});
+
+it("reads legacy image-bearing manual and rollback records without reopening their intent ingress", () => {
+  const record = {
+    ...intent,
+    id: "00000000-0000-4000-8000-000000000001",
+    reporterId: "legacy-ci-service",
+    requestedAt: 1,
+    deadlineAt: 100,
+    baseline: null,
+    tagWrite: "acknowledged",
+    queue: "acknowledged",
+    queueClaimedAt: 1,
+    outcome: "queued",
+    correlation: "pending",
+    after: null,
+    landedAt: null,
+    lateLandedAt: null,
+  };
+  for (const trigger of ["manual", "rollback"]) {
+    expect(deployAttemptResponseSchema.parse({ ...record, trigger })).toEqual({
+      ...record,
+      trigger,
+    });
+    expect(deployAttemptIntentSchema.safeParse({ ...intent, trigger }).success).toBe(false);
+    expect(
+      deployAttemptResponseSchema.safeParse({ ...record, trigger, actorUserId: "mixed" }).success,
+    ).toBe(false);
+    expect(deployAttemptResponseSchema.safeParse({ ...record, trigger, runId: null }).success).toBe(
+      false,
+    );
+  }
 });
 
 it("unspecified manual targets cannot carry fictitious CI identity or verified landing", () => {

@@ -117,6 +117,89 @@ function client(options: Partial<DeployClientConfig> = {}) {
 }
 
 describe("deployment transport", () => {
+  it("posts rollback provenance and rejects mismatched attribution, raw values and unsafe failures", async () => {
+    mode = "selected";
+    requests = [];
+    wireRequests = [];
+    const input = {
+      app: "api",
+      requestId: "11111111-1111-4111-8111-111111111111",
+      actorUserId: "verified-user",
+      targetAttemptId: "22222222-2222-4222-8222-222222222222",
+    };
+    const attempt = {
+      ...input,
+      id: "00000000-0000-4000-8000-000000000000",
+      repository: "unimatrixcore/unimatrix-01",
+      runId: null,
+      runAttempt: null,
+      trigger: "rollback",
+      image: {
+        repository: "ghcr.io/unimatrixcore/unimatrix-api",
+        tag: "a".repeat(40),
+        commit: "a".repeat(40),
+        platform: "linux/amd64",
+        digestKind: "manifest",
+        digest: `sha256:${"b".repeat(64)}`,
+      },
+      reporterId: "api-service",
+      requestedAt: 1,
+      deadlineAt: 100,
+      baseline: null,
+      tagWrite: "acknowledged",
+      queue: "acknowledged",
+      queueClaimedAt: 1,
+      outcome: "queued",
+      correlation: "pending",
+      after: null,
+      landedAt: null,
+      lateLandedAt: null,
+    };
+    selectedResponse = attempt;
+    expect(await client().rollback(input)).toEqual(attempt);
+    expect(requests).toEqual([{ url: "/deployment/rollback", authorization: "Bearer test-token" }]);
+    expect(wireRequests).toHaveLength(1);
+    expect(wireRequests[0]).toMatchObject({ method: "POST", contentType: "application/json" });
+    expect(JSON.parse(wireRequests[0]!.body)).toEqual(input);
+    for (const invalid of [
+      { ...attempt, app: "web" },
+      { ...attempt, actorUserId: "another-user" },
+      { ...attempt, requestId: "33333333-3333-4333-8333-333333333333" },
+      { ...attempt, targetAttemptId: "33333333-3333-4333-8333-333333333333" },
+      { ...attempt, env: "private upstream text" },
+    ]) {
+      selectedResponse = invalid;
+      await expect(client().rollback(input)).rejects.toBeInstanceOf(DeployClientError);
+    }
+    requests = [];
+    for (const invalid of [
+      { ...input, image: attempt.image },
+      { ...input, targetAttemptId: "arbitrary-tag" },
+      { ...input, actorUserId: "" },
+    ]) {
+      await expect(client().rollback(invalid)).rejects.toBeInstanceOf(DeployClientError);
+    }
+    expect(requests).toHaveLength(0);
+    for (const [failure, statusCode] of [
+      ["not-found", 404],
+      ["conflict", 409],
+      ["error", undefined],
+      ["redirect", undefined],
+      ["timeout", undefined],
+    ] as const) {
+      mode = failure;
+      let error: unknown;
+      try {
+        await client({ timeoutMs: 50 }).rollback(input);
+      } catch (caught) {
+        error = caught;
+      }
+      expect(error).toBeInstanceOf(DeployClientError);
+      expect(error).toHaveProperty("statusCode", statusCode);
+      expect(String(error)).not.toContain("private upstream text");
+    }
+  });
+
   it("posts only authenticated manual redeploy inputs and validates returned attribution", async () => {
     mode = "selected";
     requests = [];
