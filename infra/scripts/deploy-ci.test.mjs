@@ -58,7 +58,14 @@ function setup(t, apps = ["api", "auth"]) {
       return Response.json([
         {
           projectId: "project",
-          environments: [{ compose: apps.map((name) => ({ name, composeId: `compose-${name}` })) }],
+          environments: [
+            {
+              compose: apps.map((name) => ({
+                name,
+                composeId: `compose-${name}`,
+              })),
+            },
+          ],
         },
       ]);
     if (path === "/health")
@@ -71,9 +78,31 @@ function setup(t, apps = ["api", "auth"]) {
     if (path === "/deployment/attempts/intent") {
       assert.equal(options.headers["x-api-key"], undefined);
       assert.equal(options.headers.Authorization, "Bearer private-token");
-      const state = { ...body, id: idFor(body.app), tagWrite: null, queue: null };
-      states.set(state.id, state);
-      return Response.json(state);
+      assert.deepEqual(Object.keys(body), ["intents"]);
+      const attempts = body.intents.map((intent) => {
+        const prior = states.get(idFor(intent.app));
+        if (prior !== undefined) return prior;
+        const state = {
+          ...intent,
+          id: idFor(intent.app),
+          tagWrite: null,
+          queue: null,
+          queueClaimedAt: null,
+          outcome: "incomplete",
+          correlation: "pending",
+          after: null,
+          landedAt: null,
+          lateLandedAt: null,
+          recreatedAt: null,
+          completedAt: null,
+          failureReason: null,
+          requestedAt: Date.now(),
+          deadlineAt: Date.now() + 1_800_000,
+        };
+        states.set(state.id, state);
+        return state;
+      });
+      return Response.json({ attempts });
     }
     if (path === "/deployment/execute") {
       assert.equal(options.headers["x-api-key"], undefined);
@@ -118,14 +147,18 @@ test("intent records the deployed commit's public subject without shell interpre
   writeFileSync(path, JSON.stringify(publication));
   await deployCi(fixture);
   assert.equal(
-    fixture.calls.find(({ path: route }) => route === "/deployment/attempts/intent").body
+    fixture.calls.find(({ path: route }) => route === "/deployment/attempts/intent").body.intents[0]
       .commitSubject,
     "feat: deploy $(private) `literal` subject",
   );
 });
 
 test("captures the digest returned by that publication, refusing missing or ambiguous push evidence", () => {
-  const image = { repository: "ghcr.io/unimatrixcore/unimatrix-api", tag: commit, app: "api" };
+  const image = {
+    repository: "ghcr.io/unimatrixcore/unimatrix-api",
+    tag: commit,
+    app: "api",
+  };
   assert.equal(
     publicationFromPush(`${commit}: digest: ${digest} size: 1234\n`, image).image.digest,
     digest,
@@ -178,7 +211,11 @@ test("a failed publication does not produce deployable image evidence", (t) => {
   assert.throws(
     () =>
       publishImage(
-        { IMAGE: "ghcr.io/unimatrixcore/unimatrix-api", REVISION: commit, APP: "api" },
+        {
+          IMAGE: "ghcr.io/unimatrixcore/unimatrix-api",
+          REVISION: commit,
+          APP: "api",
+        },
         () => ({ status: 1, stdout: `${commit}: digest: ${digest} size: 1` }),
         output,
       ),
@@ -195,7 +232,7 @@ test("reserves every intent before service execution and never writes Dokploy di
   const executionIndex = calls.findIndex(({ path }) => path === "/deployment/execute");
   assert.equal(
     calls.slice(0, executionIndex).filter(({ path }) => path.endsWith("/intent")).length,
-    2,
+    1,
   );
   assert.deepEqual(
     calls.filter(({ path }) => path === "/deployment/execute").map(({ body }) => body),
@@ -321,16 +358,31 @@ test("rejected or uncertain execution is never retried", async (t) => {
 });
 
 test("an intent acknowledgement for another run or image cannot authorize execution", async (t) => {
-  for (const field of ["runId", "app", "digest", "id"]) {
+  for (const field of [
+    "repository",
+    "runId",
+    "runAttempt",
+    "app",
+    "trigger",
+    "id",
+    "commitSubject",
+    "tag",
+    "commit",
+    "platform",
+    "digestKind",
+    "digest",
+  ]) {
     const fixture = setup(t, ["api"]);
     const original = fixture.fetchImpl;
     fixture.fetchImpl = async (url, options) => {
       const response = await original(url, options);
       if (!url.endsWith("/intent")) return response;
-      const record = await response.json();
-      if (field === "digest") record.image.digest = `sha256:${"d".repeat(64)}`;
+      const batch = await response.json();
+      const record = batch.attempts[0];
+      if (["tag", "commit", "platform", "digestKind", "digest"].includes(field))
+        record.image[field] = "other";
       else record[field] = "other";
-      return Response.json(record);
+      return Response.json(batch);
     };
     await assert.rejects(deployCi(fixture), /Invalid durable intent acknowledgement/);
     assert.equal(
@@ -340,18 +392,16 @@ test("an intent acknowledgement for another run or image cannot authorize execut
   }
 });
 
-test("a duplicate intent with prior mutation evidence cannot replay execution", async (t) => {
+test("a batch containing prior mutation evidence cannot replay any execution", async (t) => {
   const fixture = setup(t);
   const original = fixture.fetchImpl;
-  fixture.fetchImpl = async (url, options) =>
-    url.endsWith("/intent")
-      ? Response.json({
-          ...JSON.parse(options.body),
-          id: idFor("api"),
-          tagWrite: "started",
-          queue: null,
-        })
-      : original(url, options);
+  fixture.fetchImpl = async (url, options) => {
+    const response = await original(url, options);
+    if (!url.endsWith("/intent")) return response;
+    const batch = await response.json();
+    batch.attempts.at(-1).tagWrite = "started";
+    return Response.json(batch);
+  };
   await assert.rejects(deployCi(fixture), /refusing mutation replay/);
   assert.equal(
     fixture.calls.some(({ path }) => path === "/deployment/execute"),
@@ -404,7 +454,7 @@ test("disabled, missing, or malformed activation never falls back to uncoordinat
   }
 });
 
-test("first rollout omits unadvertised fields for the old strict reservation schema", async (t) => {
+test("batch intents omit unadvertised optional commit-subject fields", async (t) => {
   const fixture = setup(t, ["api", "deploy"]);
   const original = fixture.fetchImpl;
   let reservations = 0;
@@ -414,16 +464,19 @@ test("first rollout omits unadvertised fields for the old strict reservation sch
     if (path === "/deployment/attempts/intent") {
       reservations++;
       const body = JSON.parse(options.body);
-      assert.equal(Object.hasOwn(body, "commitSubject"), false);
-      assert.deepEqual(
-        Object.keys(body).sort(),
-        ["repository", "runId", "runAttempt", "app", "trigger", "image"].sort(),
-      );
+      assert.deepEqual(Object.keys(body), ["intents"]);
+      for (const intent of body.intents) {
+        assert.equal(Object.hasOwn(intent, "commitSubject"), false);
+        assert.deepEqual(
+          Object.keys(intent).sort(),
+          ["repository", "runId", "runAttempt", "app", "trigger", "image"].sort(),
+        );
+      }
     }
     return original(url, options);
   };
   await deployCi(fixture);
-  assert.equal(reservations, 2);
+  assert.equal(reservations, 1);
   assert.deepEqual(
     fixture.calls.filter(({ path }) => path === "/deployment/execute").map(({ body }) => body.app),
     ["api", "deploy"],
@@ -444,7 +497,7 @@ test("unknown or missing capability headers never authorize optional reservation
       }
       if (url.endsWith("/intent")) {
         reservations++;
-        assert.equal(Object.hasOwn(JSON.parse(options.body), "commitSubject"), false);
+        assert.equal(Object.hasOwn(JSON.parse(options.body).intents[0], "commitSubject"), false);
       }
       return original(url, options);
     };
@@ -485,14 +538,21 @@ test("already-current execution is a verified resolved result with no queue", as
         landedAt: null,
         lateLandedAt: null,
         baseline: { containerId: "c".repeat(64), observedAt: 1000 },
-        after: { containerId: "c".repeat(64), observedAt: 1000, image: record.image },
+        after: {
+          containerId: "c".repeat(64),
+          observedAt: 1000,
+          image: record.image,
+        },
         completedAt: 1001,
         requestedAt: 1000,
         deadlineAt: 40000,
       });
       if (mutation === "container") record.after.containerId = "d".repeat(64);
       if (mutation === "digest")
-        record.after.image = { ...record.image, digest: "sha256:" + "d".repeat(64) };
+        record.after.image = {
+          ...record.image,
+          digest: "sha256:" + "d".repeat(64),
+        };
       if (mutation === "queue") record.queue = "acknowledged";
       if (mutation === "completion") record.completedAt = null;
       if (mutation === "tag") record.tagWrite = "started";
@@ -514,5 +574,166 @@ test("already-current execution is a verified resolved result with no queue", as
         false,
       );
     }
+  }
+});
+
+test("a conflict on the final app is one batch request with no per-app fallback or execution", async (t) => {
+  const fixture = setup(t, ["api", "auth", "web"]);
+  const original = fixture.fetchImpl;
+  const reservations = [];
+  fixture.fetchImpl = async (url, options) => {
+    if (url.endsWith("/intent")) {
+      const body = JSON.parse(options.body);
+      reservations.push(body);
+      assert.deepEqual(
+        body.intents.map((intent) => intent.app),
+        ["api", "auth", "web"],
+      );
+      return new Response("private final-app conflict", { status: 409 });
+    }
+    return original(url, options);
+  };
+  await assert.rejects(deployCi(fixture), /Durable deployment report unavailable/);
+  assert.equal(reservations.length, 1);
+  assert.equal(
+    fixture.calls.some(({ path }) => path === "/deployment/execute"),
+    false,
+  );
+});
+
+test("an old server rejecting the batch never triggers single-intent fallback", async (t) => {
+  for (const status of [400, 404]) {
+    const fixture = setup(t);
+    const original = fixture.fetchImpl;
+    const reservations = [];
+    fixture.fetchImpl = async (url, options) => {
+      if (url.endsWith("/intent")) {
+        reservations.push(JSON.parse(options.body));
+        return new Response("unsupported body", { status });
+      }
+      return original(url, options);
+    };
+    await assert.rejects(deployCi(fixture), /Durable deployment report unavailable/);
+    assert.equal(reservations.length, 1);
+    assert.equal(reservations[0].intents.length, 2);
+    assert.equal(
+      fixture.calls.some(({ path }) => path === "/deployment/execute"),
+      false,
+    );
+  }
+});
+
+test("a lost batch acknowledgement retries only the identical release before execution", async (t) => {
+  const fixture = setup(t);
+  const original = fixture.fetchImpl;
+  const bodies = [];
+  let originalIds;
+  fixture.fetchImpl = async (url, options) => {
+    const response = await original(url, options);
+    if (!url.endsWith("/intent")) return response;
+    bodies.push(options.body);
+    const batch = await response.json();
+    if (bodies.length === 1) {
+      originalIds = batch.attempts.map(({ id }) => id);
+      throw new Error("Lost acknowledgement after reservation committed");
+    }
+    assert.deepEqual(
+      batch.attempts.map(({ id }) => id),
+      originalIds,
+    );
+    return Response.json(batch);
+  };
+  await deployCi(fixture);
+  assert.equal(bodies.length, 2);
+  assert.equal(bodies[0], bodies[1]);
+  const executions = fixture.calls.filter(({ path }) => path === "/deployment/execute");
+  assert.deepEqual(
+    executions.map(({ body }) => body.attemptId),
+    originalIds,
+  );
+  assert.equal(
+    fixture.calls.findIndex(({ path }) => path === "/deployment/execute"),
+    4,
+  );
+});
+
+test("malformed batch acknowledgements cannot authorize even the first execution", async (t) => {
+  for (const mutation of [
+    "null",
+    "missing",
+    "empty",
+    "short",
+    "extra",
+    "duplicate-app",
+    "duplicate-id",
+    "unknown-app",
+    "single",
+    "extra-key",
+    "null-record",
+  ]) {
+    const fixture = setup(t);
+    const original = fixture.fetchImpl;
+    fixture.fetchImpl = async (url, options) => {
+      const response = await original(url, options);
+      if (!url.endsWith("/intent")) return response;
+      let batch = await response.json();
+      if (mutation === "null") batch = null;
+      if (mutation === "missing") batch = {};
+      if (mutation === "empty") batch.attempts = [];
+      if (mutation === "short") batch.attempts.pop();
+      if (mutation === "extra") batch.attempts.push({ ...batch.attempts[0] });
+      if (mutation === "duplicate-app") batch.attempts[1] = { ...batch.attempts[0] };
+      if (mutation === "duplicate-id") batch.attempts[1].id = batch.attempts[0].id;
+      if (mutation === "unknown-app") batch.attempts[1].app = "web";
+      if (mutation === "single") batch = batch.attempts[0];
+      if (mutation === "extra-key") batch.unexpected = true;
+      if (mutation === "null-record") batch.attempts[1] = null;
+      return Response.json(batch);
+    };
+    await assert.rejects(deployCi(fixture), /Invalid durable intent acknowledgement/);
+    assert.equal(
+      fixture.calls.some(({ path }) => path === "/deployment/execute"),
+      false,
+    );
+  }
+});
+
+test("every returned reservation must be unused and eligible before any execution", async (t) => {
+  const mutations = [
+    ["outcome", "failed"],
+    ["correlation", "verified"],
+    ["tagWrite", "started"],
+    ["tagWrite", "unknown"],
+    ["tagWrite", "acknowledged"],
+    ["queue", "started"],
+    ["queue", "unknown"],
+    ["queue", "acknowledged"],
+    ["queueClaimedAt", 1000],
+    ["after", {}],
+    ["landedAt", 1000],
+    ["lateLandedAt", 1000],
+    ["recreatedAt", 1000],
+    ["completedAt", 1000],
+    ["failureReason", "failure"],
+    ["requestedAt", -1],
+    ["requestedAt", 0.5],
+    ["deadlineAt", Date.now() - 1],
+    ["deadlineAt", null],
+  ];
+  for (const [field, value] of mutations) {
+    const fixture = setup(t);
+    const original = fixture.fetchImpl;
+    fixture.fetchImpl = async (url, options) => {
+      const response = await original(url, options);
+      if (!url.endsWith("/intent")) return response;
+      const batch = await response.json();
+      batch.attempts.at(-1)[field] = value;
+      return Response.json(batch);
+    };
+    await assert.rejects(deployCi(fixture), /refusing mutation replay/);
+    assert.equal(
+      fixture.calls.some(({ path }) => path === "/deployment/execute"),
+      false,
+    );
   }
 });
