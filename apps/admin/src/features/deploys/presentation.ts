@@ -12,6 +12,7 @@ export function outcomeLabel(attempt: DeployAttemptRecord): string {
     incomplete: "In progress",
     queued: "Queued",
     landed: "Deployed",
+    "already-current": "Already current",
     recreated: "Recreated · image unverified",
     failed: "Failed",
     "timed-out": "Not applied",

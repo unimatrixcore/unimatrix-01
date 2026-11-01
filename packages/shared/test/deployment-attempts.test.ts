@@ -65,6 +65,12 @@ describe("deployment attempt contracts", () => {
     expect(
       deployAttemptLogsResponseSchema.safeParse({
         ...output,
+        diagnosticLines: ["Requested image already running; no deployment was queued."],
+      }).success,
+    ).toBe(true);
+    expect(
+      deployAttemptLogsResponseSchema.safeParse({
+        ...output,
         diagnosticLines: Array.from(
           { length: 21 },
           () => "▶ Deployment attempt accepted and recorded.",
@@ -344,6 +350,101 @@ it("unspecified manual targets cannot carry fictitious CI identity or verified l
     { ...record, landedAt: 1 },
   ])
     expect(deployAttemptResponseSchema.safeParse(invalid).success).toBe(false);
+});
+
+describe("already-current execution evidence", () => {
+  const record = {
+    ...intent,
+    id: "00000000-0000-4000-8000-000000000001",
+    reporterId: "ci-service",
+    requestedAt: 100,
+    deadlineAt: 40_000,
+    baseline: { containerId: "c".repeat(64), observedAt: 90 },
+    tagWrite: null,
+    queue: null,
+    queueClaimedAt: null,
+    outcome: "already-current",
+    correlation: "verified",
+    after: {
+      containerId: "c".repeat(64),
+      observedAt: 90,
+      image: {
+        repository: intent.image.repository,
+        platform: intent.image.platform,
+        digestKind: intent.image.digestKind,
+        digest: intent.image.digest,
+      },
+    },
+    landedAt: null,
+    lateLandedAt: null,
+    completedAt: 101,
+    failureReason: null,
+  };
+
+  it("resolves a matching running CI image without claiming a new deployment", () => {
+    const parsed = deployAttemptResponseSchema.parse(record);
+    expect(parsed.outcome).toBe("already-current");
+    expect(parsed.landedAt).toBeNull();
+    expect(parsed.queue).toBeNull();
+    expect(hasUnresolvedDeploymentWork(parsed)).toBe(false);
+    expect(deployAttemptResponseSchema.parse({ ...record, tagWrite: "acknowledged" }).outcome).toBe(
+      "already-current",
+    );
+  });
+
+  it("requires the same container and exact requested immutable image", () => {
+    for (const invalid of [
+      { ...record, baseline: null },
+      { ...record, after: null },
+      { ...record, after: { ...record.after, containerId: "d".repeat(64) } },
+      { ...record, after: { ...record.after, observedAt: 91 } },
+      {
+        ...record,
+        after: {
+          ...record.after,
+          image: { ...record.after.image, digest: `sha256:${"e".repeat(64)}` },
+        },
+      },
+      {
+        ...record,
+        after: {
+          ...record.after,
+          image: { ...record.after.image, repository: "ghcr.io/foreign/api" },
+        },
+      },
+      {
+        ...record,
+        after: { ...record.after, image: { ...record.after.image, platform: "linux/arm64" } },
+      },
+      { ...record, correlation: "pending" },
+    ]) {
+      expect(deployAttemptResponseSchema.safeParse(invalid).success).toBe(false);
+    }
+  });
+
+  it("rejects mutation, landing, missing completion or stale evidence claims", () => {
+    for (const invalid of [
+      { ...record, trigger: "rollback" },
+      { ...record, trigger: "manual" },
+      { ...record, image: null },
+      { ...record, tagWrite: "started" },
+      { ...record, tagWrite: "unknown" },
+      { ...record, tagWrite: "rejected" },
+      { ...record, queue: "acknowledged" },
+      { ...record, queueClaimedAt: 100 },
+      { ...record, landedAt: 101 },
+      { ...record, lateLandedAt: 101 },
+      { ...record, recreatedAt: 101 },
+      { ...record, completedAt: undefined },
+      { ...record, completedAt: 99 },
+      { ...record, completedAt: 89 },
+      { ...record, completedAt: record.deadlineAt },
+      { ...record, completedAt: 30_090 },
+      { ...record, failureReason: "Image tag update was rejected. No deployment was queued." },
+    ]) {
+      expect(deployAttemptResponseSchema.safeParse(invalid).success).toBe(false);
+    }
+  });
 });
 
 describe("deployment overlap policy", () => {

@@ -6,6 +6,11 @@ import { RECONCILE_EXPECTED_OWNER, RECONCILE_EXPECTED_REPOSITORY } from "../reco
 import { mergeSecretEnv } from "./merge.js";
 
 export interface ImageTagWriter {
+  isCurrent(
+    composeId: string,
+    appDir: string,
+    image: NonNullable<DeployAttemptRecord["image"]>,
+  ): Promise<boolean>;
   write(
     composeId: string,
     appDir: string,
@@ -19,53 +24,49 @@ export class ImageTagWriteRefused extends Error {
   }
 }
 
+async function imageUpdateFor(
+  client: DokployEnvClient,
+  composeId: string,
+  appDir: string,
+  requestedImage: NonNullable<DeployAttemptRecord["image"]>,
+) {
+  const parsed = deployRequestedImageSchema.safeParse(requestedImage);
+  if (!parsed.success || parsed.data.repository !== `ghcr.io/unimatrixcore/unimatrix-${appDir}`)
+    throw new ImageTagWriteRefused();
+  let current: DokployComposeEnv;
+  try {
+    current = await client.getComposeEnv(composeId);
+  } catch {
+    throw new ImageTagWriteRefused();
+  }
+  if (
+    current.composeId !== composeId ||
+    current.owner !== RECONCILE_EXPECTED_OWNER ||
+    current.repository !== RECONCILE_EXPECTED_REPOSITORY ||
+    current.sourceType !== "github"
+  )
+    throw new ImageTagWriteRefused();
+  const merged = mergeSecretEnv(
+    current.env,
+    new Map([["IMAGE_TAG", new SecretValue(`${parsed.data.tag}@${parsed.data.digest}`)]]),
+    true,
+  );
+  if (merged.refused.length > 0) throw new ImageTagWriteRefused();
+  return { env: merged.env, changed: merged.changed.length > 0 };
+}
+
 export function createImageTagWriter(client: DokployEnvClient): ImageTagWriter {
   return {
-    async write(composeId, appDir, requestedImage) {
-      const parsed = deployRequestedImageSchema.safeParse(requestedImage);
-      if (!parsed.success || parsed.data.repository !== `ghcr.io/unimatrixcore/unimatrix-${appDir}`)
-        throw new ImageTagWriteRefused();
-      const image = parsed.data;
-      let current: DokployComposeEnv;
+    isCurrent: async (composeId, appDir, image) =>
+      !(await imageUpdateFor(client, composeId, appDir, image)).changed,
+    async write(composeId, appDir, image) {
+      const update = await imageUpdateFor(client, composeId, appDir, image);
+      if (!update.changed) return;
+      await client.updateComposeEnv(composeId, update.env);
       try {
-        current = await client.getComposeEnv(composeId);
+        if ((await imageUpdateFor(client, composeId, appDir, image)).changed) throw new Error();
       } catch {
-        throw new ImageTagWriteRefused();
-      }
-      if (
-        current.composeId !== composeId ||
-        current.owner !== RECONCILE_EXPECTED_OWNER ||
-        current.repository !== RECONCILE_EXPECTED_REPOSITORY ||
-        current.sourceType !== "github"
-      )
-        throw new ImageTagWriteRefused();
-      const merged = mergeSecretEnv(
-        current.env,
-        new Map([["IMAGE_TAG", new SecretValue(`${image.tag}@${image.digest}`)]]),
-        true,
-      );
-      if (merged.refused.length > 0) throw new ImageTagWriteRefused();
-      if (merged.changed.length > 0) {
-        await client.updateComposeEnv(composeId, merged.env);
-        try {
-          const confirmed = await client.getComposeEnv(composeId);
-          const check = mergeSecretEnv(
-            confirmed.env,
-            new Map([["IMAGE_TAG", new SecretValue(`${image.tag}@${image.digest}`)]]),
-            true,
-          );
-          if (
-            confirmed.composeId !== composeId ||
-            confirmed.owner !== RECONCILE_EXPECTED_OWNER ||
-            confirmed.repository !== RECONCILE_EXPECTED_REPOSITORY ||
-            confirmed.sourceType !== "github" ||
-            check.changed.length > 0 ||
-            check.refused.length > 0
-          )
-            throw new Error();
-        } catch {
-          throw new Error("Image tag write could not be confirmed");
-        }
+        throw new Error("Image tag write could not be confirmed");
       }
     },
   };

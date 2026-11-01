@@ -5,6 +5,7 @@ import { SecretValue } from "@unimatrix/secrets/client";
 import type { DeployAttemptRecord, DeployRuntimeEvidence } from "@unimatrix/shared";
 
 import { buildApp } from "../src/app.js";
+import { attemptDiagnosticLines } from "../src/attempts/logs.js";
 import { openDeploymentAttemptStore } from "../src/attempts/store.js";
 import { loadDeployRuntimeConfig } from "../src/config.js";
 import { DokployClientError } from "../src/dokploy/transport.js";
@@ -91,6 +92,7 @@ function fixture(options: { writer?: boolean; queue?: boolean } = {}) {
         ? {}
         : {
             imageTags: {
+              isCurrent: () => Promise.resolve(false),
               write: (composeId, appDir, target) => {
                 calls.push("write");
                 written = { composeId, appDir, target };
@@ -788,5 +790,228 @@ void test("expired unclaimed rollback retries return the timed-out record withou
     assert.deepEqual(f.calls, []);
   } finally {
     await f.app.close();
+  }
+});
+
+void test("CI already-current resolution skips writes and queues and stays resolved on retry", async () => {
+  for (const storedMatches of [true, false]) {
+    const f = fixture();
+    try {
+      const intent = f.seed(false);
+      assert.ok(f.app.imageTags);
+      f.app.imageTags.isCurrent = () => Promise.resolve(storedMatches);
+      f.setEvidence([
+        {
+          app: "api",
+          containerId: "d".repeat(64),
+          observedAt: Date.now(),
+          image: {
+            repository: image.repository,
+            platform: image.platform,
+            digestKind: image.digestKind,
+            digest: image.digest,
+          },
+          metadata: {
+            name: "api",
+            startedAt: null,
+            health: "healthy",
+            imageTag: image.tag,
+            commit: image.commit,
+            commitSubject: null,
+          },
+        },
+      ]);
+      const input = { app: "api", attemptId: intent.id };
+      const response = await f.send("execute", input);
+      assert.equal(response.statusCode, 200, response.body);
+      const record = response.json<DeployAttemptRecord>();
+      assert.equal(record.outcome, "already-current");
+      assert.equal(record.tagWrite, storedMatches ? null : "acknowledged");
+      assert.equal(record.queue, null);
+      assert.equal(record.landedAt, null);
+      assert.ok(
+        attemptDiagnosticLines(record).includes(
+          "Requested image already running; no deployment was queued.",
+        ),
+      );
+      assert.equal(
+        attemptDiagnosticLines(record).some(
+          (line) => line.includes("replacement") || line.includes("before deployment"),
+        ),
+        false,
+      );
+      assert.equal(f.calls.includes("queue"), false);
+      assert.equal(f.calls.filter((c) => c === "write").length, storedMatches ? 0 : 1);
+      f.setEvidence([]);
+      const retry = await f.send("execute", input);
+      assert.equal(retry.statusCode, 200, retry.body);
+      assert.equal(retry.json<DeployAttemptRecord>().outcome, "already-current");
+    } finally {
+      await f.app.close();
+    }
+  }
+});
+
+void test("already-current requires immutable evidence with the requested OCI commit", async () => {
+  for (const commit of [null, "c".repeat(40)]) {
+    const f = fixture();
+    try {
+      const intent = f.seed(false);
+      assert.ok(f.app.imageTags);
+      f.app.imageTags.isCurrent = () =>
+        assert.fail("must not infer already-current from digest alone");
+      f.setEvidence([
+        {
+          app: "api",
+          containerId: "d".repeat(64),
+          observedAt: Date.now(),
+          image: {
+            repository: image.repository,
+            platform: image.platform,
+            digestKind: image.digestKind,
+            digest: image.digest,
+          },
+          metadata: {
+            name: "api",
+            startedAt: null,
+            health: "healthy",
+            imageTag: image.tag,
+            commit,
+            commitSubject: null,
+          },
+        },
+      ]);
+      const response = await f.send("execute", { app: "api", attemptId: intent.id });
+      assert.equal(response.statusCode, 200, response.body);
+      assert.equal(response.json<DeployAttemptRecord>().outcome, "queued");
+    } finally {
+      await f.app.close();
+    }
+  }
+});
+
+void test("image-tag current check verifies stored identity without writing or exposing env", async () => {
+  for (const value of [`${image.tag}@${image.digest}`, "old"]) {
+    const writer = createImageTagWriter({
+      getComposeEnv: () =>
+        Promise.resolve({
+          composeId: "compose-api",
+          owner: "unimatrixcore",
+          repository: "unimatrix-01",
+          sourceType: "github",
+          env: new SecretValue(`TOKEN=private\nIMAGE_TAG=${value}\n`),
+        }),
+      updateComposeEnv: () => assert.fail("read-only check must not mutate"),
+    });
+    assert.equal(await writer.isCurrent("compose-api", "api", image), value !== "old");
+  }
+});
+
+void test("an acknowledged tag correction can finish as already-current after a read-only retry", async () => {
+  const f = fixture();
+  try {
+    const intent = f.seed(false);
+    const now = Date.now();
+    f.attempts.claimExecution("api", intent.id, f.manage.record.id, now, {
+      containerId: "d".repeat(64),
+      observedAt: now,
+    });
+    f.attempts.report(
+      { attemptId: intent.id, stage: "tag-write", result: "acknowledged" },
+      f.manage.record.id,
+      now,
+    );
+    assert.ok(f.app.imageTags);
+    f.app.imageTags.isCurrent = () => Promise.resolve(true);
+    f.setEvidence([
+      {
+        app: "api",
+        containerId: "d".repeat(64),
+        observedAt: now,
+        image: {
+          repository: image.repository,
+          platform: image.platform,
+          digestKind: image.digestKind,
+          digest: image.digest,
+        },
+        metadata: {
+          name: "api",
+          startedAt: null,
+          health: "healthy",
+          imageTag: image.tag,
+          commit: image.commit,
+          commitSubject: null,
+        },
+      },
+    ]);
+    const response = await f.send("execute", { app: "api", attemptId: intent.id });
+    assert.equal(response.statusCode, 200, response.body);
+    assert.equal(response.json<DeployAttemptRecord>().outcome, "already-current");
+    assert.equal(f.calls.includes("write"), false);
+    assert.equal(f.calls.includes("queue"), false);
+  } finally {
+    await f.app.close();
+  }
+});
+
+void test("failed already-current reads preserve rejection and readonly retry semantics", async () => {
+  for (const priorAcknowledgement of [false, true]) {
+    const f = fixture();
+    try {
+      const intent = f.seed(false);
+      const now = Date.now();
+      f.setEvidence([
+        {
+          app: "api",
+          containerId: "d".repeat(64),
+          observedAt: now,
+          image: {
+            repository: image.repository,
+            platform: image.platform,
+            digestKind: image.digestKind,
+            digest: image.digest,
+          },
+          metadata: {
+            name: "api",
+            startedAt: null,
+            health: "healthy",
+            imageTag: image.tag,
+            commit: image.commit,
+            commitSubject: null,
+          },
+        },
+      ]);
+      if (priorAcknowledgement) {
+        f.attempts.claimExecution("api", intent.id, f.manage.record.id, now, {
+          containerId: "d".repeat(64),
+          observedAt: now,
+        });
+        f.attempts.report(
+          { attemptId: intent.id, stage: "tag-write", result: "acknowledged" },
+          f.manage.record.id,
+          now,
+        );
+      }
+      let reads = 0;
+      f.app.imageTags = createImageTagWriter({
+        getComposeEnv: () => {
+          reads++;
+          return Promise.reject(new Error("private-read-error"));
+        },
+        updateComposeEnv: () => assert.fail("must not mutate after failed read"),
+      });
+      const response = await f.send("execute", { app: "api", attemptId: intent.id });
+      assert.equal(response.statusCode, 200, response.body);
+      const record = response.json<DeployAttemptRecord>();
+      assert.equal(record.tagWrite, priorAcknowledgement ? "acknowledged" : "rejected");
+      assert.equal(record.outcome, priorAcknowledgement ? "incomplete" : "failed");
+      assert.equal(record.queue, null);
+      assert.equal(reads, priorAcknowledgement ? 1 : 2);
+      assert.equal(f.calls.includes("queue"), false);
+      assert.doesNotMatch(response.body, /private-read-error/u);
+      if (!priorAcknowledgement) assert.doesNotThrow(() => f.seed(false));
+    } finally {
+      await f.app.close();
+    }
   }
 });

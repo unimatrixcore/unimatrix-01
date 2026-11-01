@@ -307,6 +307,51 @@ beforeEach(() => {
 });
 
 describe("DeploysPage", () => {
+  it("shows an already-current image without claiming replacement or blocking later requests", async () => {
+    const image = attempt().image!;
+    attempts = [
+      attempt({
+        outcome: "already-current",
+        tagWrite: null,
+        queue: null,
+        queueClaimedAt: null,
+        after: {
+          containerId: "b".repeat(64),
+          observedAt: 1000,
+          image: {
+            repository: image.repository,
+            platform: image.platform,
+            digestKind: image.digestKind,
+            digest: image.digest,
+          },
+        },
+        landedAt: null,
+        completedAt: 1500,
+      }),
+    ];
+    logs = {
+      app: "api",
+      attemptId: id,
+      policy: "recognized-events-only",
+      status: "unavailable",
+      reason: "unassociated",
+    };
+    mount();
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: "Select api" }));
+    expect(await screen.findByText("Requested image already running")).toBeInTheDocument();
+    expect(screen.queryByText("Container replaced")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Redeploy/u })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Roll back" })).toBeDisabled();
+    tab("Deploys");
+    expect(screen.getByText("Already current")).toBeInTheDocument();
+    tab("Logs");
+    expect(
+      await screen.findByText("No deployment log is associated with this attempt."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Already current")).toBeInTheDocument();
+  });
+
   it("keeps a failed deploy separate from healthy runtime and opens every detail tab", async () => {
     mount();
     await ready();

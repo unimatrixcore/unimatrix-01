@@ -77,6 +77,20 @@ function matched(inSync: boolean): DeployReconciliationResponse["results"][numbe
 }
 
 describe("deployment outcome presentation", () => {
+  it("labels an already-running image without reporting a deployment or offering rollback", () => {
+    const current = attempt({
+      outcome: "already-current",
+      tagWrite: null,
+      queue: null,
+      queueClaimedAt: null,
+      landedAt: null,
+      completedAt: 1500,
+    });
+    expect(outcomeLabel(current)).toBe("Already current");
+    expect(attemptNeedsAttention(current)).toBe(false);
+    expect(rollbackTargets([current])).toEqual([]);
+  });
+
   it("distinguishes unverified manual recreation from a verified deployed image", () => {
     const manual = attempt({
       trigger: "manual",
