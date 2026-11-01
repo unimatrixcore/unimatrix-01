@@ -1,12 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  CANONICAL_ORIGIN,
-  ROBOTS_EXCLUDED,
-  ROBOTS_INDEXABLE,
-  isIndexable,
-  routeHead,
-} from "@/lib/route-head";
+import { ROBOTS_EXCLUDED, ROBOTS_INDEXABLE, isIndexable, routeHead } from "@/lib/route-head";
 
 function metaEntry(head: ReturnType<typeof routeHead>, key: "name" | "property", value: string) {
   return head.meta.find((entry) => (entry as Record<string, unknown>)[key] === value) as
@@ -66,8 +60,8 @@ describe("routeHead", () => {
       indexable: true,
     });
 
-    expect(metaEntry(head, "property", "og:url")?.content).toBe(`${CANONICAL_ORIGIN}/learn`);
-    expect(head.links).toEqual([{ rel: "canonical", href: `${CANONICAL_ORIGIN}/learn` }]);
+    expect(metaEntry(head, "property", "og:url")?.content).toBe("https://cflop.us/learn");
+    expect(head.links).toEqual([{ rel: "canonical", href: "https://cflop.us/learn" }]);
   });
 
   it("carries jsonLd as a script:ld+json meta entry", () => {

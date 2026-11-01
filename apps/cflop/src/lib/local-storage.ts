@@ -27,13 +27,20 @@ const KEY_PREFIX = "cflop";
  */
 const LEGACY_KEY_PREFIX = "cube-trainer";
 
-function getItem(key: string): string | null {
-  try {
-    return window.localStorage.getItem(key);
-  } catch {
-    // Storage can be unavailable (private browsing, quota).
-    return null;
-  }
+/** Storage errors propagate so migration can stop before losing access to source data. */
+export function readStoredValueFromStorage(storage: Storage, suffix: string): string | null {
+  return (
+    storage.getItem(`${KEY_PREFIX}:${suffix}`) ?? storage.getItem(`${LEGACY_KEY_PREFIX}:${suffix}`)
+  );
+}
+
+export function writeStoredValueToStorage(storage: Storage, suffix: string, value: string): void {
+  storage.setItem(`${KEY_PREFIX}:${suffix}`, value);
+}
+
+/** Removes only a current-key value written by an interrupted migration. */
+export function removeStoredValueFromStorage(storage: Storage, suffix: string): void {
+  storage.removeItem(`${KEY_PREFIX}:${suffix}`);
 }
 
 /**
@@ -41,13 +48,17 @@ function getItem(key: string): string | null {
  * current one has never been written.
  */
 export function readStoredValue(suffix: string): string | null {
-  return getItem(`${KEY_PREFIX}:${suffix}`) ?? getItem(`${LEGACY_KEY_PREFIX}:${suffix}`);
+  try {
+    return readStoredValueFromStorage(window.localStorage, suffix);
+  } catch {
+    return null;
+  }
 }
 
 /** Writes `value` for `suffix`, always under the current key prefix. */
 export function writeStoredValue(suffix: string, value: string): void {
   try {
-    window.localStorage.setItem(`${KEY_PREFIX}:${suffix}`, value);
+    writeStoredValueToStorage(window.localStorage, suffix, value);
   } catch {
     // Storage can be unavailable (private browsing, quota). Every caller treats
     // its state as best-effort and safe to drop silently in that case.

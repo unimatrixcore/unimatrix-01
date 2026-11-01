@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { readStoredValue, readStoredValueFromStorage } from "@/lib/local-storage";
 import { enableOnlyLearnedCases, readCasePool, setCaseEnabled } from "@/lib/pool-storage";
 import { readPreviewMode, writePreviewMode } from "@/lib/preview-mode-storage";
 import { readCaseProgress, setCaseStatus } from "@/lib/progress-storage";
@@ -25,6 +26,19 @@ describe("pre-rebrand localStorage keys", () => {
     );
 
     expect(readCaseProgress("oll")).toEqual({ "oll-1": "known", "oll-2": "learning" });
+  });
+
+  it("propagates migration read failures while ordinary reads remain best effort", () => {
+    const failure = new DOMException("Storage blocked", "SecurityError");
+    const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw failure;
+    });
+    try {
+      expect(() => readStoredValueFromStorage(localStorage, "progress:oll")).toThrow(failure);
+      expect(readStoredValue("progress:oll")).toBeNull();
+    } finally {
+      getItem.mockRestore();
+    }
   });
 
   it("reads a training pool written under the old prefix", () => {

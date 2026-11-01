@@ -5,7 +5,7 @@ import type { AnyRouteMatch, MetaDescriptor } from "@tanstack/react-router";
  * than read from an env var: this app has no `.env` files, and a canonical that
  * varies by build is a canonical that can point at a preview host.
  */
-export const CANONICAL_ORIGIN = "https://cflop.unimatrix-01.dev";
+export const CANONICAL_ORIGIN = "https://cflop.us";
 
 export const ROBOTS_INDEXABLE = "index,follow";
 export const ROBOTS_EXCLUDED = "noindex,follow";
