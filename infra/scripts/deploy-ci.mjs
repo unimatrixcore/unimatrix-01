@@ -213,6 +213,7 @@ export async function deployCi({
     }
   }
   let queued = 0;
+  let alreadyCurrent = 0;
   const executionOrder = [...mappings].sort(([left], [right]) =>
     left === "deploy" ? 1 : right === "deploy" ? -1 : left.localeCompare(right),
   );
@@ -257,17 +258,48 @@ export async function deployCi({
       ["repository", "tag", "commit", "platform", "digestKind", "digest"].some(
         (key) => record.image?.[key] !== intent.image[key],
       ) ||
-      record.tagWrite !== "acknowledged" ||
-      record.queue !== "acknowledged"
+      !(record.outcome === "already-current"
+        ? (record.tagWrite === null || record.tagWrite === "acknowledged") &&
+          record.queue === null &&
+          record.queueClaimedAt === null &&
+          record.correlation === "verified" &&
+          record.landedAt === null &&
+          record.lateLandedAt === null &&
+          record.recreatedAt == null &&
+          record.baseline !== null &&
+          record.after !== null &&
+          /^[a-f0-9]{64}$/u.test(record.after?.containerId ?? "") &&
+          record.after?.containerId === record.baseline?.containerId &&
+          Number.isSafeInteger(record.after?.observedAt) &&
+          Number.isSafeInteger(record.baseline?.observedAt) &&
+          record.after.observedAt === record.baseline.observedAt &&
+          Number.isSafeInteger(record.completedAt) &&
+          record.completedAt >= record.after.observedAt &&
+          Number.isSafeInteger(record.requestedAt) &&
+          Number.isSafeInteger(record.deadlineAt) &&
+          record.completedAt >= record.requestedAt &&
+          record.completedAt < record.deadlineAt &&
+          record.completedAt - record.after.observedAt < 30_000 &&
+          record.failureReason == null &&
+          ["repository", "platform", "digestKind", "digest"].every(
+            (key) => record.after.image?.[key] === intent.image[key],
+          )
+        : record.tagWrite === "acknowledged" && record.queue === "acknowledged")
     ) {
       failures.push(`${app}: execution was not acknowledged for the intended image`);
       continue;
     }
-    queued++;
-    log(`${app}: deployment queued`);
+    if (record.outcome === "already-current") {
+      alreadyCurrent++;
+      log(`${app}: requested image already running; no deployment queued`);
+    } else {
+      queued++;
+      log(`${app}: deployment queued`);
+    }
   }
   if (failures.length) throw new Error(failures.join("; "));
   log(`${queued} stack(s) queued at ${tag}. Queued is not applied.`);
+  if (alreadyCurrent > 0) log(`${alreadyCurrent} stack(s) already current; no deployment queued.`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

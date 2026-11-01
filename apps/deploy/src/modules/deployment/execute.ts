@@ -5,6 +5,7 @@ import {
   deployRollbackInputSchema,
   type DeployAttemptRecord,
   type DeployAttemptBaseline,
+  type DeployRuntimeEvidence,
 } from "@unimatrix/shared";
 import type { FastifyInstance, FastifyPluginAsync } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
@@ -68,7 +69,7 @@ function canResumeRollback(attempt: DeployAttemptRecord): boolean {
   return attempt.outcome === "incomplete" && attempt.tagWrite === null && attempt.queue === null;
 }
 
-async function readBaseline(app: FastifyInstance, appDir: string): Promise<DeployAttemptBaseline> {
+async function readEvidence(app: FastifyInstance, appDir: string): Promise<DeployRuntimeEvidence> {
   const evidence = (await app.readRuntimeEvidence()).filter((entry) => entry.app === appDir);
   const now = Date.now();
   const [before] = evidence;
@@ -79,7 +80,24 @@ async function readBaseline(app: FastifyInstance, appDir: string): Promise<Deplo
     now - before.observedAt >= 30_000
   )
     refuse(503);
+  return before;
+}
+
+async function readBaseline(app: FastifyInstance, appDir: string): Promise<DeployAttemptBaseline> {
+  const before = await readEvidence(app, appDir);
   return { containerId: before.containerId, observedAt: before.observedAt };
+}
+
+function targetIsRunning(record: DeployAttemptRecord, evidence: DeployRuntimeEvidence): boolean {
+  return (
+    record.trigger === "ci" &&
+    record.image !== null &&
+    evidence.metadata?.commit === record.image.commit &&
+    evidence.image.repository === record.image.repository &&
+    evidence.image.digest === record.image.digest &&
+    evidence.image.platform === record.image.platform &&
+    evidence.image.digestKind === record.image.digestKind
+  );
 }
 
 async function execute(
@@ -90,7 +108,21 @@ async function execute(
 ): Promise<DeployAttemptRecord> {
   if (app.imageTags === undefined || app.redeployment === undefined || record.image === null)
     refuse(503);
-  const baseline = await readBaseline(app, record.app);
+  const evidence = await readEvidence(app, record.app);
+  const baseline = { containerId: evidence.containerId, observedAt: evidence.observedAt };
+  if (
+    targetIsRunning(record, evidence) &&
+    (await app.imageTags.isCurrent(composeId, record.app, record.image))
+  ) {
+    const confirmed = await readEvidence(app, record.app);
+    return app.deploymentAttempts.resolveAlreadyCurrent(
+      record.app,
+      record.id,
+      reporterId,
+      Date.now(),
+      confirmed,
+    );
+  }
   const claim = app.deploymentAttempts.claimExecution(
     record.app,
     record.id,
@@ -112,6 +144,16 @@ async function execute(
   }
   const written = report("tag-write", result);
   if (result !== "acknowledged") return written;
+  if (targetIsRunning(record, evidence)) {
+    const confirmed = await readEvidence(app, record.app);
+    return app.deploymentAttempts.resolveAlreadyCurrent(
+      record.app,
+      record.id,
+      reporterId,
+      Date.now(),
+      confirmed,
+    );
+  }
   report("queue", "started");
   try {
     await app.redeployment.queueRedeploy(composeId, record.id);
@@ -145,7 +187,33 @@ export const deploymentExecutionModule: FastifyPluginAsync = (app) => {
         if (record === undefined) refuse(404);
         const reporterId = request.serviceCaller!.id;
         if (record.trigger !== "ci" || record.reporterId !== reporterId) refuse(409);
-        if (record.tagWrite !== null || record.queue !== null) return record;
+        if (record.outcome === "already-current") return record;
+        if (record.tagWrite !== null || record.queue !== null) {
+          if (
+            record.tagWrite === "acknowledged" &&
+            record.queue === null &&
+            record.outcome === "incomplete" &&
+            app.imageTags !== undefined
+          ) {
+            const composeId = await resolveCompose(app, record.app);
+            const evidence = await readEvidence(app, record.app);
+            if (
+              targetIsRunning(record, evidence) &&
+              record.image !== null &&
+              (await app.imageTags.isCurrent(composeId, record.app, record.image))
+            ) {
+              const confirmed = await readEvidence(app, record.app);
+              return app.deploymentAttempts.resolveAlreadyCurrent(
+                record.app,
+                record.id,
+                reporterId,
+                Date.now(),
+                confirmed,
+              );
+            }
+          }
+          return record;
+        }
         const composeId = await resolveCompose(app, record.app);
         return await execute(app, record, composeId, reporterId);
       } catch (error) {

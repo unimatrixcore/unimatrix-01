@@ -10,6 +10,10 @@ export function attemptDiagnosticLines(
   const lines: NonNullable<DeployAttemptLogsResponse["diagnosticLines"]> = [
     "▶ Deployment attempt accepted and recorded.",
   ];
+  if (attempt.outcome === "already-current") {
+    lines.push("Requested image already running; no deployment was queued.");
+    return lines;
+  }
   lines.push(
     attempt.trigger === "rollback"
       ? "Rollback targets a previously verified deployed image."

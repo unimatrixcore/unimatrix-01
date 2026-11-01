@@ -22,7 +22,13 @@ even if a matching image appears; the record times out if that report never arri
 Landing evidence must be observed at or after the persisted queue-claim timestamp. Older records
 without that timestamp remain readable but cannot establish landing.
 
-Outcomes are `incomplete`, `queued`, `recreated`, `landed`, `failed` or `timed-out`.
+Outcomes are `incomplete`, `queued`, `recreated`, `landed`, `already-current`, `failed` or `timed-out`.
+CI resolves `already-current` when fresh unique evidence verifies the requested immutable image
+and OCI commit are already running. It verifies the stored image tag, correcting it when needed,
+and queues no deployment. The resolved record releases the app reservation and survives retries;
+it does not claim container replacement, reapplied runtime configuration or a rollback target.
+Missing or stale evidence cannot authorize this result. Manual redeploys and rollbacks retain their
+explicit execution behavior.
 Manual attempts have an unspecified requested image: a changed container ID can record recreation
 and its observed image, without claiming immutable landing. Late recreation preserves timeout
 and records `recreatedAt`; observed recreation resolves the manual overlap guard.
@@ -118,8 +124,15 @@ CI refuses deployment while disabled; it never falls back to direct Dokploy muta
    landing, a same-tag rebuild with a different digest and unchanged-ID redeployment. Keep health
    and configuration readback as separate checks.
 
-Ingress provisioning, scheduled bridge installation, Actions publication capture and the controlled
-end-to-end trial have not been performed. Local regression tests cover their request ordering and
-correlation failure cases; they do not establish production reachability. Leave activation off until
-the live checks above pass. Disabling activation later stops subsequent CI execution; it does not remove recorded attempts
-or cancel queued work.
+The reporting origin is `https://deploy-ci.unimatrix-01.dev`, protected by Service Auth for the
+existing GitHub Actions identity. On unimatrix-03, `unimatrix-runtime-evidence.timer` runs the
+reviewed collector serially and writes the deploy volume's snapshot. The
+[hosted-runner preflight](https://github.com/unimatrixcore/unimatrix-01/actions/runs/41273625134)
+confirmed Access denial, service authentication, rejected invalid inputs, denied unrelated routes,
+stable intent IDs and conflicting-digest rejection. Its intent-only record was closed with a
+simulated tag-write rejection; no deployment was queued.
+
+The controlled coordinated rollout, live already-current resolution and rollback/supersession
+trials remain unverified. Complete the applicable activation checks before enabling execution.
+Disabling activation later stops subsequent CI execution; it does not remove recorded attempts or
+cancel queued work.

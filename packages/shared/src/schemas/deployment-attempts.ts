@@ -108,7 +108,15 @@ export const deployAttemptResponseSchema = deployAttemptIntentSchema
     tagWrite: resultSchema.nullable(),
     queue: resultSchema.nullable(),
     queueClaimedAt: timestampSchema.nullable().default(null),
-    outcome: z.enum(["incomplete", "queued", "landed", "recreated", "failed", "timed-out"]),
+    outcome: z.enum([
+      "incomplete",
+      "queued",
+      "landed",
+      "already-current",
+      "recreated",
+      "failed",
+      "timed-out",
+    ]),
     recreatedAt: timestampSchema.nullable().optional(),
     correlation: z.enum(["pending", "ambiguous", "verified"]),
     after: afterSchema.nullable(),
@@ -164,7 +172,35 @@ export const deployAttemptResponseSchema = deployAttemptIntentSchema
           record.requestId === undefined &&
           record.targetAttemptId === undefined))
     );
-  }, "Attempt identity must match its target-image provenance");
+  }, "Attempt identity must match its target-image provenance")
+  .refine((record) => {
+    if (record.outcome !== "already-current") return true;
+    return (
+      record.trigger === "ci" &&
+      record.image !== null &&
+      record.baseline !== null &&
+      record.after !== null &&
+      record.baseline.containerId === record.after.containerId &&
+      record.baseline.observedAt === record.after.observedAt &&
+      record.after.image.repository === record.image.repository &&
+      record.after.image.platform === record.image.platform &&
+      record.after.image.digestKind === record.image.digestKind &&
+      record.after.image.digest === record.image.digest &&
+      (record.tagWrite === null || record.tagWrite === "acknowledged") &&
+      record.queue === null &&
+      record.queueClaimedAt === null &&
+      record.correlation === "verified" &&
+      record.completedAt != null &&
+      record.completedAt >= record.requestedAt &&
+      record.completedAt >= record.after.observedAt &&
+      record.completedAt < record.deadlineAt &&
+      record.completedAt - record.after.observedAt < 30_000 &&
+      record.landedAt === null &&
+      record.lateLandedAt === null &&
+      record.recreatedAt == null &&
+      record.failureReason == null
+    );
+  }, "Already-current attempts require fresh matching evidence without queueing a deployment");
 export const deployAttemptHistoryResponseSchema = z.strictObject({
   attempts: z.array(deployAttemptResponseSchema).max(100),
 });
@@ -182,6 +218,7 @@ const logSelection = {
       z.enum([
         "▶ Deployment attempt accepted and recorded.",
         "Immutable target image recorded from CI publication.",
+        "Requested image already running; no deployment was queued.",
         "Rollback targets a previously verified deployed image.",
         "Manual redeploy uses the service configuration; no immutable target image was supplied.",
         "Baseline container recorded before deployment.",
@@ -241,6 +278,7 @@ export function hasUnresolvedDeploymentWork(
   return (
     record.outcome !== "failed" &&
     record.outcome !== "landed" &&
+    record.outcome !== "already-current" &&
     record.outcome !== "recreated" &&
     record.recreatedAt == null &&
     record.lateLandedAt === null &&

@@ -79,7 +79,7 @@ function completionTime(attempt: DeployAttemptRecord): number | null {
 function attemptTone(attempt: DeployAttemptRecord): string {
   return attemptNeedsAttention(attempt)
     ? "text-destructive"
-    : attempt.outcome === "landed"
+    : attempt.outcome === "landed" || attempt.outcome === "already-current"
       ? "text-emerald-600 dark:text-emerald-400"
       : "text-muted-foreground";
 }
@@ -221,7 +221,7 @@ export function AttemptLogs({ app, attempts, selectedId, onSelect }: AttemptLogs
                       "size-2 shrink-0 rounded-full",
                       attemptNeedsAttention(candidate)
                         ? "bg-destructive"
-                        : candidate.outcome === "landed"
+                        : candidate.outcome === "landed" || candidate.outcome === "already-current"
                           ? "bg-emerald-500"
                           : "bg-muted-foreground",
                     )}

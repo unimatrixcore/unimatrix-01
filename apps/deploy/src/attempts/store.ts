@@ -59,6 +59,13 @@ export interface DeploymentAttemptStore {
     now: number,
     baseline: DeployAttemptBaseline,
   ): DeploymentExecutionClaim;
+  resolveAlreadyCurrent(
+    app: string,
+    attemptId: string,
+    reporterId: string,
+    now: number,
+    evidence: DeployRuntimeEvidence,
+  ): DeployAttemptRecord;
   findManual(
     input: DeployManualRedeployInput,
     reporterId: string,
@@ -258,6 +265,7 @@ export function openDeploymentAttemptStore(path: string): DeploymentAttemptStore
           );
           if (attempt === undefined || attempt.reporterId !== reporterId || attempt.image === null)
             throw conflict();
+          if (attempt.outcome === "already-current") return { attempt, claimed: false };
           if (attempt.tagWrite !== null) return { attempt, claimed: false };
           if (
             now >= attempt.deadlineAt ||
@@ -271,6 +279,62 @@ export function openDeploymentAttemptStore(path: string): DeploymentAttemptStore
           attempt.tagWrite = "started";
           writeRecord(attempt);
           return { attempt, claimed: true };
+        },
+      ),
+      resolveAlreadyCurrent: db.transaction(
+        (
+          app: string,
+          attemptId: string,
+          reporterId: string,
+          now: number,
+          evidence: DeployRuntimeEvidence,
+        ) => {
+          const attempt = maintain(now).find(
+            (record) => record.id === attemptId && record.app === app,
+          );
+          if (
+            attempt === undefined ||
+            attempt.reporterId !== reporterId ||
+            attempt.trigger !== "ci" ||
+            attempt.image === null
+          )
+            throw conflict();
+          if (attempt.outcome === "already-current") return attempt;
+          const observed = deployRuntimeEvidenceSchema.parse(evidence);
+          if (
+            attempt.outcome !== "incomplete" ||
+            attempt.correlation !== "pending" ||
+            (attempt.tagWrite !== null && attempt.tagWrite !== "acknowledged") ||
+            attempt.queue !== null ||
+            attempt.queueClaimedAt !== null ||
+            now >= attempt.deadlineAt ||
+            observed.app !== app ||
+            observed.observedAt > now ||
+            now - observed.observedAt >= 30_000 ||
+            observed.image.repository !== attempt.image.repository ||
+            observed.image.platform !== attempt.image.platform ||
+            observed.image.digestKind !== attempt.image.digestKind ||
+            observed.image.digest !== attempt.image.digest ||
+            observed.metadata?.commit !== attempt.image.commit
+          )
+            throw conflict();
+          attempt.baseline = {
+            containerId: observed.containerId,
+            observedAt: observed.observedAt,
+          };
+          attempt.after = {
+            containerId: observed.containerId,
+            observedAt: observed.observedAt,
+            image: observed.image,
+          };
+          attempt.outcome = "already-current";
+          attempt.correlation = "verified";
+          attempt.completedAt = now;
+          attempt.landedAt = null;
+          attempt.lateLandedAt = null;
+          attempt.failureReason = null;
+          writeRecord(deployAttemptResponseSchema.parse(attempt));
+          return attempt;
         },
       ),
       findManual: db.transaction(
@@ -420,6 +484,7 @@ export function openDeploymentAttemptStore(path: string): DeploymentAttemptStore
         if (record === undefined)
           throw Object.assign(new Error("Deployment attempt not found."), { statusCode: 404 });
         if (record.reporterId !== reporterId) throw conflict();
+        if (record.outcome === "already-current") throw conflict();
         const field = parsed.stage === "tag-write" ? "tagWrite" : "queue";
         if (field === "tagWrite" && record.image === null) throw conflict();
         if (field === "queue" && record.image !== null && record.tagWrite !== "acknowledged")

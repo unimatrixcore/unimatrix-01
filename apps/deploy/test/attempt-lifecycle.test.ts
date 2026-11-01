@@ -21,6 +21,7 @@ function storeFixture(observe: DeploymentAttemptStore["observe"]) {
     findRollback: () => assert.fail("unused"),
     reserveRollback: () => assert.fail("unused"),
     claimExecution: () => assert.fail("unused"),
+    resolveAlreadyCurrent: () => assert.fail("unused"),
     reserveManual: () => assert.fail("unused"),
     findManual: () => assert.fail("unused"),
     intent: () => assert.fail("unused"),

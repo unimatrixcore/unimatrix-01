@@ -452,3 +452,67 @@ test("unknown or missing capability headers never authorize optional reservation
     assert.equal(reservations, 1);
   }
 });
+
+test("already-current execution is a verified resolved result with no queue", async (t) => {
+  for (const mutation of [
+    null,
+    "acknowledged",
+    "container",
+    "digest",
+    "queue",
+    "completion",
+    "tag",
+    "baseline",
+    "stale",
+    "deadline",
+    "requested",
+    "failure",
+  ]) {
+    const fixture = setup(t, ["api"]);
+    const original = fixture.fetchImpl;
+    const lines = [];
+    fixture.log = (line) => lines.push(line);
+    fixture.fetchImpl = async (url, options) => {
+      const response = await original(url, options);
+      if (!url.endsWith("/deployment/execute")) return response;
+      const record = await response.json();
+      Object.assign(record, {
+        outcome: "already-current",
+        tagWrite: null,
+        queue: null,
+        queueClaimedAt: null,
+        correlation: "verified",
+        landedAt: null,
+        lateLandedAt: null,
+        baseline: { containerId: "c".repeat(64), observedAt: 1000 },
+        after: { containerId: "c".repeat(64), observedAt: 1000, image: record.image },
+        completedAt: 1001,
+        requestedAt: 1000,
+        deadlineAt: 40000,
+      });
+      if (mutation === "container") record.after.containerId = "d".repeat(64);
+      if (mutation === "digest")
+        record.after.image = { ...record.image, digest: "sha256:" + "d".repeat(64) };
+      if (mutation === "queue") record.queue = "acknowledged";
+      if (mutation === "completion") record.completedAt = null;
+      if (mutation === "tag") record.tagWrite = "started";
+      if (mutation === "acknowledged") record.tagWrite = "acknowledged";
+      if (mutation === "baseline") record.baseline.observedAt = 999;
+      if (mutation === "stale") record.completedAt = 31000;
+      if (mutation === "deadline") record.deadlineAt = 1001;
+      if (mutation === "requested") record.requestedAt = 1002;
+      if (mutation === "failure") record.failureReason = "Unexpected failure";
+      return Response.json(record);
+    };
+    if (mutation && mutation !== "acknowledged")
+      await assert.rejects(deployCi(fixture), /not acknowledged/u);
+    else {
+      await deployCi(fixture);
+      assert.ok(lines.some((line) => line.includes("1 stack(s) already current")));
+      assert.equal(
+        lines.some((line) => line === "api: deployment queued"),
+        false,
+      );
+    }
+  }
+});

@@ -79,7 +79,12 @@ function countdown(to: number, now: number): string {
 
 function attemptTone(attempt: DeployAttemptRecord): StatusTone {
   if (attemptNeedsAttention(attempt)) return "bad";
-  if (attempt.outcome === "landed" || attempt.lateLandedAt !== null) return "ok";
+  if (
+    attempt.outcome === "landed" ||
+    attempt.outcome === "already-current" ||
+    attempt.lateLandedAt !== null
+  )
+    return "ok";
   return "warn";
 }
 
@@ -196,9 +201,11 @@ export function Overview({
         ? "Attempt history unavailable"
         : !latest
           ? "No deployment yet"
-          : latest.after !== null
-            ? "Container replaced"
-            : "Deployment in progress";
+          : latest.outcome === "already-current"
+            ? "Requested image already running"
+            : latest.after !== null
+              ? "Container replaced"
+              : "Deployment in progress";
 
   return (
     <DigestCardGrid

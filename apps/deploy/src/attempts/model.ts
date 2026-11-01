@@ -28,6 +28,7 @@ export function applyRuntimeEvidence(
     evidence.observedAt < record.queueClaimedAt ||
     record.outcome === "failed" ||
     record.outcome === "landed" ||
+    record.outcome === "already-current" ||
     record.outcome === "recreated" ||
     record.recreatedAt != null ||
     record.lateLandedAt !== null ||
