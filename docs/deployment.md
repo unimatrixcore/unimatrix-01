@@ -41,10 +41,12 @@ Compose services; the local-only `lab` must never gain deployment artifacts.
    GitHub's Dependency graph → Dependabot for configuration errors. **Manual:** neither app wiring
    nor the required-check gate verifies Dependabot coverage or updater execution.
 5. Before merging, create a uniquely named Dokploy **Compose** service named `<app>`, connected to
-   this repository's `main` branch with compose path `infra/docker/<app>-compose.yaml`. Leave
-   `autoDeploy` off: CI publishes the image before queuing deployment. **Manual before merge:** the
-   reconciler reports missing/ambiguous services and settings drift, but creates no service; CI's
-   `Deploy` job detects a missing match only after merge.
+   this repository's `main` branch with compose path `infra/docker/<app>-compose.yaml`. Use the
+   host-local [creation command](../apps/deploy/README.md#reconcile-create) when the running deploy
+   image includes the new declaration, or configure the service by hand. Bootstrap `deploy` itself
+   by hand. Leave `autoDeploy` off: CI publishes the image before queuing deployment.
+   **Explicit before merge:** creation is not part of scheduled reconciliation or CI; CI's `Deploy`
+   job detects a missing match only after merge.
 6. Supply the service's declared runtime variables. Coordinated execution writes its own literal
    `IMAGE_TAG` before queueing the first deployment; it preserves unrelated service env and leaves
    project env untouched. Provision external networks, pinned TLS, service tokens and durable volumes
@@ -658,7 +660,7 @@ can a log line. What does distinguish them:
   An unset or malformed pin makes secrets health unknown without blocking service startup;
   the secrets CLI still refuses an unconfigured connection.
 - persistent storage: `deploy-data` mounted at `/data`, with `DEPLOY_DATABASE_PATH=/data/deploy.sqlite`.
-  Preserve this volume across redeploys; it holds caller-token digests and bounded health history and is separate from the
+  Preserve this volume across redeploys; it holds caller-token digests, creation reservations and bounded health history and is separate from the
   API and secrets volumes. Confirm the actual Compose-prefixed volume name and mount on the host.
 
 The collector probes internal app targets every 60 seconds and retains 30 days of observations.
@@ -702,11 +704,18 @@ a nonblank key establishes presence, not agreement with the secrets store.
 `autoDeploy` for one app when they drift — a single `compose.update` call, settings only, refusing
 its own compose entry, an app not in the manifest, a name matching zero or more than one Dokploy
 compose service, a match anchored to a different GitHub owner/repository, or a `sourceType`
-disagreement. It still writes no `env`, creates nothing (`compose.create` needs an `environmentId`
-this repo declares nowhere), deploys nothing, and touches no domain. On that last point: v0.29.13's
+disagreement. It writes no `env`, creates no service, deploys nothing, and touches no domain. On that last point: v0.29.13's
 `domain.create` procedure does work — the reason this repo does not call it is that
 `packages/deploy-config` declares no domain data, not that the API can't. See `apps/deploy/AGENTS.md`
 and `apps/deploy/README.md`.
+
+`reconcile create <app>` is the separate host-local onboarding command. It reads the app's generated
+declaration and invocation-only `DOKPLOY_ENVIRONMENT_ID`/`DOKPLOY_GITHUB_ID`, then creates and verifies
+its Compose service and GitHub source with auto-deploy disabled. It writes no env or domains and
+queues no deployment. Durable creation reservations block duplicate attempts, including after an
+uncertain POST; preserve them and investigate state before recovery. See
+[creation setup and recovery](../apps/deploy/README.md#reconcile-create), including the unexercised
+successful live creation/configuration check required on controlled first use.
 
 `pnpm --filter @unimatrix/deploy-app reconcile secrets-status <app>` resolves the secrets-store
 names one declared app's manifest entry carries, against the store this service holds a read-only
