@@ -50,6 +50,7 @@ function matchesImageRepository(image: string, repository: string): boolean {
 
 function observeContainer(
   appDir: string,
+  repository: string,
   candidates: readonly DokployContainer[],
   previous: MatchedContainerObservation | undefined,
   observedAt: number,
@@ -70,9 +71,16 @@ function observeContainer(
   }
 
   const sameContainer = previous?.containerId === container.containerId;
-  const runtime = evidence.find(
-    (entry) => entry.app === appDir && entry.containerId === container.containerId,
+  const runtimeMatches = evidence.filter(
+    (entry) =>
+      entry.app === appDir &&
+      entry.image.repository === repository &&
+      (entry.containerId === container.containerId ||
+        (/^[a-f0-9]{12,63}$/u.test(container.containerId) &&
+          /^[a-f0-9]{64}$/u.test(entry.containerId) &&
+          entry.containerId.startsWith(container.containerId))),
   );
+  const runtime = runtimeMatches.length === 1 ? runtimeMatches[0] : undefined;
   const metadata = runtime?.metadata;
   return {
     appDir,
@@ -148,6 +156,7 @@ export function createContainerObserver(
           );
           const observation = observeContainer(
             service.appDir,
+            service.image,
             candidates,
             lastMatched.get(service.appDir),
             observedAt,
