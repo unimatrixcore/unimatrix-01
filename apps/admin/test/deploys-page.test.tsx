@@ -611,7 +611,8 @@ describe("DeploysPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Select deploy" }));
     expect(screen.getByRole("button", { name: /^Redeploy/u })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Roll back" })).toBeDisabled();
-    expect(screen.getByText(/Rollback of the deploy service/u)).toBeInTheDocument();
+    expect(screen.getByLabelText("Why rollback is unavailable")).toHaveAttribute("tabindex", "0");
+    expect(screen.queryByText(/Rollback of the deploy service/u)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /^Redeploy/u }));
     await waitFor(() => {
       expect(requestedOptions(adminDeployManualRedeployContract)).toContainEqual({
