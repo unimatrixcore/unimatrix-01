@@ -1,4 +1,4 @@
-import { queryOptions } from "@tanstack/react-query";
+import { queryOptions, type QueryClient } from "@tanstack/react-query";
 import type { ApiClient } from "@unimatrix/api-client";
 import {
   adminDeployStateContract,
@@ -54,3 +54,51 @@ export const healthQueryOptions = (client: ApiClient, app: string) =>
     queryKey: [...deployQueryKeys.all, "health", app],
     queryFn: () => client.request(adminDeployHealthHistoryContract, { query: { app } }),
   });
+
+export interface DeployDetailsPrefetcher {
+  prefetch(apps: readonly string[]): Promise<void>;
+  stop(): void;
+}
+
+export function createDeployDetailsPrefetcher(
+  queryClient: QueryClient,
+  client: ApiClient,
+): DeployDetailsPrefetcher {
+  let stopped = false;
+  let apps: readonly string[] = [];
+  let rerun = false;
+  let running: Promise<void> | null = null;
+
+  async function warm(): Promise<void> {
+    do {
+      rerun = false;
+      const reads = apps.flatMap((app) => [
+        () => queryClient.prefetchQuery(historyQueryOptions(client, app)),
+        () => queryClient.prefetchQuery(healthQueryOptions(client, app)),
+      ]);
+      let next = 0;
+      async function worker(): Promise<void> {
+        while (!stopped && next < reads.length) {
+          const read = reads[next++];
+          if (read !== undefined) await read();
+        }
+      }
+      await Promise.all([worker(), worker()]);
+    } while (!stopped && rerun);
+  }
+
+  return {
+    prefetch(nextApps) {
+      if (stopped) return Promise.resolve();
+      apps = [...new Set(nextApps)].filter((app) => app.length > 0);
+      rerun = true;
+      running ??= warm().finally(() => {
+        running = null;
+      });
+      return running;
+    },
+    stop() {
+      stopped = true;
+    },
+  };
+}

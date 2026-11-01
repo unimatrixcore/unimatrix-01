@@ -24,13 +24,14 @@ import {
 } from "@unimatrix/shared";
 import { TooltipProvider } from "@unimatrix/ui";
 import type * as EditorModule from "@unimatrix/ui/editor";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const request = vi.fn();
 const toastSuccess = vi.fn();
 const toastError = vi.fn();
-vi.mock("@/lib/api-client", () => ({ useApiClient: () => ({ request }) as unknown as ApiClient }));
+const apiClient = { request } as unknown as ApiClient;
+vi.mock("@/lib/api-client", () => ({ useApiClient: () => apiClient }));
 vi.mock("@unimatrix/ui/editor", async () => ({
   ...(await vi.importActual<typeof EditorModule>("@unimatrix/ui/editor")),
   toast: { success: toastSuccess, error: toastError },
@@ -39,6 +40,8 @@ const { DeploysPage } = await import("@/features/deploys/deploys-page");
 const { ConfigPanel } = await import("@/features/deploys/config-panel");
 const { ReconciliationPanel } = await import("@/features/deploys/reconciliation-panel");
 const { AttemptHistory, HealthPanel } = await import("@/features/deploys/history-panels");
+const { deployQueryKeys, healthQueryOptions, stateQueryOptions } =
+  await import("@/features/deploys/queries");
 
 const id = "00000000-0000-4000-8000-000000000001";
 const olderId = "00000000-0000-4000-8000-000000000002";
@@ -307,6 +310,55 @@ beforeEach(() => {
 });
 
 describe("DeploysPage", () => {
+  it("warms unselected service details without fetching logs or restarting on fleet polls", async () => {
+    const queryClient = mount();
+    await ready();
+    await waitFor(() => {
+      expect(request).toHaveBeenCalledWith(adminDeployAttemptHistoryContract, {
+        query: { app: "web", limit: 100 },
+      });
+      expect(request).toHaveBeenCalledWith(adminDeployHealthHistoryContract, {
+        query: { app: "web" },
+      });
+    });
+    expect(
+      request.mock.calls.some(([contract]) => contract === adminDeployAttemptLogsContract),
+    ).toBe(false);
+    await act(async () => {
+      await queryClient.invalidateQueries({
+        queryKey: healthQueryOptions(apiClient, "web").queryKey,
+        refetchType: "none",
+      });
+      queryClient.setQueryData(stateQueryOptions(apiClient).queryKey, {
+        ...state,
+        checkedAt: 3000,
+        apps: [...state.apps].reverse(),
+      });
+    });
+    expect(
+      request.mock.calls.filter(
+        ([contract, options]) =>
+          contract === adminDeployHealthHistoryContract &&
+          (options as { query?: { app?: string } }).query?.app === "web",
+      ),
+    ).toHaveLength(1);
+    await act(async () => {
+      queryClient.setQueryData(stateQueryOptions(apiClient).queryKey, {
+        ...state,
+        apps: [...state.apps, { ...state.apps[1]!, appDir: "auth" }],
+      });
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(request).toHaveBeenCalledWith(adminDeployAttemptHistoryContract, {
+        query: { app: "auth", limit: 100 },
+      });
+      expect(request).toHaveBeenCalledWith(adminDeployHealthHistoryContract, {
+        query: { app: "auth" },
+      });
+    });
+  });
+
   it("shows an already-current image without claiming replacement or blocking later requests", async () => {
     const image = attempt().image!;
     attempts = [
@@ -426,15 +478,24 @@ describe("DeploysPage", () => {
     });
   });
 
-  it("refreshes active reads and reports both success and partial failure", async () => {
+  it("refreshes active and warmed reads and reports both success and partial failure", async () => {
     const client = mount();
     await ready();
-    const spy = vi.spyOn(client, "refetchQueries");
+    const spy = vi.spyOn(client, "invalidateQueries");
     fireEvent.click(screen.getByRole("button", { name: "Refresh deployments" }));
     await waitFor(() => {
       expect(toastSuccess).toHaveBeenCalledWith("Deployment data refreshed.");
     });
-    expect(spy).toHaveBeenCalledWith({ queryKey: ["admin", "deploys"], type: "active" });
+    expect(spy).toHaveBeenCalledWith({ queryKey: deployQueryKeys.all });
+    await waitFor(() => {
+      expect(
+        request.mock.calls.filter(
+          ([contract, options]) =>
+            contract === adminDeployHealthHistoryContract &&
+            (options as { query?: { app?: string } }).query?.app === "web",
+        ),
+      ).toHaveLength(2);
+    });
     failurePath = adminDeployDeclarationsContract.path;
     fireEvent.click(screen.getByRole("button", { name: "Refresh deployments" }));
     await waitFor(() => {
