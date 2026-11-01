@@ -112,7 +112,7 @@ async function execute(
   const baseline = { containerId: evidence.containerId, observedAt: evidence.observedAt };
   if (
     targetIsRunning(record, evidence) &&
-    (await app.imageTags.isCurrent(composeId, record.app, record.image))
+    (await app.imageTags.isCurrent(composeId, record.app, record.image).catch(() => false))
   ) {
     const confirmed = await readEvidence(app, record.app);
     return app.deploymentAttempts.resolveAlreadyCurrent(
@@ -200,7 +200,9 @@ export const deploymentExecutionModule: FastifyPluginAsync = (app) => {
             if (
               targetIsRunning(record, evidence) &&
               record.image !== null &&
-              (await app.imageTags.isCurrent(composeId, record.app, record.image))
+              (await app.imageTags
+                .isCurrent(composeId, record.app, record.image)
+                .catch(() => false))
             ) {
               const confirmed = await readEvidence(app, record.app);
               return app.deploymentAttempts.resolveAlreadyCurrent(

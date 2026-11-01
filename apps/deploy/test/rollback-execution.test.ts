@@ -953,3 +953,65 @@ void test("an acknowledged tag correction can finish as already-current after a 
     await f.app.close();
   }
 });
+
+void test("failed already-current reads preserve rejection and readonly retry semantics", async () => {
+  for (const priorAcknowledgement of [false, true]) {
+    const f = fixture();
+    try {
+      const intent = f.seed(false);
+      const now = Date.now();
+      f.setEvidence([
+        {
+          app: "api",
+          containerId: "d".repeat(64),
+          observedAt: now,
+          image: {
+            repository: image.repository,
+            platform: image.platform,
+            digestKind: image.digestKind,
+            digest: image.digest,
+          },
+          metadata: {
+            name: "api",
+            startedAt: null,
+            health: "healthy",
+            imageTag: image.tag,
+            commit: image.commit,
+            commitSubject: null,
+          },
+        },
+      ]);
+      if (priorAcknowledgement) {
+        f.attempts.claimExecution("api", intent.id, f.manage.record.id, now, {
+          containerId: "d".repeat(64),
+          observedAt: now,
+        });
+        f.attempts.report(
+          { attemptId: intent.id, stage: "tag-write", result: "acknowledged" },
+          f.manage.record.id,
+          now,
+        );
+      }
+      let reads = 0;
+      f.app.imageTags = createImageTagWriter({
+        getComposeEnv: () => {
+          reads++;
+          return Promise.reject(new Error("private-read-error"));
+        },
+        updateComposeEnv: () => assert.fail("must not mutate after failed read"),
+      });
+      const response = await f.send("execute", { app: "api", attemptId: intent.id });
+      assert.equal(response.statusCode, 200, response.body);
+      const record = response.json<DeployAttemptRecord>();
+      assert.equal(record.tagWrite, priorAcknowledgement ? "acknowledged" : "rejected");
+      assert.equal(record.outcome, priorAcknowledgement ? "incomplete" : "failed");
+      assert.equal(record.queue, null);
+      assert.equal(reads, priorAcknowledgement ? 1 : 2);
+      assert.equal(f.calls.includes("queue"), false);
+      assert.doesNotMatch(response.body, /private-read-error/u);
+      if (!priorAcknowledgement) assert.doesNotThrow(() => f.seed(false));
+    } finally {
+      await f.app.close();
+    }
+  }
+});
