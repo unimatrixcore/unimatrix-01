@@ -7,9 +7,9 @@ diffs `src/reconcile/desired-state.gen.ts` against what Dokploy actually holds, 
 write `composePath`/`branch`/`autoDeploy` for one app at a time. It observes containers and persists
 internal HTTP health probes in its own SQLite database. It queues authenticated manual redeploys
 without changing image tags. CI execution and rollback change only the selected service image tag,
-using the env capability in `src/secret-env/image-tag.ts`. It creates no services — see
-`README.md` for what still has to happen by hand before
-this stack deploys, and for apply's full refusal set. It also holds a read-only resolver against the
+using the env capability in `src/secret-env/image-tag.ts`. The host-local `reconcile create <app>`
+creates a missing declared service without deploying it. See `README.md` for onboarding, recovery
+and apply's full refusal set. It also holds a read-only resolver against the
 secrets store (`src/secret-env/`, `reconcile secrets-status <app>`) that resolves declared
 values and applies them to Dokploy only through `secrets-apply` — it holds no write capability
 against the store, and
@@ -53,9 +53,9 @@ against the store, and
   reduced to the error `code` and the `zodError.fieldErrors` key names only — never the zod message,
   which can echo the offending value, and never the row.
 - **The settings mutation uses `compose.update` with a closed
-  `{composePath?, branch?, autoDeploy?}` payload** (`DokployComposeSettingsUpdate`) —
-  `compose.create` remains absent because it needs an `environmentId` nothing in this repo
-  declares. Manual redeploys use a separate closed capability accepting only a resolved compose ID
+  `{composePath?, branch?, autoDeploy?}` payload** (`DokployComposeSettingsUpdate`).
+  Creation uses the separate closed `src/dokploy/creation-client.ts` capability.
+  Manual redeploys use a separate closed capability accepting only a resolved compose ID
   and durable attempt ID; no procedure name or image tag comes from the caller. `env` has no
   field on that type. `DokployEnvClient` is the separate env capability; it reveals a `SecretValue`
   only for the wire payload. `src/reconcile/` must not import `dokploy/env-client`,
@@ -71,10 +71,17 @@ against the store, and
   the manifest, a name that matches zero or more than one Dokploy compose service, a match anchored
   to a different GitHub owner/repository than this one's (`findComposeMatches` matches on service
   name alone, globally across the instance, and reads no `projectId`), and a `sourceType`
-  disagreement (it selects which sibling column group drives the clone, and this repo declares none
-  of them). `autoDeploy`'s written value always comes from the `RECONCILE_AUTO_DEPLOY` policy
+  disagreement (settings apply never changes the provider fields that select the clone source).
+  `autoDeploy`'s written value always comes from the `RECONCILE_AUTO_DEPLOY` policy
   constant, never from the diff's `declared` string — the fork's `coerceSchema` treats `autoDeploy`
   as `z.coerce.boolean()`, under which the string `"false"` coerces to `true`.
+- **Creation reserves an app durably before its first POST and never releases it automatically.**
+  Dokploy has no creation idempotency key; timeout can leave a committed row. Keep creation's
+  invoke-time `DOKPLOY_ENVIRONMENT_ID` and `DOKPLOY_GITHUB_ID` out of `DeployRuntimeConfig` and
+  `packages/deploy-config`. Create a disconnected raw row before attaching the repository with
+  `autoDeploy: false`; Dokploy's creation default is true. Require the invocation's unique
+  description marker before configuring the discovered row. Readback must confirm identity,
+  environment and all source settings. Recovery is host-local and deliberate; see `README.md`.
 - **CI execution, rollback and manual redeploys share durable per-app reservations.** Unknown
   tag writes or unresolved queues continue to block after timeout; never replay their mutations.
   Rollback accepts only a retained verified landed attempt, refuses self and copies its immutable
@@ -89,7 +96,7 @@ against the store, and
   file. It carries no value from any source, only structure: a `secrets-store`-kind env entry names
   the secrets-store key it expects (`secretName`) but never that key's stored value, and each
   service's `publicStatus` is a policy flag, not a credential.
-- **No env value crosses `src/reconcile/`'s boundary, ever — only a key and a closed state.**
+- **No application env value crosses `src/reconcile/`'s boundary — only a key and a closed state.**
   `readEnvKeyStates` (`src/dokploy/schemas.ts`) reduces Dokploy's plaintext `env` blob to
   `{key, blank}` inside its own schema transform, so the plaintext exists only as that function's
   parameter; nothing downstream — the diff, the report, the CLI — ever holds a field that could

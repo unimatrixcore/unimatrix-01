@@ -290,6 +290,52 @@ Same env requirement as `pnpm --filter @unimatrix/deploy-app dev` — `DOKPLOY_B
     DOKPLOY_BASE_URL=http://localhost:3000 DOKPLOY_API_KEY=<your-key> \
       pnpm --filter @unimatrix/deploy-app reconcile report
 
+## Reconcile create
+
+`pnpm --filter @unimatrix/deploy-app reconcile create <app>` creates one missing Compose service
+using the generated desired state loaded by the CLI. In production, the running image must include
+the new app's declaration; editing a checkout does not update that artifact. Bootstrap `deploy`
+itself by hand.
+
+Supply `DOKPLOY_ENVIRONMENT_ID` and `DOKPLOY_GITHUB_ID` at invocation time. Read the target
+environment ID and GitHub provider ID from Dokploy; the provider must already have access to this
+repository. These are instance identifiers, not secrets or `deploy.config.ts` fields. Only the
+creation command reads them, so missing creation configuration does not affect startup, report
+or settings apply. Production invocation:
+
+```bash
+docker exec -e DOKPLOY_ENVIRONMENT_ID=<environment-id> \
+  -e DOKPLOY_GITHUB_ID=<github-provider-id> <deploy-container> \
+  node dist/cli/reconcile.js create <app>
+```
+
+The command refuses self, undeclared apps, any existing global name match, and a target environment
+that is missing or appears more than once. It creates a disconnected `raw`/`docker-compose` row,
+then configures this repository's GitHub source on `main`, its declared compose path, the selected
+provider and `autoDeploy: false` in one settings update. Dokploy defaults auto-deploy on at creation;
+the row has no repository attached until that update. A unique description marker binds discovery
+to this invocation before source configuration. Fresh readback must verify the row's identity,
+environment and source settings before success. Creation writes no env or domains and triggers no
+deployment. Provision runtime values, external networks, storage and routing separately.
+
+Exit codes: 0 created and verified, 2 refused or invalid creation configuration, 3 write status
+unknown, 4 read/store failure, 5 verification failed. A nonzero result after a mutation can leave a
+disconnected or partially configured service; it is not rolled back automatically.
+
+Each attempted creation permanently reserves its app in `dokploy_creation_reservations`, keyed by
+`app_dir`, in `DEPLOY_DATABASE_PATH`. Use the same persistent database for every invocation against
+an instance. Preserve it: the reservation prevents concurrent or
+restarted commands from repeating a possibly committed POST. It remains after success, rejection
+or timeout. Before recovery, inspect Dokploy state and any in-flight request. Finish source
+configuration or deliberately remove a failed service as appropriate. Only after confirming that
+another create cannot duplicate a service may an operator reset that app's reservation in the
+correct database. Do not delete the database or clear unrelated reservations to retry.
+
+The installed v0.30.10 schema and readback types were inspected; an empty `compose.create` request
+returned 400 naming `name` and `environmentId`. Successful live creation and source configuration
+have not been exercised. On controlled first use, verify stored source settings, unchanged sibling
+services and absence of a deployment before provisioning and deploying the new app.
+
 ## Reconcile apply
 
 `pnpm --filter @unimatrix/deploy-app reconcile apply <app>` writes `composePath`, `branch`, and
@@ -305,7 +351,7 @@ service); the app is not declared in the manifest; the name matches zero or more
 compose service; the single match is anchored to a different GitHub owner/repository than this one
 (`findComposeMatches` matches on service name alone, globally across every project the instance
 holds); or the match's `sourceType` disagrees with policy (`sourceType` selects which sibling column
-group drives the clone, and this repo declares none of them).
+group drives the clone, and settings apply never changes provider fields).
 
 Apply's exit code is not a sync assertion: `apply web` can succeed today on an app `report` still
 exits 1 on, because `report` also finds env drift apply deliberately never touches. Run

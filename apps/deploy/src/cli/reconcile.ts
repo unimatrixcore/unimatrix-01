@@ -7,6 +7,16 @@ import type { SecretsClient } from "@unimatrix/secrets/client";
 import { loadDeployRuntimeConfig } from "../config.js";
 import { createDokployClient, loadDokployApiKey, type DokployClient } from "../dokploy/client.js";
 import { createDokployEnvClient, type DokployEnvClient } from "../dokploy/env-client.js";
+import {
+  createDokployCreationClient,
+  type DokployCreationClient,
+} from "../dokploy/creation-client.js";
+import {
+  loadDokployCreationConfig,
+  type DokployCreationConfig,
+} from "../dokploy/creation-config.js";
+import { openDokployCreationStore, type DokployCreationStore } from "../dokploy/creation-store.js";
+import { createMissingService } from "../reconcile/create.js";
 import { applySecretEnv } from "../secret-env/apply.js";
 import { applyAppSettings } from "../reconcile/apply.js";
 import { collectReconcileRun, type ReconcileRun } from "../reconcile/collect.js";
@@ -20,10 +30,14 @@ const USAGE = [
   "Usage:",
   "  reconcile report",
   "  reconcile apply <app>",
+  "  reconcile create <app>",
   "  reconcile secrets-status <app>",
   "  reconcile secrets-apply <app> [--overwrite]",
   "secrets-apply: exits 0 applied, 1 in-sync, 2 refused, 3 write status unknown,",
   "4 read failed, 5 verification failed. No deploy is triggered.",
+  "create: requires DOKPLOY_ENVIRONMENT_ID and DOKPLOY_GITHUB_ID; exits 0 created and source verified,",
+  "2 refused, 3 write status unknown, 4 read/store failure, 5 verification failed.",
+  "It reserves the app durably before creating and never retries a reserved app.",
   "",
   "report diffs apps/deploy/src/reconcile/desired-state.gen.ts against Dokploy and prints the",
   "result. Read-only — creates, updates, and deploys nothing.",
@@ -71,6 +85,11 @@ const USAGE = [
 export interface ReconcileCliDeps {
   readonly client: DokployClient;
   readonly envClient?: DokployEnvClient;
+  readonly creation?: {
+    readonly client: DokployCreationClient;
+    readonly store: Pick<DokployCreationStore, "reserve">;
+    readonly config: DokployCreationConfig;
+  };
   readonly desired: DeployDesiredState;
   readonly write: (line: string) => void;
   /**
@@ -200,6 +219,36 @@ export async function runReconcileCli(
     }
   }
 
+  if (argv.length === 2 && subcommand === "create") {
+    const appDir = argv[1];
+    if (appDir !== undefined && deps.creation !== undefined) {
+      const result = await createMissingService(
+        deps.client,
+        deps.creation.client,
+        deps.creation.store,
+        deps.desired,
+        appDir,
+        deps.creation.config,
+      );
+      deps.write(
+        `${appDir}: ${result.outcome.toUpperCase()}${result.observed === undefined ? "" : ` (observed: ${result.observed})`}`,
+      );
+      return {
+        created: 0,
+        "refused-self": 2,
+        "unknown-app": 2,
+        "not-missing": 2,
+        "invalid-target": 2,
+        "already-attempted": 2,
+        error: 4,
+        "verification-failed": 5,
+        "write-status-unknown": 3,
+      }[result.outcome];
+    }
+    deps.write("REFUSED — service creation is not configured.");
+    return 2;
+  }
+
   if (
     subcommand === "secrets-apply" &&
     (argv.length === 2 || (argv.length === 3 && argv[2] === "--overwrite"))
@@ -256,6 +305,7 @@ function tryCreateSecretsClientFromEnv(): SecretsClient | null {
 }
 
 async function main(): Promise<void> {
+  let creationStore: DokployCreationStore | undefined;
   try {
     const config = loadDeployRuntimeConfig();
     const client = createDokployClient({
@@ -264,6 +314,25 @@ async function main(): Promise<void> {
     });
 
     const argv = process.argv.slice(2);
+    let creation: ReconcileCliDeps["creation"];
+    if (argv.length === 2 && argv[0] === "create") {
+      const creationConfig = loadDokployCreationConfig();
+      try {
+        creationStore = openDokployCreationStore(config.databasePath);
+      } catch {
+        process.stderr.write("reconcile create: could not open creation reservations.\n");
+        process.exitCode = 4;
+        return;
+      }
+      creation = {
+        config: creationConfig,
+        store: creationStore,
+        client: createDokployCreationClient({
+          baseUrl: config.dokployBaseUrl,
+          apiKey: loadDokployApiKey(),
+        }),
+      };
+    }
     // Only the secrets subcommands read a store variable — report and apply never do, so a store left
     // unconfigured cannot affect either of them.
     const secretEnv =
@@ -275,6 +344,7 @@ async function main(): Promise<void> {
       client,
       desired: DEPLOY_DESIRED_STATE,
       secretEnv,
+      ...(creation === undefined ? {} : { creation }),
       ...(argv[0] === "secrets-apply"
         ? {
             envClient: createDokployEnvClient({
@@ -290,6 +360,8 @@ async function main(): Promise<void> {
   } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 2;
+  } finally {
+    creationStore?.close();
   }
 }
 
