@@ -144,6 +144,13 @@ export async function deployCi({
     }
     throw new Error("Durable deployment report unavailable.");
   }
+  const health = await call("/health", undefined, true);
+  const supportsCommitSubject =
+    health.result === "acknowledged" &&
+    (health.response.headers.get("X-Deploy-Capabilities") ?? "")
+      .split(",")
+      .some((capability) => capability.trim() === "commit-subject-v1");
+  await health.response?.body?.cancel().catch(() => undefined);
   const projectResult = await call("/api/project.all");
   if (projectResult.result !== "acknowledged") throw new Error("Dokploy project discovery failed.");
   let projects;
@@ -184,7 +191,7 @@ export async function deployCi({
         app,
         trigger: "ci",
         image: publications.get(app),
-        commitSubject,
+        ...(supportsCommitSubject ? { commitSubject } : {}),
       };
       const intent = await reserve(request);
       if (

@@ -1,48 +1,56 @@
 import { Link } from "@tanstack/react-router";
-import { RiInformationLine } from "@remixicon/react";
+import { RiScales3Line, RiServerLine, RiTimeLine } from "@remixicon/react";
 import type { DeployReconciliationResponse, DeployDeclaration } from "@unimatrix/shared";
 import {
-  Alert,
-  AlertDescription,
-  AlertTitle,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Badge,
+  Button,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
 } from "@unimatrix/ui/editor";
 
-const envStateLabels = {
-  set: "Present · value equality not checked",
-  blank: "Blank · needs resolution",
-  missing: "Missing · needs resolution",
-  "optional-absent": "Optional · absent",
-  undeclared: "Undeclared · needs resolution",
-  "build-arg-runtime-copy": "Informational · build argument copied to runtime",
-} as const;
-
-function timestamp(value: number | null): string {
-  return value === null ? "Not scheduled" : new Date(value).toLocaleString();
+function relativeTime(value: number): string {
+  const minutes = Math.floor(Math.max(0, Date.now() - value) / 60_000);
+  if (minutes < 1) return "< 1m";
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  return hours < 24 ? `${hours}h ${minutes % 60}m` : `${Math.floor(hours / 24)}d ${hours % 24}h`;
+}
+function sourceHref(path: string): string {
+  return `https://github.com/unimatrixcore/unimatrix-01/blob/main/${path.split("/").map(encodeURIComponent).join("/")}`;
 }
 
 export function ReconciliationPanel({
   snapshot,
   app,
   declaration,
+  dokployUrl,
 }: {
   snapshot: DeployReconciliationResponse;
   app: string;
   declaration?: DeployDeclaration | undefined;
+  dokployUrl?: string | null;
 }) {
   const result = snapshot.results.find((entry) => entry.appDir === app);
   const diff = result?.outcome === "diffed" ? result.diff : undefined;
+  const matched = diff?.verdict === "matched" ? diff : undefined;
   const findings =
-    diff?.verdict === "matched"
-      ? diff.envFindings.filter(
-          (finding) => finding.state !== "set" && finding.state !== "optional-absent",
-        )
-      : [];
+    matched?.envFindings.filter(
+      (finding) =>
+        finding.state !== "set" &&
+        finding.state !== "optional-absent" &&
+        finding.state !== "build-arg-runtime-copy",
+    ) ?? [];
+  const routing = matched?.routing;
+  const routingCount =
+    routing?.status === "drift"
+      ? Number(routing.missingHosts.length > 0 || routing.unexpectedHosts.length > 0) +
+        Number(routing.portMismatch)
+      : 0;
+  const count = findings.length + (matched?.settingFindings.length ?? 0) + routingCount;
   const title =
     snapshot.status === "not-checked"
       ? "Not checked"
@@ -50,227 +58,212 @@ export function ReconciliationPanel({
         ? "Checking"
         : (snapshot.status === "read-failed" && result === undefined) || result?.outcome === "error"
           ? "Check unavailable"
-          : diff === undefined
+          : !diff
             ? "No result for this service"
             : diff.verdict === "missing"
-              ? "Not created yet"
+              ? "Awaiting setup"
               : diff.verdict === "ambiguous"
                 ? "Service mapping is ambiguous"
-                : diff.inSync
-                  ? "No detected drift"
-                  : "Detected drift needs a decision";
-
+                : count
+                  ? `${count} to resolve`
+                  : routing?.status === "unavailable"
+                    ? "Routing unavailable"
+                    : "In sync";
   return (
     <div className="space-y-5">
-      <div className="space-y-2">
-        <h3 className="text-sm font-medium">{title}</h3>
-        <p className="text-xs text-muted-foreground">
-          {snapshot.observedAt === null
-            ? "No completed check"
-            : `Checked ${timestamp(snapshot.observedAt)}`}{" "}
-          · Next check: {timestamp(snapshot.nextRunAt)}
-        </p>
-        {snapshot.freshness === "stale" ? (
-          <p className="text-sm text-amber-600 dark:text-amber-400">
-            Stale snapshot — these findings may have changed.
-          </p>
-        ) : null}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <Badge variant={count ? "destructive" : "outline"}>{title}</Badge>
+          {snapshot.freshness === "stale" ? (
+            <span className="text-xs text-amber-600 dark:text-amber-400">Stale snapshot</span>
+          ) : null}
+        </div>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span
+              tabIndex={0}
+              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+            >
+              <RiTimeLine aria-hidden="true" className="size-3.5" />
+              {snapshot.observedAt === null
+                ? "No completed check"
+                : `${relativeTime(snapshot.observedAt)} ago`}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>
+            {snapshot.nextRunAt === null
+              ? "Next check not scheduled"
+              : `Next check in ${Math.max(0, Math.ceil((snapshot.nextRunAt - Date.now()) / 60_000))}m`}
+          </TooltipContent>
+        </Tooltip>
       </div>
-
+      {diff?.verdict === "missing" ? (
+        <div className="flex items-center gap-3 border-b border-border py-3">
+          <RiServerLine aria-hidden="true" className="size-4 text-muted-foreground" />
+          <span className="text-sm">Service not created</span>
+          <span className="ml-auto text-xs text-muted-foreground">Host-local setup required</span>
+        </div>
+      ) : null}
       {diff?.verdict === "ambiguous" ? (
         <p className="text-sm text-muted-foreground">
           {diff.matchCount} services matched this declaration. Resolve the service mapping before
           comparing configuration.
         </p>
       ) : null}
-      {diff?.verdict === "missing" ? (
-        <p className="text-sm text-muted-foreground">
-          No Dokploy service matched this declaration.
+      {count ? (
+        <div className="divide-y divide-border border-y border-border">
+          {findings.map((finding) => {
+            const source = declaration?.env.find((entry) => entry.name === finding.key)?.source;
+            const sourceLabel =
+              source?.kind === "literal"
+                ? "config literal"
+                : source?.kind === "secrets-store"
+                  ? "secrets store"
+                  : (source?.kind ?? "undeclared");
+            return (
+              <div key={finding.key} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-4">
+                <div className="min-w-0 flex-1">
+                  <p className="break-all font-mono text-xs text-foreground">{finding.key}</p>
+                  <div className="mt-1.5 flex items-center gap-2 text-xs">
+                    <span
+                      className={
+                        finding.state === "undeclared" ? "text-amber-500" : "text-destructive"
+                      }
+                    >
+                      {finding.state === "undeclared"
+                        ? "Undeclared"
+                        : finding.state === "blank"
+                          ? "Blank value"
+                          : "Missing value"}
+                    </span>
+                    <span className="text-muted-foreground">· {sourceLabel}</span>
+                  </div>
+                </div>
+                {finding.state === "undeclared" ? (
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button size="sm" variant="outline">
+                        Review
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent align="end" className="rounded-none text-xs">
+                      <p className="break-all font-mono">{finding.key}</p>
+                      <p>
+                        Keep: declare it in{" "}
+                        {declaration?.configPath ?? "the deployment configuration"}.
+                      </p>
+                      {dokployUrl ? (
+                        <a
+                          href={dokployUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="underline underline-offset-4"
+                        >
+                          Remove in Dokploy ↗
+                        </a>
+                      ) : null}
+                    </PopoverContent>
+                  </Popover>
+                ) : source?.kind === "secrets-store" ? (
+                  <Button asChild size="sm" variant="outline">
+                    <Link to="/secrets">Open Secrets</Link>
+                  </Button>
+                ) : declaration ? (
+                  <Button asChild size="sm" variant="outline">
+                    <a href={sourceHref(declaration.configPath)} target="_blank" rel="noreferrer">
+                      Open source ↗
+                    </a>
+                  </Button>
+                ) : null}
+              </div>
+            );
+          })}
+          {matched?.settingFindings.map((finding) => (
+            <div key={finding.setting} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-4">
+              <div className="min-w-0 flex-1">
+                <p className="break-all font-mono text-xs">{finding.setting}</p>
+                <p className="mt-1.5 break-all text-xs text-muted-foreground">
+                  <span className="text-destructive">Different setting</span> · declared{" "}
+                  {finding.declared} · Dokploy has {finding.actual}
+                </p>
+              </div>
+              {declaration ? (
+                <a
+                  href={sourceHref(declaration.configPath)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs underline underline-offset-4"
+                >
+                  Open source ↗
+                </a>
+              ) : null}
+            </div>
+          ))}
+          {routing?.status === "drift" ? (
+            <>
+              {routing.missingHosts.length > 0 || routing.unexpectedHosts.length > 0 ? (
+                <div className="py-4">
+                  <p className="font-mono text-xs">Domain</p>
+                  <p className="mt-1.5 break-all text-xs text-muted-foreground">
+                    <span className="text-destructive">Different routing</span> · declared{" "}
+                    {routing.expectedHosts.join(", ") || "internal service"} · Dokploy has{" "}
+                    {routing.observedHosts?.join(", ") || "none"}
+                  </p>
+                </div>
+              ) : null}
+              {routing.portMismatch ? (
+                <div className="py-4">
+                  <p className="font-mono text-xs">Container port</p>
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    <span className="text-destructive">Different routing</span> · declared{" "}
+                    {routing.declaredPort} · Dokploy has{" "}
+                    {routing.observedPorts?.map((port) => port ?? "unknown").join(", ") || "none"}
+                  </p>
+                </div>
+              ) : null}
+            </>
+          ) : null}
+        </div>
+      ) : matched && routing?.status !== "unavailable" ? (
+        <div className="flex items-center gap-3 py-4">
+          <RiScales3Line aria-hidden="true" className="size-5 text-muted-foreground" />
+          <p className="text-sm">No differences</p>
+        </div>
+      ) : null}
+      {routing?.status === "drift" ? (
+        <a
+          href={sourceHref(routing.sourcePath)}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-block text-xs underline underline-offset-4"
+        >
+          Open routing source ↗
+        </a>
+      ) : null}
+      {routing?.status === "unavailable" || routing?.status === "not-declared" ? (
+        <p className="text-xs text-muted-foreground">
+          {routing.status === "unavailable"
+            ? "Routing observations are unavailable or incomplete."
+            : "No routing policy is declared for this service."}
         </p>
       ) : null}
-      {diff?.verdict === "matched" ? (
-        <>
-          <section className="space-y-2" aria-label="Environment findings">
-            <h3 className="text-sm font-medium">Environment</h3>
-            {findings.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No environment findings.</p>
-            ) : (
-              <Table className="table-fixed [&_th]:truncate [&_th]:text-xs [&_td]:truncate">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-2/5" title="Key">
-                      Key
-                    </TableHead>
-                    <TableHead className="w-3/5" title="Finding">
-                      Finding
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {findings.map((finding) => (
-                    <TableRow key={finding.key}>
-                      <TableCell className="truncate font-mono text-xs" title={finding.key}>
-                        {finding.key}
-                        <span
-                          className="mt-1 block truncate text-muted-foreground"
-                          title={declaration?.configPath}
-                        >
-                          {declaration?.env.find((entry) => entry.name === finding.key)?.source
-                            .kind ?? "Undeclared"}
-                        </span>
-                      </TableCell>
-                      <TableCell className="truncate text-xs" title={envStateLabels[finding.state]}>
-                        {envStateLabels[finding.state]}
-                        {declaration && finding.state !== "build-arg-runtime-copy" && (
-                          <span className="mt-1 block">
-                            {declaration.env.find((entry) => entry.name === finding.key)?.source
-                              .kind === "secrets-store" ? (
-                              <Link to="/secrets" className="underline underline-offset-4">
-                                Open Secrets
-                              </Link>
-                            ) : (
-                              <a
-                                className="underline underline-offset-4"
-                                target="_blank"
-                                rel="noreferrer"
-                                href={`https://github.com/unimatrixcore/unimatrix-01/blob/main/${declaration.configPath.split("/").map(encodeURIComponent).join("/")}`}
-                              >
-                                Open source ↗
-                              </a>
-                            )}
-                          </span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </section>
-          {diff.routing && (
-            <section className="space-y-2" aria-label="Routing findings">
-              <h3 className="text-sm font-medium">Routing</h3>
-              {(diff.routing.status === "unavailable" ||
-                diff.routing.status === "not-declared") && (
-                <p className="text-xs text-amber-400">
-                  {diff.routing.status === "unavailable"
-                    ? "Routing observations are unavailable or incomplete. No routing sync claim can be made."
-                    : "No routing policy is declared for this service."}
-                </p>
-              )}
-              <Table className="table-fixed [&_th]:truncate [&_th]:text-xs [&_td]:truncate">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-1/4" title="Field">
-                      Field
-                    </TableHead>
-                    <TableHead className="w-[37.5%]" title="Declared">
-                      Declared
-                    </TableHead>
-                    <TableHead className="w-[37.5%]" title="Stored in Dokploy">
-                      Stored in Dokploy
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  <TableRow>
-                    <TableCell className="text-xs">Domains</TableCell>
-                    <TableCell
-                      className="truncate text-xs"
-                      title={diff.routing.expectedHosts.join(", ")}
-                    >
-                      {diff.routing.expectedHosts.join(", ") ||
-                        (diff.routing.status === "not-declared"
-                          ? "Not declared"
-                          : "Internal service")}
-                    </TableCell>
-                    <TableCell
-                      className="truncate text-xs"
-                      title={diff.routing.observedHosts?.join(", ")}
-                    >
-                      {diff.routing.observedHosts === null
-                        ? "Unavailable"
-                        : diff.routing.observedHosts.join(", ") || "No routed domains"}
-                    </TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="text-xs" title="Target port">
-                      Target port
-                    </TableCell>
-                    <TableCell className="text-xs">{diff.routing.declaredPort}</TableCell>
-                    <TableCell
-                      className="truncate text-xs"
-                      title={diff.routing.observedPorts
-                        ?.map((port) => port ?? "Unknown")
-                        .join(", ")}
-                    >
-                      {diff.routing.observedPorts === null
-                        ? "Unavailable"
-                        : diff.routing.observedPorts.map((port) => port ?? "Unknown").join(", ") ||
-                          "No routed port"}
-                    </TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
-              <a
-                className="text-xs underline underline-offset-4"
-                target="_blank"
-                rel="noreferrer"
-                href={`https://github.com/unimatrixcore/unimatrix-01/blob/main/${diff.routing.sourcePath}`}
-              >
-                Routing policy ↗
-              </a>
-            </section>
-          )}
-          <section className="space-y-2" aria-label="Setting findings">
-            <h3 className="text-sm font-medium">Settings</h3>
-            {diff.settingFindings.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No setting drift detected.</p>
-            ) : (
-              <Table className="table-fixed [&_th]:truncate [&_th]:text-xs [&_td]:truncate">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-1/3" title="Setting">
-                      Setting
-                    </TableHead>
-                    <TableHead className="w-1/3" title="Declared">
-                      Declared
-                    </TableHead>
-                    <TableHead className="w-1/3" title="Stored in Dokploy">
-                      Stored in Dokploy
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {diff.settingFindings.map((finding) => (
-                    <TableRow key={finding.setting}>
-                      <TableCell className="truncate text-xs" title={finding.setting}>
-                        {finding.setting}
-                      </TableCell>
-                      <TableCell className="truncate font-mono text-xs" title={finding.declared}>
-                        {finding.declared}
-                      </TableCell>
-                      <TableCell className="truncate font-mono text-xs" title={finding.actual}>
-                        {finding.actual}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </section>
-        </>
+      {(matched?.envFindings.some((finding) => finding.state === "build-arg-runtime-copy") ??
+      false) ? (
+        <details className="text-xs text-muted-foreground">
+          <summary className="cursor-pointer">Informational environment findings</summary>
+          {matched?.envFindings
+            .filter((finding) => finding.state === "build-arg-runtime-copy")
+            .map((finding) => (
+              <p className="py-2" key={finding.key}>
+                <span className="font-mono">{finding.key}</span> · build argument copied to runtime
+              </p>
+            ))}
+        </details>
       ) : null}
-      <Alert>
-        <RiInformationLine aria-hidden="true" />
-        <AlertTitle>Detection only</AlertTitle>
-        <AlertDescription>
-          Checks compare Dokploy’s stored configuration with the declaration. They do not inspect
-          runtime environment values or compare credentials with the secrets store. Resolve findings
-          in the declaration, in Dokploy, or through the host-local settings and secrets apply
-          commands. Refresh reads this snapshot without starting a check.
-        </AlertDescription>
-      </Alert>
+      <p className="text-xs text-muted-foreground">
+        Detection only · checks compare stored configuration. Values and credentials are not
+        compared, and changes require source, Dokploy, or host-local apply commands.
+      </p>
     </div>
   );
 }

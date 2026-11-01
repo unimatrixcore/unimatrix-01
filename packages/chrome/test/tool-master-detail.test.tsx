@@ -4,6 +4,22 @@ import { describe, expect, it } from "vitest";
 import { ToolMasterDetail } from "../src/tool.js";
 
 describe("ToolMasterDetail", () => {
+  it("frames both panes as cards while preserving independent scrolling", () => {
+    render(
+      <ToolMasterDetail
+        variant="cards"
+        detailScroll="managed"
+        listHeader={<h1>Deploys</h1>}
+        list={<button>Service</button>}
+        detail={<div data-testid="service-detail">Detail</div>}
+      />,
+    );
+    expect(screen.getByRole("heading").closest('[data-slot="card"]')).not.toBeNull();
+    expect(screen.getByRole("button").closest('[data-slot="scroll-area"]')).not.toBeNull();
+    const detail = screen.getByTestId("service-detail");
+    expect(detail.closest('[data-slot="card"]')).not.toBeNull();
+    expect(detail.closest('[data-slot="scroll-area"]')).toBeNull();
+  });
   it("keeps the list header outside both pane viewports", () => {
     render(
       <ToolMasterDetail

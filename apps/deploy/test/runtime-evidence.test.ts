@@ -240,3 +240,31 @@ void test("runtime metadata is selected from Docker state and explicit image lab
     commitSubject: "Build deploys tab",
   });
 });
+
+void test("an oversized optional commit subject does not discard immutable image evidence", async () => {
+  const snapshot = await collectRuntimeEvidence(
+    docker({
+      container: { Id: id, Image: config, Name: "/api-generated-1" },
+      image: {
+        Id: config,
+        RepoDigests: [`${repository}@${digest}`],
+        Os: "linux",
+        Architecture: "amd64",
+        Revision: "c".repeat(40),
+        CommitSubject: "x".repeat(513),
+      },
+    }),
+    readManifest,
+    apps,
+    () => now,
+  );
+  assert.equal(snapshot.evidence.length, 1);
+  assert.deepEqual(snapshot.evidence[0]?.image, {
+    repository,
+    digest,
+    digestKind: "manifest",
+    platform: "linux/amd64",
+  });
+  assert.equal(snapshot.evidence[0]?.metadata?.commit, "c".repeat(40));
+  assert.equal(snapshot.evidence[0]?.metadata?.commitSubject, null);
+});

@@ -44,7 +44,7 @@ nginx conf cannot name it. Tightening further means templating the conf
 
 The Deploys section reads deployment state, attempt history, per-attempt diagnostics, health
 history, scheduled reconciliation findings and public declarations through the admin API.
-Redeploy and rollback require confirmation; rollback targets retained, verified landed attempts.
+Redeploy queues the current configuration; the rollback menu offers retained, verified landed attempts.
 Configuration is read-only. `DOKPLOY_PUBLIC_URL` on the deploy service supplies operator links.
 
 Log delivery includes durable lifecycle diagnostics and recognized Dokploy events. Other upstream

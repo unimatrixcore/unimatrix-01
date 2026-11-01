@@ -19,7 +19,7 @@ const imageSchema = z.strictObject({
   Os: z.literal("linux"),
   Architecture: z.enum(["amd64", "arm64"]),
   Revision: z.string().nullable().optional(),
-  CommitSubject: z.string().max(512).nullable().optional(),
+  CommitSubject: z.string().nullable().optional(),
 });
 const manifestSchema = z.object({
   schemaVersion: z.literal(2),
@@ -121,7 +121,10 @@ export async function collectRuntimeEvidence(
                     ? container.ImageReference.slice(candidate.repository.length + 1)
                     : null,
                 commit: /^[a-f0-9]{40}$/u.test(image.Revision ?? "") ? image.Revision! : null,
-                commitSubject: image.CommitSubject || null,
+                commitSubject:
+                  image.CommitSubject && image.CommitSubject.length <= 512
+                    ? image.CommitSubject
+                    : null,
               },
             }),
         image: {

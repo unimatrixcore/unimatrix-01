@@ -61,6 +61,13 @@ function setup(t, apps = ["api", "auth"]) {
           environments: [{ compose: apps.map((name) => ({ name, composeId: `compose-${name}` })) }],
         },
       ]);
+    if (path === "/health")
+      return Response.json(
+        { service: "deploy", status: "ok" },
+        {
+          headers: { "X-Deploy-Capabilities": "commit-subject-v1" },
+        },
+      );
     if (path === "/deployment/attempts/intent") {
       assert.equal(options.headers["x-api-key"], undefined);
       assert.equal(options.headers.Authorization, "Bearer private-token");
@@ -394,5 +401,54 @@ test("disabled, missing, or malformed activation never falls back to uncoordinat
     rmSync(join(fixture.root, "publication"), { recursive: true });
     await assert.rejects(deployCi(fixture), /Coordinated deployment execution must be enabled/);
     assert.equal(fixture.calls.length, 0);
+  }
+});
+
+test("first rollout omits unadvertised fields for the old strict reservation schema", async (t) => {
+  const fixture = setup(t, ["api", "deploy"]);
+  const original = fixture.fetchImpl;
+  let reservations = 0;
+  fixture.fetchImpl = async (url, options) => {
+    const path = new URL(url).pathname;
+    if (path === "/health") return Response.json({ service: "deploy", status: "ok" });
+    if (path === "/deployment/attempts/intent") {
+      reservations++;
+      const body = JSON.parse(options.body);
+      assert.equal(Object.hasOwn(body, "commitSubject"), false);
+      assert.deepEqual(
+        Object.keys(body).sort(),
+        ["repository", "runId", "runAttempt", "app", "trigger", "image"].sort(),
+      );
+    }
+    return original(url, options);
+  };
+  await deployCi(fixture);
+  assert.equal(reservations, 2);
+  assert.deepEqual(
+    fixture.calls.filter(({ path }) => path === "/deployment/execute").map(({ body }) => body.app),
+    ["api", "deploy"],
+  );
+});
+
+test("unknown or missing capability headers never authorize optional reservation fields", async (t) => {
+  for (const capability of [undefined, "", "commit-subject-v2", "commit-subject-v1-extra", "503"]) {
+    const fixture = setup(t, ["api"]);
+    const original = fixture.fetchImpl;
+    let reservations = 0;
+    fixture.fetchImpl = async (url, options) => {
+      if (new URL(url).pathname === "/health") {
+        return new Response("unused body", {
+          status: capability === "503" ? 503 : 200,
+          headers: capability === undefined ? {} : { "X-Deploy-Capabilities": capability },
+        });
+      }
+      if (url.endsWith("/intent")) {
+        reservations++;
+        assert.equal(Object.hasOwn(JSON.parse(options.body), "commitSubject"), false);
+      }
+      return original(url, options);
+    };
+    await deployCi(fixture);
+    assert.equal(reservations, 1);
   }
 });

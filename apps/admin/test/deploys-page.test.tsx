@@ -22,6 +22,7 @@ import {
   type DeployReconciliationResponse,
   type DeployStateResponse,
 } from "@unimatrix/shared";
+import { TooltipProvider } from "@unimatrix/ui";
 import type * as EditorModule from "@unimatrix/ui/editor";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -189,7 +190,9 @@ function mount(node = <DeploysPage />) {
   });
   render(
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router as never} />
+      <TooltipProvider>
+        <RouterProvider router={router as never} />
+      </TooltipProvider>
     </QueryClientProvider>,
   );
   return queryClient;
@@ -204,7 +207,7 @@ function tab(name: string) {
   );
 }
 async function ready() {
-  await screen.findByRole("button", { name: "Redeploy" });
+  await screen.findByRole("button", { name: /^Redeploy/u });
   await waitFor(() => {
     expect(screen.queryByText("Loading attempt history…")).not.toBeInTheDocument();
   });
@@ -314,8 +317,8 @@ describe("DeploysPage", () => {
     expect(request).toHaveBeenCalledWith(adminDeployAttemptHistoryContract, {
       query: { app: "api", limit: 100 },
     });
-    expect(await screen.findByText("78.95% uptime")).toBeInTheDocument();
-    expect(screen.getByText("ghcr.io/gwenny/api:running")).toBeInTheDocument();
+    expect(await screen.findByText("78.95%")).toBeInTheDocument();
+    expect(screen.getByText(/ghcr.io\/gwenny\/api:running/u)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Container details" }));
     expect(
       await screen.findByText(/A changed container ID proves recreation/u),
@@ -323,7 +326,7 @@ describe("DeploysPage", () => {
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     tab("Deploys");
     expect(screen.getByRole("table")).toHaveClass("table-fixed");
-    expect(screen.getAllByText("Push to main")).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: /^Logs for/u })).toHaveLength(2);
     fireEvent.click(screen.getAllByRole("button", { name: /^Logs for/u })[0]!);
     expect(
       await screen.findByRole("log", { name: "Recognized deployment events" }),
@@ -337,13 +340,13 @@ describe("DeploysPage", () => {
     expect(screen.getByText("30-day uptime")).toBeInTheDocument();
     expect(screen.getByText("Not responding")).toBeInTheDocument();
     tab("Reconcile");
-    expect(screen.getByText("Detected drift needs a decision")).toBeInTheDocument();
+    expect(screen.getByText("2 to resolve")).toBeInTheDocument();
     expect(screen.getByText(/Stale snapshot/u)).toBeInTheDocument();
-    expect(screen.getByText("other")).toBeInTheDocument();
+    expect(screen.getByText(/Dokploy has other/u)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /apply/iu })).not.toBeInTheDocument();
     tab("Config");
     expect(screen.getByText("public-default")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "platform/api-token" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Open in Secrets" })).toHaveAttribute(
       "href",
       "/secrets",
     );
@@ -356,7 +359,7 @@ describe("DeploysPage", () => {
     mount();
     expect(await screen.findByText("Attempt history unavailable")).toBeInTheDocument();
     expect(screen.queryByText("Never deployed")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Redeploy" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^Redeploy/u })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Roll back" })).toBeDisabled();
   });
 
@@ -365,8 +368,8 @@ describe("DeploysPage", () => {
     await ready();
     fireEvent.click(screen.getByRole("button", { name: "Select web" }));
     expect(screen.queryByRole("tab", { name: "Reconcile" })).not.toBeInTheDocument();
-    expect(await screen.findByText("Never deployed")).toBeInTheDocument();
-    expect(screen.getByText("No matched container")).toBeInTheDocument();
+    expect(await screen.findByText("No deployment yet")).toBeInTheDocument();
+    expect(screen.getByText("No container matched")).toBeInTheDocument();
     tab("Deploys");
     expect(screen.getByText("No deployment attempts recorded.")).toBeInTheDocument();
     tab("Logs");
@@ -392,28 +395,23 @@ describe("DeploysPage", () => {
     await waitFor(() => {
       expect(toastError).toHaveBeenCalledWith("Some deployment data could not be refreshed.");
     });
-    expect(screen.getByRole("alert")).toHaveTextContent("Some details may be unavailable");
+    expect(screen.getByText(/Some details may be unavailable/u)).toBeInTheDocument();
     expect(screen.queryByText("upstream secret")).not.toBeInTheDocument();
   });
 
-  it("records a confirmed redeploy once and invalidates deployment reads", async () => {
+  it("records a direct redeploy once and invalidates deployment reads", async () => {
     const client = mount();
     await ready();
     const invalidate = vi.spyOn(client, "invalidateQueries");
-    fireEvent.click(screen.getByRole("button", { name: "Redeploy" }));
-    const dialog = await screen.findByRole("dialog");
-    expect(
-      within(dialog).getByText(/image provenance will remain unverified/u),
-    ).toBeInTheDocument();
-    expect(
-      request.mock.calls.filter(([contract]) => contract === adminDeployManualRedeployContract),
-    ).toHaveLength(0);
-    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Redeploy/u }));
     await waitFor(() => {
       expect(request).toHaveBeenCalledWith(adminDeployManualRedeployContract, {
         body: { app: "api", requestId: requestUuid },
       });
     });
+    expect(
+      request.mock.calls.filter(([contract]) => contract === adminDeployManualRedeployContract),
+    ).toHaveLength(1);
     await waitFor(() => {
       expect(invalidate).toHaveBeenCalledWith({ queryKey: ["admin", "deploys"] });
     });
@@ -421,23 +419,20 @@ describe("DeploysPage", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("rolls back only to a verified prior image and cancels without a request", async () => {
+  it("offers only verified prior images in the rollback menu and submits the selected target", async () => {
     mount();
     await ready();
-    fireEvent.click(screen.getByRole("button", { name: "Roll back" }));
-    const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByRole("combobox", { name: "Rollback target" })).toHaveTextContent(
-      "release-previous",
-    );
-    expect(within(dialog).queryByText(/release-new/u)).not.toBeInTheDocument();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Roll back" }), {
+      button: 0,
+      ctrlKey: false,
+    });
+    const menu = await screen.findByRole("menu");
+    expect(within(menu).getByRole("menuitem", { name: /release-previous/u })).toBeInTheDocument();
+    expect(within(menu).queryByText(/release-new/u)).not.toBeInTheDocument();
     expect(
       request.mock.calls.filter(([contract]) => contract === adminDeployRollbackContract),
     ).toHaveLength(0);
-    fireEvent.click(screen.getByRole("button", { name: "Roll back" }));
-    fireEvent.click(
-      within(await screen.findByRole("dialog")).getByRole("button", { name: "Confirm" }),
-    );
+    fireEvent.click(within(menu).getByRole("menuitem", { name: /release-previous/u }));
     await waitFor(() => {
       expect(request).toHaveBeenCalledWith(adminDeployRollbackContract, {
         body: { app: "api", requestId: requestUuid, targetAttemptId: olderId },
@@ -445,21 +440,19 @@ describe("DeploysPage", () => {
     });
   });
 
-  it("keeps a failed mutation reviewable without retrying or exposing exception text", async () => {
+  it("reports a failed direct mutation without retrying or exposing exception text", async () => {
     failurePath = adminDeployManualRedeployContract.path;
     mount();
     await ready();
-    fireEvent.click(screen.getByRole("button", { name: "Redeploy" }));
-    fireEvent.click(
-      within(await screen.findByRole("dialog")).getByRole("button", { name: "Confirm" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: /^Redeploy/u }));
     await waitFor(() => {
       expect(toastError).toHaveBeenCalledWith("Your account does not have deployment access.");
     });
     expect(
       request.mock.calls.filter(([contract]) => contract === adminDeployManualRedeployContract),
     ).toHaveLength(1);
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByText("upstream secret")).not.toBeInTheDocument();
   });
 
   it("disables overlapping and self deployment actions", async () => {
@@ -469,7 +462,7 @@ describe("DeploysPage", () => {
     mount();
     await ready();
     fireEvent.click(screen.getByRole("button", { name: "Select deploy" }));
-    expect(screen.getByRole("button", { name: "Redeploy" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^Redeploy/u })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Roll back" })).toBeDisabled();
     expect(screen.getByText(/require host-local operation/u)).toBeInTheDocument();
   });
@@ -479,7 +472,7 @@ describe("DeploysPage", () => {
     mount();
     await ready();
     fireEvent.click(screen.getByRole("button", { name: "Select api" }));
-    expect(screen.getByRole("button", { name: "Redeploy" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^Redeploy/u })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Roll back" })).toBeDisabled();
   });
 
@@ -495,7 +488,7 @@ describe("DeploysPage", () => {
     state.apps = [];
     mount();
     expect(await screen.findByText("No declared deployment services.")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Redeploy" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Redeploy/u })).not.toBeInTheDocument();
   });
 
   it("provides safe unavailable logs and allows a failed log read to be retried", async () => {
@@ -546,7 +539,7 @@ describe("deployment details", () => {
       />,
     );
     expect(await screen.findByText("17ms")).toBeInTheDocument();
-    expect(screen.getByRole("columnheader", { name: "Latency" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Response" })).toBeInTheDocument();
     const rows = screen.getAllByRole("row");
     expect(within(rows[1]!).getAllByText("Unknown")).toHaveLength(2);
   });
@@ -570,16 +563,21 @@ describe("deployment details", () => {
         portMismatch: status === "drift",
       };
       mount(<ReconciliationPanel app="api" snapshot={value} />);
-      const routing = await screen.findByRole("region", { name: "Routing findings" });
-      expect(within(routing).getByText("api.unimatrix-01.dev")).toBeInTheDocument();
-      expect(within(routing).getByRole("link", { name: "Routing policy ↗" })).toHaveAttribute(
-        "href",
-        expect.stringContaining("routing-policy.ts"),
-      );
-      if (status === "unavailable")
-        expect(within(routing).getAllByText("Unavailable")).toHaveLength(2);
-      else expect(within(routing).getByText("8080, Unknown")).toBeInTheDocument();
-      expect(within(routing).queryByRole("button")).not.toBeInTheDocument();
+      if (status === "drift") {
+        expect(await screen.findByText(/api.unimatrix-01.dev/u)).toBeInTheDocument();
+        expect(screen.getByText(/8080, unknown/u)).toBeInTheDocument();
+      } else if (status === "unavailable") {
+        expect(
+          await screen.findByText("Routing observations are unavailable or incomplete."),
+        ).toBeInTheDocument();
+      } else if (status === "not-declared") {
+        expect(
+          await screen.findByText("No routing policy is declared for this service."),
+        ).toBeInTheDocument();
+      } else {
+        expect(screen.queryByText("Different routing")).not.toBeInTheDocument();
+      }
+      expect(screen.queryByRole("button", { name: /apply/iu })).not.toBeInTheDocument();
     },
   );
 
@@ -598,7 +596,7 @@ describe("deployment details", () => {
     );
     expect(await screen.findByText("Static site")).toBeInTheDocument();
     expect(screen.getByText("Not listed")).toBeInTheDocument();
-    expect(screen.getByText("No environment variables declared.")).toBeInTheDocument();
+    expect(screen.getByText(/No environment variables declared/u)).toBeInTheDocument();
     expect(screen.getByText("No build arguments declared.")).toBeInTheDocument();
     expect(screen.getByText("No Dockerfile environment defaults declared.")).toBeInTheDocument();
   });
@@ -612,10 +610,9 @@ describe("deployment details", () => {
     value.current.state = "unknown";
     value.current.checkedAt = null;
     mount(<HealthPanel history={value} />);
-    expect(await screen.findByText("No measured uptime")).toBeInTheDocument();
-    expect(screen.getByText("Awaiting first health observation")).toBeInTheDocument();
-    expect(screen.getByText("No daily observations recorded.")).toBeInTheDocument();
-    expect(screen.getByText("No recent probes recorded.")).toBeInTheDocument();
+    expect(await screen.findByText("Awaiting first probe")).toBeInTheDocument();
+    expect(screen.queryByText(/minutes down/u)).not.toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 
   it.each(["missing", "ambiguous"] as const)(
@@ -640,17 +637,15 @@ describe("deployment details", () => {
       );
       expect(
         await screen.findByText(
-          verdict === "missing"
-            ? "No Dokploy service matched this declaration."
-            : /2 services matched this declaration/u,
+          verdict === "missing" ? "Service not created" : /2 services matched this declaration/u,
         ),
       ).toBeInTheDocument();
-      expect(screen.getByText("Detection only")).toBeInTheDocument();
+      expect(screen.getByText(/Detection only/u)).toBeInTheDocument();
       expect(screen.queryByRole("button")).not.toBeInTheDocument();
     },
   );
 
-  it("shows recreation evidence, late observations, and rollback provenance in history", async () => {
+  it("shows recreation evidence and late observations in history", async () => {
     const manual = attempt({
       image: null,
       trigger: "manual",
@@ -665,11 +660,8 @@ describe("deployment details", () => {
         onSelect={vi.fn()}
       />,
     );
-    expect(await screen.findByText("Manual redeploy")).toBeInTheDocument();
-    expect(screen.getByText("Rollback")).toBeInTheDocument();
-    expect(
-      screen.getByText("A replacement container does not verify which image was deployed."),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/Requested image observed after the deadline/u)).toBeInTheDocument();
+    expect(await screen.findByText("Current service configuration")).toBeInTheDocument();
+    expect(screen.getByText("Recreated · image unverified")).toBeInTheDocument();
+    expect(screen.getByText("Deployed late")).toBeInTheDocument();
   });
 });

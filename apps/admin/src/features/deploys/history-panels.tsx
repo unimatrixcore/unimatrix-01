@@ -1,13 +1,23 @@
-import { RiTerminalBoxLine } from "@remixicon/react";
+import { RiPulseLine, RiTerminalBoxLine } from "@remixicon/react";
 import { useQuery } from "@tanstack/react-query";
 import {
   adminDeployAttemptLogsContract,
   type DeployAttemptRecord,
   type DeployHealthHistoryResponse,
+  type DeployDeclaration,
+  type DeployStateResponse,
 } from "@unimatrix/shared";
 import { HealthHistory } from "@unimatrix/ui";
 import {
   Button,
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  EmptyDescription,
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
   Select,
   SelectContent,
   SelectItem,
@@ -27,65 +37,66 @@ import { ScrollArea } from "@unimatrix/ui/scroll-area";
 import { useApiClient } from "@/lib/api-client";
 import { retryUnlessClientError } from "@/lib/retry";
 
-import { attemptNeedsAttention, durationLabel, formatTime, outcomeLabel } from "./presentation";
+import { DeclarationRow } from "./config-panel";
+
+import {
+  attemptNeedsAttention,
+  durationLabel,
+  formatTime,
+  outcomeLabel,
+  shortTag,
+} from "./presentation";
 
 type AttemptHistoryProps = {
   attempts: DeployAttemptRecord[];
   onSelect: (id: string) => void;
+  runningTag?: string | null;
 };
 
 function attemptTag(attempt: DeployAttemptRecord): string {
-  return attempt.image?.tag ?? "Current service configuration";
+  return attempt.image ? shortTag(attempt.image.tag) : "Current service configuration";
 }
 
-function triggerLabel(attempt: DeployAttemptRecord): string {
-  return attempt.trigger === "ci"
-    ? "Push to main"
-    : attempt.trigger === "manual"
-      ? "Manual redeploy"
-      : "Rollback";
+function formatTimestamp(at: number): string {
+  return new Date(at).toLocaleString(undefined, {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
-
+function relativeTime(at: number): string {
+  const minutes = Math.floor(Math.max(0, Date.now() - at) / 60_000);
+  if (minutes < 1) return "< 1m";
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ${minutes % 60}m`;
+  return `${Math.floor(hours / 24)}d ${hours % 24}h`;
+}
 function completionTime(attempt: DeployAttemptRecord): number | null {
   return attempt.completedAt ?? attempt.landedAt ?? attempt.recreatedAt ?? null;
 }
-
-function AttemptEvidence({ attempt }: { attempt: DeployAttemptRecord }) {
-  const before = attempt.baseline?.containerId ?? "Not observed";
-  const after = attempt.after?.containerId ?? "Not observed";
-  return (
-    <details className="mt-1 text-xs text-muted-foreground">
-      <summary className="cursor-pointer">Container details</summary>
-      <div className="mt-2 space-y-1 whitespace-normal">
-        <p className="break-all">Before: {before}</p>
-        <p className="break-all">After: {after}</p>
-        <p>Image correlation: {attempt.correlation}</p>
-        {attempt.image === null ? (
-          <p>A replacement container does not verify which image was deployed.</p>
-        ) : (
-          <p>Deployed requires a replacement container and verified image correlation.</p>
-        )}
-        {attempt.lateLandedAt === null ? null : (
-          <p>Requested image observed after the deadline: {formatTime(attempt.lateLandedAt)}</p>
-        )}
-      </div>
-    </details>
-  );
+function attemptTone(attempt: DeployAttemptRecord): string {
+  return attemptNeedsAttention(attempt)
+    ? "text-destructive"
+    : attempt.outcome === "landed"
+      ? "text-emerald-600 dark:text-emerald-400"
+      : "text-muted-foreground";
 }
 
-export function AttemptHistory({ attempts, onSelect }: AttemptHistoryProps) {
+export function AttemptHistory({ attempts, onSelect, runningTag }: AttemptHistoryProps) {
   if (attempts.length === 0) {
     return <p className="p-4 text-sm text-muted-foreground">No deployment attempts recorded.</p>;
   }
 
   return (
-    <Table className="table-fixed [&_th]:truncate [&_th]:text-xs [&_td]:truncate">
+    <Table className="table-fixed [&_th]:truncate [&_td]:truncate">
       <TableHeader>
         <TableRow>
-          <TableHead className="w-[37%]" title="Tag">
+          <TableHead className="w-[42%]" title="Tag">
             Tag
           </TableHead>
-          <TableHead className="w-[23%]" title="Requested">
+          <TableHead className="w-[18%]" title="Requested">
             Requested
           </TableHead>
           <TableHead className="w-[20%]" title="Result">
@@ -104,12 +115,10 @@ export function AttemptHistory({ attempts, onSelect }: AttemptHistoryProps) {
           const completedAt = completionTime(attempt);
           return (
             <TableRow key={attempt.id}>
-              <TableCell className="align-top">
+              <TableCell>
                 <span className="block truncate font-mono text-xs" title={attemptTag(attempt)}>
                   {attemptTag(attempt)}
-                </span>
-                <span className="block truncate text-xs text-muted-foreground">
-                  {triggerLabel(attempt)}
+                  {runningTag != null && runningTag === attempt.image?.tag ? " · running now" : ""}
                 </span>
                 {attempt.commitSubject && (
                   <span
@@ -119,27 +128,25 @@ export function AttemptHistory({ attempts, onSelect }: AttemptHistoryProps) {
                     {attempt.commitSubject}
                   </span>
                 )}
-                <AttemptEvidence attempt={attempt} />
+              </TableCell>
+              <TableCell className="truncate text-xs" title={formatTime(attempt.requestedAt)}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span tabIndex={0}>{relativeTime(attempt.requestedAt)} ago</span>
+                  </TooltipTrigger>
+                  <TooltipContent>{formatTime(attempt.requestedAt)}</TooltipContent>
+                </Tooltip>
               </TableCell>
               <TableCell
-                className="truncate align-top text-xs"
-                title={formatTime(attempt.requestedAt)}
-              >
-                {formatTime(attempt.requestedAt)}
-              </TableCell>
-              <TableCell
-                className={cn(
-                  "truncate align-top text-xs",
-                  attemptNeedsAttention(attempt) && "text-destructive",
-                )}
+                className={cn("truncate text-xs", attemptTone(attempt))}
                 title={outcomeLabel(attempt)}
               >
                 {outcomeLabel(attempt)}
               </TableCell>
-              <TableCell className="truncate align-top text-xs text-muted-foreground">
+              <TableCell className="truncate font-mono text-xs whitespace-nowrap text-muted-foreground">
                 {completedAt === null ? "—" : durationLabel(completedAt - attempt.requestedAt)}
               </TableCell>
-              <TableCell className="text-right align-top">
+              <TableCell className="text-right whitespace-nowrap">
                 <Button
                   size="icon-sm"
                   variant="ghost"
@@ -208,21 +215,31 @@ export function AttemptLogs({ app, attempts, selectedId, onSelect }: AttemptLogs
           <SelectContent>
             {attempts.map((candidate) => (
               <SelectItem key={candidate.id} value={candidate.id}>
-                {attemptTag(candidate)} · {formatTime(candidate.requestedAt)}
+                <span className="flex min-w-0 items-center gap-2">
+                  <span
+                    className={cn(
+                      "size-2 shrink-0 rounded-full",
+                      attemptNeedsAttention(candidate)
+                        ? "bg-destructive"
+                        : candidate.outcome === "landed"
+                          ? "bg-emerald-500"
+                          : "bg-muted-foreground",
+                    )}
+                  />
+                  {attemptTag(candidate)} · {formatTimestamp(candidate.requestedAt)}
+                </span>
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
-        <span className={cn("text-xs", attemptNeedsAttention(attempt) && "text-destructive")}>
-          {outcomeLabel(attempt)}
-        </span>
+        <span className={cn("text-xs", attemptTone(attempt))}>{outcomeLabel(attempt)}</span>
       </div>
       <ScrollArea
         variant="overlay"
         className="min-h-0 flex-1 bg-black/25"
         viewportProps={{ "aria-label": "Recorded deployment output", tabIndex: 0 }}
       >
-        <div className="space-y-3 p-4 text-xs">
+        <div className="px-4 py-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">
           {logs.isPending ? <p role="status">Loading recorded output…</p> : null}
           {logs.isError ? (
             <div role="alert">
@@ -243,7 +260,7 @@ export function AttemptLogs({ app, attempts, selectedId, onSelect }: AttemptLogs
             </div>
           ) : null}
           {(logs.data?.diagnosticLines?.length ?? 0) > 0 && (
-            <div role="log" aria-label="Deployment diagnostics" className="space-y-1 font-mono">
+            <div role="log" aria-label="Deployment diagnostics" className="font-mono">
               {logs.data?.diagnosticLines?.map((line, index) => (
                 <p
                   key={index}
@@ -265,11 +282,7 @@ export function AttemptLogs({ app, attempts, selectedId, onSelect }: AttemptLogs
           ) : null}
           {logs.data?.status === "available" ? (
             <>
-              <div
-                className="space-y-1 font-mono"
-                role="log"
-                aria-label="Recognized deployment events"
-              >
+              <div className="font-mono" role="log" aria-label="Recognized deployment events">
                 {logs.data.events.map((event, index) => (
                   <p key={`${event}-${String(index)}`} className={logEvents[event].tone}>
                     {logEvents[event].text}
@@ -299,57 +312,89 @@ export function AttemptLogs({ app, attempts, selectedId, onSelect }: AttemptLogs
   );
 }
 
-export function HealthPanel({ history }: { history: DeployHealthHistoryResponse }) {
+export function HealthPanel({
+  history,
+  declaration,
+  service,
+}: {
+  history: DeployHealthHistoryResponse;
+  declaration?: DeployDeclaration;
+  service?: DeployStateResponse["apps"][number];
+}) {
   const stateLabel = { up: "Responding", down: "Not responding", unknown: "Unknown" };
+  const path = declaration ? new URL(declaration.healthProbe.url).pathname : null;
+  if (history.current.checkedAt === null)
+    return (
+      <Empty className="min-h-64 border p-6">
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <RiPulseLine />
+          </EmptyMedia>
+          <EmptyTitle>Awaiting first probe</EmptyTitle>
+          <EmptyDescription>
+            The first result{" "}
+            {path ? (
+              <>
+                for <span className="font-mono text-xs">{path}</span>{" "}
+              </>
+            ) : null}
+            appears when a check runs.
+          </EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    );
   return (
-    <div className="space-y-5 text-sm">
-      <div className="space-y-2">
-        <p>{stateLabel[history.current.state]}</p>
-        <p className="text-xs text-muted-foreground">
-          Checked {formatTime(history.current.checkedAt)}
-        </p>
-        {history.freshness !== "fresh" ? (
-          <p className="text-xs text-amber-400">
-            {history.freshness === "stale"
-              ? "Stale health observations"
-              : "Awaiting first health observation"}
-          </p>
-        ) : null}
-      </div>
-      <div className="space-y-2">
-        <h3 className="font-medium">30-day uptime</h3>
-        <p>
+    <div className="space-y-5">
+      <div>
+        <DeclarationRow label="Last check">
+          {stateLabel[history.current.state]}
+          <span className="text-muted-foreground">
+            {" "}
+            · checked {relativeTime(history.current.checkedAt)} ago
+            {path ? (
+              <>
+                {" "}
+                · <span className="font-mono text-xs">{path}</span> over the internal network
+              </>
+            ) : null}
+            {history.freshness === "stale" ? " · stale observation" : ""}
+          </span>
+        </DeclarationRow>
+        <DeclarationRow label="30-day uptime">
           {history.summary.uptimePercent === null
             ? "No measured uptime"
             : `${history.summary.uptimePercent.toFixed(2)}%`}
-        </p>
-        <p className="text-xs text-muted-foreground">
-          {history.summary.coveragePercent.toFixed(2)}% observed ·{" "}
-          {durationLabel(history.summary.downMs)} down · {durationLabel(history.summary.unknownMs)}{" "}
-          unknown
-        </p>
+          <span className="text-muted-foreground">
+            {" "}
+            · {Math.round(history.summary.downMs / 60_000)} minutes down
+            {history.summary.coveragePercent < 100
+              ? ` · ${history.summary.coveragePercent.toFixed(2)}% observed · ${durationLabel(history.summary.unknownMs)} unknown`
+              : ""}
+          </span>
+        </DeclarationRow>
+        <DeclarationRow label="Container">
+          {service?.container.kind === "matched" ? (
+            service.container.status
+          ) : (
+            <span className="text-muted-foreground">unknown</span>
+          )}
+        </DeclarationRow>
       </div>
       <div className="space-y-2">
-        <h3 className="font-medium">Last 14 days</h3>
+        <p className="text-sm font-medium text-foreground">Last 14 days</p>
         <HealthHistory days={history.days.slice(-14)} />
         {history.days.length === 0 ? (
           <p className="text-xs text-muted-foreground">No daily observations recorded.</p>
         ) : null}
       </div>
       <div className="space-y-2">
-        <h3 className="font-medium">Recent checks</h3>
-        <Table className="table-fixed [&_th]:truncate [&_th]:text-xs [&_td]:truncate">
+        <p className="text-sm font-medium text-foreground">Recent checks</p>
+        <Table className="table-fixed [&_th]:truncate [&_td]:truncate">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[45%]" title="Checked">
-                Checked
-              </TableHead>
-              <TableHead className="w-[35%]" title="Result">
-                Result
-              </TableHead>
-              <TableHead className="w-[20%]" title="Latency">
-                Latency
-              </TableHead>
+              <TableHead className="w-56">Checked</TableHead>
+              <TableHead>Result</TableHead>
+              <TableHead>Response</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -357,20 +402,25 @@ export function HealthPanel({ history }: { history: DeployHealthHistoryResponse 
               .sort((a, b) => b.checkedAt - a.checkedAt)
               .map((probe) => (
                 <TableRow key={probe.checkedAt}>
-                  <TableCell className="truncate text-xs" title={formatTime(probe.checkedAt)}>
-                    {formatTime(probe.checkedAt)}
+                  <TableCell
+                    className="text-xs whitespace-nowrap"
+                    title={formatTime(probe.checkedAt)}
+                  >
+                    {relativeTime(probe.checkedAt)} ago
                   </TableCell>
                   <TableCell
-                    className={cn("truncate text-xs", probe.state === "down" && "text-destructive")}
+                    className={cn(
+                      "text-xs",
+                      probe.state === "up"
+                        ? "text-emerald-600 dark:text-emerald-400"
+                        : probe.state === "down"
+                          ? "text-destructive"
+                          : "text-muted-foreground",
+                    )}
                   >
                     {stateLabel[probe.state]}
                   </TableCell>
-                  <TableCell
-                    className="truncate text-xs text-muted-foreground"
-                    title={
-                      probe.durationMs == null ? "Latency not measured" : `${probe.durationMs}ms`
-                    }
-                  >
+                  <TableCell className="font-mono text-xs text-muted-foreground">
                     {probe.durationMs == null ? "Unknown" : `${probe.durationMs}ms`}
                   </TableCell>
                 </TableRow>

@@ -143,7 +143,7 @@ export const dokployComposeSchema = z.object({
   owner: z.string().nullable(),
   repository: z.string().nullable(),
   env: z.string().nullable().transform(readEnvKeyStates),
-  domains: dokployDomainsSchema.nullable().optional(),
+  domains: dokployDomainsSchema.nullable().optional().catch(null),
 });
 
 /**

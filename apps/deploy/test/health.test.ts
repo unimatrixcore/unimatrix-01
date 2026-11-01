@@ -40,6 +40,7 @@ void test("GET /health returns the expected health payload and cache headers", a
     });
     assert.equal(response.headers["cache-control"], "no-store, no-cache, must-revalidate");
     assert.equal(response.headers.pragma, "no-cache");
+    assert.equal(response.headers["x-deploy-capabilities"], "commit-subject-v1");
   } finally {
     await app.close();
   }

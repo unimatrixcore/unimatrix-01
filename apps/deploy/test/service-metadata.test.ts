@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { dokployComposeSchema } from "../src/dokploy/schemas.js";
-import { readServiceMetadata } from "../src/observe/service-metadata.js";
+import {
+  createServiceMetadataReader,
+  readServiceMetadata,
+} from "../src/observe/service-metadata.js";
 
 const compose = {
   composeId: "compose/id",
@@ -82,7 +85,7 @@ void test("failed, ambiguous and mismatched reads remain unavailable", async () 
     assert.equal((await readServiceMetadata(client, ["api"], "https://dokploy.example")).size, 0);
 });
 
-void test("domain metadata cannot smuggle credentials or alternate link origins", () => {
+void test("invalid optional domains stay unavailable without discarding service metadata", async () => {
   for (const domain of [
     { host: "user@evil.test" },
     { host: "example.com/evil" },
@@ -90,12 +93,58 @@ void test("domain metadata cannot smuggle credentials or alternate link origins"
     { path: "//evil.test" },
     { path: "/\\evil.test" },
     { path: "javascript:alert(1)" },
-  ])
-    assert.equal(
-      dokployComposeSchema.safeParse({
-        ...compose,
-        domains: [{ ...compose.domains[0], ...domain }],
-      }).success,
-      false,
+  ]) {
+    const parsed = dokployComposeSchema.parse({
+      ...compose,
+      domains: [{ ...compose.domains[0], ...domain }],
+    });
+    assert.equal(parsed.domains, null);
+    const metadata = await readServiceMetadata(
+      { getProjects: () => Promise.resolve([project]), getCompose: () => Promise.resolve(parsed) },
+      ["api"],
+      "https://dokploy.example",
+      () => 100,
     );
+    assert.equal(metadata.get("api")?.domains, null);
+    assert.equal(
+      metadata.get("api")?.dokployUrl,
+      "https://dokploy.example/dashboard/project/project%2Fid/environment/env%2Fid/services/compose/compose%2Fid",
+    );
+    assert.equal(metadata.get("api")?.metadataFreshness, "fresh");
+  }
+});
+
+void test("metadata budget returns cached data and coalesces stalled refreshes", async () => {
+  let now = 100;
+  let calls = 0;
+  let resume: (() => void) | undefined;
+  const parsed = dokployComposeSchema.parse(compose);
+  const reader = createServiceMetadataReader(
+    {
+      getProjects: async () => {
+        calls += 1;
+        if (calls > 1)
+          await new Promise<void>((resolve) => {
+            resume = resolve;
+          });
+        return [project];
+      },
+      getCompose: () => Promise.resolve(parsed),
+    },
+    ["api"],
+    "https://dokploy.example",
+    { budgetMs: 5, refreshIntervalMs: 100, now: () => now },
+  );
+  assert.equal((await reader.read()).get("api")?.metadataFreshness, "fresh");
+  now = 201;
+  const stale = await reader.read();
+  assert.equal(stale.get("api")?.metadataFreshness, "stale");
+  assert.equal(stale.get("api")?.metadataObservedAt, 100);
+  now = 1000;
+  await Promise.all([reader.read(), reader.read(), reader.read()]);
+  assert.equal(calls, 2);
+  assert.ok(resume);
+  resume();
+  assert.equal((await reader.read()).get("api")?.metadataFreshness, "fresh");
+  assert.equal(calls, 2);
 });

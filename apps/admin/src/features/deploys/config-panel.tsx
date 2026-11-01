@@ -1,7 +1,23 @@
-import { RiBox3Line, RiFileCodeLine, RiKeyLine, RiSettings3Line } from "@remixicon/react";
-import { Link } from "@tanstack/react-router";
-import type { DeployDeclaration, DeployStateResponse } from "@unimatrix/shared";
 import {
+  RiBox3Line,
+  RiExternalLinkLine,
+  RiFileCodeLine,
+  RiFileCopyLine,
+  RiGlobalLine,
+  RiKeyLine,
+  RiPlugLine,
+  RiPulseLine,
+  RiServerLine,
+  RiSettings3Line,
+} from "@remixicon/react";
+import { Link } from "@tanstack/react-router";
+import type {
+  DeployDeclaration,
+  DeployReconciliationResponse,
+  DeployStateResponse,
+} from "@unimatrix/shared";
+import {
+  Button,
   Table,
   TableBody,
   TableCell,
@@ -12,58 +28,68 @@ import {
 import type { ReactNode } from "react";
 
 type EnvironmentSource = DeployDeclaration["env"][number]["source"];
+const rowIcons = {
+  Type: RiServerLine,
+  Image: RiBox3Line,
+  Domain: RiGlobalLine,
+  "Container port": RiPlugLine,
+  "Declared in": RiFileCodeLine,
+  "Generated into": RiFileCopyLine,
+  "Health path": RiPulseLine,
+};
 
-function DeclarationRow({ label, children }: { label: string; children: ReactNode }) {
+export function DeclarationRow({ label, children }: { label: string; children: ReactNode }) {
+  const Icon = rowIcons[label as keyof typeof rowIcons];
   return (
-    <div className="grid grid-cols-[8rem_minmax(0,1fr)] gap-3 border-b border-border/50 py-2 text-sm last:border-0">
-      <span className="flex items-center gap-2 text-xs text-muted-foreground">
-        {label === "Image" ? (
-          <RiBox3Line className="size-4 shrink-0" />
-        ) : label === "Declared in" || label === "Generated into" ? (
-          <RiFileCodeLine className="size-4 shrink-0" />
-        ) : (
-          <RiSettings3Line className="size-4 shrink-0" />
-        )}
+    <div className="flex gap-4 border-b border-border/40 py-2 last:border-b-0">
+      <span className="flex w-36 shrink-0 items-center gap-2 text-xs text-muted-foreground">
+        {Icon ? <Icon aria-hidden="true" className="size-4 shrink-0" /> : null}
         {label}
       </span>
-      <div className="min-w-0 break-words">{children}</div>
+      <div className="min-w-0 flex-1 text-sm text-foreground">{children}</div>
     </div>
   );
 }
 
-function SourceValue({ source }: { source: EnvironmentSource }) {
+function ExternalLink({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex items-center gap-1 underline decoration-muted-foreground/40 underline-offset-4 transition-colors hover:text-primary"
+    >
+      {children}
+      <RiExternalLinkLine aria-hidden="true" className="size-3.5" />
+    </a>
+  );
+}
+
+function sourceValue(source: EnvironmentSource): string {
   switch (source.kind) {
     case "literal":
     case "generated":
-      return <span title={source.value}>{source.value || '""'}</span>;
+      return source.value || '""';
     case "variable":
-      return (
-        <span title={source.defaultValue}>
-          {source.defaultValue === undefined ? "No default declared" : source.defaultValue || '""'}
-        </span>
-      );
+      return source.defaultValue === undefined
+        ? "No default declared"
+        : source.defaultValue || '""';
     case "secrets-store":
-      return (
-        <Link to="/secrets" className="underline underline-offset-4" title={source.secretName}>
-          {source.secretName}
-        </Link>
-      );
+      return source.secretName;
   }
 }
-
 function sourceDescription(source: EnvironmentSource): string {
   switch (source.kind) {
     case "literal":
-      return "Committed literal";
+      return "config literal";
     case "generated":
-      return `Generated · ${source.name}`;
+      return "generated";
     case "variable":
-      return `${source.bootstrap ? "Bootstrap · set by hand" : "Variable"} · ${source.name} · ${source.required ? "required" : "optional"}`;
+      return `${source.bootstrap ? "set by hand" : "variable"}${source.required ? "" : " · optional"}`;
     case "secrets-store":
-      return `Secrets store · ${source.name} · required`;
+      return "secrets store";
   }
 }
-
 function DefaultsTable({
   rows,
   valueLabel,
@@ -72,15 +98,12 @@ function DefaultsTable({
   valueLabel: string;
 }) {
   return (
-    <Table className="table-fixed [&_th]:truncate [&_th]:text-xs [&_td]:truncate">
+    <Table className="table-fixed [&_th]:truncate [&_td]:truncate">
       <TableHeader>
         <TableRow>
-          <TableHead className="w-1/2" title="Name">
-            Name
-          </TableHead>
-          <TableHead className="w-1/2" title="{valueLabel}">
-            {valueLabel}
-          </TableHead>
+          <TableHead className="w-72">Name</TableHead>
+          <TableHead title={valueLabel}>{valueLabel}</TableHead>
+          <TableHead className="w-40 text-right" />
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -95,6 +118,7 @@ function DefaultsTable({
             >
               {row.value === undefined ? "No default declared" : row.value || '""'}
             </TableCell>
+            <TableCell />
           </TableRow>
         ))}
       </TableBody>
@@ -105,10 +129,21 @@ function DefaultsTable({
 export function ConfigPanel({
   declaration,
   service,
+  reconciliation,
 }: {
   declaration: DeployDeclaration;
   service?: DeployStateResponse["apps"][number];
+  reconciliation?: DeployReconciliationResponse;
 }) {
+  const result = reconciliation?.results.find((entry) => entry.appDir === declaration.appDir);
+  const routing =
+    result?.outcome === "diffed" && result.diff.verdict === "matched"
+      ? result.diff.routing
+      : undefined;
+  const hosts =
+    routing && routing.status !== "not-declared"
+      ? routing.expectedHosts
+      : service?.domains?.map((domain) => domain.host);
   return (
     <div className="space-y-5">
       <div>
@@ -116,74 +151,83 @@ export function ConfigPanel({
           {declaration.kind === "static-spa" ? "Static site" : "Node service"}
         </DeclarationRow>
         <DeclarationRow label="Image">
-          <span className="font-mono text-xs">{declaration.image}</span>
+          <span className="break-all font-mono text-xs">{declaration.image}</span>
         </DeclarationRow>
         <DeclarationRow label="Domain">
-          {service?.domains == null
-            ? "Domain observation unavailable"
-            : service.domains.length === 0
-              ? "No routed domain"
-              : service.domains.map((domain) => (
-                  <a
-                    className="mr-3 inline-flex text-sm underline underline-offset-4"
-                    key={`${domain.host}${domain.path ?? ""}`}
-                    href={`${domain.https ? "https" : "http"}://${domain.host}${domain.path ?? "/"}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {domain.host}
-                    {domain.path} ↗
-                  </a>
-                ))}
+          {hosts === undefined ? (
+            <span className="text-muted-foreground">Domain observation unavailable</span>
+          ) : hosts.length === 0 ? (
+            <span className="text-muted-foreground">internal only — no domain</span>
+          ) : (
+            hosts.map((host) => (
+              <span key={host} className="mr-3">
+                <ExternalLink href={`https://${host}`}>{host}</ExternalLink>
+              </span>
+            ))
+          )}
+          {routing?.status === "drift" &&
+          (routing.missingHosts.length > 0 || routing.unexpectedHosts.length > 0) ? (
+            <span className="text-destructive">
+              {" "}
+              · Dokploy has {routing.observedHosts?.join(", ") || "none"}
+            </span>
+          ) : null}
         </DeclarationRow>
-        <DeclarationRow label="Container port">{declaration.containerPort}</DeclarationRow>
+        <DeclarationRow label="Container port">
+          <span className="font-mono text-xs">{declaration.containerPort}</span>
+          {routing?.portMismatch ? (
+            <span className="text-destructive">
+              {" "}
+              · Dokploy has{" "}
+              {routing.observedPorts?.map((port) => port ?? "unknown").join(", ") || "none"}
+            </span>
+          ) : null}
+        </DeclarationRow>
         <DeclarationRow label="Declared in">
-          <span className="font-mono text-xs">{declaration.configPath}</span>
+          <span className="break-all font-mono text-xs">{declaration.configPath}</span>
         </DeclarationRow>
         <DeclarationRow label="Generated into">
-          <span className="font-mono text-xs">{declaration.composePath}</span>
+          <span className="break-all font-mono text-xs">{declaration.composePath}</span>
         </DeclarationRow>
-        <DeclarationRow label="Health target">
-          <span className="font-mono text-xs">{declaration.healthProbe.url}</span>
+        <DeclarationRow label="Health path">
+          <span className="break-all font-mono text-xs" title={declaration.healthProbe.url}>
+            {new URL(declaration.healthProbe.url).pathname}
+          </span>
         </DeclarationRow>
-        {declaration.healthProbe.caCertificateEnv === undefined ? null : (
+        {declaration.healthProbe.caCertificateEnv ? (
           <DeclarationRow label="Probe CA source">
-            <span className="font-mono text-xs">{declaration.healthProbe.caCertificateEnv}</span>
+            <span className="break-all font-mono text-xs">
+              {declaration.healthProbe.caCertificateEnv}
+            </span>
           </DeclarationRow>
-        )}
+        ) : null}
         <DeclarationRow label="Public status">
           {declaration.publicStatus ? (
-            <a
-              href="https://status.unimatrix-01.dev"
-              target="_blank"
-              rel="noreferrer"
-              className="underline underline-offset-4"
-            >
-              Listed on public status ↗
-            </a>
+            <ExternalLink href="https://status.unimatrix-01.dev">
+              Listed on public status
+            </ExternalLink>
           ) : (
-            "Not listed"
+            <span className="text-muted-foreground">Not listed</span>
           )}
         </DeclarationRow>
       </div>
-
       <section className="space-y-2" aria-label="Environment variables">
-        <h3 className="flex items-center gap-2 text-sm font-medium">
-          <RiKeyLine className="size-4 text-muted-foreground" aria-hidden="true" /> Environment
-          variables
+        <h3 className="flex items-center gap-2 text-sm font-medium text-foreground">
+          <RiKeyLine className="size-4 text-muted-foreground" aria-hidden="true" />
+          Environment variables
         </h3>
         {declaration.env.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No environment variables declared.</p>
+          <p className="text-sm text-muted-foreground">
+            No environment variables declared — add them in{" "}
+            <span className="font-mono text-xs">{declaration.configPath}</span>.
+          </p>
         ) : (
-          <Table className="table-fixed [&_th]:truncate [&_th]:text-xs [&_td]:truncate">
+          <Table className="table-fixed [&_th]:truncate [&_td]:truncate">
             <TableHeader>
               <TableRow>
-                <TableHead className="w-1/2" title="Name and source">
-                  Name and source
-                </TableHead>
-                <TableHead className="w-1/2" title="Declared value or source">
-                  Declared value or source
-                </TableHead>
+                <TableHead className="w-72">Name</TableHead>
+                <TableHead>Value</TableHead>
+                <TableHead className="w-40 text-right" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -194,14 +238,29 @@ export function ConfigPanel({
                       {name}
                     </span>
                     <span
-                      className="block truncate text-muted-foreground"
+                      className="block truncate text-xs text-muted-foreground"
                       title={sourceDescription(source)}
                     >
                       {sourceDescription(source)}
                     </span>
                   </TableCell>
-                  <TableCell className="truncate font-mono text-xs text-muted-foreground">
-                    <SourceValue source={source} />
+                  <TableCell className="truncate text-xs">
+                    <span
+                      className="block truncate font-mono text-muted-foreground"
+                      title={sourceValue(source)}
+                    >
+                      {sourceValue(source)}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-right text-xs">
+                    {source.kind === "secrets-store" ? (
+                      <Button variant="link" className="h-auto px-0 text-xs" asChild>
+                        <Link to="/secrets">
+                          <RiKeyLine aria-hidden="true" className="size-3.5" />
+                          Open in Secrets
+                        </Link>
+                      </Button>
+                    ) : null}
                   </TableCell>
                 </TableRow>
               ))}
@@ -209,11 +268,10 @@ export function ConfigPanel({
           </Table>
         )}
       </section>
-
       <section className="space-y-2" aria-label="Build arguments">
-        <h3 className="flex items-center gap-2 text-sm font-medium">
-          <RiSettings3Line className="size-4 text-muted-foreground" aria-hidden="true" /> Build
-          arguments
+        <h3 className="flex items-center gap-2 text-sm font-medium text-foreground">
+          <RiSettings3Line className="size-4 text-muted-foreground" aria-hidden="true" />
+          Build arguments
         </h3>
         {declaration.buildArgs.length === 0 ? (
           <p className="text-sm text-muted-foreground">No build arguments declared.</p>
@@ -227,11 +285,10 @@ export function ConfigPanel({
           />
         )}
       </section>
-
       <section className="space-y-2" aria-label="Dockerfile environment defaults">
-        <h3 className="flex items-center gap-2 text-sm font-medium">
-          <RiBox3Line className="size-4 text-muted-foreground" aria-hidden="true" /> Dockerfile
-          environment defaults
+        <h3 className="flex items-center gap-2 text-sm font-medium text-foreground">
+          <RiBox3Line className="size-4 text-muted-foreground" aria-hidden="true" />
+          Dockerfile environment defaults
         </h3>
         {declaration.dockerfileEnv.length === 0 ? (
           <p className="text-sm text-muted-foreground">
@@ -241,10 +298,6 @@ export function ConfigPanel({
           <DefaultsTable rows={declaration.dockerfileEnv} valueLabel="Declared default" />
         )}
       </section>
-      <p className="flex items-start gap-2 text-xs text-muted-foreground">
-        <RiFileCodeLine className="size-4 shrink-0" aria-hidden="true" />
-        Defaults describe the declaration, not the inputs used to build or run the current image.
-      </p>
     </div>
   );
 }

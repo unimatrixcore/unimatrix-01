@@ -46,7 +46,7 @@ export function AppShell({ children }: AppShellProps) {
           : "page"
       }
       sections={sections}
-      width={pathname.replace(/\/$/u, "") === "/deploys" ? "full" : "wide"}
+      width="wide"
       sectionsHomeHref="/"
       showFooter={false}
     >

@@ -13,7 +13,10 @@ import {
   RiPulseLine,
   RiSettings3Line,
   RiTerminalBoxLine,
-  RiHistoryLine,
+  RiUploadCloud2Line,
+  RiErrorWarningFill,
+  RiBox3Line,
+  RiServerLine,
   RiDashboardLine,
   RiScales3Line,
   RiArrowGoBackLine,
@@ -30,17 +33,14 @@ import {
   TooltipProvider,
   StatusDot,
   toast,
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
+  Badge,
+  CardHeader,
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuItem,
 } from "@unimatrix/ui/editor";
 import { ScrollArea } from "@unimatrix/ui/scroll-area";
 import { useApiClient } from "@/lib/api-client";
@@ -99,9 +99,6 @@ export function DeploysPage() {
   const [selectedApp, setSelectedApp] = useState<string | null>(null);
   const [tab, setTab] = useState("overview");
   const [attemptId, setAttemptId] = useState<string | null>(null);
-  const [action, setAction] = useState<"redeploy" | "rollback" | null>(null);
-  const [targetId, setTargetId] = useState("");
-  const [requestId, setRequestId] = useState(() => crypto.randomUUID());
   const apps = [...(state.data?.apps ?? [])].sort((a, b) => {
     const rank = (app: typeof a) => {
       const latest = attempts.data?.attempts
@@ -132,19 +129,23 @@ export function DeploysPage() {
   const activeTab = tab === "reconcile" && !summary?.showDetail ? "overview" : tab;
   const pending = history.some(hasUnresolvedDeploymentWork);
   const historyReady = selectedHistory.isSuccess && !selectedHistory.isError;
-  const targets = rollbackTargets(history).filter(
-    (run) => app?.container.kind !== "matched" || run.image?.tag !== app.container.imageTag,
-  );
+  const targets = rollbackTargets(history);
+  const runningTag = app?.container.kind === "matched" ? app.container.imageTag : null;
   const mutation = useMutation({
-    mutationFn: async () =>
-      action === "rollback"
+    mutationFn: async (request: { app: string; requestId: string; targetAttemptId?: string }) =>
+      request.targetAttemptId
         ? client.request(adminDeployRollbackContract, {
-            body: { app: appName, requestId, targetAttemptId: targetId },
+            body: {
+              app: request.app,
+              requestId: request.requestId,
+              targetAttemptId: request.targetAttemptId,
+            },
           })
-        : client.request(adminDeployManualRedeployContract, { body: { app: appName, requestId } }),
+        : client.request(adminDeployManualRedeployContract, {
+            body: { app: request.app, requestId: request.requestId },
+          }),
     retry: false,
     onSuccess: async (result) => {
-      setAction(null);
       setAttemptId(result.id);
       setTab("deploys");
       toast.success("Deployment request recorded. Follow its outcome in Deploys.");
@@ -166,20 +167,11 @@ export function DeploysPage() {
   }
   const partialError =
     attempts.error ?? selectedHistory.error ?? declarations.error ?? reconciliation.error;
+  const actionDisabled = !historyReady || pending || appName === "deploy" || mutation.isPending;
+  const attention = latest && attemptNeedsAttention(latest);
   return (
     <TooltipProvider>
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4">
-        <header className="flex shrink-0 items-center gap-3">
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Refresh deployments"
-            onClick={() => void refresh()}
-          >
-            <RiRefreshLine className="size-4" />
-          </Button>
-          <h1 className="text-xl font-semibold">Deploys</h1>
-        </header>
+      <div className="relative mx-auto flex min-h-0 w-full flex-1 flex-col">
         {state.isPending ? (
           <p role="status">Loading deployments…</p>
         ) : state.error ? (
@@ -194,16 +186,32 @@ export function DeploysPage() {
               </p>
             )}
             <ToolMasterDetail
+              variant="cards"
               detailScroll="managed"
               listHeader={
-                <h2 className="pb-3 text-xs font-bold uppercase text-muted-foreground">Services</h2>
+                <CardHeader className="flex h-11 shrink-0 flex-row items-center justify-between gap-2 px-3 pt-4 pb-1">
+                  <h1 className="text-lg leading-none font-semibold tracking-[-0.03em] text-foreground">
+                    Deploys
+                  </h1>
+                  <Button
+                    className="size-6"
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label="Refresh deployments"
+                    onClick={() => void refresh()}
+                  >
+                    <RiRefreshLine aria-hidden="true" className="size-4" />
+                  </Button>
+                </CardHeader>
               }
               list={
-                <div className="space-y-1">
+                <nav aria-label="Services" className="pt-2">
                   {apps.map((entry) => {
                     const last = attempts.data?.attempts
                       .filter((run) => run.app === entry.appDir)
                       .sort((a, b) => b.requestedAt - a.requestedAt)[0];
+                    const failed = last && attemptNeedsAttention(last);
+                    const status = serviceStatus(entry.container);
                     return (
                       <button
                         type="button"
@@ -211,25 +219,28 @@ export function DeploysPage() {
                         onClick={() => {
                           setSelectedApp(entry.appDir);
                           setAttemptId(null);
-                          setAction(null);
                         }}
                         disabled={mutation.isPending}
                         aria-label={`Select ${entry.appDir}`}
-                        aria-pressed={entry.appDir === appName}
-                        className={`flex w-full items-center gap-3 border-l-2 px-3 py-3 text-left text-sm ${entry.appDir === appName ? "border-primary bg-muted" : "border-transparent hover:bg-muted/50"}`}
+                        aria-current={entry.appDir === appName ? "true" : undefined}
+                        className={`flex w-full items-start gap-2.5 border-l-2 px-3 py-2.5 text-left transition-colors ${entry.appDir === appName ? "border-primary bg-muted/60" : "border-transparent hover:border-border hover:bg-muted/30"}`}
                       >
-                        <StatusDot
-                          tone={serviceStatus(entry.container).tone}
-                          label={serviceStatus(entry.container).label}
-                        />
-                        <span className="min-w-0 flex-1">
-                          <span
-                            className={`block ${last && attemptNeedsAttention(last) ? "text-destructive" : ""}`}
-                          >
-                            {last && attemptNeedsAttention(last) ? "⚠ " : ""}
-                            {entry.appDir}
+                        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                          <span className="flex min-w-0 items-center gap-1.5">
+                            {failed ? (
+                              <RiErrorWarningFill
+                                aria-hidden="true"
+                                className="size-3.5 shrink-0 text-destructive"
+                              />
+                            ) : null}
+                            <span
+                              className={`min-w-0 flex-1 truncate text-sm ${failed ? "font-medium text-destructive" : "text-foreground"}`}
+                            >
+                              {entry.appDir}
+                            </span>
+                            <StatusDot tone={status.tone} label={status.label} />
                           </span>
-                          <span className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                          <span className="flex min-w-0 items-center justify-between gap-2 font-mono text-xs text-muted-foreground">
                             <span
                               className="truncate"
                               title={
@@ -240,79 +251,108 @@ export function DeploysPage() {
                             >
                               {entry.container.kind === "matched"
                                 ? shortTag(entry.container.imageTag)
-                                : "No container"}
+                                : "no container"}
                             </span>
-                            <span>·</span>
-                            <span>
-                              {entry.container.kind === "matched"
-                                ? uptimeLabel(entry.container.startedAt)
-                                : "Unknown"}
-                            </span>
+                            {entry.container.kind === "matched" ? (
+                              <span className="flex shrink-0 items-center gap-1">
+                                <RiTimeLine aria-hidden="true" className="size-3" />
+                                {uptimeLabel(entry.container.startedAt)}
+                              </span>
+                            ) : null}
                           </span>
                         </span>
                       </button>
                     );
                   })}
-                </div>
+                </nav>
               }
               detail={
                 <>
-                  <header className="grid h-20 shrink-0 grid-cols-[minmax(0,1fr)_auto] content-center items-center gap-x-2 border-b sm:h-14">
-                    <h2
-                      className={`flex min-w-0 items-center gap-2 font-semibold ${latest && attemptNeedsAttention(latest) ? "text-destructive" : ""}`}
-                    >
+                  <div
+                    data-service-header
+                    className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1"
+                  >
+                    <h2 className="flex items-center gap-2 text-lg leading-tight font-medium tracking-[-0.03em] text-foreground">
                       <StatusDot
                         tone={serviceStatus(app.container).tone}
                         label={serviceStatus(app.container).label}
                       />
-                      {latest && attemptNeedsAttention(latest) ? "⚠ " : ""}
-                      {appName}
+                      {attention ? (
+                        <RiErrorWarningFill
+                          aria-hidden="true"
+                          className="size-4 text-destructive"
+                        />
+                      ) : null}
+                      <span className={attention ? "text-destructive" : undefined}>{appName}</span>
                     </h2>
-                    <div className="flex gap-2">
+                    <div className="flex items-center gap-2">
                       <Button
-                        aria-label="Redeploy"
-                        title="Redeploy"
-                        className="size-8 px-0 sm:w-auto sm:gap-2 sm:px-2.5"
+                        aria-label={`Redeploy ${shortTag(runningTag)}`}
+                        title={`Redeploy ${shortTag(runningTag)}`}
+                        className="size-8 px-0 sm:h-8 sm:w-auto sm:gap-2 sm:px-2.5"
                         size="sm"
                         variant="outline"
-                        disabled={
-                          !historyReady || pending || appName === "deploy" || mutation.isPending
-                        }
+                        disabled={actionDisabled}
                         onClick={() => {
-                          setSelectedApp(appName);
-                          setRequestId(crypto.randomUUID());
-                          setAction("redeploy");
+                          mutation.mutate({ app: appName, requestId: crypto.randomUUID() });
                         }}
                       >
-                        <RiRefreshLine className="size-4" />
-                        <span className="hidden sm:inline">Redeploy</span>
+                        <RiRefreshLine aria-hidden="true" className="size-4" />
+                        <span className="hidden sm:inline">Redeploy {shortTag(runningTag)}</span>
                       </Button>
-                      <Button
-                        aria-label="Roll back"
-                        title="Roll back"
-                        className="size-8 px-0 sm:w-auto sm:gap-2 sm:px-2.5"
-                        size="sm"
-                        variant="outline"
-                        disabled={
-                          !historyReady ||
-                          pending ||
-                          appName === "deploy" ||
-                          !targets.length ||
-                          mutation.isPending
-                        }
-                        onClick={() => {
-                          setTargetId(targets[0]?.id ?? "");
-                          setSelectedApp(appName);
-                          setRequestId(crypto.randomUUID());
-                          setAction("rollback");
-                        }}
-                      >
-                        <RiArrowGoBackLine className="size-4" />
-                        <span className="hidden sm:inline">Roll back</span>
-                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            aria-label="Roll back"
+                            title="Roll back"
+                            className="size-8 px-0 sm:h-8 sm:w-auto sm:gap-2 sm:px-2.5"
+                            size="sm"
+                            variant="outline"
+                            disabled={
+                              actionDisabled ||
+                              !targets.some((run) => run.image?.tag !== runningTag)
+                            }
+                          >
+                            <RiArrowGoBackLine aria-hidden="true" className="size-4" />
+                            <span className="hidden sm:inline">Roll back</span>
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-80">
+                          <DropdownMenuLabel>
+                            Running: {shortTag(runningTag)} · choose a previous deploy
+                          </DropdownMenuLabel>
+                          <DropdownMenuSeparator />
+                          {targets.map((run) => (
+                            <DropdownMenuItem
+                              key={run.id}
+                              disabled={run.image?.tag === runningTag || actionDisabled}
+                              onSelect={() => {
+                                mutation.mutate({
+                                  app: appName,
+                                  requestId: crypto.randomUUID(),
+                                  targetAttemptId: run.id,
+                                });
+                              }}
+                            >
+                              <span className="flex min-w-0 flex-col">
+                                <span className="font-mono text-xs">
+                                  {shortTag(run.image?.tag)}
+                                  {run.image?.tag === runningTag ? " · running now" : ""}
+                                </span>
+                                <span className="truncate text-xs text-muted-foreground">
+                                  {run.commitSubject ?? "Commit subject unavailable"}
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  {uptimeLabel(run.requestedAt)} ago · {formatTime(run.requestedAt)}
+                                </span>
+                              </span>
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                       {app.dokployUrl && (
                         <Button
-                          className="size-8 px-0 sm:w-auto sm:gap-2 sm:px-2.5"
+                          className="size-8 px-0 sm:h-8 sm:w-auto sm:gap-2 sm:px-2.5"
                           size="sm"
                           variant="outline"
                           asChild
@@ -325,71 +365,105 @@ export function DeploysPage() {
                             rel="noreferrer"
                           >
                             <span className="hidden sm:inline">Open in Dokploy</span>
-                            <RiExternalLinkLine className="size-4" />
+                            <RiExternalLinkLine aria-hidden="true" className="size-4" />
                           </a>
                         </Button>
                       )}
                     </div>
-                    <div className="col-span-2 flex min-w-0 flex-wrap items-center gap-x-3 text-xs text-muted-foreground">
-                      <span className="inline-flex items-center gap-1.5">
-                        <RiTimeLine className="size-3.5" />
+                    <div
+                      data-service-metadata
+                      className="col-span-2 grid min-h-11 items-start gap-y-1 text-sm leading-5 text-muted-foreground sm:flex sm:min-h-5 sm:items-center sm:gap-x-3"
+                    >
+                      <span className="inline-flex h-5 items-center gap-1.5">
+                        {app.container.kind === "matched" ? (
+                          <RiTimeLine aria-hidden="true" className="size-3.5" />
+                        ) : (
+                          <RiBox3Line aria-hidden="true" className="size-3.5" />
+                        )}
                         {app.container.kind === "matched"
                           ? uptimeLabel(app.container.startedAt)
                           : "No container"}
                       </span>
-                      <span aria-hidden="true">·</span>
-                      <span className="inline-flex min-w-0 items-center gap-1.5">
-                        <RiGlobalLine className="size-3.5 shrink-0" />
+                      <span aria-hidden="true" className="hidden sm:inline">
+                        ·
+                      </span>
+                      <span className="inline-flex h-5 items-center gap-1.5">
+                        {app.domains?.length ? (
+                          <RiGlobalLine aria-hidden="true" className="size-3.5" />
+                        ) : (
+                          <RiServerLine aria-hidden="true" className="size-3.5" />
+                        )}
                         {app.domains == null ? (
                           "Domain unknown"
                         ) : app.domains[0] ? (
                           <a
-                            className="truncate underline underline-offset-4"
+                            className="inline-flex items-center gap-1 text-foreground underline decoration-border underline-offset-4 hover:decoration-foreground"
                             target="_blank"
                             rel="noreferrer"
                             href={`${app.domains[0].https ? "https" : "http"}://${app.domains[0].host}${app.domains[0].path ?? "/"}`}
                           >
-                            {app.domains[0].host} ↗
+                            {app.domains[0].host}
+                            <RiExternalLinkLine aria-hidden="true" className="size-3" />
                           </a>
                         ) : (
                           "Internal service"
                         )}
                       </span>
                     </div>
-                  </header>
+                  </div>
                   {appName === "deploy" && (
-                    <p className="py-1 text-xs text-muted-foreground">
+                    <p className="text-xs text-muted-foreground">
                       Deploy service actions require host-local operation.
                     </p>
                   )}
-                  <Tabs
-                    value={activeTab}
-                    onValueChange={setTab}
-                    className="flex min-h-0 flex-1 flex-col gap-0"
-                  >
-                    <ScrollArea variant="overlay" orientation="horizontal" className="shrink-0">
-                      <TabsList className="h-11 w-max justify-start rounded-none bg-transparent">
-                        {[
-                          ["overview", "Overview", RiDashboardLine],
-                          ["deploys", "Deploys", RiHistoryLine],
-                          ["logs", "Logs", RiTerminalBoxLine],
-                          ["health", "Health", RiPulseLine],
-                          ...(summary?.showDetail
-                            ? [["reconcile", "Reconcile", RiScales3Line] as const]
-                            : []),
-                          ["config", "Config", RiSettings3Line],
-                        ].map(([value, label, Icon]) => (
-                          <TabsTrigger key={String(value)} value={String(value)} className="gap-2">
-                            <Icon className="size-4" />
-                            {String(label)}
-                            {value === "reconcile" && summary && summary.count > 0 ? (
-                              <span className="ml-1 text-xs">{summary.count}</span>
-                            ) : null}
-                          </TabsTrigger>
-                        ))}
-                      </TabsList>
+                  <Tabs value={activeTab} onValueChange={setTab} className="min-h-0 min-w-0 flex-1">
+                    <ScrollArea
+                      variant="overlay"
+                      orientation="horizontal"
+                      className="h-11 shrink-0"
+                    >
+                      <div
+                        data-deploy-tab-scroll
+                        className="min-w-0 shrink-0 scroll-px-1 p-1"
+                        onFocusCapture={(event) => {
+                          const target = event.target as HTMLElement;
+                          if (target.getAttribute("role") === "tab")
+                            target.scrollIntoView({
+                              block: "nearest",
+                              inline: "nearest",
+                              behavior: "instant",
+                            });
+                        }}
+                      >
+                        <TabsList
+                          variant="line"
+                          className="w-full min-w-max shrink-0 justify-start"
+                        >
+                          {[
+                            ["overview", "Overview", RiDashboardLine],
+                            ["deploys", "Deploys", RiUploadCloud2Line],
+                            ["logs", "Logs", RiTerminalBoxLine],
+                            ["health", "Health", RiPulseLine],
+                            ...(summary?.showDetail
+                              ? [["reconcile", "Reconcile", RiScales3Line] as const]
+                              : []),
+                            ["config", "Config", RiSettings3Line],
+                          ].map(([value, label, Icon]) => (
+                            <TabsTrigger key={String(value)} value={String(value)}>
+                              <Icon aria-hidden="true" className="size-4" />
+                              {String(label)}
+                              {value === "reconcile" && summary && summary.count > 0 ? (
+                                <Badge variant="destructive">{summary.count}</Badge>
+                              ) : null}
+                            </TabsTrigger>
+                          ))}
+                        </TabsList>
+                      </div>
                     </ScrollArea>
-                    <TabsContent value={activeTab} className="flex min-h-0 flex-1 flex-col">
+                    <TabsContent
+                      value={activeTab}
+                      className="flex min-h-0 flex-1 flex-col overflow-hidden"
+                    >
                       {activeTab === "logs" ? (
                         <AttemptLogs
                           key={appName}
@@ -400,7 +474,7 @@ export function DeploysPage() {
                         />
                       ) : (
                         <ScrollArea variant="overlay" className="min-h-0 flex-1">
-                          <div className="p-1 pt-4">
+                          <div className={activeTab === "overview" ? "h-full p-1" : "p-1"}>
                             {activeTab === "overview" && (
                               <Overview
                                 app={app}
@@ -423,11 +497,19 @@ export function DeploysPage() {
                               (selectedHistory.isPending ? (
                                 <p>Loading attempts…</p>
                               ) : (
-                                <AttemptHistory attempts={history} onSelect={openAttempt} />
+                                <AttemptHistory
+                                  attempts={history}
+                                  onSelect={openAttempt}
+                                  runningTag={runningTag}
+                                />
                               ))}
                             {activeTab === "health" &&
                               (health.data ? (
-                                <HealthPanel history={health.data} />
+                                <HealthPanel
+                                  history={health.data}
+                                  {...(declaration ? { declaration } : {})}
+                                  service={app}
+                                />
                               ) : (
                                 <p>Health history unavailable.</p>
                               ))}
@@ -436,11 +518,18 @@ export function DeploysPage() {
                                 snapshot={reconciliation.data}
                                 app={appName}
                                 declaration={declaration}
+                                dokployUrl={app.dokployUrl}
                               />
                             )}
                             {activeTab === "config" &&
                               (declaration ? (
-                                <ConfigPanel declaration={declaration} service={app} />
+                                <ConfigPanel
+                                  declaration={declaration}
+                                  service={app}
+                                  {...(reconciliation.data
+                                    ? { reconciliation: reconciliation.data }
+                                    : {})}
+                                />
                               ) : (
                                 <p>Declaration unavailable.</p>
                               ))}
@@ -454,71 +543,6 @@ export function DeploysPage() {
             />
           </>
         )}
-        <Dialog
-          open={action !== null}
-          onOpenChange={(open) => {
-            if (!open && !mutation.isPending) setAction(null);
-          }}
-        >
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>
-                {action === "rollback" ? "Roll back" : "Redeploy"} {appName}
-              </DialogTitle>
-              <DialogDescription>
-                {action === "rollback"
-                  ? "Deploy a previously verified image. This replaces the running service."
-                  : "Recreate the service using its currently configured image. Its image provenance will remain unverified."}
-              </DialogDescription>
-            </DialogHeader>
-            {action === "rollback" && (
-              <Select value={targetId} onValueChange={setTargetId}>
-                <SelectTrigger aria-label="Rollback target" className="w-full min-w-0">
-                  <SelectValue className="min-w-0 truncate">
-                    {shortTag(targets.find((run) => run.id === targetId)?.image?.tag)} ·{" "}
-                    {formatTime(targets.find((run) => run.id === targetId)?.landedAt ?? null)}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent className="max-w-[calc(100vw-2rem)]">
-                  {targets.map((run) => (
-                    <SelectItem key={run.id} value={run.id}>
-                      <span className="flex max-w-72 min-w-0 flex-col">
-                        <span className="truncate" title={run.image?.tag}>
-                          {shortTag(run.image?.tag)} · {formatTime(run.landedAt)}
-                        </span>
-                        <span
-                          className="truncate text-xs text-muted-foreground"
-                          title={run.commitSubject ?? undefined}
-                        >
-                          {run.commitSubject ?? "Commit subject unavailable"}
-                        </span>
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-            <DialogFooter>
-              <Button
-                variant="outline"
-                disabled={mutation.isPending}
-                onClick={() => {
-                  setAction(null);
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                disabled={mutation.isPending || (action === "rollback" && !targetId)}
-                onClick={() => {
-                  mutation.mutate();
-                }}
-              >
-                {mutation.isPending ? "Requesting…" : "Confirm"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
       </div>
     </TooltipProvider>
   );
