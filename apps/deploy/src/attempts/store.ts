@@ -84,6 +84,8 @@ export interface DeploymentAttemptStore {
     now: number,
   ): DeployAttemptRecord;
   report(input: DeployAttemptReport, reporterId: string, now: number): DeployAttemptRecord;
+  /** Service startup only: diagnostic store opens can overlap a live queue request. */
+  recoverInterruptedQueues(now: number): void;
   observe(evidence: readonly DeployRuntimeEvidence[], now: number): void;
   list(app: string | undefined, limit: number, now: number): DeployAttemptRecord[];
   get(app: string, attemptId: string, now: number): DeployAttemptRecord | undefined;
@@ -506,6 +508,16 @@ export function openDeploymentAttemptStore(path: string): DeploymentAttemptStore
         record.failureReason = describeAttemptFailure(record);
         writeRecord(record);
         return record;
+      }),
+      recoverInterruptedQueues: db.transaction((now: number) => {
+        validateTime(now);
+        for (const record of readRecords()) {
+          if (record.queue !== "started") continue;
+          record.queue = "unknown";
+          expireAttempt(record, now);
+          record.failureReason = describeAttemptFailure(record);
+          writeRecord(record);
+        }
       }),
       observe: db.transaction((evidence: readonly DeployRuntimeEvidence[], now: number) => {
         const parsed = evidence.map((entry) => deployRuntimeEvidenceSchema.parse(entry));

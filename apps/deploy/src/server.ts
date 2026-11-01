@@ -2,6 +2,7 @@ import { buildApp } from "./app.js";
 import { loadDeployRuntimeConfig } from "./config.js";
 import { createDokployClient, loadDokployApiKey } from "./dokploy/client.js";
 import { createDokployLogClient } from "./dokploy/log-client.js";
+import { createDokployRecreationClient } from "./dokploy/recreation-client.js";
 import { createDokployRedeployClient } from "./dokploy/redeploy-client.js";
 import { createDokployEnvClient } from "./dokploy/env-client.js";
 import { createImageTagWriter } from "./secret-env/image-tag.js";
@@ -21,11 +22,13 @@ const dokployOptions = {
 };
 const dokploy = createDokployClient(dokployOptions);
 const deploymentLogs = createDokployLogClient(dokployOptions);
+const recreation = createDokployRecreationClient(dokployOptions);
 const https = loadDeployTlsOptions();
 const app = buildApp(config, {
   dokploy,
   deploymentLogs,
   redeployment: createDokployRedeployClient(dokployOptions),
+  recreation: { inspect: (composeId) => recreation.inspect(composeId) },
   imageTags: createImageTagWriter(createDokployEnvClient(dokployOptions)),
   ...(https === undefined ? {} : { https }),
 });

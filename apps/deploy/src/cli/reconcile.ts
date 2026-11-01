@@ -16,6 +16,11 @@ import {
   type DokployCreationConfig,
 } from "../dokploy/creation-config.js";
 import { openDokployCreationStore, type DokployCreationStore } from "../dokploy/creation-store.js";
+import {
+  createDokployRecreationClient,
+  type DokployRecreationClient,
+} from "../dokploy/recreation-client.js";
+import { enableAppRecreation } from "../reconcile/recreation.js";
 import { createMissingService } from "../reconcile/create.js";
 import { applySecretEnv } from "../secret-env/apply.js";
 import { applyAppSettings } from "../reconcile/apply.js";
@@ -31,6 +36,9 @@ const USAGE = [
   "  reconcile report",
   "  reconcile apply <app>",
   "  reconcile create <app>",
+  "  reconcile enable-recreation <app>",
+  "enable-recreation: command-only configuration; preserves volumes and queues no deployment.",
+  "Exits 0 applied, 1 already enabled, 2 refused, 3 write unknown, 4 read failure, 5 readback mismatch.",
   "  reconcile secrets-status <app>",
   "  reconcile secrets-apply <app> [--overwrite]",
   "secrets-apply: exits 0 applied, 1 in-sync, 2 refused, 3 write status unknown,",
@@ -85,6 +93,7 @@ const USAGE = [
 export interface ReconcileCliDeps {
   readonly client: DokployClient;
   readonly envClient?: DokployEnvClient;
+  readonly recreation?: DokployRecreationClient;
   readonly creation?: {
     readonly client: DokployCreationClient;
     readonly store: Pick<DokployCreationStore, "reserve">;
@@ -219,6 +228,25 @@ export async function runReconcileCli(
     }
   }
 
+  if (argv.length === 2 && subcommand === "enable-recreation" && argv[1] !== undefined) {
+    if (deps.recreation === undefined) {
+      deps.write("REFUSED — recreation settings are not configured.");
+      return 2;
+    }
+    const result = await enableAppRecreation(deps.client, deps.recreation, deps.desired, argv[1]);
+    deps.write(`${result.appDir}: ${result.outcome.toUpperCase()}`);
+    return {
+      applied: 0,
+      "already-enabled": 1,
+      refused: 2,
+      "unknown-app": 2,
+      "not-matched": 2,
+      "write-status-unknown": 3,
+      error: 4,
+      "verification-failed": 5,
+    }[result.outcome];
+  }
+
   if (argv.length === 2 && subcommand === "create") {
     const appDir = argv[1];
     if (appDir !== undefined && deps.creation !== undefined) {
@@ -345,6 +373,14 @@ async function main(): Promise<void> {
       desired: DEPLOY_DESIRED_STATE,
       secretEnv,
       ...(creation === undefined ? {} : { creation }),
+      ...(argv[0] === "enable-recreation"
+        ? {
+            recreation: createDokployRecreationClient({
+              baseUrl: config.dokployBaseUrl,
+              apiKey: loadDokployApiKey(),
+            }),
+          }
+        : {}),
       ...(argv[0] === "secrets-apply"
         ? {
             envClient: createDokployEnvClient({

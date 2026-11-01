@@ -80,7 +80,8 @@ export async function createMissingService(
         row.branch === RECONCILE_BRANCH &&
         row.autoDeploy === RECONCILE_AUTO_DEPLOY &&
         row.githubId === options.githubId &&
-        row.composePath.replace(/^\.\//u, "") === composePath;
+        row.composePath.replace(/^\.\//u, "") === composePath &&
+        row.policy === "enabled";
       const disconnected =
         row.sourceType === "raw" &&
         row.composeType === "docker-compose" &&
@@ -119,7 +120,11 @@ export async function createMissingService(
     return { appDir, outcome: "verification-failed", observed: created.state };
   }
   try {
-    await creation.configureCompose(created.composeId, { composePath, githubId: options.githubId });
+    await creation.configureCompose(created.composeId, {
+      composePath,
+      githubId: options.githubId,
+      description,
+    });
   } catch {
     return { appDir, outcome: "write-status-unknown", observed: (await observe()).state };
   }

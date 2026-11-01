@@ -28,6 +28,11 @@ function fixture() {
     autoDeploy: !configured,
     composePath: configured ? "infra/docker/web-compose.yaml" : "./docker-compose.yml",
     githubId: configured ? "provider" : null,
+    appName: "web-project",
+    createEnvFile: true,
+    serverId: null,
+    mountCount: 0,
+    policy: configured ? "enabled" : "unsupported",
   });
   const deps: ReconcileCliDeps = {
     client: {
@@ -151,6 +156,11 @@ void test("real creation CLI loads invoke-time IDs and persists its reservation 
           githubId: null,
           autoDeploy: true,
           composePath: "./docker-compose.yml",
+          appName: "web-project",
+          createEnvFile: true,
+          serverId: null,
+          mounts: [],
+          command: null,
         };
       } else if (request.url === "/api/compose.update") {
         row = { ...row, ...input };

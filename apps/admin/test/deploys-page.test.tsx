@@ -30,17 +30,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const request = vi.fn();
 const toastSuccess = vi.fn();
 const toastError = vi.fn();
+const toastLoading = vi.fn();
+const toastDismiss = vi.fn();
 const apiClient = { request } as unknown as ApiClient;
 vi.mock("@/lib/api-client", () => ({ useApiClient: () => apiClient }));
 vi.mock("@unimatrix/ui/editor", async () => ({
   ...(await vi.importActual<typeof EditorModule>("@unimatrix/ui/editor")),
-  toast: { success: toastSuccess, error: toastError },
+  toast: { success: toastSuccess, error: toastError, loading: toastLoading, dismiss: toastDismiss },
 }));
 const { DeploysPage } = await import("@/features/deploys/deploys-page");
 const { ConfigPanel } = await import("@/features/deploys/config-panel");
 const { ReconciliationPanel } = await import("@/features/deploys/reconciliation-panel");
 const { AttemptHistory, HealthPanel } = await import("@/features/deploys/history-panels");
-const { deployQueryKeys, healthQueryOptions, stateQueryOptions } =
+const { deployQueryKeys, healthQueryOptions, stateQueryOptions, attemptsQueryOptions } =
   await import("@/features/deploys/queries");
 
 const id = "00000000-0000-4000-8000-000000000001";
@@ -189,7 +191,7 @@ function mount(node = <DeploysPage />) {
     history: createMemoryHistory({ initialEntries: ["/"] }),
   });
   const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    defaultOptions: { queries: { retry: false, retryDelay: 0 }, mutations: { retry: false } },
   });
   render(
     <QueryClientProvider client={queryClient}>
@@ -525,16 +527,26 @@ describe("DeploysPage", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("offers only verified prior images in the rollback menu and submits the selected target", async () => {
+  it("offers only prior images with a digest-pinned current tag and submits the selected target", async () => {
+    const service = state.apps[0]!;
+    if (service.container.kind !== "matched") throw new Error("Expected a matched service");
+    service.container.imageTag = `release-new@sha256:${"a".repeat(64)}`;
+    attempts.unshift(attempt({ id: "00000000-0000-4000-8000-000000000004" }));
     mount();
     await ready();
+    fireEvent.click(screen.getByText("api"));
+    await screen.findByRole("button", { name: "Redeploy release-new" });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Roll back" })).toBeEnabled());
     fireEvent.pointerDown(screen.getByRole("button", { name: "Roll back" }), {
       button: 0,
       ctrlKey: false,
     });
     const menu = await screen.findByRole("menu");
     expect(within(menu).getByRole("menuitem", { name: /release-previous/u })).toBeInTheDocument();
-    expect(within(menu).queryByText(/release-new/u)).not.toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: /release-new/u })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
     expect(
       request.mock.calls.filter(([contract]) => contract === adminDeployRollbackContract),
     ).toHaveLength(0);
@@ -559,18 +571,137 @@ describe("DeploysPage", () => {
     ).toHaveLength(1);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.queryByText("upstream secret")).not.toBeInTheDocument();
+    expect(toastLoading).not.toHaveBeenCalled();
   });
 
-  it("disables overlapping and self deployment actions", async () => {
-    attempts = [attempt({ outcome: "queued", landedAt: null })];
+  it("allows self redeploy but keeps self rollback disabled", async () => {
+    attempts = [attempt({ app: "deploy" })];
     state.apps[0]!.appDir = "deploy";
     state.apps[0]!.container.appDir = "deploy";
     mount();
     await ready();
     fireEvent.click(screen.getByRole("button", { name: "Select deploy" }));
-    expect(screen.getByRole("button", { name: /^Redeploy/u })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^Redeploy/u })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Roll back" })).toBeDisabled();
-    expect(screen.getByText(/require host-local operation/u)).toBeInTheDocument();
+    expect(screen.getByText(/Rollback of the deploy service/u)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^Redeploy/u }));
+    await waitFor(() => {
+      expect(request).toHaveBeenCalledWith(adminDeployManualRedeployContract, {
+        body: { app: "deploy", requestId: requestUuid },
+      });
+    });
+  });
+
+  it("recovers a lost response from the original request ID without another mutation", async () => {
+    const normalRequest = request.getMockImplementation() as (
+      ...args: unknown[]
+    ) => Promise<unknown>;
+    request.mockImplementation((contract, options) =>
+      contract === adminDeployManualRedeployContract
+        ? Promise.reject(new ApiClientError("private upstream detail", { status: 502 }))
+        : normalRequest(contract, options),
+    );
+    const client = mount();
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: /^Redeploy/u }));
+    await screen.findByText("Connection restored. Deployment outcome is still unknown.");
+    expect(toastLoading).toHaveBeenCalledWith(expect.stringContaining("Reconnecting"), {
+      id: "deployment-backend-reconnecting",
+    });
+    expect(toastError).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /^Redeploy/u })).toBeDisabled();
+    const recorded = attempt({
+      requestId: requestUuid,
+      trigger: "manual",
+      outcome: "queued",
+      landedAt: null,
+    });
+    act(() => {
+      client.setQueryData(attemptsQueryOptions(apiClient).queryKey, { attempts: [recorded] });
+    });
+    await waitFor(() => {
+      expect(toastSuccess).toHaveBeenCalledWith(
+        "Deployment request recovered. Follow its outcome in Deploys.",
+      );
+    });
+    expect(
+      screen.queryByText("Deployment response interrupted. Checking the recorded request…"),
+    ).not.toBeInTheDocument();
+    expect(
+      request.mock.calls.filter(([contract]) => contract === adminDeployManualRedeployContract),
+    ).toHaveLength(1);
+    expect(screen.queryByText("private upstream detail")).not.toBeInTheDocument();
+    expect(toastDismiss).toHaveBeenCalledWith("deployment-backend-reconnecting");
+  });
+
+  it("retries an interrupted request explicitly with the same UUID", async () => {
+    const randomUUID = vi.spyOn(crypto, "randomUUID");
+    const normalRequest = request.getMockImplementation() as (
+      ...args: unknown[]
+    ) => Promise<unknown>;
+    let first = true;
+    request.mockImplementation((contract, options) => {
+      if (contract === adminDeployManualRedeployContract && first) {
+        first = false;
+        return Promise.reject(new TypeError("network interrupted"));
+      }
+      return normalRequest(contract, options);
+    });
+    mount();
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: /^Redeploy/u }));
+    const retry = await screen.findByRole("button", { name: "Retry same request" });
+    expect(
+      request.mock.calls.filter(([contract]) => contract === adminDeployManualRedeployContract),
+    ).toHaveLength(1);
+    fireEvent.click(retry);
+    await waitFor(() => {
+      expect(toastSuccess).toHaveBeenCalledWith(
+        "Deployment request recorded. Follow its outcome in Deploys.",
+      );
+    });
+    const mutations = request.mock.calls.filter(
+      ([contract]) => contract === adminDeployManualRedeployContract,
+    );
+    expect(mutations).toHaveLength(2);
+    for (const [, options] of mutations)
+      expect(options).toEqual({ body: { app: "api", requestId: requestUuid } });
+    expect(randomUUID).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves cached services through disconnection and clears reconnect feedback after reads recover", async () => {
+    const normalRequest = request.getMockImplementation() as (
+      ...args: unknown[]
+    ) => Promise<unknown>;
+    let disconnected = false;
+    request.mockImplementation((contract, options) =>
+      disconnected && contract === adminDeployStateContract
+        ? Promise.reject(new ApiClientError("private upstream detail", { status: 503 }))
+        : normalRequest(contract, options),
+    );
+    const client = mount();
+    await ready();
+    disconnected = true;
+    await act(async () => {
+      await client.refetchQueries({ queryKey: stateQueryOptions(apiClient).queryKey });
+    });
+    expect(
+      await screen.findByText("Disconnected from deployment backend. Reconnecting…"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Select api" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Select web" })).toBeInTheDocument();
+    expect(screen.queryByText("Loading deployments…")).not.toBeInTheDocument();
+    toastDismiss.mockClear();
+    disconnected = false;
+    await act(async () => {
+      await client.refetchQueries({ queryKey: stateQueryOptions(apiClient).queryKey });
+    });
+    await waitFor(() =>
+      expect(
+        screen.queryByText("Disconnected from deployment backend. Reconnecting…"),
+      ).not.toBeInTheDocument(),
+    );
+    expect(toastDismiss).toHaveBeenCalledWith("deployment-backend-reconnecting");
   });
 
   it("disables actions while an earlier request is unresolved", async () => {

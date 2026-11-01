@@ -19,7 +19,21 @@ const COMPOSE = {
   autoDeploy: false,
   composePath: "infra/docker/api-compose.yaml",
   githubId: "github-1",
+  appName: "api-project",
+  createEnvFile: true,
+  serverId: null,
+  mounts: [],
+  command: null,
 };
+function projected(row: Record<string, unknown>) {
+  return {
+    ...Object.fromEntries(
+      Object.entries(row).filter(([key]) => key !== "mounts" && key !== "command"),
+    ),
+    mountCount: 0,
+    policy: "disabled",
+  };
+}
 
 void test("creation sends only the disconnected service fields and discards the success body", async () => {
   let sent: unknown;
@@ -65,6 +79,17 @@ void test("source configuration pins repository policy and excludes wider input 
     apiKey: API_KEY,
     fetch: (url, init) => {
       assert.ok(url instanceof URL);
+      if (init?.method === "GET")
+        return Promise.resolve(
+          Response.json({
+            ...COMPOSE,
+            sourceType: "raw",
+            owner: null,
+            repository: null,
+            branch: null,
+            githubId: null,
+          }),
+        );
       assert.equal(url.href, `${BASE_URL}/api/compose.update`);
       assert.equal(init?.method, "POST");
       assert.ok(typeof init.body === "string");
@@ -75,6 +100,7 @@ void test("source configuration pins repository policy and excludes wider input 
   const widerInput = {
     composePath: "infra/docker/api-compose.yaml",
     githubId: "github-1",
+    description: COMPOSE.description,
     env: "SECRET=never-on-wire",
     owner: "foreign-owner",
     autoDeploy: true,
@@ -94,6 +120,8 @@ void test("source configuration pins repository policy and excludes wider input 
     autoDeploy: false,
     githubId: "github-1",
     composePath: "infra/docker/api-compose.yaml",
+    command:
+      "compose -p api-project --env-file infra/docker/.env -f infra/docker/api-compose.yaml up -d --build --remove-orphans --force-recreate",
   });
 });
 
@@ -115,7 +143,7 @@ void test("creation readback strips env and provider credentials before returnin
     },
   });
 
-  assert.deepEqual(await client.getCompose("compose-1"), COMPOSE);
+  assert.deepEqual(await client.getCompose("compose-1"), projected(COMPOSE));
 });
 
 void test("creation readback accepts the disconnected nullable source fields", async () => {
@@ -134,7 +162,7 @@ void test("creation readback accepts the disconnected nullable source fields", a
     fetch: () => Promise.resolve(Response.json(disconnected)),
   });
 
-  assert.deepEqual(await client.getCompose("compose-1"), disconnected);
+  assert.deepEqual(await client.getCompose("compose-1"), projected(disconnected));
 });
 
 void test("invalid readback never includes the invalid source value or env in its error", async () => {
@@ -191,4 +219,43 @@ void test("creation mutation errors retain only error code and field names", asy
       return true;
     },
   );
+});
+
+void test("configuration refuses changed ownership marker or unsafe generated settings before writing", async () => {
+  for (const patch of [
+    { description: "other-invocation" },
+    { appName: "bad;command" },
+    { command: "private-custom-command" },
+    { serverId: "remote" },
+    { sourceType: "github" },
+  ]) {
+    let posts = 0;
+    const client = createDokployCreationClient({
+      baseUrl: BASE_URL,
+      apiKey: API_KEY,
+      fetch: (_url, init) => {
+        if (init?.method === "POST") posts++;
+        return Promise.resolve(
+          Response.json({
+            ...COMPOSE,
+            sourceType: "raw",
+            owner: null,
+            repository: null,
+            branch: null,
+            githubId: null,
+            ...patch,
+          }),
+        );
+      },
+    });
+    await assert.rejects(
+      client.configureCompose("compose-1", {
+        composePath: COMPOSE.composePath,
+        githubId: "github-1",
+        description: COMPOSE.description,
+      }),
+      /no longer matches/,
+    );
+    assert.equal(posts, 0);
+  }
 });

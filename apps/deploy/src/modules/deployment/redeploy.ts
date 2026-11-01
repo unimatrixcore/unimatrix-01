@@ -4,11 +4,7 @@ import type { ZodTypeProvider } from "fastify-type-provider-zod";
 
 import { DokployClientError } from "../../dokploy/transport.js";
 import { requireDeployCapability } from "../../plugins/auth.js";
-import {
-  RECONCILE_SELF_APP_DIR,
-  RECONCILE_EXPECTED_OWNER,
-  RECONCILE_EXPECTED_REPOSITORY,
-} from "../../reconcile/apply.js";
+import { RECONCILE_EXPECTED_OWNER, RECONCILE_EXPECTED_REPOSITORY } from "../../reconcile/apply.js";
 import { findComposeMatches } from "../../reconcile/diff.js";
 import { DEPLOY_DESIRED_STATE } from "../../reconcile/desired-state.gen.js";
 
@@ -30,14 +26,13 @@ export const deploymentRedeployModule: FastifyPluginAsync = (app) => {
     },
     handler: async (request) => {
       const { app: appDir } = request.body;
-      if (appDir === RECONCILE_SELF_APP_DIR) refuse(409);
       const service = DEPLOY_DESIRED_STATE.find((entry) => entry.appDir === appDir);
       if (service === undefined) refuse(404);
       try {
         const reporterId = request.serviceCaller!.id;
         const existing = app.deploymentAttempts.findManual(request.body, reporterId, Date.now());
         if (existing !== undefined) return existing;
-        if (app.redeployment === undefined) refuse(503);
+        if (app.redeployment === undefined || app.recreation === undefined) refuse(503);
         const matches = findComposeMatches(appDir, await app.dokploy.getProjects());
         const [match] = matches;
         if (matches.length !== 1 || match === undefined) refuse(409);
@@ -48,6 +43,18 @@ export const deploymentRedeployModule: FastifyPluginAsync = (app) => {
           compose.owner !== RECONCILE_EXPECTED_OWNER ||
           compose.repository !== RECONCILE_EXPECTED_REPOSITORY ||
           compose.sourceType !== "github"
+        )
+          refuse(409);
+
+        const policy = await app.recreation.inspect(match.composeId);
+        if (
+          policy.composeId !== match.composeId ||
+          policy.name !== appDir ||
+          policy.owner !== RECONCILE_EXPECTED_OWNER ||
+          policy.repository !== RECONCILE_EXPECTED_REPOSITORY ||
+          policy.sourceType !== "github" ||
+          policy.composePath.replace(/^\.\//u, "") !== service.composePath ||
+          policy.policy !== "enabled"
         )
           refuse(409);
 

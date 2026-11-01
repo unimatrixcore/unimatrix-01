@@ -1,21 +1,24 @@
 import { z } from "zod";
 
+import { canonicalRecreationCommand, recreationComposeSchema } from "./recreation-client.js";
 import { createDokployTransport, type CreateDokployClientOptions } from "./transport.js";
 
-const creationComposeSchema = z.object({
-  composeId: z.string(),
-  name: z.string(),
-  description: z.string().nullable(),
-  environmentId: z.string(),
-  composeType: z.string(),
-  sourceType: z.string(),
-  owner: z.string().nullable(),
-  repository: z.string().nullable(),
-  branch: z.string().nullable(),
-  autoDeploy: z.boolean(),
-  composePath: z.string(),
-  githubId: z.string().nullable(),
-});
+const creationComposeSchema = z
+  .object({
+    composeId: z.string(),
+    name: z.string(),
+    description: z.string().nullable(),
+    environmentId: z.string(),
+    composeType: z.string(),
+    sourceType: z.string(),
+    owner: z.string().nullable(),
+    repository: z.string().nullable(),
+    branch: z.string().nullable(),
+    autoDeploy: z.boolean(),
+    composePath: z.string(),
+    githubId: z.string().nullable(),
+  })
+  .and(recreationComposeSchema);
 
 export type DokployCreationCompose = z.infer<typeof creationComposeSchema>;
 
@@ -28,6 +31,7 @@ export interface DokployComposeCreation {
 export interface DokployComposeSourceConfiguration {
   readonly composePath: string;
   readonly githubId: string;
+  readonly description: string;
 }
 
 export interface DokployCreationClient {
@@ -50,8 +54,24 @@ export function createDokployCreationClient(
         sourceType: "raw",
         composeType: "docker-compose",
       }),
-    configureCompose: (composeId, source) =>
-      callMutation("compose.update", {
+    configureCompose: async (composeId, source) => {
+      const row = await callProcedure("compose.one", creationComposeSchema, { composeId });
+      const command = canonicalRecreationCommand({ ...row, composePath: source.composePath });
+      if (
+        row.composeId !== composeId ||
+        row.description !== source.description ||
+        row.sourceType !== "raw" ||
+        row.owner !== null ||
+        row.repository !== null ||
+        row.githubId !== null ||
+        row.branch !== null ||
+        row.policy === "foreign-command" ||
+        source.composePath !== `infra/docker/${row.name}-compose.yaml` ||
+        command === null
+      ) {
+        throw new Error("Created service no longer matches the disconnected configuration.");
+      }
+      await callMutation("compose.update", {
         composeId,
         sourceType: "github",
         composeType: "docker-compose",
@@ -61,7 +81,9 @@ export function createDokployCreationClient(
         autoDeploy: false,
         githubId: source.githubId,
         composePath: source.composePath,
-      }),
+        command,
+      });
+    },
     getCompose: (composeId) => callProcedure("compose.one", creationComposeSchema, { composeId }),
   };
 }

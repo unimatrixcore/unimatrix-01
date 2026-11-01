@@ -67,7 +67,7 @@ export default defineConfig({
     // reporters and exclusions, and each workspace supplies its own numbers.
     //
     coverage: createCoverageConfig({
-      thresholds: { statements: 75, functions: 78 },
+      thresholds: { statements: 77, functions: 78 },
     }),
     environment: "jsdom",
     include: ["test/**/*.test.ts", "test/**/*.test.tsx"],

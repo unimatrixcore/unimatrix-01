@@ -44,6 +44,8 @@ against the store, and
   mutation is isolated in `src/dokploy/redeploy-client.ts`. The installed v0.30.10 deployment
   reads (`deployment.allByCompose`, `deployment.readLogs`) are isolated in `src/dokploy/log-client.ts`;
   raw log output must be reduced to closed diagnostic events inside that client's schema transform.
+  Installed Git deployments can overwrite UUID titles on completion; missing markers remain
+  unassociated, never replaced by a latest-row or time-window match.
   `DokployClientError` (`src/dokploy/transport.ts`)
   never carries a response-body fragment, on any property: `project.all` returns every project's
   whole environment-variable blob and `compose.one` returns one service's, both in plaintext.
@@ -55,6 +57,10 @@ against the store, and
 - **The settings mutation uses `compose.update` with a closed
   `{composePath?, branch?, autoDeploy?}` payload** (`DokployComposeSettingsUpdate`).
   Creation uses the separate closed `src/dokploy/creation-client.ts` capability.
+  `src/dokploy/recreation-client.ts` is the separate command-only capability: host-local
+  `enable-recreation` verifies the persistent force-recreation policy without queueing or writing env.
+  Refuse foreign commands and unsupported topology; never substitute Dokploy's destructive
+  `freshVolumes` path. HTTP manual redeploys only read this policy.
   Manual redeploys use a separate closed capability accepting only a resolved compose ID
   and durable attempt ID; no procedure name or image tag comes from the caller. `env` has no
   field on that type. `DokployEnvClient` is the separate env capability; it reveals a `SecretValue`
@@ -63,8 +69,8 @@ against the store, and
   `apps/deploy/src/reconcile/apply.ts`'s `applyAppSettings` refuses to write against this service's
   own compose entry (`RECONCILE_SELF_APP_DIR`, checked before any network call): `compose.update`
   there followed by any deploy would destroy the process performing the reconciliation mid-run, and
-  Dokploy has no rollback for a Compose service (`docs/deployment.md`). Manual redeploys also
-  refuse self before network calls and atomically
+  Dokploy has no rollback for a Compose service (`docs/deployment.md`). Manual redeploys permit self
+  only with verified recreation policy and fresh runtime evidence, and atomically
   reserve an app in SQLite, refusing unresolved overlaps even after timeout. They record the verified
   API session user, no CI run identity and no immutable target image; they cannot claim `landed`.
   Settings apply also refuses an app not in
@@ -81,13 +87,19 @@ against the store, and
   `packages/deploy-config`. Create a disconnected raw row before attaching the repository with
   `autoDeploy: false`; Dokploy's creation default is true. Require the invocation's unique
   description marker before configuring the discovered row. Readback must confirm identity,
-  environment and all source settings. Recovery is host-local and deliberate; see `README.md`.
+  environment, all source settings and enabled recreation policy. Configure the command in the same
+  source-settings POST, using the created row's generated identity. Recovery is host-local and
+  deliberate; see `README.md`.
 - **CI execution, rollback and manual redeploys share durable per-app reservations.** Unknown
   tag writes or unresolved queues continue to block after timeout; never replay their mutations.
   Rollback accepts only a retained verified landed attempt, refuses self and copies its immutable
   target. CI overwrites that service tag on its next accepted deployment and executes self last.
   Project env stays untouched. Keep env values inside the narrow image writer; reconciliation
   remains value-free. External UI edits and `secrets-apply` do not share these reservations.
+- **Recover interrupted queues only during service readiness, before accepting requests.** Change
+  persisted `queue: started` claims to unknown results without requeueing; replacement evidence can
+  resolve the original attempt. Generic store opens must not do this because host CLIs also open
+  the live database. Browser retries retain the original request UUID across disconnections.
 - **`compose.update` is the only HTTP route on v0.29.13 that can write a compose service's `env`.**
   `compose.saveEnvironment` exists as a tRPC procedure but is absent from the exposed path map, so the
   sibling env client must use this same procedure rather than reaching for a narrower one.

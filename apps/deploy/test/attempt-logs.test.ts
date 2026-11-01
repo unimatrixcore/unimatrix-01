@@ -184,6 +184,49 @@ void test("an older failed attempt retrieves its own source instead of the newes
   assert.equal(f.requests.length, 2);
 });
 
+void test("long unrelated titles are withheld without invalidating an exact attempt association", async () => {
+  const f = fixture();
+  const privateTitle = "private-title-value".repeat(100);
+  f.state.rows.unshift({
+    deploymentId: "unrelated",
+    composeId: "compose-api",
+    title: privateTitle,
+    logPath: "/logs/unrelated.log",
+  });
+  const projected = await f.logs.getDeployments("compose-api");
+  assert.equal(projected[0]?.title, null);
+  assert.equal(JSON.stringify(projected).includes("private-title-value"), false);
+  assert.equal((await readAttemptLogs(record, f.client, f.logs)).status, "available");
+
+  f.state.rows.pop();
+  f.requests.length = 0;
+  const unassociated = await readAttemptLogs(record, f.client, f.logs);
+  assert.equal(unassociated.status, "unavailable");
+  if (unassociated.status === "unavailable") assert.equal(unassociated.reason, "unassociated");
+  assert.equal(JSON.stringify(unassociated).includes("private-title-value"), false);
+  assert.equal(f.requests.length, 1);
+});
+
+void test("deployment inventory retains byte and row limits without exposing titles", async () => {
+  const f = fixture();
+  f.state.rows[0]!.title = "private-title-value".repeat(65_536);
+  const oversized = await readAttemptLogs(record, f.client, f.logs);
+  assert.equal(oversized.status, "unavailable");
+  if (oversized.status === "unavailable") assert.equal(oversized.reason, "source-unavailable");
+  assert.equal(JSON.stringify(oversized).includes("private-title-value"), false);
+
+  f.state.rows = Array.from({ length: 1001 }, (_, index) => ({
+    deploymentId: `deployment-${index}`,
+    composeId: "compose-api",
+    title: "unrelated",
+    logPath: `/logs/${index}.log`,
+  }));
+  const overpopulated = await readAttemptLogs(record, f.client, f.logs);
+  assert.equal(overpopulated.status, "unavailable");
+  if (overpopulated.status === "unavailable")
+    assert.equal(overpopulated.reason, "source-unavailable");
+});
+
 void test("association refuses absent, duplicate, foreign, and colliding sources without reading text", async () => {
   for (const scenario of [
     "absent",

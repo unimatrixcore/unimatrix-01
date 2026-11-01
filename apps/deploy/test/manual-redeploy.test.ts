@@ -8,12 +8,13 @@ import { openServiceTokenStore } from "../src/service-tokens/store.js";
 import { DokployClientError } from "../src/dokploy/transport.js";
 import { createDokployRedeployClient } from "../src/dokploy/redeploy-client.js";
 
-function fixture() {
+function fixture(appName = "api") {
   const tokens = openServiceTokenStore(":memory:");
   const manage = tokens.issue({ name: "api", capability: "manage" }).token;
   const read = tokens.issue({ name: "reader", capability: "read" }).token;
   const calls: unknown[] = [];
   let matches = 1;
+  let policyEnabled = true;
   let owner = "unimatrixcore";
   let sourceType = "github";
   let queueError: Error | undefined;
@@ -46,7 +47,7 @@ function fixture() {
                   name: "e",
                   compose: Array.from({ length: matches }, () => ({
                     composeId: "compose-api",
-                    name: "api",
+                    name: appName,
                     composeStatus: "done",
                   })),
                 },
@@ -57,7 +58,7 @@ function fixture() {
         getCompose: () =>
           Promise.resolve({
             composeId: "compose-api",
-            name: "api",
+            name: appName,
             environmentId: "e",
             composePath: "./infra/docker/api-compose.yaml",
             sourceType,
@@ -74,7 +75,7 @@ function fixture() {
             ? []
             : [
                 {
-                  app: "api",
+                  app: appName,
                   containerId: "a".repeat(64),
                   observedAt: Date.now() - (evidenceMode === "stale" ? 30_001 : 0),
                   image: {
@@ -86,6 +87,23 @@ function fixture() {
                 },
               ],
         ),
+      recreation: {
+        inspect: () =>
+          Promise.resolve({
+            composeId: "compose-api",
+            name: appName,
+            owner,
+            repository: "unimatrix-01",
+            sourceType,
+            appName: "api-project",
+            composePath: `infra/docker/${appName}-compose.yaml`,
+            composeType: "docker-compose",
+            createEnvFile: true,
+            serverId: null,
+            mountCount: 0,
+            policy: policyEnabled ? ("enabled" as const) : ("disabled" as const),
+          }),
+      },
       redeployment: {
         queueRedeploy: (composeId, attemptId) => {
           calls.push(["queue", composeId, attemptId]);
@@ -95,7 +113,7 @@ function fixture() {
       },
     },
   );
-  const payload = { app: "api", requestId: randomUUID(), actorUserId: "user_verified" };
+  const payload = { app: appName, requestId: randomUUID(), actorUserId: "user_verified" };
   const send = (body: unknown = payload, token: string | undefined = manage) =>
     app.inject({
       method: "POST",
@@ -109,6 +127,9 @@ function fixture() {
     payload,
     send,
     read,
+    setPolicyEnabled: (value: boolean) => {
+      policyEnabled = value;
+    },
     setMatches: (value: number) => {
       matches = value;
     },
@@ -142,6 +163,7 @@ void test("manual queueing records attribution, is idempotent, rejects overlap a
     assert.equal(record.queue, "acknowledged");
     assert.equal(record.outcome, "queued");
     f.failReads();
+    f.setPolicyEnabled(false);
     const retry = await f.send();
     assert.equal(retry.statusCode, 200, retry.body);
     assert.equal(retry.json<DeployAttemptRecord>().id, record.id);
@@ -162,7 +184,7 @@ void test("an unresolved queued request blocks a different manual request", asyn
   }
 });
 
-void test("auth, selectors, self and unknown app refuse before Dokploy calls", async () => {
+void test("auth, selectors and unknown app refuse before Dokploy calls", async () => {
   const f = fixture();
   try {
     assert.equal(
@@ -172,7 +194,6 @@ void test("auth, selectors, self and unknown app refuse before Dokploy calls", a
     );
     assert.equal((await f.send(f.payload, f.read)).statusCode, 403);
     assert.equal((await f.send({ ...f.payload, composeId: "arbitrary" })).statusCode, 400);
-    assert.equal((await f.send({ ...f.payload, app: "deploy" })).statusCode, 409);
     assert.equal((await f.send({ ...f.payload, app: "absent" })).statusCode, 404);
     assert.deepEqual(f.calls, []);
   } finally {
@@ -269,4 +290,25 @@ void test("redeploy capability sends only compose ID and attempt marker and disc
   });
   await client.queueRedeploy("compose-api", "attempt");
   assert.equal(seen, true);
+});
+
+void test("self redeploy is permitted only with enabled recreation policy", async () => {
+  const f = fixture("deploy");
+  try {
+    f.setPolicyEnabled(false);
+    assert.equal((await f.send()).statusCode, 409);
+    assert.equal(f.calls.filter(Array.isArray).length, 0);
+    assert.equal(f.app.deploymentAttempts.list("deploy", 100, Date.now()).length, 0);
+    f.setPolicyEnabled(true);
+    const first = await f.send();
+    assert.equal(first.statusCode, 200, first.body);
+    assert.equal(first.json<DeployAttemptRecord>().app, "deploy");
+    assert.equal(
+      (await f.send()).json<DeployAttemptRecord>().id,
+      first.json<DeployAttemptRecord>().id,
+    );
+    assert.equal(f.calls.filter(Array.isArray).length, 1);
+  } finally {
+    await f.app.close();
+  }
 });
