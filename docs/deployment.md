@@ -393,8 +393,12 @@ cflop has no API dependency, so it does not need an entry in
 Configure proxied Cloudflare records for `cflop.us` and `*.cflop.us`, pointing
 at the Dokploy server. The wildcard DNS record does not configure Traefik routes
 or certificates for arbitrary subdomains; add those explicitly when needed.
-Keep Cloudflare's origin TLS validation enabled and provision a certificate for
-`cflop.us` before directing traffic to its Dokploy domain record.
+Keep Cloudflare's origin TLS validation enabled. Configure the `cflop.us`
+Dokploy route and certificate against the existing image, then verify public
+HTTPS before deploying the migration image: old-host browsers navigate to
+`https://cflop.us` as soon as that image is live. Saving a Compose domain alone
+does not update the running container's router labels; recreate the service
+and verify the route before proceeding.
 
 Keep `cflop.unimatrix-01.dev` and `cube.unimatrix-01.dev` routed to the live
 `cflop` service on port `8080`, with valid TLS certificates. Browser storage is
