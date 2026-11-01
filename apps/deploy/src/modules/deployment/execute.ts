@@ -164,19 +164,21 @@ export const deploymentExecutionModule: FastifyPluginAsync = (app) => {
       try {
         const reporterId = request.serviceCaller!.id;
         const prior = app.deploymentAttempts.findRollback(request.body, reporterId, Date.now());
-        if (prior !== undefined) return prior;
+        if (prior !== undefined && (prior.tagWrite !== null || prior.queue !== null)) return prior;
         if (app.imageTags === undefined || app.redeployment === undefined) refuse(503);
         const composeId = await resolveCompose(app, appDir);
-        const baseline = await readBaseline(app, appDir);
-        const now = Date.now();
-        const reservation = app.deploymentAttempts.reserveRollback(
-          request.body,
-          reporterId,
-          baseline,
-          now,
-        );
-        if (!reservation.created) return reservation.attempt;
-        return await execute(app, reservation.attempt, composeId, reporterId);
+        let attempt = prior;
+        if (attempt === undefined) {
+          const baseline = await readBaseline(app, appDir);
+          attempt = app.deploymentAttempts.reserveRollback(
+            request.body,
+            reporterId,
+            baseline,
+            Date.now(),
+          ).attempt;
+        }
+        if (attempt.tagWrite !== null || attempt.queue !== null) return attempt;
+        return await execute(app, attempt, composeId, reporterId);
       } catch (error) {
         safeFailure(error);
       }

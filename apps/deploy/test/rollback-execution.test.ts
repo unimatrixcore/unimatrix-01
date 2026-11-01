@@ -672,3 +672,44 @@ void test("a rejected post-write readback stays unknown and retains the app rese
     await f.app.close();
   }
 });
+
+void test("rollback retries resume unclaimed reservations after bridge recovery without replaying mutations", async () => {
+  const f = fixture();
+  try {
+    const target = f.seed();
+    const input = f.rollback(target.id);
+    const originalRead = f.app.readRuntimeEvidence;
+    let reads = 0;
+    f.app.readRuntimeEvidence = () => {
+      if (++reads === 2) return Promise.reject(new Error("private-bridge-failure"));
+      return originalRead();
+    };
+    const failed = await f.send("rollback", input);
+    assert.equal(failed.statusCode, 503, failed.body);
+    assert.doesNotMatch(failed.body, /private/u);
+    const reserved = f.attempts.findRollback(input, f.manage.record.id, Date.now())!;
+    assert.equal(reserved.tagWrite, null);
+    assert.equal(reserved.queue, null);
+    assert.equal(f.calls.includes("write"), false);
+    assert.equal(f.calls.includes("queue"), false);
+    const resumed = await Promise.all([f.send("rollback", input), f.send("rollback", input)]);
+    for (const response of resumed) {
+      assert.equal(response.statusCode, 200, response.body);
+      assert.equal(response.json<DeployAttemptRecord>().id, reserved.id);
+    }
+    const completed = f.attempts.get("api", reserved.id, Date.now())!;
+    assert.equal(completed.tagWrite, "acknowledged");
+    assert.equal(completed.queue, "acknowledged");
+    assert.equal(f.calls.filter((entry) => entry === "write").length, 1);
+    assert.equal(f.calls.filter((entry) => entry === "queue").length, 1);
+    f.setReadError();
+    f.setEvidence([]);
+    const retry = await f.send("rollback", input);
+    assert.equal(retry.statusCode, 200, retry.body);
+    assert.equal(retry.json<DeployAttemptRecord>().id, reserved.id);
+    assert.equal(f.calls.filter((entry) => entry === "write").length, 1);
+    assert.equal(f.calls.filter((entry) => entry === "queue").length, 1);
+  } finally {
+    await f.app.close();
+  }
+});
