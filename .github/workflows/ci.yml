@@ -1,406 +1,56 @@
-name: CI
-
+name: CI ingress validation
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}
-  cancel-in-progress: true
-
-# Both jobs already declare `contents: read`, so this changes nothing today. It
-# is the floor for a job added later without a permissions block of its own,
-# which would otherwise inherit the repository default — and it is what
-# Scorecard's Token-Permissions check reads.
-permissions:
-  contents: read
-
+permissions: {}
 jobs:
-  verify:
-    name: Verify
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    permissions:
-      contents: read
-
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          persist-credentials: false
-
-      - name: Set up pnpm
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-        with:
-          version: 10.30.3
-
-      - name: Set up Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .node-version
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-
-      # Pure bash, reads only `apps/*` and this file, so it runs before the
-      # install and costs nothing. It lives here rather than only inside
-      # `pnpm check`/`pnpm verify` because this job runs its gates individually
-      # and calls neither wrapper — a gate reachable only through them is not a
-      # pre-merge gate at all, it is a next-morning email from the scheduled
-      # `maintenance.yml` run against already-merged `main`.
-      - name: App wiring
-        run: bash ./infra/scripts/check-app-wiring.sh
-
-      - name: Required image checks
+          node-version: 24.18.0
+      - name: Probe existing reporting identity without deployment mutations
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          node --test ./infra/scripts/check-required-image-checks.test.mjs
-          node ./infra/scripts/check-required-image-checks.mjs
-
-      - name: Deployment reporting
-        run: node --test ./infra/scripts/deploy-ci.test.mjs
-
-      - name: Stale comments
-        run: node ./infra/scripts/check-stale-comments.mjs
-
-      # Same placement rationale — pure bash over `git ls-files`, no
-      # `node_modules`. A doc naming a script the repo does not ship is
-      # asserting config no reviewer can see and no clone gets.
-      - name: Doc script references
-        run: bash ./infra/scripts/check-doc-script-refs.sh
-
-      # Same placement rationale. This repo is public, so a runner on the
-      # owner's hardware would execute fork-PR code on the home lab.
-      - name: Runner labels
-        run: node ./infra/scripts/check-runner-labels.mjs
-
-      - name: Codex context and hook fixtures
-        run: pnpm check:codex-context
-
-      # The repo's shell reaches no other static analysis: CodeQL has no shell
-      # extractor and prettier has no bash parser. A step in `Verify` rather than
-      # a job of its own, for the same reason as the gates above — `Verify` is already
-      # required on `main`, so a new job would need arming as a required check
-      # before it gated anything.
-      #
-      # `git ls-files` rather than a committed list of paths, so a script added
-      # later is covered without anyone remembering this file. It finds only
-      # `*.sh`; an extension-less script with a shebang is not checked.
-      #
-      # Uses the runner image's shellcheck rather than an action. GitHub's
-      # ubuntu-24.04 image ships 0.9.0 and this repo already leans on that image
-      # having Docker preinstalled in the `Images` job below.
-      - name: Shellcheck
-        run: |
-          shellcheck --version
-          git ls-files -z -- '*.sh' | xargs -0 -r shellcheck --
-
-      - name: Set up .NET for the Jellyfin plugin
-        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        with:
-          dotnet-version: "10.0.x"
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      # Unlike the gates above, this needs node_modules: it imports
-      # @unimatrix/deploy-config and apps/api/src/config.ts by absolute path,
-      # and generate-deploy-config.mjs --check formats through prettier's
-      # API. It is the only thing that reads apps/*/Dockerfile and
-      # infra/docker/*-compose.yaml at all — Images (*) builds each
-      # Dockerfile directly and never opens a compose file, so one that stops
-      # passing env into a perfectly good image is green everywhere until
-      # production restart-loops.
-      - name: Deploy config
-        run: pnpm check:deploy-config
-
-      - name: Install Playwright Chromium
-        run: |
-          pnpm --filter @unimatrix/web exec playwright install --with-deps chromium
-          pnpm --filter @unimatrix/cflop exec playwright install --with-deps chromium
-          pnpm --filter @unimatrix/status exec playwright install --with-deps chromium
-
-      # Runs before the expensive steps: formatting is the cheapest thing that
-      # can be wrong, so failing here saves a full build/test cycle.
-      - name: Format
-        run: pnpm format:check
-
-      # Also cheap, and it catches a class of problem the rest of the pipeline
-      # cannot: one workspace drifting to a different version of a shared
-      # dependency builds and tests green in isolation, then behaves differently
-      # from its siblings at runtime.
-      - name: Dependency versions
-        run: pnpm deps:check
-
-      - name: Build
-        run: pnpm build
-
-      - name: Lint
-        run: pnpm lint
-
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Test
-        # Each workspace starts its own test workers; avoid multiplying those
-        # pools across ten simultaneous suites on the hosted runner.
-        run: pnpm test --concurrency=2
-
-      # Reads the `coverage/coverage-summary.json` the step above writes, so it
-      # has to follow it. Catches a floor left far below what its workspace
-      # actually measures — slack a real regression can hide inside while the
-      # gate stays green.
-      - name: Coverage drift
-        run: pnpm check:coverage-drift
-
-      # Last, because it is the slowest step: a real Chrome run against every
-      # previewable route. `pnpm test` has already built both apps, and the
-      # script resolves Playwright's Chromium itself rather than needing a
-      # system Chrome or a CHROME_PATH set here.
-      #
-      # Reports stay on the runner. They are uploaded as a build artifact
-      # below, never to an external service.
-      - name: Lighthouse budgets
-        run: pnpm lighthouse
-
-      - name: Upload Lighthouse reports
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: lighthouse-reports
-          path: apps/*/.lighthouse/**
-          retention-days: 7
-          # THIS is what was broken: `include-hidden-files` defaults to false,
-          # and `.lighthouse` is a dot-prefixed directory, so every report under
-          # it was excluded as a hidden file. The step logged "No files were
-          # found" and passed anyway on every run the workflow has ever done.
-          include-hidden-files: true
-          # Was `ignore`, which is what let the above look like a pass. `warn`
-          # annotates a genuinely empty run — legitimate when the Lighthouse step
-          # itself failed, since `always()` runs this either way — without
-          # turning one failure into two.
-          if-no-files-found: warn
-
-  # `Verify` builds with Vite and tsc; it never touches a Dockerfile. That left a
-  # whole class of breakage invisible: a dependency can pass every check on the
-  # runner while making the deployable image unbuildable.
-  #
-  # Not hypothetical. `better-sqlite3@13` publishes no prebuilt binaries at all
-  # (12.11.1 ships 138), so it falls through to `node-gyp rebuild` and dies on
-  # `node:*-alpine` with `gyp ERR! find Python` — while `pnpm verify` stays green
-  # on the glibc runner, because glibc has a prebuild. Caught by hand on
-  # 2026-07-27; nothing in CI would have caught it.
-  #
-  # Build only, no push and no registry credentials. The point is that the image
-  # still assembles, which is exactly the signal `Verify` cannot give.
-  images:
-    name: Images
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    permissions:
-      contents: read
-
-    strategy:
-      # Do not cancel the others on the first failure — knowing whether a break
-      # is confined to one image or affects all of them is most of the
-      # diagnosis, and re-running to find out costs another full cycle.
-      fail-fast: false
-      # Every `apps/*/Dockerfile` must appear here. The `App wiring` step in
-      # the `Verify` job above fails the build if one does not.
-      # Adding an entry is only half the job: the matching `Images (<app>)`
-      # check also has to be armed as required on `main`, or the image is built
-      # and its result ignored.
-      matrix:
-        app: [admin, api, auth, cflop, deploy, secrets, status, web]
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      # Plain `docker build` against the runner's preinstalled Docker, rather
-      # than the buildx actions. It needs no third-party action to pin and no
-      # cache to invalidate, the build context is the repo itself, and the image
-      # lands in the local daemon where the cflop step below needs it.
-      #
-      # A layer cache cannot buy wall clock here however well it works: compare
-      # any run's `Images (*)` durations against `Verify` in the same run — the
-      # whole matrix finishes minutes before `Verify` does, so this job is never
-      # the critical path. A per-app Blacksmith sticky-disk cache was measured
-      # over three runs on main and produced zero `CACHED` layers in all 18
-      # jobs, while adding ~5s of action setup to each.
-      - name: Build ${{ matrix.app }} image
-        run: docker build --file "apps/${{ matrix.app }}/Dockerfile" --tag "unimatrix-${{ matrix.app }}:ci" .
-
-      # cflop serves one HTML file per route and returns real 404s, which lives
-      # entirely in its `nginx.conf`. Nothing else reaches it: the unit suite
-      # starts no server, Playwright drives a client router that renders a
-      # not-found card over a 200, and `vite preview` reproduces none of the
-      # rules. Here because this job is the only one with a built image.
-      - name: cflop serving contract
-        if: matrix.app == 'cflop'
-        run: bash ./infra/scripts/check-cflop-serving.sh "unimatrix-cflop:ci"
-
-      - name: status serving contract
-        if: matrix.app == 'status'
-        run: bash ./infra/scripts/check-status-serving.sh "unimatrix-status:ci"
-
-  # A separate job from `images` rather than a push step inside it, because
-  # `Images (<app>)` is a required check and must keep meaning "this image
-  # builds" — folding a registry push into it would make the same check mean
-  # "the image builds and the registry accepted it", and the second half can
-  # fail for reasons (GHCR auth, rate limits) that have nothing to do with
-  # whether the image is good.
-  #
-  # Deliberately **not** armed as a required check. The reason is not that it
-  # never reports — a job skipped by the `if:` below still produces a check
-  # run with conclusion `skipped`, and this repo's own `watch-pr.sh` maps
-  # `skipping` to green. The reason is that arming it would create a
-  # permanently-green required check on every pull request: this job never
-  # runs on `pull_request` at all (see `if:` below), so it would report
-  # green while verifying nothing.
-  #
-  # `needs: [verify, images]` so a `main`-branch failure cannot move the
-  # `:main` tag onto a bad commit.
-  #
-  # `images` is not redundant with this job's own build. It runs one assertion
-  # this job does not: `check-cflop-serving.sh` against the built cflop image,
-  # which is the only thing anywhere that proves cflop serves real 404s rather
-  # than a 200 with a not-found card. Without the dependency, a broken serving
-  # contract reddens `Images (cflop)` and publishes the image regardless.
-  #
-  # The wait costs nothing measurable — the whole `images` matrix finishes in
-  # well under a minute against `Verify`'s ~6, so `verify` is the long pole
-  # either way, on a path nothing downstream waits on yet.
-  publish:
-    name: Publish
-    needs: [verify, images]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    # Both a push to main and a manual dispatch from any branch are allowed
-    # to run; only the push-to-main path is permitted to move the `:main`
-    # tag (see the tag/push steps below).
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    permissions:
-      contents: read
-      packages: write
-
-    strategy:
-      fail-fast: false
-      matrix:
-        app: [admin, api, auth, cflop, deploy, secrets, status, web]
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Log in to GHCR
-        env:
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GHCR_ACTOR: ${{ github.actor }}
-        run: echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin
-
-      - name: Set up Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .node-version
-
-      # No build args: Task 1 (deploy.config.ts) gave every SPA's ARG a
-      # production default, so the image built here is correct without any.
-      # Publish a single amd64 manifest so the captured push digest and the
-      # runtime manifest evidence use the same digest kind.
-      - name: Build and tag ${{ matrix.app }} image
-        env:
-          APP: ${{ matrix.app }}
-          IMAGE: ghcr.io/unimatrixcore/unimatrix-${{ matrix.app }}
-          REVISION: ${{ github.sha }}
-          SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}
-          IS_MAIN_PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-        run: |
-          commit_subject="$(git log -1 --format=%s "$REVISION")"
-          tag_args=(--tag "$IMAGE:$REVISION")
-          if [ "$IS_MAIN_PUSH" = "true" ]; then
-            tag_args+=(--tag "$IMAGE:main")
-          fi
-          docker build \
-            --platform linux/amd64 \
-            --file "apps/$APP/Dockerfile" \
-            --label "org.opencontainers.image.source=$SOURCE_URL" \
-            --label "org.opencontainers.image.revision=$REVISION" \
-            --label "org.opencontainers.image.commit.subject=$commit_subject" \
-            "${tag_args[@]}" \
-            .
-
-      # The SHA tag always pushes; the moving `main` tag pushes only on a
-      # push to main (see `IS_MAIN_PUSH` above) — a `workflow_dispatch` run
-      # against a feature branch must never move `:main` onto a branch build.
-      - name: Push ${{ matrix.app }} image
-        env:
-          APP: ${{ matrix.app }}
-          IMAGE: ghcr.io/unimatrixcore/unimatrix-${{ matrix.app }}
-          REVISION: ${{ github.sha }}
-          IS_MAIN_PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-        run: node infra/scripts/publish-image.mjs
-
-      - name: Retain publication identity
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: publication-${{ matrix.app }}-${{ github.run_attempt }}
-          path: publication/${{ matrix.app }}.json
-          retention-days: 7
-          if-no-files-found: error
-
-  # Deploy is deliberately not a required check: it runs only on a push to main.
-  # The deploy service owns service-scoped image writes and durable reservations shared
-  # with rollback. Actions never falls back to direct Dokploy mutations.
-  # A later main deployment replaces each service's rollback target with its publication.
-  # One job keeps requests sequential; deploy executes last because it restarts the observer.
-  # Cancellation can lose an execution acknowledgement. Durable attempts must be inspected
-  # before retrying; a new run cannot overwrite unresolved work.
-  deploy:
-    name: Deploy
-    needs: [publish]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    permissions:
-      contents: read
-
-    steps:
-      # For `infra/docker/*-compose.yaml` alone: the stacks to deploy are
-      # derived from those filenames rather than listed here, so an app added
-      # to the matrices above cannot be silently left undeployed.
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Set up Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .node-version
-
-      # Activation follows the source/reachability checks in docs/deployment.md.
-      - name: Download publication identities
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          pattern: publication-*-${{ github.run_attempt }}
-          path: publication
-          merge-multiple: true
-
-      - name: Request coordinated deployment of this commit
-        env:
-          DOKPLOY_URL: https://dokploy.unimatrix-01.dev
-          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
-          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
-          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
-          IMAGE_TAG: ${{ github.sha }}
-          DEPLOY_ATTEMPTS_ENABLED: ${{ vars.DEPLOY_ATTEMPTS_ENABLED }}
           DEPLOY_REPORT_URL: ${{ vars.DEPLOY_REPORT_URL }}
           DEPLOY_REPORT_TOKEN: ${{ secrets.DEPLOY_REPORT_TOKEN }}
-        run: node infra/scripts/deploy-ci.mjs
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+        run: |
+          node --input-type=module <<'JS'
+          const base = process.env.DEPLOY_REPORT_URL;
+          if (base !== 'https://deploy-ci.unimatrix-01.dev') throw new Error('Unexpected reporting origin');
+          for (const key of ['DEPLOY_REPORT_TOKEN', 'CF_ACCESS_CLIENT_ID', 'CF_ACCESS_CLIENT_SECRET']) {
+            if (!process.env[key]) throw new Error('Missing probe credential');
+          }
+          const access = {
+            'CF-Access-Client-Id': process.env.CF_ACCESS_CLIENT_ID,
+            'CF-Access-Client-Secret': process.env.CF_ACCESS_CLIENT_SECRET,
+          };
+          const checks = [
+            ['POST', '/deployment/attempts/intent', false, false, [403]],
+            ['POST', '/deployment/attempts/intent', true, false, [401]],
+            ['POST', '/deployment/attempts/intent', true, true, [400]],
+            ['POST', '/deployment/execute', true, false, [401]],
+            ['POST', '/deployment/execute', true, true, [400, 404]],
+            ['GET', '/deployment/attempts/intent', true, true, [404]],
+            ['GET', '/health', true, true, [404]],
+            ['POST', '/deployment/rollback', true, true, [404]],
+            ['POST', '/deployment/attempts/report', true, true, [404]],
+          ];
+          for (const [method, path, withAccess, withToken, expected] of checks) {
+            const response = await fetch(base + path, {
+              method, redirect: 'error', signal: AbortSignal.timeout(15000),
+              headers: {
+                'content-type': 'application/json',
+                ...(withAccess ? access : {}),
+                ...(withToken ? {Authorization: `Bearer ${process.env.DEPLOY_REPORT_TOKEN}`} : {}),
+              },
+              ...(method === 'POST' ? {body: '{}'} : {}),
+            });
+            const status = response.status;
+            await response.body?.cancel();
+            console.log(`${method} ${path}: ${status} (Access=${withAccess}, service token=${withToken})`);
+            if (!expected.includes(status)) throw new Error('Reporting boundary probe failed');
+          }
+          JS
