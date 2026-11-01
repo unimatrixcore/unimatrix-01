@@ -713,3 +713,80 @@ void test("rollback retries resume unclaimed reservations after bridge recovery 
     await f.app.close();
   }
 });
+
+void test("failed pre-write reads reject the attempt and release its reservation without mutation", async () => {
+  for (const error of [
+    new Error("private-prewrite"),
+    new DokployClientError("private-prewrite", 503),
+  ]) {
+    const f = fixture();
+    try {
+      const target = f.seed(false);
+      let reads = 0;
+      f.app.imageTags = createImageTagWriter({
+        getComposeEnv: () => {
+          reads++;
+          return Promise.reject(error);
+        },
+        updateComposeEnv: () => assert.fail("must not mutate after failed read"),
+      });
+      const input = { app: "api", attemptId: target.id };
+      const response = await f.send("execute", input);
+      assert.equal(response.statusCode, 200, response.body);
+      const record = response.json<DeployAttemptRecord>();
+      assert.equal(record.tagWrite, "rejected");
+      assert.equal(record.outcome, "failed");
+      assert.equal(record.queue, null);
+      assert.equal(f.calls.includes("queue"), false);
+      assert.doesNotMatch(response.body, /private/u);
+      assert.equal((await f.send("execute", input)).statusCode, 200);
+      assert.equal(reads, 1);
+      const now = Date.now();
+      const next = f.attempts.intent(
+        {
+          repository: "unimatrixcore/unimatrix-01",
+          runId: "987654321",
+          runAttempt: 1,
+          app: "api",
+          trigger: "ci",
+          image,
+        },
+        f.manage.record.id,
+        { containerId: "d".repeat(64), observedAt: now },
+        now,
+      );
+      assert.equal(next.outcome, "incomplete");
+      assert.notEqual(next.id, record.id);
+    } finally {
+      await f.app.close();
+    }
+  }
+});
+
+void test("expired unclaimed rollback retries return the timed-out record without upstream calls", async (t) => {
+  const f = fixture();
+  try {
+    const target = f.seed();
+    const input = f.rollback(target.id);
+    const now = Date.now();
+    const { attempt } = f.attempts.reserveRollback(
+      input,
+      f.manage.record.id,
+      { containerId: "d".repeat(64), observedAt: now },
+      now,
+    );
+    t.mock.method(Date, "now", () => attempt.deadlineAt);
+    f.setReadError();
+    f.setEvidence([]);
+    const response = await f.send("rollback", input);
+    assert.equal(response.statusCode, 200, response.body);
+    const record = response.json<DeployAttemptRecord>();
+    assert.equal(record.id, attempt.id);
+    assert.equal(record.outcome, "timed-out");
+    assert.equal(record.tagWrite, null);
+    assert.equal(record.queue, null);
+    assert.deepEqual(f.calls, []);
+  } finally {
+    await f.app.close();
+  }
+});

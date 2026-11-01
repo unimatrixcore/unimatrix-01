@@ -64,6 +64,10 @@ function mutationFailure(error: unknown): "rejected" | "unknown" {
     : "unknown";
 }
 
+function canResumeRollback(attempt: DeployAttemptRecord): boolean {
+  return attempt.outcome === "incomplete" && attempt.tagWrite === null && attempt.queue === null;
+}
+
 async function readBaseline(app: FastifyInstance, appDir: string): Promise<DeployAttemptBaseline> {
   const evidence = (await app.readRuntimeEvidence()).filter((entry) => entry.app === appDir);
   const now = Date.now();
@@ -164,7 +168,7 @@ export const deploymentExecutionModule: FastifyPluginAsync = (app) => {
       try {
         const reporterId = request.serviceCaller!.id;
         const prior = app.deploymentAttempts.findRollback(request.body, reporterId, Date.now());
-        if (prior !== undefined && (prior.tagWrite !== null || prior.queue !== null)) return prior;
+        if (prior !== undefined && !canResumeRollback(prior)) return prior;
         if (app.imageTags === undefined || app.redeployment === undefined) refuse(503);
         const composeId = await resolveCompose(app, appDir);
         let attempt = prior;
@@ -177,7 +181,7 @@ export const deploymentExecutionModule: FastifyPluginAsync = (app) => {
             Date.now(),
           ).attempt;
         }
-        if (attempt.tagWrite !== null || attempt.queue !== null) return attempt;
+        if (!canResumeRollback(attempt)) return attempt;
         return await execute(app, attempt, composeId, reporterId);
       } catch (error) {
         safeFailure(error);

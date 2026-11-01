@@ -1,7 +1,7 @@
 import { SecretValue } from "@unimatrix/secrets/client";
 import { deployRequestedImageSchema, type DeployAttemptRecord } from "@unimatrix/shared";
 
-import type { DokployEnvClient } from "../dokploy/env-client.js";
+import type { DokployComposeEnv, DokployEnvClient } from "../dokploy/env-client.js";
 import { RECONCILE_EXPECTED_OWNER, RECONCILE_EXPECTED_REPOSITORY } from "../reconcile/apply.js";
 import { mergeSecretEnv } from "./merge.js";
 
@@ -26,7 +26,12 @@ export function createImageTagWriter(client: DokployEnvClient): ImageTagWriter {
       if (!parsed.success || parsed.data.repository !== `ghcr.io/unimatrixcore/unimatrix-${appDir}`)
         throw new ImageTagWriteRefused();
       const image = parsed.data;
-      const current = await client.getComposeEnv(composeId);
+      let current: DokployComposeEnv;
+      try {
+        current = await client.getComposeEnv(composeId);
+      } catch {
+        throw new ImageTagWriteRefused();
+      }
       if (
         current.composeId !== composeId ||
         current.owner !== RECONCILE_EXPECTED_OWNER ||
