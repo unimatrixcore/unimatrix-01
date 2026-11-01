@@ -3,6 +3,11 @@ import { z } from "zod";
 import { DIAGRAM_PREVIEW_MODES } from "@/features/algorithms/preview-mode";
 import { ALGORITHM_SET_IDS } from "@/features/algorithms/types";
 
+import {
+  readStoredValueFromStorage,
+  removeStoredValueFromStorage,
+  writeStoredValueToStorage,
+} from "./local-storage";
 import { DRILL_POOL_MODES } from "./pool-storage";
 import { CASE_STATUSES } from "./progress-storage";
 
@@ -61,7 +66,7 @@ function validValue(suffix: string, value: string): boolean {
 export function createMigrationUrl(location: URL, storage: Storage): string {
   const entries: MigrationPayload["entries"] = [];
   for (const suffix of SUFFIXES) {
-    const value = storage.getItem(`cflop:${suffix}`) ?? storage.getItem(`cube-trainer:${suffix}`);
+    const value = readStoredValueFromStorage(storage, suffix);
     if (value !== null && value.length <= 8192 && validValue(suffix, value)) {
       entries.push([suffix, value]);
     }
@@ -97,22 +102,18 @@ export function importMigration(hash: string, storage: Storage): MigrationImport
   if (!payload) return "invalid";
   // Even malformed destination values count as existing data; migration must never replace them.
   for (const suffix of SUFFIXES) {
-    if (
-      storage.getItem(`cflop:${suffix}`) !== null ||
-      storage.getItem(`cube-trainer:${suffix}`) !== null
-    ) {
+    if (readStoredValueFromStorage(storage, suffix) !== null) {
       return "existing";
     }
   }
   const written: string[] = [];
   try {
     for (const [suffix, value] of payload.entries) {
-      const key = `cflop:${suffix}`;
-      storage.setItem(key, value);
-      written.push(key);
+      writeStoredValueToStorage(storage, suffix, value);
+      written.push(suffix);
     }
   } catch (error) {
-    for (const key of written) storage.removeItem(key);
+    for (const suffix of written) removeStoredValueFromStorage(storage, suffix);
     throw error;
   }
   return "imported";
