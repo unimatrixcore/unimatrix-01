@@ -7,7 +7,18 @@ import {
   attemptNeedsAttention,
   outcomeLabel,
   reconciliationSummary,
+  shortTag,
 } from "@/features/deploys/presentation";
+
+it.each([
+  ["a".repeat(40), "aaaaaaa"],
+  [`${"a".repeat(40)}@sha256:${"b".repeat(64)}`, "aaaaaaa"],
+  [`v1.2.3@sha256:${"b".repeat(64)}`, "v1.2.3"],
+  ["release-current", "release-current"],
+  [null, "Unknown tag"],
+] as const)("shows a readable image tag for %s", (tag, expected) => {
+  expect(shortTag(tag)).toBe(expected);
+});
 
 function attempt(overrides: Partial<DeployAttemptRecord> = {}): DeployAttemptRecord {
   return {

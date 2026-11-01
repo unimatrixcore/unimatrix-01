@@ -17,8 +17,11 @@ An unexecuted intent can expire without leaving queued work. The execution route
 durably claims each service tag write and queue request before sending it. Claims are exclusive: an interrupted claim is never
 automatically replayed. Retrying a retained execution or rollback request returns its record without replaying a mutation.
 Cancellation between a claim and a mutation can therefore leave a record that needs investigation.
-A queue claim without its terminal acknowledgment or unknown-result report cannot establish landing,
-even if a matching image appears; the record times out if that report never arrives.
+Before accepting requests at startup, the service converts interrupted `queue: started` claims to
+`queue: unknown` without dispatching them again. Runtime evidence can then resolve work whose
+response was lost during self-replacement. Opening the store from a host CLI does not recover
+claims. A claim without an acknowledgment or unknown-result report cannot establish landing,
+even if a matching image appears.
 Landing evidence must be observed at or after the persisted queue-claim timestamp. Older records
 without that timestamp remain readable but cannot establish landing.
 
@@ -32,6 +35,11 @@ explicit execution behavior.
 Manual attempts have an unspecified requested image: a changed container ID can record recreation
 and its observed image, without claiming immutable landing. Late recreation preserves timeout
 and records `recreatedAt`; observed recreation resolves the manual overlap guard.
+Manual work requires a verified persistent force-recreation command, including for `deploy` itself.
+Configure it with the host-local `enable-recreation` command before queueing; HTTP requests only
+check the policy. It reapplies stored Compose configuration without removing data volumes.
+During a backend restart the console retains the request UUID and recovers its attempt through
+history. A missing response is not a definite failure or permission to issue another request UUID.
 Acknowledged queueing is
 separate from image landing and health. Transport failures and server failures leave an unknown
 request result. A changed full container ID plus an independently verified matching immutable
@@ -66,9 +74,13 @@ to redact arbitrary output or disclose raw logs.
 
 Read-only checks on unimatrix-03 on 2026-10-31 observed `deployment.allByCompose` returning
 deployment rows and `deployment.readLogs` returning a JSON string on the installed v0.30.10.
-The installed source prunes older rows/files when creating deployments. A production deployment
-with the UUID title marker has not been exercised; verify it during the controlled activation trial
-below. Existing unmarked deployments cannot establish that association.
+The installed Git deployment path overwrites both title and description with commit metadata on
+completion, so a completed CI or manual deployment can lose its UUID marker and become
+unassociated. Production readback confirmed the marker was absent after completion.
+The installed source prunes older rows/files when creating deployments. No durable binding beyond
+the UUID title is implemented: an old unmarked attempt cannot be safely associated, and neither a
+latest-row nor a time-window fallback is permitted. Verify and report log association independently
+of deployment completion.
 
 ## Host-local runtime bridge
 
@@ -132,7 +144,10 @@ confirmed Access denial, service authentication, rejected invalid inputs, denied
 stable intent IDs and conflicting-digest rejection. Its intent-only record was closed with a
 simulated tag-write rejection; no deployment was queued.
 
-The controlled coordinated rollout, live already-current resolution and rollback/supersession
-trials remain unverified. Complete the applicable activation checks before enabling execution.
+The [coordinated rollout](https://github.com/unimatrixcore/unimatrix-01/actions/runs/41275979600)
+and [live already-current check](https://github.com/unimatrixcore/unimatrix-01/actions/runs/41278200680)
+completed, with separate runtime readback verifying image landing and healthy containers.
+Production force recreation, self-redeploy reconnection and rollback/supersession trials remain
+unverified. Complete the applicable controlled trials before relying on those behaviors.
 Disabling activation later stops subsequent CI execution; it does not remove recorded attempts or
 cancel queued work.

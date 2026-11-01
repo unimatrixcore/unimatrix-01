@@ -26,6 +26,7 @@ function storeFixture(observe: DeploymentAttemptStore["observe"]) {
     findManual: () => assert.fail("unused"),
     intent: () => assert.fail("unused"),
     report: () => assert.fail("unused"),
+    recoverInterruptedQueues: () => undefined,
     list: () => assert.fail("unused"),
     get: () => assert.fail("unused"),
     observe,
@@ -43,6 +44,32 @@ void test("attempt lifecycle closes an unstarted owned store", async () => {
   assert.deepEqual(app.deploymentAttempts.list(undefined, 1, Date.now()), []);
   await app.close();
   assert.throws(() => app.deploymentAttempts.list(undefined, 1, Date.now()), /not open/u);
+});
+
+void test("failed interrupted-queue recovery prevents service readiness and runtime sampling", async () => {
+  const app = Fastify();
+  let observations = 0;
+  let reads = 0;
+  const fixture = storeFixture(() => {
+    observations += 1;
+  });
+  fixture.store.recoverInterruptedQueues = () => {
+    throw new Error("recovery failed");
+  };
+  setupDeploymentAttempts(app, ":memory:", fixture.store, () => {
+    reads += 1;
+    return Promise.resolve([]);
+  });
+  try {
+    await assert.rejects(async () => {
+      await app.ready();
+    }, /recovery failed/u);
+    assert.equal(reads, 0);
+    assert.equal(observations, 0);
+  } finally {
+    await app.close();
+    assert.equal(fixture.isClosed(), true);
+  }
 });
 
 void test("shutdown drains a pending runtime read before closing the durable store", async () => {

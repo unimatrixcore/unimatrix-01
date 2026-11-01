@@ -35,6 +35,11 @@ const DISCONNECTED: DokployCreationCompose = {
   autoDeploy: true,
   composePath: "./docker-compose.yml",
   githubId: null,
+  appName: "api-project",
+  createEnvFile: true,
+  serverId: null,
+  mountCount: 0,
+  policy: "unsupported",
 };
 const CONFIGURED: DokployCreationCompose = {
   ...DISCONNECTED,
@@ -45,6 +50,7 @@ const CONFIGURED: DokployCreationCompose = {
   autoDeploy: false,
   composePath: "infra/docker/api-compose.yaml",
   githubId: "github-1",
+  policy: "enabled",
 };
 
 function projects(names: readonly string[] = []): DokployProject[] {
@@ -93,12 +99,16 @@ function harness() {
       created = true;
       return Promise.resolve();
     },
-    configureCompose: (composeId: string, source: { composePath: string; githubId: string }) => {
+    configureCompose: (
+      composeId: string,
+      source: { composePath: string; githubId: string; description: string },
+    ) => {
       calls.push("configure");
       assert.equal(composeId, "compose-1");
       assert.deepEqual(source, {
         composePath: "infra/docker/api-compose.yaml",
         githubId: "github-1",
+        description: state.description,
       });
       configured = true;
       return Promise.resolve();
@@ -232,6 +242,7 @@ void test("a silent configuration drop fails verification for each pinned settin
     { autoDeploy: true },
     { githubId: "foreign-provider" },
     { composePath: "other.yaml" },
+    { policy: "disabled" as const },
   ]) {
     const h = harness();
     let reads = 0;

@@ -91,6 +91,25 @@ export function rollbackTargets(attempts: DeployAttemptRecord[]): DeployAttemptR
   );
 }
 
+interface DeploymentRequest {
+  app: string;
+  requestId: string;
+  targetAttemptId?: string;
+}
+
+function isDisconnectError(error: unknown): boolean {
+  return (
+    (error instanceof ApiClientError &&
+      (error.status >= 500 || error.status < 400 || error.status === 408)) ||
+    error instanceof TypeError ||
+    (error instanceof Error && error.name === "AbortError")
+  );
+}
+
+const reconnectToastId = "deployment-backend-reconnecting";
+const reconnectMessage =
+  "Disconnected from deployment backend. Reconnecting and checking requests…";
+
 export function DeploysPage() {
   const client = useApiClient();
   const queryClient = useQueryClient();
@@ -101,6 +120,11 @@ export function DeploysPage() {
   const [selectedApp, setSelectedApp] = useState<string | null>(null);
   const [tab, setTab] = useState("overview");
   const [attemptId, setAttemptId] = useState<string | null>(null);
+  const [requestState, setRequestState] = useState<
+    | { request: DeploymentRequest; uncertain: false }
+    | { request: DeploymentRequest; uncertain: true; failedAt: number }
+    | null
+  >(null);
   const detailPrefetcher = useRef<DeployDetailsPrefetcher | null>(null);
   const appIds = (state.data?.apps ?? [])
     .map((entry) => entry.appDir)
@@ -145,12 +169,53 @@ export function DeploysPage() {
   const declaration = declarations.data?.apps.find((entry) => entry.appDir === appName);
   const summary = reconciliation.data ? reconciliationSummary(reconciliation.data, appName) : null;
   const activeTab = tab === "reconcile" && !summary?.showDetail ? "overview" : tab;
-  const pending = history.some(hasUnresolvedDeploymentWork);
+  const pending = [
+    ...history,
+    ...(attempts.data?.attempts ?? []).filter((run) => run.app === appName),
+  ].some(hasUnresolvedDeploymentWork);
   const historyReady = selectedHistory.isSuccess && !selectedHistory.isError;
   const targets = rollbackTargets(history);
-  const runningTag = app?.container.kind === "matched" ? app.container.imageTag : null;
+  const runningTag =
+    app?.container.kind === "matched" ? (app.container.imageTag?.split("@")[0] ?? null) : null;
+  const uncertainRequest = requestState?.uncertain ? requestState.request : null;
+  const recoveryReadSucceeded =
+    requestState?.uncertain === true &&
+    attempts.isSuccess &&
+    !attempts.isFetching &&
+    attempts.dataUpdatedAt >= requestState.failedAt;
+  const disconnected = [state.error, attempts.error, selectedHistory.error].some(isDisconnectError);
+  const reconnecting = disconnected || (uncertainRequest !== null && !recoveryReadSucceeded);
+  useEffect(() => {
+    if (reconnecting) {
+      toast.loading(reconnectMessage, { id: reconnectToastId });
+    } else {
+      toast.dismiss(reconnectToastId);
+    }
+  }, [reconnecting]);
+  useEffect(
+    () => () => {
+      toast.dismiss(reconnectToastId);
+    },
+    [],
+  );
+  useEffect(() => {
+    if (uncertainRequest === null) return;
+    const recovered = [
+      ...(attempts.data?.attempts ?? []),
+      ...(selectedHistory.data?.attempts ?? []),
+    ].find(
+      (run) => run.app === uncertainRequest.app && run.requestId === uncertainRequest.requestId,
+    );
+    if (recovered === undefined) return;
+    if (appName === recovered.app) {
+      setAttemptId(recovered.id);
+      setTab("deploys");
+    }
+    setRequestState(null);
+    toast.success("Deployment request recovered. Follow its outcome in Deploys.");
+  }, [uncertainRequest, attempts.data, selectedHistory.data, appName]);
   const mutation = useMutation({
-    mutationFn: async (request: { app: string; requestId: string; targetAttemptId?: string }) =>
+    mutationFn: async (request: DeploymentRequest) =>
       request.targetAttemptId
         ? client.request(adminDeployRollbackContract, {
             body: {
@@ -163,14 +228,27 @@ export function DeploysPage() {
             body: { app: request.app, requestId: request.requestId },
           }),
     retry: false,
+    onMutate: (request) => {
+      setRequestState({ request, uncertain: false });
+    },
     onSuccess: async (result) => {
+      setRequestState(null);
       setAttemptId(result.id);
       setTab("deploys");
       toast.success("Deployment request recorded. Follow its outcome in Deploys.");
       await queryClient.invalidateQueries({ queryKey: deployQueryKeys.all });
-      await detailPrefetcher.current?.prefetch(appIds ? appIds.split("\n") : []);
+      void detailPrefetcher.current?.prefetch(appIds ? appIds.split("\n") : []);
     },
-    onError: (error) => toast.error(describeDeployError(error)),
+    onError: (error, request) => {
+      if (isDisconnectError(error)) {
+        toast.loading(reconnectMessage, { id: reconnectToastId });
+        setRequestState({ request, uncertain: true, failedAt: Date.now() });
+        void queryClient.invalidateQueries({ queryKey: deployQueryKeys.all });
+      } else {
+        setRequestState(null);
+        toast.error(describeDeployError(error));
+      }
+    },
   });
   async function refresh() {
     await queryClient.invalidateQueries({ queryKey: deployQueryKeys.all });
@@ -186,15 +264,46 @@ export function DeploysPage() {
     setTab("logs");
   }
   const partialError =
-    attempts.error ?? selectedHistory.error ?? declarations.error ?? reconciliation.error;
-  const actionDisabled = !historyReady || pending || appName === "deploy" || mutation.isPending;
+    state.error ??
+    attempts.error ??
+    selectedHistory.error ??
+    declarations.error ??
+    reconciliation.error;
+  const actionDisabled =
+    !historyReady || pending || mutation.isPending || uncertainRequest !== null;
   const attention = latest && attemptNeedsAttention(latest);
   return (
     <TooltipProvider>
       <div className="relative mx-auto flex min-h-0 w-full flex-1 flex-col">
+        {(disconnected || uncertainRequest !== null) && (
+          <div
+            role="status"
+            className="flex shrink-0 flex-wrap items-center gap-2 text-sm text-muted-foreground"
+          >
+            <p>
+              {disconnected
+                ? "Disconnected from deployment backend. Reconnecting…"
+                : recoveryReadSucceeded
+                  ? "Connection restored. Deployment outcome is still unknown."
+                  : "Deployment response interrupted. Checking the recorded request…"}
+            </p>
+            {uncertainRequest && !disconnected && recoveryReadSucceeded && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={mutation.isPending}
+                onClick={() => {
+                  mutation.mutate(uncertainRequest);
+                }}
+              >
+                Retry same request
+              </Button>
+            )}
+          </div>
+        )}
         {state.isPending ? (
           <p role="status">Loading deployments…</p>
-        ) : state.error ? (
+        ) : state.error && !state.data ? (
           <p role="alert">{describeDeployError(state.error)}</p>
         ) : !app ? (
           <p>No declared deployment services.</p>
@@ -330,6 +439,7 @@ export function DeploysPage() {
                             variant="outline"
                             disabled={
                               actionDisabled ||
+                              appName === "deploy" ||
                               !targets.some((run) => run.image?.tag !== runningTag)
                             }
                           >
@@ -345,7 +455,11 @@ export function DeploysPage() {
                           {targets.map((run) => (
                             <DropdownMenuItem
                               key={run.id}
-                              disabled={run.image?.tag === runningTag || actionDisabled}
+                              disabled={
+                                run.image?.tag === runningTag ||
+                                actionDisabled ||
+                                appName === "deploy"
+                              }
                               onSelect={() => {
                                 mutation.mutate({
                                   app: appName,
@@ -433,7 +547,7 @@ export function DeploysPage() {
                   </div>
                   {appName === "deploy" && (
                     <p className="text-xs text-muted-foreground">
-                      Deploy service actions require host-local operation.
+                      Rollback of the deploy service requires host-local operation.
                     </p>
                   )}
                   <Tabs value={activeTab} onValueChange={setTab} className="min-h-0 min-w-0 flex-1">

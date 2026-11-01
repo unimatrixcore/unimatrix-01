@@ -41,7 +41,6 @@ const deploymentsSchema = z
       composeId: z.string().regex(/^[A-Za-z0-9_-]{1,256}$/u),
       title: z
         .string()
-        .max(1024)
         .transform((title) => (/^unimatrix-attempt:[a-f0-9-]{36}$/u.test(title) ? title : null)),
       logPath: z
         .string()

@@ -47,6 +47,10 @@ export function setupDeploymentAttempts(
     });
     return inFlight;
   };
+  app.addHook("onReady", () => {
+    store.recoverInterruptedQueues(Date.now());
+    return Promise.resolve();
+  });
   app.addHook("onListen", () => {
     void sample();
     return Promise.resolve();

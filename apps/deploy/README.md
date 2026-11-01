@@ -93,8 +93,10 @@ when retrying that request. The API forwards the verified session user over its 
 service connection; its deploy token needs `manage` capability. The browser holds no Dokploy key.
 
 The internal `/deployment/redeploy` route accepts only a declared app, request UUID and attributed
-user. Fresh runtime evidence is required before reserving and queueing work. It refuses `deploy`, missing or ambiguous matches, foreign repositories and non-GitHub
-sources. It persists a reservation before queueing `compose.deploy` with the attempt UUID marker.
+user, including `deploy` itself. Fresh runtime evidence and an enabled force-recreation policy are
+required before reserving and queueing work. Missing or ambiguous matches, foreign repositories,
+non-GitHub sources and unconfigured policies are refused. It persists a reservation before queueing
+`compose.deploy` with the attempt UUID marker.
 Retries return the same retained record without another mutation, even if Dokploy is unavailable.
 Idempotency ends when a resolved record expires from history. Neither service nor project
 `IMAGE_TAG` is rewritten: Dokploy deploys its configured image, which may differ from the running image.
@@ -107,11 +109,44 @@ the overlap guard but cannot establish that the configured image or runtime valu
 Manual attempts never claim `landed`. The 30-minute deadline yields `timed-out`, which does not
 prove Dokploy stopped; later recreation is recorded separately without erasing the timeout.
 Unresolved attempts keep blocking new manual, rollback and CI requests for the app, including after
-timeout and normal history retention. Inspect associated logs and runtime state separately.
+timeout and normal history retention. Inspect log association and runtime state separately.
+Completed Git deployments on the installed Dokploy can lose their UUID marker and return
+unassociated logs; see [attempt logs](../../docs/deployment-attempts.md#attempt-logs).
 
-Production manual queueing and UUID association have not been exercised. Before activation,
-verify the API's manage token, a controlled queue request, idempotent retry, attributed history and
-associated logs; check runtime image/configuration and health separately.
+Redeploying admin, API or deploy can interrupt the browser's connection. The console preserves the
+request UUID, shows reconnecting feedback and uses read-only history to recover the recorded
+attempt. An explicit retry reuses that UUID; connection loss does not authorize another queue
+request. On deploy startup, before accepting requests, interrupted `queue: started` claims become
+`queue: unknown` without requeueing. Fresh replacement evidence can then resolve the original
+attempt. Opening the store from a host CLI does not perform this recovery.
+
+Production force recreation and self-redeploy recovery remain unverified. During the controlled
+trial, verify one durable request, idempotent retry and attributed history. Check log association,
+the changed container ID, preserved volumes, applied configuration, health and browser reconnection
+independently; a completed redeploy does not guarantee associated logs.
+
+### Force recreation policy
+
+The installed Dokploy command can acknowledge a same-image deployment without replacing its
+container. Configure the persistent `--force-recreate` command before using manual Redeploy:
+
+```bash
+docker exec <deploy-container> node dist/cli/reconcile.js enable-recreation <app>
+```
+
+Run it once per declared service, including `deploy`, during a quiescent deployment window. Back up
+the stored settings and avoid concurrent Dokploy edits. The command writes only the selected
+service's command, verifies readback, and queues nothing. It preserves Dokploy's project, compose
+path and env-file behavior. It never removes volumes or uses `freshVolumes`; the installed
+`freshVolumes` path runs `down --volumes`.
+
+Supported targets are local GitHub `docker-compose` services with the declared compose path and no
+Dokploy mounts. Existing foreign commands and unsupported topology are refused rather than
+overwritten. Exit codes are 0 applied, 1 already enabled, 2 refused, 3 write status unknown, 4
+read/preflight failure and 5 verification failed. After an uncertain write, inspect the stored
+policy before retrying. HTTP redeploy requests only check this policy; they never configure it.
+Creation configures and verifies it in the existing source-settings update. The persistent command
+also applies when CI or rollback queues work; CI's `already-current` result still queues nothing.
 
 ## Rollback and CI execution
 
@@ -130,8 +165,9 @@ supersedes a rollback; there is no hold to release. Execution requires a baselin
 uncertain tag writes and unresolved queues continue blocking even after timeout.
 
 Keep Dokploy UI env edits and `secrets-apply` outside execution windows: they do not share attempt
-reservations and Dokploy has no conditional env write. CI self-deployment runs last; replacement
-before queue-result persistence can leave an unresolved claim requiring host-level investigation.
+reservations and Dokploy has no conditional env write. CI self-deployment runs last. Startup
+recovery converts interrupted queue claims to unknown results without replaying them; missing or
+ambiguous runtime evidence can still leave a claim requiring host-level investigation.
 See [activation requirements](../../docs/deployment-attempts.md#restricted-ci-ingress-and-activation).
 Production rollback and CI supersession remain unverified; complete the controlled activation trial
 before relying on them operationally.
@@ -152,7 +188,8 @@ same image repository.
 
 An observed container ID change records recreation. The Docker `status` text is retained for coarse
 display, and a fresh host-local runtime-evidence bridge can supply Docker's exact start timestamp, health,
-image tag and OCI commit metadata. The bridge joins only on app and full container ID; without it
+image tag and OCI commit metadata. The bridge joins only on the same app and image repository with
+a unique exact ID or validated abbreviated Docker ID match; without it
 those fields remain unknown. The first observation time measures only how long this service has seen that ID. Observations reset on
 service restart and do not establish that a requested image or configuration was deployed.
 
@@ -312,10 +349,10 @@ docker exec -e DOKPLOY_ENVIRONMENT_ID=<environment-id> \
 The command refuses self, undeclared apps, any existing global name match, and a target environment
 that is missing or appears more than once. It creates a disconnected `raw`/`docker-compose` row,
 then configures this repository's GitHub source on `main`, its declared compose path, the selected
-provider and `autoDeploy: false` in one settings update. Dokploy defaults auto-deploy on at creation;
+provider, `autoDeploy: false` and the force-recreation command in one settings update. Dokploy defaults auto-deploy on at creation;
 the row has no repository attached until that update. A unique description marker binds discovery
 to this invocation before source configuration. Fresh readback must verify the row's identity,
-environment and source settings before success. Creation writes no env or domains and triggers no
+environment, source settings and enabled recreation policy before success. Creation writes no env or domains and triggers no
 deployment. Provision runtime values, external networks, storage and routing separately.
 
 Exit codes: 0 created and verified, 2 refused or invalid creation configuration, 3 write status

@@ -107,5 +107,6 @@ export function serviceStatus(container: DeployStateResponse["apps"][number]["co
 
 export function shortTag(tag: string | null | undefined): string {
   if (!tag) return "Unknown tag";
-  return /^[a-f0-9]{40}$/u.test(tag) ? tag.slice(0, 7) : tag;
+  const name = tag.split("@")[0]!;
+  return /^[a-f0-9]{40}$/u.test(name) ? name.slice(0, 7) : name;
 }
