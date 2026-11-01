@@ -33,6 +33,11 @@ const toastError = vi.fn();
 const toastLoading = vi.fn();
 const toastDismiss = vi.fn();
 const apiClient = { request } as unknown as ApiClient;
+function requestedOptions(contract: { path: string }): unknown[] {
+  return request.mock.calls
+    .filter(([candidate]) => candidate === contract)
+    .map(([, options]): unknown => options);
+}
 vi.mock("@/lib/api-client", () => ({ useApiClient: () => apiClient }));
 vi.mock("@unimatrix/ui/editor", async () => ({
   ...(await vi.importActual<typeof EditorModule>("@unimatrix/ui/editor")),
@@ -316,10 +321,10 @@ describe("DeploysPage", () => {
     const queryClient = mount();
     await ready();
     await waitFor(() => {
-      expect(request).toHaveBeenCalledWith(adminDeployAttemptHistoryContract, {
+      expect(requestedOptions(adminDeployAttemptHistoryContract)).toContainEqual({
         query: { app: "web", limit: 100 },
       });
-      expect(request).toHaveBeenCalledWith(adminDeployHealthHistoryContract, {
+      expect(requestedOptions(adminDeployHealthHistoryContract)).toContainEqual({
         query: { app: "web" },
       });
     });
@@ -352,10 +357,10 @@ describe("DeploysPage", () => {
       await Promise.resolve();
     });
     await waitFor(() => {
-      expect(request).toHaveBeenCalledWith(adminDeployAttemptHistoryContract, {
+      expect(requestedOptions(adminDeployAttemptHistoryContract)).toContainEqual({
         query: { app: "auth", limit: 100 },
       });
-      expect(request).toHaveBeenCalledWith(adminDeployHealthHistoryContract, {
+      expect(requestedOptions(adminDeployHealthHistoryContract)).toContainEqual({
         query: { app: "auth" },
       });
     });
@@ -410,10 +415,10 @@ describe("DeploysPage", () => {
     mount();
     await ready();
     expect(screen.getAllByText("Failed").length).toBeGreaterThan(0);
-    expect(request).toHaveBeenCalledWith(adminDeployAttemptHistoryContract, {
+    expect(requestedOptions(adminDeployAttemptHistoryContract)).toContainEqual({
       query: { limit: 100, latestPerApp: "true" },
     });
-    expect(request).toHaveBeenCalledWith(adminDeployAttemptHistoryContract, {
+    expect(requestedOptions(adminDeployAttemptHistoryContract)).toContainEqual({
       query: { app: "api", limit: 100 },
     });
     expect(await screen.findByText("78.95%")).toBeInTheDocument();
@@ -432,7 +437,7 @@ describe("DeploysPage", () => {
     ).toHaveTextContent("Deployment process failed");
     expect(screen.getByText(/Unrecognized output was withheld/u)).toBeInTheDocument();
     expect(screen.getByText(/truncated at the log delivery limit/u)).toBeInTheDocument();
-    expect(request).toHaveBeenCalledWith(adminDeployAttemptLogsContract, {
+    expect(requestedOptions(adminDeployAttemptLogsContract)).toContainEqual({
       query: { app: "api", attemptId: id },
     });
     tab("Health");
@@ -475,7 +480,7 @@ describe("DeploysPage", () => {
     expect(screen.getByText("No deployment attempts recorded.")).toBeInTheDocument();
     tab("Config");
     expect(screen.getByText("Declaration unavailable.")).toBeInTheDocument();
-    expect(request).toHaveBeenCalledWith(adminDeployHealthHistoryContract, {
+    expect(requestedOptions(adminDeployHealthHistoryContract)).toContainEqual({
       query: { app: "web" },
     });
   });
@@ -529,11 +534,7 @@ describe("DeploysPage", () => {
       const invalidate = vi.spyOn(client, "invalidateQueries");
       fireEvent.click(redeploy);
       await waitFor(() => {
-        expect(
-          request.mock.calls
-            .filter(([contract]) => contract === adminDeployManualRedeployContract)
-            .map(([, options]): unknown => options),
-        ).toContainEqual({
+        expect(requestedOptions(adminDeployManualRedeployContract)).toContainEqual({
           body: { app: "api", requestId: requestUuid },
         });
         expect(invalidate).toHaveBeenCalledWith({ queryKey: ["admin", "deploys"] });
@@ -579,11 +580,7 @@ describe("DeploysPage", () => {
     ).toHaveLength(0);
     fireEvent.click(within(menu).getByRole("menuitem", { name: /release-previous/u }));
     await waitFor(() => {
-      expect(
-        request.mock.calls
-          .filter(([contract]) => contract === adminDeployRollbackContract)
-          .map(([, options]): unknown => options),
-      ).toContainEqual({
+      expect(requestedOptions(adminDeployRollbackContract)).toContainEqual({
         body: { app: "api", requestId: requestUuid, targetAttemptId: olderId },
       });
     });
@@ -617,7 +614,7 @@ describe("DeploysPage", () => {
     expect(screen.getByText(/Rollback of the deploy service/u)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /^Redeploy/u }));
     await waitFor(() => {
-      expect(request).toHaveBeenCalledWith(adminDeployManualRedeployContract, {
+      expect(requestedOptions(adminDeployManualRedeployContract)).toContainEqual({
         body: { app: "deploy", requestId: requestUuid },
       });
     });
