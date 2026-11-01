@@ -21,6 +21,7 @@ const RESULT_PREFIX = "#cflop-probe-result=";
 const SKIP_PREFIX = "#cflop-skip=";
 const PENDING_KEY = "cflop:origin-migration-pending:v1";
 const COMPLETE_KEY = "cflop:origin-migration-complete:v1";
+const MIGRATION_MARKER = "__cflop_migrate=1";
 const MAX_PAYLOAD_LENGTH = 32_768;
 const SUFFIXES = [
   "progress:oll",
@@ -262,13 +263,32 @@ function handleBridge(root: HTMLElement, location: URL): void {
 function cleanLocation(location: URL, hash: string): URL {
   const target = new URL(DESTINATION);
   target.pathname = location.pathname;
-  target.search = location.search;
+  target.search = location.search
+    .slice(1)
+    .split("&")
+    .filter((part) => part !== MIGRATION_MARKER)
+    .join("&");
   target.hash = hash;
   return target;
 }
 
 function restoreLocation(href: string): void {
   window.history.replaceState(window.history.state, "", href);
+}
+
+function parsePending(raw: string | null): MigrationProbe | null {
+  try {
+    const parsed = probeSchema.safeParse(raw ? JSON.parse(raw) : null);
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
+function retryMigrationUrl(href: string): string {
+  const target = new URL(href);
+  target.search = MIGRATION_MARKER + (target.search ? "&" + target.search.slice(1) : "");
+  return target.href;
 }
 
 /** Runs before any component can initialize its state from localStorage. */
@@ -288,13 +308,24 @@ export function handleOriginMigration(root: HTMLElement, onContinue?: () => void
     return true;
   }
   if (location.origin !== DESTINATION) return false;
+  const marked = location.search.slice(1).split("&").includes(MIGRATION_MARKER);
+  const cleanUrl = cleanLocation(location, location.hash);
+  if (marked) restoreLocation(cleanUrl.href);
   if (location.hash.startsWith(SKIP_PREFIX)) {
     const hash = decodeFragment(location.hash, SKIP_PREFIX);
     restoreLocation(cleanLocation(location, typeof hash === "string" ? hash : "").href);
     return false;
   }
-  let returnHref = location.href;
-  let retryHref: string | undefined;
+  if (
+    !marked &&
+    location.pathname !== BRIDGE_PATH &&
+    !location.hash.startsWith(FRAGMENT_PREFIX) &&
+    !location.hash.startsWith(RESULT_PREFIX)
+  ) {
+    return false;
+  }
+  let returnHref = cleanUrl.href;
+  let retryHref = retryMigrationUrl(returnHref);
   try {
     if (location.hash.startsWith(FRAGMENT_PREFIX)) {
       const payload = parsePayload(location.hash);
@@ -303,25 +334,31 @@ export function handleOriginMigration(root: HTMLElement, onContinue?: () => void
         restoreLocation(returnHref);
         return false;
       }
+      retryHref = location.href;
       importMigration(location.hash, window.localStorage);
       restoreLocation(returnHref);
       return false;
     }
     if (location.hash.startsWith(RESULT_PREFIX)) {
       returnHref = cleanLocation(location, "").href;
-      const result = resultSchema.safeParse(decodeFragment(location.hash, RESULT_PREFIX));
+      retryHref = retryMigrationUrl(returnHref);
       const rawPending = window.sessionStorage.getItem(PENDING_KEY);
-      const pending = probeSchema.safeParse(rawPending ? JSON.parse(rawPending) : null);
-      if (result.success) returnHref = result.data.probe.returnHref;
+      const pending = parsePending(rawPending);
+      if (pending) {
+        returnHref = pending.returnHref;
+        retryHref = bridgeUrl(pending);
+      } else if (rawPending !== null) {
+        window.sessionStorage.removeItem(PENDING_KEY);
+      }
+      const result = resultSchema.safeParse(decodeFragment(location.hash, RESULT_PREFIX));
       if (
         !result.success ||
-        !pending.success ||
-        JSON.stringify(result.data.probe) !== JSON.stringify(pending.data) ||
+        !pending ||
+        JSON.stringify(result.data.probe) !== JSON.stringify(pending) ||
         cleanLocation(location, new URL(returnHref).hash).href !== returnHref
       ) {
         throw new Error("Unexpected migration result.");
       }
-      retryHref = bridgeUrl(pending.data);
       if (result.data.skipped) {
         window.sessionStorage.removeItem(PENDING_KEY);
         restoreLocation(returnHref);
@@ -335,7 +372,7 @@ export function handleOriginMigration(root: HTMLElement, onContinue?: () => void
         window.localStorage,
       );
       if (importResult === "invalid") throw new Error("Invalid migration data.");
-      if (hasStoredData(window.localStorage) || pending.data.sourceIndex === 1) {
+      if (hasStoredData(window.localStorage) || pending.sourceIndex === 1) {
         if (!hasStoredData(window.localStorage)) window.localStorage.setItem(COMPLETE_KEY, "1");
         window.sessionStorage.removeItem(PENDING_KEY);
         restoreLocation(returnHref);
@@ -349,16 +386,10 @@ export function handleOriginMigration(root: HTMLElement, onContinue?: () => void
     }
     const rawPending = window.sessionStorage.getItem(PENDING_KEY);
     if (rawPending) {
-      let value: unknown;
-      try {
-        value = JSON.parse(rawPending);
-      } catch {
-        value = null;
-      }
-      const pending = probeSchema.safeParse(value);
-      if (pending.success) {
-        returnHref = pending.data.returnHref;
-        retryHref = bridgeUrl(pending.data);
+      const pending = parsePending(rawPending);
+      if (pending) {
+        returnHref = pending.returnHref;
+        retryHref = bridgeUrl(pending);
       } else {
         window.sessionStorage.removeItem(PENDING_KEY);
       }

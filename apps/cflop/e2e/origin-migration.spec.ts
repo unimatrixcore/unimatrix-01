@@ -1,5 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
 
+function markedRedirectTarget(href: string): string {
+  const url = new URL(href);
+  url.search = "?__cflop_migrate=1&" + url.search.slice(1);
+  return url.href;
+}
+
 async function serveMigrationWithRedirects(page: Page): Promise<string[]> {
   const bridgeVisits: string[] = [];
   await page.route(
@@ -12,7 +18,9 @@ async function serveMigrationWithRedirects(page: Page): Promise<string[]> {
         } else if (!url.pathname.startsWith("/assets/")) {
           await route.fulfill({
             status: 301,
-            headers: { location: "https://cflop.us" + url.pathname + url.search },
+            headers: {
+              location: markedRedirectTarget("https://cflop.us" + url.pathname + url.search),
+            },
           });
           return;
         }
@@ -41,7 +49,7 @@ for (const oldHost of ["cflop.unimatrix-01.dev", "cube.unimatrix-01.dev"]) {
       { source: oldHost },
     );
     // Start where the HTTP redirect lands: Playwright does not intercept a redirect's target.
-    await page.goto("https://cflop.us/learn?migration-check=1#case");
+    await page.goto(markedRedirectTarget("https://cflop.us/learn?migration-check=1#case"));
     await expect(page).toHaveURL("https://cflop.us/learn?migration-check=1#case");
     await expect(page.locator("main")).toBeVisible();
     expect(
@@ -76,7 +84,7 @@ test("recovers homepage data at the redirected destination with its query and fr
       localStorage.setItem("cube-trainer:progress:oll", '{"oll-1":"known"}');
     }
   });
-  await page.goto("https://cflop.us/?from=bookmark#saved");
+  await page.goto(markedRedirectTarget("https://cflop.us/?from=bookmark#saved"));
   await expect(page).toHaveURL("https://cflop.us/?from=bookmark#saved");
   await expect(page.locator("main")).toBeVisible();
   expect(await page.evaluate(() => localStorage.getItem("cflop:progress:oll"))).toBe(
@@ -87,13 +95,35 @@ test("recovers homepage data at the redirected destination with its query and fr
 
 test("checks empty old profiles once without looping on reload", async ({ page }) => {
   const bridgeVisits = await serveMigrationWithRedirects(page);
-  await page.goto("https://cflop.us/drill?fresh=1#start");
+  await page.goto(markedRedirectTarget("https://cflop.us/drill?fresh=1#start"));
   await expect(page).toHaveURL("https://cflop.us/drill?fresh=1#start");
   await expect(page.locator("main")).toBeVisible();
   expect(bridgeVisits).toEqual(["cflop.unimatrix-01.dev", "cube.unimatrix-01.dev"]);
   await page.reload();
   await expect(page.locator("main")).toBeVisible();
   expect(bridgeVisits).toHaveLength(2);
+  await page.goto(markedRedirectTarget("https://cflop.us/drill?fresh=1#start"));
+  await expect(page).toHaveURL("https://cflop.us/drill?fresh=1#start");
+  await expect(page.locator("main")).toBeVisible();
+  expect(bridgeVisits).toHaveLength(2);
+});
+
+test("direct new-domain visitors never visit old hosts or mark migration complete", async ({
+  page,
+}) => {
+  const bridgeVisits = await serveMigrationWithRedirects(page);
+  const documents: string[] = [];
+  page.on("request", (request) => {
+    if (request.isNavigationRequest()) documents.push(request.url());
+  });
+  await page.goto("https://cflop.us/?new=1#start");
+  await expect(page.locator("main")).toBeVisible();
+  await expect(page).toHaveURL("https://cflop.us/?new=1#start");
+  expect(bridgeVisits).toEqual([]);
+  expect(documents).toEqual(["https://cflop.us/?new=1"]);
+  expect(
+    await page.evaluate(() => localStorage.getItem("cflop:origin-migration-complete:v1")),
+  ).toBeNull();
 });
 
 test("does not visit old profiles when destination already has progress", async ({ page }) => {
@@ -103,7 +133,7 @@ test("does not visit old profiles when destination already has progress", async 
       localStorage.setItem("cflop:progress:oll", '{"oll-2":"known"}');
     }
   });
-  await page.goto("https://cflop.us/learn");
+  await page.goto(markedRedirectTarget("https://cflop.us/learn"));
   await expect(page).toHaveURL("https://cflop.us/learn");
   await expect(page.locator("main")).toBeVisible();
   expect(bridgeVisits).toEqual([]);
@@ -125,7 +155,7 @@ test("retries a blocked source before initializing destination storage", async (
       return readSessionItem(key);
     };
   });
-  await page.goto("https://cflop.us/learn?retry=1#case");
+  await page.goto(markedRedirectTarget("https://cflop.us/learn?retry=1#case"));
   await expect(
     page.getByRole("heading", { name: "Your saved progress could not be transferred" }),
   ).toBeVisible();
@@ -156,7 +186,7 @@ test("lets a user continue after source storage fails even with a long fragment"
     };
   });
   const targetHref = "https://cflop.us/learn#" + "x".repeat(2049);
-  await page.goto(targetHref);
+  await page.goto(markedRedirectTarget(targetHref));
   await expect(
     page.getByRole("heading", { name: "Your saved progress could not be transferred" }),
   ).toBeVisible();

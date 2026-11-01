@@ -405,20 +405,30 @@ Keep `cflop.unimatrix-01.dev` and `cube.unimatrix-01.dev` routed to the live
 origin-bound: `/origin-migration` and its `/assets/*` scripts must remain
 reachable on each old host even when normal URLs redirect.
 
-Before initializing saved state, an empty `cflop.us` profile visits the old
-hosts through that transfer URL using top-level navigation. The transfer
-preserves the requested destination path, query string and fragment. Existing
-destination data always wins, and source data remains untouched. A completion
-marker prevents repeated visits after an import or after both old profiles
-were checked and empty. Storage failures offer Retry and Continue without
-importing; continuing does not permanently mark the failed transfer complete.
+Cloudflare marks old-domain arrivals with `__cflop_migrate=1`. Before
+initializing saved state, the app strips that query marker and checks whether
+the destination profile is empty and unchecked. Only marked arrivals meeting
+those conditions visit the old hosts through the transfer URL using top-level
+navigation; direct `cflop.us` visits never initiate these trips. The transfer
+preserves the requested destination path, remaining query string and fragment.
+Existing destination data always wins, and source data remains untouched. A
+completion marker prevents repeated visits after an import or after both old
+profiles were checked and empty. Storage failures offer Retry and Continue
+without importing; continuing does not permanently mark the failed transfer
+complete.
 
 Deploy the migration image and verify the transfer URL and scripts on both old
 hosts **before enabling Cloudflare's 301**. Match only the old hostnames,
 exclude the exact `/origin-migration` path and paths starting with `/assets/`,
-and use the dynamic target `concat("https://cflop.us", http.request.uri.path)`
-with Preserve query string enabled. A redirect on the transfer URL or its
-scripts prevents old-origin storage from being read. Verify the homepage and
+and use this dynamic target:
+
+```text
+concat("https://cflop.us", http.request.uri.path, "?__cflop_migrate=1&", http.request.uri.query)
+```
+
+Turn Preserve query string **off**: the expression already copies the original
+query after the migration marker. A redirect on the transfer URL or its scripts
+prevents old-origin storage from being read. Verify the homepage and
 deep-link 301 responses, then exercise a browser transfer with isolated test
 storage before submitting Search Console's change of address.
 

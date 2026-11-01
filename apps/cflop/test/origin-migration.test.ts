@@ -145,8 +145,14 @@ describe("browser origin migration", () => {
     return { replace, reload, replaceState };
   }
 
+  function markedUrl(href: string): string {
+    const target = new URL(href);
+    target.search = "__cflop_migrate=1" + (target.search ? "&" + target.search.slice(1) : "");
+    return target.href;
+  }
+
   function startProbe(href = "https://cflop.us/learn?set=pll#case") {
-    const navigation = at(href);
+    const navigation = at(markedUrl(href));
     expect(handleOriginMigration(document.createElement("div"))).toBe(true);
     return new URL(navigation.replace.mock.calls[0]![0] as string);
   }
@@ -209,9 +215,10 @@ describe("browser origin migration", () => {
 
   it("does not probe either old origin when destination already has data", () => {
     localStorage.setItem("cube-trainer:algorithm-set", "malformed");
-    const navigation = at("https://cflop.us/drill");
+    const navigation = at("https://cflop.us/drill?__cflop_migrate=1");
     expect(handleOriginMigration(document.createElement("div"))).toBe(false);
     expect(navigation.replace).not.toHaveBeenCalled();
+    expect(navigation.replaceState).toHaveBeenCalledWith(null, "", "https://cflop.us/drill");
     vi.unstubAllGlobals();
   });
 
@@ -231,7 +238,7 @@ describe("browser origin migration", () => {
 
   it("does not turn an interrupted probe into a navigation loop", () => {
     startProbe();
-    const navigation = at("https://cflop.us/learn?set=pll#case");
+    const navigation = at("https://cflop.us/learn?__cflop_migrate=1&set=pll#case");
     const root = document.createElement("div");
     const render = vi.fn();
     expect(handleOriginMigration(root, render)).toBe(true);
@@ -248,7 +255,7 @@ describe("browser origin migration", () => {
   });
 
   it("offers a usable skip if session storage is unavailable", () => {
-    at("https://cflop.us/drill?set=pll#case");
+    at("https://cflop.us/drill?__cflop_migrate=1&set=pll#case");
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new DOMException("Blocked", "SecurityError");
     });
@@ -291,6 +298,91 @@ describe("browser origin migration", () => {
     expect(navigation.replace).toHaveBeenCalledWith(first.href);
     vi.unstubAllGlobals();
   });
+
+  it("does not read storage or visit old origins for a direct destination visit", () => {
+    sessionStorage.setItem("cflop:origin-migration-pending:v1", "stale pending state");
+    const navigation = at("https://cflop.us/learn?set=pll#case");
+    const read = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new DOMException("Blocked", "SecurityError");
+    });
+    expect(handleOriginMigration(document.createElement("div"))).toBe(false);
+    expect(read).not.toHaveBeenCalled();
+    expect(navigation.replace).not.toHaveBeenCalled();
+    expect(navigation.replaceState).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it("strips the marker without reencoding other query parameters or fragments", () => {
+    const bridge = startProbe("https://cflop.us/learn?q=a%20b&x=one+two&x=three#case");
+    const probe = JSON.parse(decodeURIComponent(bridge.hash.slice("#cflop-probe=".length))) as {
+      returnHref: string;
+    };
+    expect(probe.returnHref).toBe("https://cflop.us/learn?q=a%20b&x=one+two&x=three#case");
+    vi.unstubAllGlobals();
+  });
+
+  it.each(["%xx", encodeURIComponent(JSON.stringify({ unexpected: true }))])(
+    "retries the trusted pending bridge after a malformed callback %s",
+    (badFragment) => {
+      const bridge = startProbe();
+      const navigation = at("https://cflop.us/learn?set=pll#cflop-probe-result=" + badFragment);
+      const root = document.createElement("div");
+      expect(handleOriginMigration(root)).toBe(true);
+      root.querySelector("button")!.click();
+      expect(navigation.replace).toHaveBeenCalledWith(bridge.href);
+      expect(navigation.reload).not.toHaveBeenCalled();
+      vi.unstubAllGlobals();
+    },
+  );
+
+  it("ignores a mismatched callback return URL when choosing Retry and Continue", () => {
+    const bridge = startProbe();
+    const result = bridgeResult(bridge);
+    const callback = JSON.parse(
+      decodeURIComponent(result.hash.slice("#cflop-probe-result=".length)),
+    ) as {
+      probe: { nonce: string; returnHref: string };
+    };
+    callback.probe.nonce = crypto.randomUUID();
+    callback.probe.returnHref = "https://cflop.us/untrusted-return";
+    result.hash = "#cflop-probe-result=" + encodeURIComponent(JSON.stringify(callback));
+    const navigation = at(result.href);
+    const root = document.createElement("div");
+    const render = vi.fn();
+    expect(handleOriginMigration(root, render)).toBe(true);
+    root.querySelector("button")!.click();
+    expect(navigation.replace).toHaveBeenCalledWith(bridge.href);
+    root.querySelector("a")!.click();
+    expect(navigation.replaceState).toHaveBeenCalledWith(
+      null,
+      "",
+      "https://cflop.us/learn?set=pll#case",
+    );
+    expect(render).toHaveBeenCalledOnce();
+    vi.unstubAllGlobals();
+  });
+
+  it.each([null, "not JSON", '{"version":99}'])(
+    "starts a fresh probe after one Retry with absent or corrupt callback state %s",
+    (pending) => {
+      const bridge = startProbe();
+      const result = bridgeResult(bridge);
+      if (pending === null) sessionStorage.removeItem("cflop:origin-migration-pending:v1");
+      else sessionStorage.setItem("cflop:origin-migration-pending:v1", pending);
+      const navigation = at(result.href);
+      const root = document.createElement("div");
+      expect(handleOriginMigration(root)).toBe(true);
+      root.querySelector("button")!.click();
+      const retry = navigation.replace.mock.calls[0]![0] as string;
+      expect(retry).toBe("https://cflop.us/learn?__cflop_migrate=1&set=pll");
+      const restarted = at(retry);
+      expect(handleOriginMigration(document.createElement("div"))).toBe(true);
+      expect(restarted.replace).toHaveBeenCalledWith(
+        expect.stringContaining("https://cflop.unimatrix-01.dev/origin-migration?attempt="),
+      );
+      vi.unstubAllGlobals();
+    },
+  );
 
   it("rejects bridge metadata targeting another origin", () => {
     const hash =
