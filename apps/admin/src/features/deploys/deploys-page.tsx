@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiClientError } from "@unimatrix/api-client";
 import { ToolMasterDetail } from "@unimatrix/chrome/tool";
@@ -52,6 +52,8 @@ import {
   healthQueryOptions,
   historyQueryOptions,
   deployQueryKeys,
+  createDeployDetailsPrefetcher,
+  type DeployDetailsPrefetcher,
 } from "./queries";
 import {
   attemptNeedsAttention,
@@ -99,6 +101,22 @@ export function DeploysPage() {
   const [selectedApp, setSelectedApp] = useState<string | null>(null);
   const [tab, setTab] = useState("overview");
   const [attemptId, setAttemptId] = useState<string | null>(null);
+  const detailPrefetcher = useRef<DeployDetailsPrefetcher | null>(null);
+  const appIds = (state.data?.apps ?? [])
+    .map((entry) => entry.appDir)
+    .sort()
+    .join("\n");
+  useEffect(() => {
+    const prefetcher = createDeployDetailsPrefetcher(queryClient, client);
+    detailPrefetcher.current = prefetcher;
+    return () => {
+      prefetcher.stop();
+      detailPrefetcher.current = null;
+    };
+  }, [client, queryClient]);
+  useEffect(() => {
+    void detailPrefetcher.current?.prefetch(appIds ? appIds.split("\n") : []);
+  }, [appIds, client, queryClient]);
   const apps = [...(state.data?.apps ?? [])].sort((a, b) => {
     const rank = (app: typeof a) => {
       const latest = attempts.data?.attempts
@@ -150,11 +168,13 @@ export function DeploysPage() {
       setTab("deploys");
       toast.success("Deployment request recorded. Follow its outcome in Deploys.");
       await queryClient.invalidateQueries({ queryKey: deployQueryKeys.all });
+      await detailPrefetcher.current?.prefetch(appIds ? appIds.split("\n") : []);
     },
     onError: (error) => toast.error(describeDeployError(error)),
   });
   async function refresh() {
-    await queryClient.refetchQueries({ queryKey: deployQueryKeys.all, type: "active" });
+    await queryClient.invalidateQueries({ queryKey: deployQueryKeys.all });
+    await detailPrefetcher.current?.prefetch(appIds ? appIds.split("\n") : []);
     const failed = queryClient
       .getQueriesData({ queryKey: deployQueryKeys.all })
       .some(([key]) => queryClient.getQueryState(key)?.status === "error");
