@@ -17,7 +17,13 @@ const declaration = {
     { name: "PORT", source: { kind: "generated", name: "PORT", value: "3001" } },
     {
       name: "IMAGE_TAG",
-      source: { kind: "variable", name: "IMAGE_TAG", required: false, defaultValue: "latest" },
+      source: {
+        kind: "variable",
+        name: "IMAGE_TAG",
+        required: false,
+        defaultValue: "latest",
+        bootstrap: true,
+      },
     },
     {
       name: "KEY",

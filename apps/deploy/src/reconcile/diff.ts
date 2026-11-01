@@ -1,3 +1,4 @@
+import type { RoutingComparison } from "./routing-policy.js";
 import type { DeployDesiredEnvVar, DeployDesiredService } from "@unimatrix/deploy-config";
 
 import type {
@@ -47,6 +48,7 @@ export interface MatchedAppDiff {
   readonly envFindings: readonly EnvFinding[];
   readonly settingFindings: readonly SettingFinding[];
   readonly inSync: boolean;
+  readonly routing?: RoutingComparison;
 }
 
 export interface MissingAppDiff {

@@ -315,6 +315,7 @@ export const DEPLOY_DECLARATIONS: readonly DeployDeclaration[] = [
           kind: "variable",
           name: "DEPLOY_TLS_KEY_BASE64",
           required: true,
+          bootstrap: true,
         },
       },
       {
@@ -323,6 +324,7 @@ export const DEPLOY_DECLARATIONS: readonly DeployDeclaration[] = [
           kind: "variable",
           name: "DOKPLOY_API_KEY",
           required: true,
+          bootstrap: true,
         },
       },
       {
@@ -331,6 +333,13 @@ export const DEPLOY_DECLARATIONS: readonly DeployDeclaration[] = [
           kind: "variable",
           name: "DOKPLOY_BASE_URL",
           required: true,
+        },
+      },
+      {
+        name: "DOKPLOY_PUBLIC_URL",
+        source: {
+          kind: "literal",
+          value: "https://dokploy.unimatrix-01.dev",
         },
       },
       {
@@ -473,6 +482,7 @@ export const DEPLOY_DECLARATIONS: readonly DeployDeclaration[] = [
           kind: "variable",
           name: "SECRETS_KEKS",
           required: true,
+          bootstrap: true,
         },
       },
       {
@@ -489,6 +499,7 @@ export const DEPLOY_DECLARATIONS: readonly DeployDeclaration[] = [
           kind: "variable",
           name: "SECRETS_TLS_KEY_BASE64",
           required: true,
+          bootstrap: true,
         },
       },
     ],

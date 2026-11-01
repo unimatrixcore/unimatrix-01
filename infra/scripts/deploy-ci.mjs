@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { execFileSync } from "node:child_process";
 
 function required(env, name) {
   if (!env[name]) throw new Error(`Missing ${name}.`);
@@ -49,6 +50,18 @@ export async function deployCi({
 } = {}) {
   const tag = required(env, "IMAGE_TAG");
   if (!/^[a-f0-9]{40}$/u.test(tag)) throw new Error("Invalid deployment commit.");
+  let commitSubject = null;
+  try {
+    const subject = execFileSync("git", ["show", "--no-patch", "--format=%s", tag], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      maxBuffer: 65_536,
+    }).trim();
+    if (subject.length > 0 && !/\p{Cc}/u.test(subject)) commitSubject = subject.slice(0, 240);
+  } catch {
+    // Missing checkout metadata does not change deployment image provenance.
+  }
   if (env.DEPLOY_ATTEMPTS_ENABLED !== "true")
     throw new Error("Coordinated deployment execution must be enabled; no writes permitted.");
   const reportBase = reportingUrl(required(env, "DEPLOY_REPORT_URL"));
@@ -131,6 +144,13 @@ export async function deployCi({
     }
     throw new Error("Durable deployment report unavailable.");
   }
+  const health = await call("/health", undefined, true);
+  const supportsCommitSubject =
+    health.result === "acknowledged" &&
+    (health.response.headers.get("X-Deploy-Capabilities") ?? "")
+      .split(",")
+      .some((capability) => capability.trim() === "commit-subject-v1");
+  await health.response?.body?.cancel().catch(() => undefined);
   const projectResult = await call("/api/project.all");
   if (projectResult.result !== "acknowledged") throw new Error("Dokploy project discovery failed.");
   let projects;
@@ -171,6 +191,7 @@ export async function deployCi({
         app,
         trigger: "ci",
         image: publications.get(app),
+        ...(supportsCommitSubject ? { commitSubject } : {}),
       };
       const intent = await reserve(request);
       if (

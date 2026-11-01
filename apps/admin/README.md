@@ -1,13 +1,12 @@
 # Admin console
 
 The administration console is a Vite SPA built from `apps/admin/Dockerfile`
-and served by nginx on port 8080, matching the other three static apps.
+and served by nginx on port 8080, like the other static apps.
 
 For production setup, follow the
 [new-app onboarding checklist](../../docs/deployment.md#new-app-onboarding).
 
-Content (the blog/project CMS) and Secrets (the credential console) are the
-built sections, on `@unimatrix/chrome`'s tool shell; the remaining section
+Content, Secrets and Deploys run on `@unimatrix/chrome`'s tool shell; the remaining section
 routes are still placeholders. It is deployed and reachable:
 `infra/docker/admin-compose.yaml` is the Dokploy Compose file, and
 `admin.unimatrix-01.dev` sits behind Cloudflare Access, which is what makes the
@@ -40,3 +39,14 @@ loads `clerk.browser.js` from its frontend-API host and avatars from
 `img.clerk.com`; that host is baked into the bundle at build time and a static
 nginx conf cannot name it. Tightening further means templating the conf
 (nginx's `envsubst` entrypoint) from the same build arg, not guessing.
+
+## Deployments
+
+The Deploys section reads deployment state, attempt history, per-attempt diagnostics, health
+history, scheduled reconciliation findings and public declarations through the admin API.
+Redeploy queues the current configuration; the rollback menu offers retained, verified landed attempts.
+Configuration is read-only. `DOKPLOY_PUBLIC_URL` on the deploy service supplies operator links.
+
+Log delivery includes durable lifecycle diagnostics and recognized Dokploy events. Other upstream
+output remains withheld because it can contain credential values. A completed Dokploy process
+does not establish that the requested immutable image is running.

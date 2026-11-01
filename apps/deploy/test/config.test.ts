@@ -146,3 +146,34 @@ void test("health history path defaults locally and rejects a blank override", (
     /DEPLOY_DATABASE_PATH must not be empty/,
   );
 });
+
+void test("public Dokploy origin is optional and rejects unsafe browser links", () => {
+  assert.equal(loadDeployRuntimeConfig(BASE_ENV).dokployPublicUrl, null);
+  assert.equal(
+    loadDeployRuntimeConfig({ ...BASE_ENV, DOKPLOY_PUBLIC_URL: " https://dokploy.example/ " })
+      .dokployPublicUrl,
+    "https://dokploy.example",
+  );
+  for (const value of [
+    "https://user:pass@dokploy.example",
+    "https://dokploy.example/path",
+    "https://dokploy.example/?token=value",
+    "https://dokploy.example/#fragment",
+    "javascript:alert(1)",
+    "not-a-url",
+  ]) {
+    assert.throws(
+      () => loadDeployRuntimeConfig({ ...BASE_ENV, DOKPLOY_PUBLIC_URL: value }),
+      /DOKPLOY_PUBLIC_URL/,
+    );
+  }
+  assert.throws(
+    () =>
+      loadDeployRuntimeConfig({
+        ...BASE_ENV,
+        NODE_ENV: "production",
+        DOKPLOY_PUBLIC_URL: "http://dokploy.example",
+      }),
+    /HTTPS in production/,
+  );
+});

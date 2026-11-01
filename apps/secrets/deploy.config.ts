@@ -28,7 +28,7 @@ export default nodeApiApp({
     { name: "LOG_LEVEL", value: { kind: "literal", value: "info" } },
     {
       name: "SECRETS_KEKS",
-      value: { kind: "variable", name: "SECRETS_KEKS" },
+      value: { kind: "variable", name: "SECRETS_KEKS", bootstrap: true },
       comment: [
         "`<version>:<base64key>[,<version>:<base64key>...]`. Compose passes",
         "nothing to a container that is not named here — the API's CLERK_*",
@@ -55,7 +55,10 @@ export default nodeApiApp({
         "on a port the API now expects TLS on.",
       ],
     },
-    { name: "SECRETS_TLS_KEY_BASE64", value: { kind: "variable", name: "SECRETS_TLS_KEY_BASE64" } },
+    {
+      name: "SECRETS_TLS_KEY_BASE64",
+      value: { kind: "variable", name: "SECRETS_TLS_KEY_BASE64", bootstrap: true },
+    },
     {
       name: "DB_MIGRATE_ON_START",
       value: { kind: "literal", value: '"true"' },

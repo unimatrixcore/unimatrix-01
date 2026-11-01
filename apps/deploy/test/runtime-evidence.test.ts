@@ -206,3 +206,65 @@ void test("GHCR manifest reader authenticates anonymously, requests immutable di
     globalThis.fetch = original;
   }
 });
+
+void test("runtime metadata is selected from Docker state and explicit image labels", async () => {
+  const snapshot = await collectRuntimeEvidence(
+    docker({
+      container: {
+        Id: id,
+        Image: config,
+        Name: "/api-generated-1",
+        StartedAt: "2026-10-31T00:00:00.000Z",
+        Health: "healthy",
+        ImageReference: `${repository}:main-tag`,
+      },
+      image: {
+        Id: config,
+        RepoDigests: [`${repository}@${digest}`],
+        Os: "linux",
+        Architecture: "amd64",
+        Revision: "c".repeat(40),
+        CommitSubject: "Build deploys tab",
+      },
+    }),
+    readManifest,
+    apps,
+    () => now,
+  );
+  assert.deepEqual(snapshot.evidence[0]?.metadata, {
+    name: "api-generated-1",
+    startedAt: Date.parse("2026-10-31T00:00:00.000Z"),
+    health: "healthy",
+    imageTag: "main-tag",
+    commit: "c".repeat(40),
+    commitSubject: "Build deploys tab",
+  });
+});
+
+void test("an oversized optional commit subject does not discard immutable image evidence", async () => {
+  const snapshot = await collectRuntimeEvidence(
+    docker({
+      container: { Id: id, Image: config, Name: "/api-generated-1" },
+      image: {
+        Id: config,
+        RepoDigests: [`${repository}@${digest}`],
+        Os: "linux",
+        Architecture: "amd64",
+        Revision: "c".repeat(40),
+        CommitSubject: "x".repeat(513),
+      },
+    }),
+    readManifest,
+    apps,
+    () => now,
+  );
+  assert.equal(snapshot.evidence.length, 1);
+  assert.deepEqual(snapshot.evidence[0]?.image, {
+    repository,
+    digest,
+    digestKind: "manifest",
+    platform: "linux/amd64",
+  });
+  assert.equal(snapshot.evidence[0]?.metadata?.commit, "c".repeat(40));
+  assert.equal(snapshot.evidence[0]?.metadata?.commitSubject, null);
+});

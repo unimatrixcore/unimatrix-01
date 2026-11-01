@@ -83,9 +83,15 @@ export function buildApp(
   app.addHook("onClose", () => detector.stop());
   app.decorate(
     "containerObserver",
-    createContainerObserver(options.dokploy, DEPLOY_DESIRED_STATE, Date.now, () => {
-      app.log.warn("container observation poll failed");
-    }),
+    createContainerObserver(
+      options.dokploy,
+      DEPLOY_DESIRED_STATE,
+      Date.now,
+      () => {
+        app.log.warn("container observation poll failed");
+      },
+      () => app.readRuntimeEvidence(),
+    ),
   );
   setupCorePlugins(app);
   const serviceTokens = options.serviceTokens ?? openServiceTokenStore(config.databasePath);

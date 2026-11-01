@@ -5,6 +5,7 @@ import { dirname } from "node:path";
 import Database from "better-sqlite3";
 import {
   deployAttemptIntentSchema,
+  hasUnresolvedDeploymentWork as hasUnresolvedWork,
   deployManualRedeployInputSchema,
   deployRollbackInputSchema,
   type DeployRollbackInput,
@@ -26,6 +27,7 @@ import {
   MAX_ATTEMPT_RECORDS,
   expireAttempt,
   applyRuntimeEvidence,
+  describeAttemptFailure,
 } from "./model.js";
 
 export interface ManualRedeployReservation {
@@ -91,19 +93,6 @@ function validateTime(now: number): void {
     throw new Error("Invalid deployment observation time.");
   }
 }
-function hasUnresolvedWork(record: DeployAttemptRecord): boolean {
-  return (
-    record.outcome !== "failed" &&
-    record.outcome !== "landed" &&
-    record.outcome !== "recreated" &&
-    record.recreatedAt == null &&
-    record.lateLandedAt === null &&
-    (record.outcome !== "timed-out" ||
-      record.queue !== null ||
-      record.tagWrite === "started" ||
-      record.tagWrite === "unknown")
-  );
-}
 
 export function openDeploymentAttemptStore(path: string): DeploymentAttemptStore {
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
@@ -135,6 +124,11 @@ export function openDeploymentAttemptStore(path: string): DeploymentAttemptStore
       const retained: DeployAttemptRecord[] = [];
       for (const record of records) {
         expireAttempt(record, now);
+        record.completedAt ??=
+          record.landedAt ??
+          record.recreatedAt ??
+          (record.outcome === "timed-out" ? record.deadlineAt : null);
+        record.failureReason = describeAttemptFailure(record);
         if (record.deadlineAt < now - ATTEMPT_RETENTION_MS && !hasUnresolvedWork(record)) {
           db.prepare("DELETE FROM deployment_attempts WHERE id = ?").run(record.id);
         } else {
@@ -223,6 +217,9 @@ export function openDeploymentAttemptStore(path: string): DeploymentAttemptStore
             runAttempt: null,
             trigger: "rollback",
             image: target.image,
+            commitSubject: target.commitSubject ?? null,
+            completedAt: null,
+            failureReason: null,
             id: randomUUID(),
             reporterId,
             requestedAt: now,
@@ -320,6 +317,9 @@ export function openDeploymentAttemptStore(path: string): DeploymentAttemptStore
               app: record.app,
               trigger: record.trigger,
               image: record.image,
+              ...(record.commitSubject !== undefined
+                ? { commitSubject: record.commitSubject }
+                : {}),
             };
             if (
               record.reporterId !== reporterId ||
@@ -348,6 +348,8 @@ export function openDeploymentAttemptStore(path: string): DeploymentAttemptStore
             after: null,
             landedAt: null,
             lateLandedAt: null,
+            completedAt: null,
+            failureReason: null,
           };
           if (
             records.some((previous) => previous.app === record.app && hasUnresolvedWork(previous))
@@ -386,6 +388,7 @@ export function openDeploymentAttemptStore(path: string): DeploymentAttemptStore
             app: parsed.app,
             trigger: "manual",
             image: null,
+            commitSubject: null,
             recreatedAt: null,
             actorUserId: parsed.actorUserId,
             requestId: parsed.requestId,
@@ -402,6 +405,8 @@ export function openDeploymentAttemptStore(path: string): DeploymentAttemptStore
             after: null,
             landedAt: null,
             lateLandedAt: null,
+            completedAt: null,
+            failureReason: null,
           };
           db.prepare(
             "INSERT INTO deployment_attempts (id, request_key, requested_at, record) VALUES (?, ?, ?, ?)",
@@ -427,9 +432,13 @@ export function openDeploymentAttemptStore(path: string): DeploymentAttemptStore
         }
         record[field] = parsed.result;
         if (record.outcome === "incomplete" || record.outcome === "queued") {
-          if (parsed.result === "rejected") record.outcome = "failed";
-          else if (field === "queue" && parsed.result === "acknowledged") record.outcome = "queued";
+          if (parsed.result === "rejected") {
+            record.outcome = "failed";
+            record.completedAt = now;
+          } else if (field === "queue" && parsed.result === "acknowledged")
+            record.outcome = "queued";
         }
+        record.failureReason = describeAttemptFailure(record);
         writeRecord(record);
         return record;
       }),

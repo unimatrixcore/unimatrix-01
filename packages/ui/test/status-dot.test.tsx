@@ -4,7 +4,7 @@ import { StatusDot } from "../src/components/ui/status-dot.js";
 import { TooltipProvider } from "../src/components/ui/tooltip.js";
 
 describe("StatusDot", () => {
-  it("names status and detail without adding a tab stop", () => {
+  it("names status and detail and exposes the tooltip to keyboard users", async () => {
     render(
       <TooltipProvider>
         <StatusDot tone="warn" label="Starting" detail="Waiting for a probe" />
@@ -12,9 +12,11 @@ describe("StatusDot", () => {
     );
     const dot = screen.getByRole("img", { name: "Starting: Waiting for a probe" });
     expect(dot.tagName).toBe("SPAN");
-    expect(dot).not.toHaveAttribute("tabindex");
+    expect(dot).toHaveAttribute("tabindex", "0");
     expect(dot).toHaveClass("bg-amber-500");
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    fireEvent.focus(dot);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Starting: Waiting for a probe");
   });
   it("shows its full description on hover and allows a consumer class", async () => {
     render(

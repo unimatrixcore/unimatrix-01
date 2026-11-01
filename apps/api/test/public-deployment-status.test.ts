@@ -13,6 +13,10 @@ function state(): DeployStateResponse {
     apps: ["web", "api", "private"].map((appDir) => ({
       appDir,
       publicStatus: appDir !== "private",
+      dokployUrl: null,
+      domains: null,
+      metadataObservedAt: null,
+      metadataFreshness: "missing",
       container: {
         appDir,
         kind: "unknown",

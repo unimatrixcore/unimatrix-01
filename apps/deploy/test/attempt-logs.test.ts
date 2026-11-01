@@ -3,7 +3,7 @@ import test from "node:test";
 import type { DeployAttemptRecord } from "@unimatrix/shared";
 
 import { buildApp } from "../src/app.js";
-import { readAttemptLogs } from "../src/attempts/logs.js";
+import { attemptDiagnosticLines, readAttemptLogs } from "../src/attempts/logs.js";
 import { openDeploymentAttemptStore } from "../src/attempts/store.js";
 import { loadDeployRuntimeConfig } from "../src/config.js";
 import type { DokployClient } from "../src/dokploy/client.js";
@@ -43,6 +43,57 @@ const record: DeployAttemptRecord = {
   landedAt: null,
   lateLandedAt: null,
 };
+
+void test("durable diagnostics explain rejected, unresolved and late deployment stages without raw output", () => {
+  assert.deepEqual(attemptDiagnosticLines(record), [
+    "▶ Deployment attempt accepted and recorded.",
+    "Immutable target image recorded from CI publication.",
+    "No baseline container was recorded; replacement cannot be verified.",
+    "Image tag update acknowledged.",
+    "✖ Deployment queue request rejected.",
+  ]);
+  for (const state of ["started", "acknowledged", "rejected", "unknown"] as const) {
+    const result = attemptDiagnosticLines({ ...record, tagWrite: state, queue: state });
+    assert.equal(result.length, 5);
+    assert.equal(
+      result.some((line) => line.includes("private-secret")),
+      false,
+    );
+  }
+  assert.ok(
+    attemptDiagnosticLines({ ...record, outcome: "landed" }).includes(
+      "✔ Requested image verified in a replacement container.",
+    ),
+  );
+  assert.ok(
+    attemptDiagnosticLines({ ...record, trigger: "rollback" }).includes(
+      "Rollback targets a previously verified deployed image.",
+    ),
+  );
+  const manual = {
+    ...record,
+    trigger: "manual" as const,
+    image: null,
+    baseline: { containerId: "a".repeat(64), observedAt: 1 },
+    tagWrite: null,
+    queue: null,
+  };
+  assert.ok(
+    attemptDiagnosticLines({ ...manual, outcome: "recreated" }).includes(
+      "✔ Replacement container observed; deployed image remains unverified.",
+    ),
+  );
+  assert.ok(
+    attemptDiagnosticLines({ ...manual, outcome: "timed-out", recreatedAt: 3 }).includes(
+      "Replacement container observed after the deployment deadline; image remains unverified.",
+    ),
+  );
+  assert.ok(
+    attemptDiagnosticLines({ ...record, outcome: "timed-out", lateLandedAt: 3 }).includes(
+      "Requested image verified after the deployment deadline.",
+    ),
+  );
+});
 
 function fixture(attemptId = id) {
   const compose = {
@@ -124,6 +175,7 @@ void test("an older failed attempt retrieves its own source instead of the newes
     app: "api",
     attemptId: id,
     policy: "recognized-events-only",
+    diagnosticLines: attemptDiagnosticLines(record),
     status: "available",
     events: ["deployment-initialized", "deployment-failed"],
     withheld: false,
@@ -177,6 +229,7 @@ void test("association refuses absent, duplicate, foreign, and colliding sources
         app: "api",
         attemptId: id,
         policy: "recognized-events-only",
+        diagnosticLines: attemptDiagnosticLines(record),
         status: "unavailable",
         reason,
       },
@@ -206,6 +259,7 @@ void test("only exact recognized lines survive arbitrary output, controls and cr
     app: "api",
     attemptId: id,
     policy: "recognized-events-only",
+    diagnosticLines: attemptDiagnosticLines(record),
     status: "available",
     events: ["deployment-initialized", "deployment-completed"],
     withheld: true,

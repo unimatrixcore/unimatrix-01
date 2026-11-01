@@ -12,6 +12,7 @@ export function createHealthMonitor(
   store: HealthHistoryStore,
   now: () => number = Date.now,
   probe: typeof probeHealth = probeHealth,
+  monotonicNow: () => number = () => performance.now(),
 ): HealthMonitor {
   const abort = new AbortController();
   let active: Promise<void> | undefined;
@@ -21,10 +22,15 @@ export function createHealthMonitor(
       if (active) return active;
       active = Promise.allSettled(
         targets.map(async (target) => {
+          const started = monotonicNow();
           const state = await probe(target, abort.signal);
+          const durationMs = Math.max(0, Math.round(monotonicNow() - started));
           if (abort.signal.aborted) return;
           const checkedAt = now();
-          store.record({ app: target.app, checkedAt, state }, checkedAt);
+          store.record(
+            { app: target.app, checkedAt, state, ...(state === "unknown" ? {} : { durationMs }) },
+            checkedAt,
+          );
         }),
       )
         .then((results) => {

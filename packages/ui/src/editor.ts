@@ -110,7 +110,21 @@ export { STATUS_DOT_CLASSES, STATUS_TEXT_CLASSES, getUptimeTone } from "./lib/st
 export type { StatusTone } from "./lib/status-tone.js";
 export { StatusDot } from "./components/ui/status-dot.js";
 export type { StatusDotProps } from "./components/ui/status-dot.js";
-export { TooltipProvider } from "./components/ui/tooltip.js";
+export {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+  TooltipProvider,
+} from "./components/ui/tooltip.js";
+export { Popover, PopoverTrigger, PopoverContent } from "./components/ui/popover.js";
+export {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+} from "./components/ui/dropdown-menu.js";
 export {
   Card,
   CardHeader,

@@ -16,6 +16,7 @@ export function StatusDot({ tone, label, detail, className }: StatusDotProps) {
       <TooltipTrigger asChild>
         <span
           aria-label={description}
+          tabIndex={0}
           className={cn(
             "inline-block size-2 shrink-0 rounded-full",
             STATUS_DOT_CLASSES[tone],

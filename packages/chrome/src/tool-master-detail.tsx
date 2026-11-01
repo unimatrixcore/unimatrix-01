@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 import { ScrollArea } from "@unimatrix/ui/scroll-area";
-import { cn } from "@unimatrix/ui/public";
+import { Card, cn } from "@unimatrix/ui/public";
 
 export type ToolMasterDetailProps = {
   listHeader: ReactNode;
@@ -9,6 +9,7 @@ export type ToolMasterDetailProps = {
   detail: ReactNode;
   className?: string;
   detailScroll?: "pane" | "managed";
+  variant?: "plain" | "cards";
 };
 
 export function ToolMasterDetail({
@@ -17,7 +18,10 @@ export function ToolMasterDetail({
   detail,
   className,
   detailScroll = "pane",
+  variant = "plain",
 }: ToolMasterDetailProps) {
+  const Pane = variant === "cards" ? Card : "div";
+  const cardProps = variant === "cards" ? { size: "sm" as const } : {};
   return (
     <div
       className={cn(
@@ -25,18 +29,29 @@ export function ToolMasterDetail({
         className,
       )}
     >
-      <div className="flex min-h-0 min-w-0 flex-col">
+      <Pane
+        {...cardProps}
+        className={cn("flex min-h-0 min-w-0 flex-col", variant === "cards" && "gap-0 py-0")}
+      >
         <div className="shrink-0">{listHeader}</div>
         <ScrollArea variant="overlay" className="min-h-0 min-w-0 flex-1">
           {list}
         </ScrollArea>
-      </div>
+      </Pane>
       {detailScroll === "pane" ? (
         <ScrollArea variant="overlay" className="min-h-0 min-w-0">
           {detail}
         </ScrollArea>
       ) : (
-        <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">{detail}</div>
+        <Pane
+          {...cardProps}
+          className={cn(
+            "flex min-h-0 min-w-0 flex-col overflow-hidden",
+            variant === "cards" && "gap-4 px-5 py-4",
+          )}
+        >
+          {detail}
+        </Pane>
       )}
     </div>
   );

@@ -454,3 +454,38 @@ void test("declarations expose committed defaults and secret references without 
     await app.close();
   }
 });
+
+void test("slow optional metadata cannot withhold cached container state or multiply reads", async () => {
+  const { app, headers, client, calls } = fixture();
+  let resume: ((value: DokployProject[]) => void) | undefined;
+  client.getProjects = () => {
+    calls.projects += 1;
+    return new Promise((resolve) => {
+      resume = resolve;
+    });
+  };
+  try {
+    await app.containerObserver.poll();
+    const response = await Promise.race([
+      app.inject({ url: "/deployment/state?app=api", headers }),
+      new Promise<never>((_resolve, reject) => {
+        const deadline = setTimeout(() => {
+          reject(new Error("State exceeded metadata budget"));
+        }, 1500);
+        deadline.unref();
+      }),
+    ]);
+    assert.equal(response.statusCode, 200);
+    const state = response.json<DeployStateResponse>();
+    assert.equal(state.apps[0]?.container.kind, "matched");
+    assert.equal(state.apps[0]?.metadataFreshness, "missing");
+    const second = await app.inject({ url: "/deployment/state?app=api", headers });
+    assert.equal(second.statusCode, 200);
+    assert.equal(calls.projects, 1);
+    assert.ok(resume);
+    resume(projects(["api"]));
+  } finally {
+    resume?.([]);
+    await app.close();
+  }
+});

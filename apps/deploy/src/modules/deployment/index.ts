@@ -16,6 +16,7 @@ import { deploymentExecutionModule } from "./execute.js";
 
 import { PROBE_INTERVAL_MS } from "../../health-history/model.js";
 import { CONTAINER_POLL_INTERVAL_MS } from "../../observe/polling.js";
+import { createServiceMetadataReader } from "../../observe/service-metadata.js";
 import { requireDeployCapability } from "../../plugins/auth.js";
 import { DEPLOY_DESIRED_STATE } from "../../reconcile/desired-state.gen.js";
 
@@ -40,6 +41,11 @@ function unavailable() {
 
 export const deploymentModule: FastifyPluginAsync = (app) => {
   app.register(deploymentExecutionModule);
+  const serviceMetadata = createServiceMetadataReader(
+    app.dokploy,
+    DEPLOY_DESIRED_STATE.map((service) => service.appDir),
+    app.runtimeConfig.dokployPublicUrl,
+  );
   const routes = app.withTypeProvider<ZodTypeProvider>();
   routes.addHook("onRequest", async (_request, reply) => {
     reply.header("Cache-Control", "no-store");
@@ -73,11 +79,12 @@ export const deploymentModule: FastifyPluginAsync = (app) => {
       querystring: deployStateQuerySchema,
       response: { 200: deployStateContract.responseSchema },
     },
-    handler: (request) => {
+    handler: async (request) => {
       const selected = selectApps(request.query.app);
       try {
         const checkedAt = Date.now();
         const snapshot = app.containerObserver.getSnapshot();
+        const metadata = await serviceMetadata.read();
         return deployStateContract.responseSchema.parse({
           checkedAt,
           apps: selected.map((service) => {
@@ -90,6 +97,7 @@ export const deploymentModule: FastifyPluginAsync = (app) => {
             return {
               appDir: service.appDir,
               publicStatus: service.publicStatus === true,
+              ...metadata.get(service.appDir),
               container: {
                 ...container,
                 freshness: freshness(container.observedAt, checkedAt, CONTAINER_POLL_INTERVAL_MS),

@@ -2,6 +2,7 @@ services:
   deploy:
     image: ghcr.io/unimatrixcore/unimatrix-deploy:${IMAGE_TAG}
     environment:
+      DOKPLOY_PUBLIC_URL: https://dokploy.unimatrix-01.dev
       HOST: 0.0.0.0
       PORT: 3001
       NODE_ENV: production

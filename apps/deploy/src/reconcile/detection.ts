@@ -58,7 +58,7 @@ export function createReconciliationDetector(
     status = "checking";
     inFlight = (async () => {
       try {
-        const run = await collectReconcileRun(client, desired);
+        const run = await collectReconcileRun(client, desired, true);
         // Validate before caching: a malformed upstream result must not poison later reads.
         results = deployReconciliationResponseSchema.parse({
           ...snapshot(),

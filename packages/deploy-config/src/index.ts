@@ -127,7 +127,12 @@ export interface DeploySecretRegistryEntry {
  */
 export type DeployComposeValue =
   | { readonly kind: "literal"; readonly value: string }
-  | { readonly kind: "variable"; readonly name: string; readonly default?: string }
+  | {
+      readonly kind: "variable";
+      readonly name: string;
+      readonly default?: string;
+      readonly bootstrap?: boolean;
+    }
   | {
       readonly kind: "secrets-store";
       readonly name: string;
@@ -861,6 +866,7 @@ export type DeployDeclarationSource =
       readonly name: string;
       readonly required: boolean;
       readonly defaultValue?: string;
+      readonly bootstrap?: boolean;
     }
   | {
       readonly kind: "secrets-store";
@@ -899,6 +905,7 @@ function declarationSource(value: DeployComposeValue): DeployDeclarationSource {
         kind: value.kind,
         name: value.name,
         required: value.default === undefined,
+        ...(value.bootstrap === true ? { bootstrap: true } : {}),
         ...(value.default === undefined ? {} : { defaultValue: value.default }),
       };
     case "secrets-store":

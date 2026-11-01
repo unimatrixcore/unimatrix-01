@@ -12,6 +12,10 @@ export default nodeApiApp({
     { name: "DEPLOY_DATABASE_PATH", value: "/data/deploy.sqlite" },
   ],
   composeEnv: [
+    {
+      name: "DOKPLOY_PUBLIC_URL",
+      value: { kind: "literal", value: "https://dokploy.unimatrix-01.dev" },
+    },
     { name: "HOST", value: { kind: "literal", value: "0.0.0.0" } },
     { name: "PORT", value: { kind: "literal", value: "3001" } },
     { name: "NODE_ENV", value: { kind: "literal", value: "production" } },
@@ -29,7 +33,7 @@ export default nodeApiApp({
     },
     {
       name: "DOKPLOY_API_KEY",
-      value: { kind: "variable", name: "DOKPLOY_API_KEY" },
+      value: { kind: "variable", name: "DOKPLOY_API_KEY", bootstrap: true },
       comment: [
         "Unscoped and unexpiring — it can delete every application on the",
         "instance. It comes only from this variable, never lands on",
@@ -58,7 +62,10 @@ export default nodeApiApp({
         "Keep the private key out of images and caller configuration.",
       ],
     },
-    { name: "DEPLOY_TLS_KEY_BASE64", value: { kind: "variable", name: "DEPLOY_TLS_KEY_BASE64" } },
+    {
+      name: "DEPLOY_TLS_KEY_BASE64",
+      value: { kind: "variable", name: "DEPLOY_TLS_KEY_BASE64", bootstrap: true },
+    },
     {
       name: "SECRETS_TLS_CERT_BASE64",
       value: { kind: "variable", name: "SECRETS_TLS_CERT_BASE64" },
