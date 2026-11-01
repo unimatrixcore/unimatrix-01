@@ -529,7 +529,11 @@ describe("DeploysPage", () => {
       const invalidate = vi.spyOn(client, "invalidateQueries");
       fireEvent.click(redeploy);
       await waitFor(() => {
-        expect(request).toHaveBeenCalledWith(adminDeployManualRedeployContract, {
+        expect(
+          request.mock.calls
+            .filter(([contract]) => contract === adminDeployManualRedeployContract)
+            .map(([, options]): unknown => options),
+        ).toContainEqual({
           body: { app: "api", requestId: requestUuid },
         });
         expect(invalidate).toHaveBeenCalledWith({ queryKey: ["admin", "deploys"] });
@@ -575,7 +579,11 @@ describe("DeploysPage", () => {
     ).toHaveLength(0);
     fireEvent.click(within(menu).getByRole("menuitem", { name: /release-previous/u }));
     await waitFor(() => {
-      expect(request).toHaveBeenCalledWith(adminDeployRollbackContract, {
+      expect(
+        request.mock.calls
+          .filter(([contract]) => contract === adminDeployRollbackContract)
+          .map(([, options]): unknown => options),
+      ).toContainEqual({
         body: { app: "api", requestId: requestUuid, targetAttemptId: olderId },
       });
     });
