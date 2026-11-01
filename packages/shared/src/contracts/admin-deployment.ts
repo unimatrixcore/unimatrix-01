@@ -4,6 +4,8 @@ import {
 } from "../schemas/deployment-declarations.js";
 import {
   deployAttemptHistoryResponseSchema,
+  deployManualRedeployRequestSchema,
+  deployAttemptResponseSchema,
   deployAttemptQuerySchema,
   deployAttemptLogsQuerySchema,
   deployAttemptLogsResponseSchema,
@@ -67,3 +69,10 @@ export const adminDeployDeclarationsContract = defineApiContract({
 });
 
 export type AdminDeployDeclarationsContract = typeof adminDeployDeclarationsContract;
+
+export const adminDeployManualRedeployContract = defineApiContract({
+  method: "POST",
+  path: "/deployment/admin/redeploy",
+  bodySchema: deployManualRedeployRequestSchema,
+  responseSchema: deployAttemptResponseSchema,
+});

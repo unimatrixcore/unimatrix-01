@@ -2,6 +2,7 @@ import { buildApp } from "./app.js";
 import { loadDeployRuntimeConfig } from "./config.js";
 import { createDokployClient, loadDokployApiKey } from "./dokploy/client.js";
 import { createDokployLogClient } from "./dokploy/log-client.js";
+import { createDokployRedeployClient } from "./dokploy/redeploy-client.js";
 import { setupHealthMonitoring } from "./health-history/lifecycle.js";
 import { resolveHealthProbeTargets } from "./health-history/probe.js";
 import { DEPLOY_DESIRED_STATE } from "./reconcile/desired-state.gen.js";
@@ -22,6 +23,7 @@ const https = loadDeployTlsOptions();
 const app = buildApp(config, {
   dokploy,
   deploymentLogs,
+  redeployment: createDokployRedeployClient(dokployOptions),
   ...(https === undefined ? {} : { https }),
 });
 setupHealthMonitoring(

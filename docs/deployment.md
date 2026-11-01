@@ -202,8 +202,9 @@ runtime evidence bridge are covered in [deployment attempt setup](deployment-att
 
 **CI keeps orchestration; the deploy service owns attempt records and outcome observation.**
 CI reports intent before queuing work and reports the request result afterwards. Reporting must
-not queue a deployment, change project env, or retry a Dokploy mutation. Future manual redeploy
-and rollback operations record through the same attempt model. Direct Dokploy UI operations are
+not queue a deployment, change project env, or retry a Dokploy mutation. Manual redeploys record
+through the same history with an unspecified target image; see
+[manual redeploys](../apps/deploy/README.md#manual-redeploys). Direct Dokploy UI operations are
 out of band: a container change without a recorded request remains an observation, with no
 invented trigger, requested image, or successful attempt. Dokploy history polling is not the
 ingestion mechanism.
@@ -273,8 +274,8 @@ authenticated CI reporting, restart recovery and the failure cases above. Exerci
 rebuild with a different digest and a same-image redeploy without recreation; neither may land.
 The runtime bridge was checked read-only on unimatrix-03 on 2026-10-30: each declared app produced
 a full container ID and a verified platform-manifest/config relationship. Authenticated CI ingress,
-publication digest capture in Actions and end-to-end reporting remain activation gates. Per-attempt log
-retrieval and rollback execution remain separate features; a local attempt ID alone does not
+publication digest capture in Actions and end-to-end reporting remain activation gates. Rollback
+execution remains a separate feature; a local attempt ID alone does not
 establish an upstream log identity or permission to change the project-wide image tag.
 
 ### Rolling back

@@ -4,6 +4,7 @@ import type { ServerOptions as HttpsServerOptions } from "node:https";
 import type { DeployRuntimeConfig } from "./config.js";
 import type { DokployClient } from "./dokploy/client.js";
 import type { DokployLogClient } from "./dokploy/log-client.js";
+import type { DokployRedeployClient } from "./dokploy/redeploy-client.js";
 import { createNotFoundErrorEnvelope, normalizeDeployError } from "./lib/http/errors.js";
 import { buildLoggerOptions, type DeployLoggerStream } from "./lib/http/logging.js";
 import { registerModules } from "./modules/index.js";
@@ -24,6 +25,7 @@ declare module "fastify" {
     runtimeConfig: DeployRuntimeConfig;
     dokploy: DokployClient;
     deploymentLogs: DokployLogClient | undefined;
+    redeployment: DokployRedeployClient | undefined;
     containerObserver: ContainerObserver;
     reconciliationDetector: ReconciliationDetector;
   }
@@ -33,6 +35,7 @@ export interface BuildDeployAppOptions {
   /** The typed Dokploy API client, decorated onto the instance as `app.dokploy`. */
   dokploy: DokployClient;
   deploymentLogs?: DokployLogClient;
+  redeployment?: DokployRedeployClient;
   /** Where log records go instead of stdout, so tests can assert on redaction. */
   loggerStream?: DeployLoggerStream;
   https?: HttpsServerOptions;
@@ -66,6 +69,7 @@ export function buildApp(
   app.decorate("runtimeConfig", config);
   app.decorate("dokploy", options.dokploy);
   app.decorate("deploymentLogs", options.deploymentLogs);
+  app.decorate("redeployment", options.redeployment);
   const detector = createReconciliationDetector(options.dokploy, DEPLOY_DESIRED_STATE);
   app.decorate("reconciliationDetector", detector);
   app.addHook("onListen", () => {

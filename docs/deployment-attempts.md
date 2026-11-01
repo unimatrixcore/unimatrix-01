@@ -3,26 +3,33 @@
 The deploy service retains attempts on its existing SQLite volume. Internal callers use the
 contracts in `packages/shared/src/contracts/deployment-attempts.ts`: `manage` reports intent and
 mutation results; `read` can retrieve bounded history. The caller identity comes from the verified
-service token. Reporting never mutates Dokploy. Manual and rollback triggers fit the same record;
-their execution paths remain separate work. Direct Dokploy UI operations have no recorded attempt.
+service token. Reporting never mutates Dokploy. Manual redeploys use the same history with an
+unspecified target image and verified API user attribution; see
+[manual redeploys](../apps/deploy/README.md#manual-redeploys). Direct Dokploy UI operations have no
+recorded attempt.
 
 An intent captures a server-observed baseline, or explicit missing evidence. CI durably claims each
 tag write and queue request before sending it. Claims are exclusive: an interrupted claim is never
 automatically replayed. Retry the idempotent intent or terminal report, not a Dokploy mutation.
 Cancellation between a claim and a mutation can therefore leave a record that needs investigation.
 A queue claim without its terminal acknowledgment or unknown-result report cannot establish landing,
-even if a matching image appears; the record expires if that report never arrives.
+even if a matching image appears; the record times out if that report never arrives.
 Landing evidence must be observed at or after the persisted queue-claim timestamp. Older records
 without that timestamp remain readable but cannot establish landing.
 
-Outcomes are `incomplete`, `queued`, `landed`, `failed` or `timed-out`. Acknowledged queueing is
+Outcomes are `incomplete`, `queued`, `recreated`, `landed`, `failed` or `timed-out`.
+Manual attempts have an unspecified requested image: a changed container ID can record recreation
+and its observed image, without claiming immutable landing. Late recreation preserves timeout
+and records `recreatedAt`; observed recreation resolves the manual overlap guard.
+Acknowledged queueing is
 separate from image landing and health. Transport failures and server failures leave an unknown
 request result. A changed full container ID plus an independently verified matching immutable
 platform manifest can establish landing; missing baseline, overlapping requests, unchanged IDs and
 different digests cannot. A 30-minute deadline expires even without a CI callback or runtime sample.
-A later match retains the timeout and records late landing separately. History retains records for
-30 days after their deadline, returns at most 100 per read, and refuses new intents at 10,000 retained
-records rather than evicting unresolved evidence. Preserve the deploy data volume across replacement.
+A later match retains the timeout and records late landing separately. History retains resolved
+records for 30 days after their deadline and preserves unresolved
+records beyond that window. Reads return at most 100 records; new intents are refused at 10,000
+retained records rather than evicting unresolved evidence. Preserve the deploy data volume across replacement.
 
 ## Attempt logs
 

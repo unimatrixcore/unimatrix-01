@@ -11,6 +11,11 @@ import {
   deployAttemptLogsResponseSchema,
   deployAttemptLogsContract,
   adminDeployAttemptLogsContract,
+  deployManualRedeployRequestSchema,
+  deployManualRedeployInputSchema,
+  deployManualRedeployContract,
+  adminDeployManualRedeployContract,
+  deployAttemptResponseSchema,
 } from "../src/index.js";
 
 const intent = {
@@ -119,4 +124,86 @@ describe("deployment attempt contracts", () => {
       }).success,
     ).toBe(false);
   });
+});
+
+it("manual redeploy contracts separate verified actor attribution from browser input", () => {
+  const request = { app: "api", requestId: "00000000-0000-4000-8000-000000000001" };
+  expect(deployManualRedeployRequestSchema.parse(request)).toEqual(request);
+  expect(
+    deployManualRedeployRequestSchema.safeParse({ ...request, actorUserId: "spoofed" }).success,
+  ).toBe(false);
+  expect(
+    deployManualRedeployRequestSchema.safeParse({ ...request, composeId: "foreign" }).success,
+  ).toBe(false);
+  expect(deployManualRedeployInputSchema.safeParse(request).success).toBe(false);
+  expect(
+    deployManualRedeployInputSchema.parse({ ...request, actorUserId: "verified" }).actorUserId,
+  ).toBe("verified");
+  expect(deployManualRedeployContract.path).toBe("/deployment/redeploy");
+  expect(adminDeployManualRedeployContract.path).toBe("/deployment/admin/redeploy");
+  expect(deployManualRedeployContract.method).toBe("POST");
+});
+
+it("unspecified manual targets cannot carry fictitious CI identity or verified landing", () => {
+  const record = {
+    ...intent,
+    runId: null,
+    runAttempt: null,
+    trigger: "manual",
+    image: null,
+    actorUserId: "verified",
+    requestId: "00000000-0000-4000-8000-000000000001",
+    id: "00000000-0000-4000-8000-000000000002",
+    reporterId: "api-service",
+    requestedAt: 0,
+    deadlineAt: 100,
+    baseline: null,
+    tagWrite: null,
+    queue: "acknowledged",
+    queueClaimedAt: 0,
+    outcome: "queued",
+    correlation: "pending",
+    after: null,
+    landedAt: null,
+    lateLandedAt: null,
+  };
+  expect(deployAttemptResponseSchema.safeParse(record).success).toBe(true);
+  const { actorUserId, requestId, ...withoutActor } = record;
+  expect(actorUserId).toBe("verified");
+  expect(requestId).toBe(record.requestId);
+  expect(deployAttemptResponseSchema.safeParse({ ...withoutActor, ...intent }).success).toBe(true);
+  const recreated = {
+    ...record,
+    outcome: "recreated",
+    recreatedAt: 1,
+    after: {
+      containerId: "d".repeat(64),
+      observedAt: 1,
+      image: {
+        repository: intent.image.repository,
+        platform: intent.image.platform,
+        digestKind: "manifest",
+        digest: intent.image.digest,
+      },
+    },
+  };
+  expect(deployAttemptResponseSchema.safeParse(recreated).success).toBe(true);
+  expect(
+    deployAttemptResponseSchema.safeParse({ ...recreated, outcome: "timed-out" }).success,
+  ).toBe(true);
+  for (const invalid of [
+    { ...recreated, recreatedAt: 2 },
+    { ...recreated, recreatedAt: null },
+    { ...recreated, outcome: "queued" },
+    { ...recreated, correlation: "verified" },
+    { ...record, outcome: "recreated" },
+    { ...record, runId: "123" },
+    { ...record, actorUserId: undefined },
+    { ...record, trigger: "ci" },
+    { ...record, tagWrite: "acknowledged" },
+    { ...record, outcome: "landed" },
+    { ...record, correlation: "verified" },
+    { ...record, landedAt: 1 },
+  ])
+    expect(deployAttemptResponseSchema.safeParse(invalid).success).toBe(false);
 });

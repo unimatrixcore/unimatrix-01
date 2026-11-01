@@ -611,3 +611,287 @@ void test("an expired queue claim still makes later requests ambiguous even with
     store.close();
   }
 });
+
+void test("manual reservations are durable, attributed and idempotent across store connections", () => {
+  const directory = mkdtempSync(join(tmpdir(), "manual-attempt-"));
+  try {
+    const path = join(directory, "db.sqlite");
+    const first = openRawStore(path);
+    const second = openRawStore(path);
+    const input = {
+      app: "api",
+      requestId: "00000000-0000-4000-8000-000000000001",
+      actorUserId: "verified-admin",
+    };
+    assert.equal(second.findManual(input, "api-service", now), undefined);
+    const reservation = first.reserveManual(input, "api-service", before, now);
+    assert.deepEqual(second.findManual(input, "api-service", now), reservation.attempt);
+    assert.throws(
+      () => second.findManual({ ...input, app: "web" }, "api-service", now),
+      /conflicts/u,
+    );
+    assert.throws(() => second.findManual(input, "other-service", now), /conflicts/u);
+    assert.equal(reservation.created, true);
+    assert.equal(reservation.attempt.image, null);
+    assert.equal(reservation.attempt.runId, null);
+    assert.equal(reservation.attempt.runAttempt, null);
+    assert.equal(reservation.attempt.actorUserId, input.actorUserId);
+    assert.equal(reservation.attempt.tagWrite, null);
+    assert.deepEqual(second.reserveManual(input, "api-service", null, now + 1), {
+      attempt: reservation.attempt,
+      created: false,
+    });
+    assert.throws(
+      () => second.reserveManual({ ...input, app: "web" }, "api-service", null, now),
+      /conflicts/u,
+    );
+    assert.throws(() => second.reserveManual(input, "other-service", null, now), /conflicts/u);
+    assert.throws(
+      () =>
+        second.reserveManual(
+          { ...input, requestId: "00000000-0000-4000-8000-000000000002" },
+          "api-service",
+          null,
+          now,
+        ),
+      /conflicts/u,
+    );
+    assert.throws(
+      () =>
+        second.reserveManual({ ...input, actorUserId: "other-admin" }, "api-service", null, now),
+      /conflicts/u,
+    );
+    assert.equal(second.list("api", 100, now).length, 1);
+    first.close();
+    second.close();
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+void test("manual queue claims record recreation without claiming an unspecified image landed", () => {
+  const store = openRawStore(":memory:");
+  try {
+    const input = {
+      app: "api",
+      requestId: "00000000-0000-4000-8000-000000000001",
+      actorUserId: "admin",
+    };
+    const { attempt } = store.reserveManual(input, "api-service", before, now);
+    assert.throws(
+      () =>
+        store.report(
+          { attemptId: attempt.id, stage: "tag-write", result: "started" },
+          "api-service",
+          now,
+        ),
+      /conflicts/u,
+    );
+    assert.throws(
+      () =>
+        store.report(
+          { attemptId: attempt.id, stage: "queue", result: "acknowledged" },
+          "api-service",
+          now,
+        ),
+      /conflicts/u,
+    );
+    store.report({ attemptId: attempt.id, stage: "queue", result: "started" }, "api-service", now);
+    assert.equal(
+      store.report(
+        { attemptId: attempt.id, stage: "queue", result: "acknowledged" },
+        "api-service",
+        now,
+      ).outcome,
+      "queued",
+    );
+    store.observe([evidence], now + 1000);
+    const observed = store.get("api", attempt.id, now + 1000)!;
+    assert.equal(observed.image, null);
+    assert.equal(observed.outcome, "recreated");
+    assert.equal(observed.correlation, "pending");
+    assert.deepEqual(observed.after, {
+      containerId: evidence.containerId,
+      observedAt: evidence.observedAt,
+      image: evidence.image,
+    });
+    assert.equal(observed.recreatedAt, evidence.observedAt);
+    assert.equal(observed.landedAt, null);
+    assert.equal(observed.lateLandedAt, null);
+    assert.equal(observed.tagWrite, null);
+    store.observe([{ ...evidence, observedAt: now + 2000 }], now + 2000);
+    assert.equal(store.get("api", attempt.id, now + 2000)!.recreatedAt, evidence.observedAt);
+    assert.equal(
+      store.reserveManual(
+        { ...input, requestId: "00000000-0000-4000-8000-000000000002" },
+        "api-service",
+        null,
+        now + 2000,
+      ).created,
+      true,
+    );
+  } finally {
+    store.close();
+  }
+});
+
+void test("unresolved manual queue claims survive retention and late recreation preserves timeout while resolving overlap", () => {
+  const directory = mkdtempSync(join(tmpdir(), "manual-late-recreation-"));
+  try {
+    const path = join(directory, "db.sqlite");
+    let store = openRawStore(path);
+    const input = {
+      app: "api",
+      requestId: "00000000-0000-4000-8000-000000000001",
+      actorUserId: "admin",
+    };
+    const { attempt } = store.reserveManual(input, "api-service", before, now);
+    store.report({ attemptId: attempt.id, stage: "queue", result: "started" }, "api-service", now);
+    store.report({ attemptId: attempt.id, stage: "queue", result: "unknown" }, "api-service", now);
+    store.close();
+    store = openRawStore(path);
+    const late = attempt.deadlineAt + ATTEMPT_RETENTION_MS + 1;
+    const next = { ...input, requestId: "00000000-0000-4000-8000-000000000002" };
+    assert.throws(() => store.reserveManual(next, "api-service", null, late), /conflicts/u);
+    assert.equal(store.get("api", attempt.id, late)!.outcome, "timed-out");
+    store.observe([{ ...evidence, observedAt: late }], late);
+    // Read before retention can prune the now-resolved record.
+    const db = new Database(path);
+    const row = db
+      .prepare("SELECT record FROM deployment_attempts WHERE id = ?")
+      .get(attempt.id) as { record: string };
+    const record = JSON.parse(row.record) as {
+      outcome: string;
+      recreatedAt: number;
+      landedAt: null;
+      lateLandedAt: null;
+    };
+    assert.equal(record.outcome, "timed-out");
+    assert.equal(record.recreatedAt, late);
+    assert.equal(record.landedAt, null);
+    assert.equal(record.lateLandedAt, null);
+    db.close();
+    assert.equal(store.reserveManual(next, "api-service", null, late + 1).created, true);
+    store.close();
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+void test("manual recreation needs an unambiguous changed container after its durable queue claim", () => {
+  for (const example of [
+    { baseline: null, sample: evidence, queue: true, ambiguous: false },
+    {
+      baseline: before,
+      sample: { ...evidence, containerId: before.containerId },
+      queue: true,
+      ambiguous: false,
+    },
+    {
+      baseline: before,
+      sample: { ...evidence, observedAt: now - 1 },
+      queue: true,
+      ambiguous: false,
+    },
+    { baseline: before, sample: { ...evidence, app: "web" }, queue: true, ambiguous: false },
+    { baseline: before, sample: { ...evidence, observedAt: now }, queue: true, ambiguous: false },
+    { baseline: before, sample: evidence, queue: false, ambiguous: false },
+    { baseline: before, sample: evidence, queue: true, ambiguous: true },
+  ]) {
+    const store = openRawStore(":memory:");
+    try {
+      const { attempt } = store.reserveManual(
+        { app: "api", requestId: "00000000-0000-4000-8000-000000000001", actorUserId: "admin" },
+        "api-service",
+        example.baseline,
+        now,
+      );
+      if (example.queue) {
+        store.report(
+          { attemptId: attempt.id, stage: "queue", result: "started" },
+          "api-service",
+          now + 1,
+        );
+        store.report(
+          { attemptId: attempt.id, stage: "queue", result: "acknowledged" },
+          "api-service",
+          now + 1,
+        );
+      }
+      if (example.ambiguous) store.intent(intent, "ci", before, now + 1);
+      store.observe([example.sample], now + 1000);
+      const observed = store.get("api", attempt.id, now + 1000)!;
+      assert.equal(observed.after, null);
+      assert.equal(observed.recreatedAt, null);
+      assert.notEqual(observed.outcome, "recreated");
+    } finally {
+      store.close();
+    }
+  }
+});
+
+void test("manual reservations reject unresolved CI work, while CI overlap stays recordable and ambiguous", () => {
+  for (const result of ["started", "acknowledged", "unknown"] as const) {
+    const store = openRawStore(":memory:");
+    try {
+      const ci = store.intent(intent, "ci", before, now);
+      const manual = {
+        app: "api",
+        requestId: "00000000-0000-4000-8000-000000000001",
+        actorUserId: "admin",
+      };
+      assert.throws(() => store.reserveManual(manual, "api-service", before, now), /conflicts/u);
+      for (const tagResult of ["started", "acknowledged"] as const)
+        store.report({ attemptId: ci.id, stage: "tag-write", result: tagResult }, "ci", now);
+      store.report({ attemptId: ci.id, stage: "queue", result: "started" }, "ci", now);
+      if (result !== "started")
+        store.report({ attemptId: ci.id, stage: "queue", result }, "ci", now);
+      assert.throws(
+        () => store.reserveManual(manual, "api-service", before, ci.deadlineAt),
+        /conflicts/u,
+      );
+    } finally {
+      store.close();
+    }
+  }
+  const store = openRawStore(":memory:");
+  try {
+    const manual = store.reserveManual(
+      { app: "api", requestId: "00000000-0000-4000-8000-000000000001", actorUserId: "admin" },
+      "api-service",
+      before,
+      now,
+    );
+    const ci = store.intent(intent, "ci", before, now);
+    assert.equal(ci.correlation, "ambiguous");
+    assert.equal(store.get("api", manual.attempt.id, now)!.correlation, "ambiguous");
+  } finally {
+    store.close();
+  }
+});
+
+void test("rejected manual queueing releases overlap refusal without allowing a retry to submit twice", () => {
+  const store = openRawStore(":memory:");
+  try {
+    const input = {
+      app: "api",
+      requestId: "00000000-0000-4000-8000-000000000001",
+      actorUserId: "admin",
+    };
+    const { attempt } = store.reserveManual(input, "api-service", before, now);
+    store.report({ attemptId: attempt.id, stage: "queue", result: "started" }, "api-service", now);
+    store.report({ attemptId: attempt.id, stage: "queue", result: "rejected" }, "api-service", now);
+    const retry = store.reserveManual(input, "api-service", before, now + 1);
+    assert.equal(retry.created, false);
+    assert.equal(retry.attempt.outcome, "failed");
+    const next = store.reserveManual(
+      { ...input, requestId: "00000000-0000-4000-8000-000000000002" },
+      "api-service",
+      before,
+      now + 1,
+    );
+    assert.equal(next.created, true);
+  } finally {
+    store.close();
+  }
+});

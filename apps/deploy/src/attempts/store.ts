@@ -5,6 +5,8 @@ import { dirname } from "node:path";
 import Database from "better-sqlite3";
 import {
   deployAttemptIntentSchema,
+  deployManualRedeployInputSchema,
+  type DeployManualRedeployInput,
   deployAttemptReportSchema,
   deployAttemptResponseSchema,
   deployAttemptBaselineSchema,
@@ -24,7 +26,23 @@ import {
   applyRuntimeEvidence,
 } from "./model.js";
 
+export interface ManualRedeployReservation {
+  attempt: DeployAttemptRecord;
+  created: boolean;
+}
+
 export interface DeploymentAttemptStore {
+  findManual(
+    input: DeployManualRedeployInput,
+    reporterId: string,
+    now: number,
+  ): DeployAttemptRecord | undefined;
+  reserveManual(
+    input: DeployManualRedeployInput,
+    reporterId: string,
+    baseline: DeployAttemptBaseline | null,
+    now: number,
+  ): ManualRedeployReservation;
   intent(
     input: DeployAttemptIntent,
     reporterId: string,
@@ -52,6 +70,8 @@ function canExplainTransition(record: DeployAttemptRecord): boolean {
   return (
     record.outcome !== "failed" &&
     record.outcome !== "landed" &&
+    record.outcome !== "recreated" &&
+    record.recreatedAt == null &&
     record.lateLandedAt === null &&
     (record.outcome !== "timed-out" || record.queue !== null)
   );
@@ -87,7 +107,7 @@ export function openDeploymentAttemptStore(path: string): DeploymentAttemptStore
       const retained: DeployAttemptRecord[] = [];
       for (const record of records) {
         expireAttempt(record, now);
-        if (record.deadlineAt < now - ATTEMPT_RETENTION_MS) {
+        if (record.deadlineAt < now - ATTEMPT_RETENTION_MS && !canExplainTransition(record)) {
           db.prepare("DELETE FROM deployment_attempts WHERE id = ?").run(record.id);
         } else {
           writeRecord(record);
@@ -96,7 +116,29 @@ export function openDeploymentAttemptStore(path: string): DeploymentAttemptStore
       }
       return retained;
     };
+    const manualKey = (input: DeployManualRedeployInput): string =>
+      JSON.stringify(["manual", input.actorUserId, input.requestId]);
+    const readManual = (
+      input: DeployManualRedeployInput,
+      reporterId: string,
+    ): DeployAttemptRecord | undefined => {
+      if (reporterId.length === 0 || reporterId.length > 128) throw conflict();
+      const existing = db
+        .prepare("SELECT record FROM deployment_attempts WHERE request_key = ?")
+        .get(manualKey(input)) as { record: string } | undefined;
+      if (existing === undefined) return undefined;
+      const attempt = deployAttemptResponseSchema.parse(JSON.parse(existing.record));
+      if (attempt.app !== input.app || attempt.reporterId !== reporterId) throw conflict();
+      return attempt;
+    };
     return {
+      findManual: db.transaction(
+        (input: DeployManualRedeployInput, reporterId: string, now: number) => {
+          const parsed = deployManualRedeployInputSchema.parse(input);
+          maintain(now);
+          return readManual(parsed, reporterId);
+        },
+      ),
       intent: db.transaction(
         (
           input: DeployAttemptIntent,
@@ -120,6 +162,8 @@ export function openDeploymentAttemptStore(path: string): DeploymentAttemptStore
             .get(key) as { record: string } | undefined;
           if (existing !== undefined) {
             const record = deployAttemptResponseSchema.parse(JSON.parse(existing.record));
+            if (record.image === null || record.runId === null || record.runAttempt === null)
+              throw conflict();
             const priorIntent: DeployAttemptIntent = {
               repository: record.repository,
               runId: record.runId,
@@ -171,6 +215,56 @@ export function openDeploymentAttemptStore(path: string): DeploymentAttemptStore
           return record;
         },
       ),
+      reserveManual: db.transaction(
+        (
+          input: DeployManualRedeployInput,
+          reporterId: string,
+          baseline: DeployAttemptBaseline | null,
+          now: number,
+        ): ManualRedeployReservation => {
+          const parsed = deployManualRedeployInputSchema.parse(input);
+          if (reporterId.length === 0 || reporterId.length > 128) throw conflict();
+          const before = deployAttemptBaselineSchema.nullable().parse(baseline);
+          if (before !== null && before.observedAt > now) throw conflict();
+          const records = maintain(now);
+          const existing = readManual(parsed, reporterId);
+          if (existing !== undefined) return { attempt: existing, created: false };
+          if (records.some((record) => record.app === parsed.app && canExplainTransition(record)))
+            throw conflict();
+          if (records.length >= MAX_ATTEMPT_RECORDS)
+            throw Object.assign(new Error("Deployment attempt capacity exhausted."), {
+              statusCode: 503,
+            });
+          const attempt: DeployAttemptRecord = {
+            repository: "unimatrixcore/unimatrix-01",
+            runId: null,
+            runAttempt: null,
+            app: parsed.app,
+            trigger: "manual",
+            image: null,
+            recreatedAt: null,
+            actorUserId: parsed.actorUserId,
+            requestId: parsed.requestId,
+            id: randomUUID(),
+            reporterId,
+            requestedAt: now,
+            deadlineAt: now + ATTEMPT_DEADLINE_MS,
+            baseline: before,
+            tagWrite: null,
+            queue: null,
+            queueClaimedAt: null,
+            outcome: "incomplete",
+            correlation: "pending",
+            after: null,
+            landedAt: null,
+            lateLandedAt: null,
+          };
+          db.prepare(
+            "INSERT INTO deployment_attempts (id, request_key, requested_at, record) VALUES (?, ?, ?, ?)",
+          ).run(attempt.id, manualKey(parsed), now, JSON.stringify(attempt));
+          return { attempt, created: true };
+        },
+      ),
       report: db.transaction((input: DeployAttemptReport, reporterId: string, now: number) => {
         const parsed = deployAttemptReportSchema.parse(input);
         const record = maintain(now).find((entry) => entry.id === parsed.attemptId);
@@ -178,7 +272,9 @@ export function openDeploymentAttemptStore(path: string): DeploymentAttemptStore
           throw Object.assign(new Error("Deployment attempt not found."), { statusCode: 404 });
         if (record.reporterId !== reporterId) throw conflict();
         const field = parsed.stage === "tag-write" ? "tagWrite" : "queue";
-        if (field === "queue" && record.tagWrite !== "acknowledged") throw conflict();
+        if (field === "tagWrite" && record.image === null) throw conflict();
+        if (field === "queue" && record.image !== null && record.tagWrite !== "acknowledged")
+          throw conflict();
         if (parsed.result === "started") {
           if (record[field] !== null || now >= record.deadlineAt) throw conflict();
           if (field === "queue") record.queueClaimedAt = now;

@@ -5,7 +5,8 @@
 and a settings-only apply (`src/reconcile/`, `pnpm --filter @unimatrix/deploy-app reconcile`): it
 diffs `src/reconcile/desired-state.gen.ts` against what Dokploy actually holds, prints drift, and can
 write `composePath`/`branch`/`autoDeploy` for one app at a time. It observes containers and persists
-internal HTTP health probes in its own SQLite database. It creates and deploys nothing — see
+internal HTTP health probes in its own SQLite database. It queues authenticated manual redeploys
+without changing image tags. It creates no services — see
 `README.md` for what still has to happen by hand before
 this stack deploys, and for apply's full refusal set. It also holds a read-only resolver against the
 secrets store (`src/secret-env/`, `reconcile secrets-status <app>`) that resolves declared
@@ -38,29 +39,34 @@ against the store, and
   resource path, and `/api/openapi.json` 404s on v0.29.13, so schemas are hand-written rather than
   generated. Only add a procedure whose response has actually been observed —
   `docker.getContainers`, `settings.getDokployVersion`, `project.all`, `compose.one`, and
-  `compose.update` are implemented in `src/dokploy/client.ts`. The installed v0.30.10 deployment
+  `compose.update` are implemented in `src/dokploy/client.ts`; the observed `compose.deploy` queue
+  mutation is isolated in `src/dokploy/redeploy-client.ts`. The installed v0.30.10 deployment
   reads (`deployment.allByCompose`, `deployment.readLogs`) are isolated in `src/dokploy/log-client.ts`;
   raw log output must be reduced to closed diagnostic events inside that client's schema transform.
   `DokployClientError` (`src/dokploy/transport.ts`)
   never carries a response-body fragment, on any property: `project.all` returns every project's
   whole environment-variable blob and `compose.one` returns one service's, both in plaintext.
-- **`callProcedure` hardcodes `method: "GET"` and stays read-only; `compose.update` is the one
-  mutation and goes through the separate `callMutation` instead.** `callMutation` never reads a 200
+- **`callProcedure` hardcodes `method: "GET"` and stays read-only; mutations go through the separate `callMutation` instead.** `callMutation` never reads a 200
   body — the fork's `update` procedure returns the whole updated compose row, `env` plaintext
   included, and `void` on success is the only return shape that cannot carry it. A non-2xx body is
   reduced to the error `code` and the `zodError.fieldErrors` key names only — never the zod message,
   which can echo the offending value, and never the row.
 - **The settings mutation uses `compose.update` with a closed
   `{composePath?, branch?, autoDeploy?}` payload** (`DokployComposeSettingsUpdate`) —
-  `compose.create` and `compose.deploy` remain absent, because `compose.create` needs an
-  `environmentId` nothing in this repo declares and nothing here triggers a deploy. `env` has no
+  `compose.create` remains absent because it needs an `environmentId` nothing in this repo
+  declares. Manual redeploys use a separate closed capability accepting only a resolved compose ID
+  and durable attempt ID; no procedure name or image tag comes from the caller. `env` has no
   field on that type. `DokployEnvClient` is the separate env capability; it reveals a `SecretValue`
   only for the wire payload. `src/reconcile/` must not import `dokploy/env-client`,
   `dokploy/transport`, or `dokploy/env-line`; the transport exposes a general mutation primitive.
   `apps/deploy/src/reconcile/apply.ts`'s `applyAppSettings` refuses to write against this service's
   own compose entry (`RECONCILE_SELF_APP_DIR`, checked before any network call): `compose.update`
   there followed by any deploy would destroy the process performing the reconciliation mid-run, and
-  Dokploy has no rollback for a Compose service (`docs/deployment.md`). It also refuses an app not in
+  Dokploy has no rollback for a Compose service (`docs/deployment.md`). Manual redeploys also
+  refuse self before network calls and atomically
+  reserve an app in SQLite, refusing unresolved overlaps even after timeout. They record the verified
+  API session user, no CI run identity and no immutable target image; they cannot claim `landed`.
+  Settings apply also refuses an app not in
   the manifest, a name that matches zero or more than one Dokploy compose service, a match anchored
   to a different GitHub owner/repository than this one's (`findComposeMatches` matches on service
   name alone, globally across the instance, and reads no `projectId`), and a `sourceType`
