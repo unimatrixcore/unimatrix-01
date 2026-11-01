@@ -7,7 +7,7 @@ export const DEPLOY_ROUTING_HOSTS: Readonly<Record<string, readonly string[]>> =
   admin: ["admin.unimatrix-01.dev"],
   api: ["api.unimatrix-01.dev"],
   auth: ["auth.unimatrix-01.dev"],
-  cflop: ["cflop.unimatrix-01.dev", "cube.unimatrix-01.dev"],
+  cflop: ["cflop.us", "cflop.unimatrix-01.dev", "cube.unimatrix-01.dev"],
   deploy: [],
   secrets: [],
   status: ["status.unimatrix-01.dev"],

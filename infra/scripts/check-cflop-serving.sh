@@ -146,8 +146,8 @@ check_body_contains /drill '<title>CFLOP - Drill</title>'
 # card itself is rendered by the client router, as on every other route.
 check_body_contains /nonsense '<title>CFLOP</title>'
 check_body_contains /nonsense '<div id="app"></div>'
-check_body_contains /robots.txt 'Sitemap: https://cflop.unimatrix-01.dev/sitemap.xml'
-check_body_contains /sitemap.xml '<loc>https://cflop.unimatrix-01.dev/</loc>'
+check_body_contains /robots.txt 'Sitemap: https://cflop.us/sitemap.xml'
+check_body_contains /sitemap.xml '<loc>https://cflop.us/</loc>'
 
 # A tab open across a deploy still has `import()` calls pointing at chunk hashes
 # the new build dropped, so the HTML has to be `no-cache` or a fresh navigation

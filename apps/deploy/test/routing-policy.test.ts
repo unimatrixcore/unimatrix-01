@@ -47,6 +47,7 @@ void test("unrouted declarations and compatibility hostnames remain explicit pol
     assert.deepEqual(result.unexpectedHosts, [route.host]);
   }
   const cflop = compareRouting({ appDir: "cflop", containerPort: 8080 }, [
+    { ...route, host: "cflop.us", port: 8080 },
     { ...route, host: "cube.unimatrix-01.dev", port: 8080 },
     { ...route, host: "cflop.unimatrix-01.dev", port: 8080 },
   ]);
