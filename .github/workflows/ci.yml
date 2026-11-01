@@ -1,7 +1,8 @@
 name: CI ingress validation
 on:
   workflow_dispatch:
-permissions: {}
+permissions:
+  actions: read
 jobs:
   probe:
     runs-on: ubuntu-latest
@@ -10,7 +11,13 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24.18.0
-      - name: Probe existing reporting identity without deployment mutations
+      - name: Download the main run publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          release_attempt=$(gh api repos/unimatrixcore/unimatrix-01/actions/runs/41275979600 --jq .run_attempt)
+          gh run download 41275979600 --repo unimatrixcore/unimatrix-01 --name "publication-deploy-${release_attempt}" --dir publication
+      - name: Verify already-current execution without deployment mutations
         env:
           DEPLOY_REPORT_URL: ${{ vars.DEPLOY_REPORT_URL }}
           DEPLOY_REPORT_TOKEN: ${{ secrets.DEPLOY_REPORT_TOKEN }}
@@ -18,6 +25,9 @@ jobs:
           CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
         run: |
           node --input-type=module <<'JS'
+          import {readFileSync} from 'node:fs';
+          const publication = JSON.parse(readFileSync('publication/deploy.json','utf8'));
+          if (publication.app !== 'deploy' || publication.image.commit !== '980daccbcab6df8015529cf05ffec461de1a35c9') throw new Error('Unexpected release publication');
           const base = process.env.DEPLOY_REPORT_URL;
           if (base !== 'https://deploy-ci.unimatrix-01.dev') throw new Error('Unexpected reporting origin');
           for (const key of ['DEPLOY_REPORT_TOKEN', 'CF_ACCESS_CLIENT_ID', 'CF_ACCESS_CLIENT_SECRET']) {
@@ -56,12 +66,8 @@ jobs:
           const payload = {
             repository: 'unimatrixcore/unimatrix-01', runId: process.env.GITHUB_RUN_ID,
             runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT), app: 'deploy', trigger: 'ci',
-            image: {
-              repository: 'ghcr.io/unimatrixcore/unimatrix-deploy', platform: 'linux/amd64',
-              digestKind: 'manifest', digest: 'sha256:6acac5335babef98ce48ab3d730e5be2303e3d32a902168b12e9cca103f41425',
-              tag: '9e03c7e606c242c52133f6cba32cf5ae253eddd5', commit: '9e03c7e606c242c52133f6cba32cf5ae253eddd5',
-            },
-            commitSubject: 'CI activation preflight: intent only; simulated rejection, no deployment',
+            image: publication.image,
+            commitSubject: 'CI activation verification: already-current, no deployment queued',
           };
           async function intent(body) {
             return fetch(base + '/deployment/attempts/intent', {
@@ -80,5 +86,13 @@ jobs:
           const conflict = await intent({...payload, image: {...payload.image, digest: 'sha256:' + '0'.repeat(64)}});
           if (conflict.status !== 409) throw new Error('Conflicting intent was not rejected');
           await conflict.body?.cancel();
-          console.log(`Preflight intent ${record.id}: stable ID, fresh baseline, conflicting digest rejected; no execution requested.`);
+          const execution = await fetch(base + '/deployment/execute', {
+            method: 'POST', redirect: 'error', signal: AbortSignal.timeout(15000),
+            headers: {...access, 'content-type': 'application/json', Authorization: `Bearer ${process.env.DEPLOY_REPORT_TOKEN}`},
+            body: JSON.stringify({app: 'deploy', attemptId: record.id}),
+          });
+          if (execution.status !== 200) throw new Error('Already-current execution failed');
+          const completed = await execution.json();
+          if (completed.outcome !== 'already-current' || completed.queue !== null || completed.tagWrite !== null || completed.landedAt !== null || completed.baseline?.containerId !== completed.after?.containerId) throw new Error('Already-current invariant failed');
+          console.log(`Live already-current attempt ${record.id}: resolved without tag write or queue; same verified container.`);
           JS
