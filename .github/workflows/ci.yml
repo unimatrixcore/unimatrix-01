@@ -32,7 +32,7 @@ jobs:
             ['POST', '/deployment/attempts/intent', true, false, [401]],
             ['POST', '/deployment/attempts/intent', true, true, [400]],
             ['POST', '/deployment/execute', true, false, [401]],
-            ['POST', '/deployment/execute', true, true, [400, 404]],
+            ['POST', '/deployment/execute', true, true, [400]],
             ['GET', '/deployment/attempts/intent', true, true, [404]],
             ['GET', '/health', true, true, [404]],
             ['POST', '/deployment/rollback', true, true, [404]],
@@ -53,4 +53,32 @@ jobs:
             console.log(`${method} ${path}: ${status} (Access=${withAccess}, service token=${withToken})`);
             if (!expected.includes(status)) throw new Error('Reporting boundary probe failed');
           }
+          const payload = {
+            repository: 'unimatrixcore/unimatrix-01', runId: process.env.GITHUB_RUN_ID,
+            runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT), app: 'deploy', trigger: 'ci',
+            image: {
+              repository: 'ghcr.io/unimatrixcore/unimatrix-deploy', platform: 'linux/amd64',
+              digestKind: 'manifest', digest: 'sha256:6acac5335babef98ce48ab3d730e5be2303e3d32a902168b12e9cca103f41425',
+              tag: '9e03c7e606c242c52133f6cba32cf5ae253eddd5', commit: '9e03c7e606c242c52133f6cba32cf5ae253eddd5',
+            },
+            commitSubject: 'CI activation preflight: intent only; simulated rejection, no deployment',
+          };
+          async function intent(body) {
+            return fetch(base + '/deployment/attempts/intent', {
+              method: 'POST', redirect: 'error', signal: AbortSignal.timeout(15000),
+              headers: {...access, 'content-type': 'application/json', Authorization: `Bearer ${process.env.DEPLOY_REPORT_TOKEN}`},
+              body: JSON.stringify(body),
+            });
+          }
+          const first = await intent(payload);
+          if (first.status !== 200) throw new Error('Valid intent was refused');
+          const record = await first.json();
+          const repeated = await intent(payload);
+          if (repeated.status !== 200) throw new Error('Repeated intent was refused');
+          const repeatRecord = await repeated.json();
+          if (record.id !== repeatRecord.id || record.baseline === null || record.tagWrite !== null || record.queue !== null) throw new Error('Intent idempotency/baseline failed');
+          const conflict = await intent({...payload, image: {...payload.image, digest: 'sha256:' + '0'.repeat(64)}});
+          if (conflict.status !== 409) throw new Error('Conflicting intent was not rejected');
+          await conflict.body?.cancel();
+          console.log(`Preflight intent ${record.id}: stable ID, fresh baseline, conflicting digest rejected; no execution requested.`);
           JS
