@@ -78,7 +78,7 @@ The default production shape is separate-origin:
 - `https://site.example.com` -> web
 - `https://api.example.com` -> api
 - `https://cflop.us` -> cflop
-- `https://cflop.unimatrix-01.dev` and `https://cube.unimatrix-01.dev` -> browser migration to `cflop.us`
+- `https://cflop.unimatrix-01.dev` and `https://cube.unimatrix-01.dev` -> permanent redirect to `cflop.us`
   (compatibility hostnames; see "CFLOP service" below)
 - `https://auth.unimatrix-01.dev` -> auth
 - `https://admin.unimatrix-01.dev` -> admin
@@ -402,28 +402,47 @@ and verify the route before proceeding.
 
 Keep `cflop.unimatrix-01.dev` and `cube.unimatrix-01.dev` routed to the live
 `cflop` service on port `8080`, with valid TLS certificates. Browser storage is
-origin-bound, so these old hosts must remain reachable to transfer their saved
-progress before navigation to `https://cflop.us`. The app uses a JavaScript
-browser redirect, preserving the requested path, query string and fragment.
-It imports validated saved data only when the new origin has no existing
-CFLOP data; visiting the other old hostname afterward cannot overwrite that
-profile. Source data remains on each old origin. Requests without JavaScript
-do not transfer data or automatically redirect; this is not an HTTP 301.
+origin-bound: `/origin-migration` and its `/assets/*` scripts must remain
+reachable on each old host even when normal URLs redirect.
 
-Keep both old Dokploy domain records' `middlewares` arrays empty. After the
-migration image has landed, remove `cube-to-cflop@file` from the cube domain
-record so its browser migration can execute. A blanket Traefik redirect on
-either old host skips that origin's saved data. Hostname routing is configured
+Cloudflare marks old-domain arrivals with `__cflop_migrate=1`. Before
+initializing saved state, the app strips that query marker and checks whether
+the destination profile is empty and unchecked. Only marked arrivals meeting
+those conditions visit the old hosts through the transfer URL using top-level
+navigation; direct `cflop.us` visits never initiate these trips. The transfer
+preserves the requested destination path, remaining query string and fragment.
+Existing destination data always wins, and source data remains untouched. A
+completion marker prevents repeated visits after an import or after both old
+profiles were checked and empty. Storage failures offer Retry and Continue
+without importing; continuing does not permanently mark the failed transfer
+complete.
+
+Deploy the migration image and verify the transfer URL and scripts on both old
+hosts **before enabling Cloudflare's 301**. Match only the old hostnames,
+exclude the exact `/origin-migration` path and paths starting with `/assets/`,
+and use this dynamic target:
+
+```text
+concat("https://cflop.us", http.request.uri.path, "?__cflop_migrate=1&", http.request.uri.query)
+```
+
+Turn Preserve query string **off**: the expression already copies the original
+query after the migration marker. A redirect on the transfer URL or its scripts
+prevents old-origin storage from being read. Verify the homepage and
+deep-link 301 responses, then exercise a browser transfer with isolated test
+storage before submitting Search Console's change of address.
+
+Keep both old Dokploy domain records' `middlewares` arrays empty so Cloudflare
+controls the redirect and its transfer exceptions. Hostname routing is configured
 in Dokploy;
 `apps/deploy/src/reconcile/routing-policy.ts` detects missing or unexpected
 hostnames but does not configure routes or validate certificate coverage.
 
-Browsers that cached the earlier permanent cube-to-cflop redirect may skip the
-cube origin even after its middleware is removed, leaving cube-origin data
-unimported. Clearing the browser's cached redirect or retrying the original
-cube hostname with an uncached URL may let its migration run; browser cache
-behavior varies, so confirm the original origin was reached and its progress
-was imported. Existing destination data still prevents an import.
+Browsers that cached a blanket permanent redirect may skip an old origin even
+after the redirect is corrected. Clear the cached redirect or retry the transfer
+URL with an uncached query string, and confirm that the original origin was
+reached and its progress imported. Existing destination data still prevents an
+import.
 
 `apps/cflop/src/lib/local-storage.ts` falls back from the `cflop:` key prefix to
 `cube-trainer:` within one origin; that fallback alone cannot migrate data

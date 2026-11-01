@@ -116,6 +116,7 @@ fi
 check_url / 200
 check_url /learn 200
 check_url /drill 200
+check_url /origin-migration 200
 check_url /learn/ 301 /learn
 check_url '/learn/?x=1' 301 '/learn?x=1'
 check_url /learn.html 301 /learn
@@ -142,12 +143,18 @@ fi
 
 check_body_contains /learn '<title>CFLOP - Learn</title>'
 check_body_contains /drill '<title>CFLOP - Drill</title>'
+check_body_contains /origin-migration 'name="robots" content="noindex,follow"'
 # The 404 body is the prerendered not-found *head* over an empty `#app`; the
 # card itself is rendered by the client router, as on every other route.
 check_body_contains /nonsense '<title>CFLOP</title>'
 check_body_contains /nonsense '<div id="app"></div>'
 check_body_contains /robots.txt 'Sitemap: https://cflop.us/sitemap.xml'
 check_body_contains /sitemap.xml '<loc>https://cflop.us/</loc>'
+if sitemap="$(curl -sf "${BASE_URL}/sitemap.xml")" && [[ "${sitemap}" != *'/origin-migration'* ]]; then
+  pass '/sitemap.xml excludes /origin-migration'
+else
+  fail '/sitemap.xml must exclude /origin-migration'
+fi
 
 # A tab open across a deploy still has `import()` calls pointing at chunk hashes
 # the new build dropped, so the HTML has to be `no-cache` or a fresh navigation
