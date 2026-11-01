@@ -167,7 +167,10 @@ export async function deployCi({
       (project.environments ?? []).flatMap((environment) =>
         (environment.compose ?? [])
           .filter((compose) => compose.name === app)
-          .map((compose) => ({ project: project.projectId, compose: compose.composeId })),
+          .map((compose) => ({
+            project: project.projectId,
+            compose: compose.composeId,
+          })),
       ),
     );
     if (
@@ -178,40 +181,75 @@ export async function deployCi({
       failures.push(`${app}: unique compose mapping unavailable`);
     else mappings.set(app, matches[0]);
   }
-  // Reserve every app before starting execution; CI and rollback share these durable claims.
+  // One transaction reserves the release before any execution; never fall back to single intents.
   const intents = new Map();
   {
     if (failures.length)
       throw new Error("Compose mapping incomplete; no deployment writes permitted.");
-    for (const app of apps) {
-      const request = {
-        repository: env.GITHUB_REPOSITORY,
-        runId: env.GITHUB_RUN_ID,
-        runAttempt: Number(env.GITHUB_RUN_ATTEMPT),
-        app,
-        trigger: "ci",
-        image: publications.get(app),
-        ...(supportsCommitSubject ? { commitSubject } : {}),
-      };
-      const intent = await reserve(request);
+    const requests = apps.map((app) => ({
+      repository: env.GITHUB_REPOSITORY,
+      runId: env.GITHUB_RUN_ID,
+      runAttempt: Number(env.GITHUB_RUN_ATTEMPT),
+      app,
+      trigger: "ci",
+      image: publications.get(app),
+      ...(supportsCommitSubject ? { commitSubject } : {}),
+    }));
+    const acknowledgement = await reserve({ intents: requests });
+    if (
+      acknowledgement === null ||
+      typeof acknowledgement !== "object" ||
+      Array.isArray(acknowledgement) ||
+      Object.keys(acknowledgement).length !== 1 ||
+      !Array.isArray(acknowledgement.attempts) ||
+      acknowledgement.attempts.length !== requests.length
+    )
+      throw new Error("Invalid durable intent acknowledgement.");
+    const requested = new Map(requests.map((request) => [request.app, request]));
+    const ids = new Set();
+    for (const intent of acknowledgement.attempts) {
+      const request = requested.get(intent?.app);
       if (
+        request === undefined ||
+        intents.has(intent.app) ||
         typeof intent.id !== "string" ||
         !/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u.test(
           intent.id,
         ) ||
+        ids.has(intent.id) ||
         ["repository", "runId", "runAttempt", "app", "trigger"].some(
           (key) => intent[key] !== request[key],
         ) ||
         ["repository", "tag", "commit", "platform", "digestKind", "digest"].some(
           (key) => intent.image?.[key] !== request.image[key],
-        )
+        ) ||
+        intent.commitSubject !== request.commitSubject
       )
         throw new Error("Invalid durable intent acknowledgement.");
-      if (intent.tagWrite !== null || intent.queue !== null)
-        throw new Error("Existing attempt has mutation results; refusing mutation replay.");
-      intents.set(app, intent);
+      if (
+        intent.outcome !== "incomplete" ||
+        intent.correlation !== "pending" ||
+        intent.tagWrite !== null ||
+        intent.queue !== null ||
+        intent.queueClaimedAt !== null ||
+        intent.after !== null ||
+        intent.landedAt !== null ||
+        intent.lateLandedAt !== null ||
+        intent.recreatedAt != null ||
+        intent.completedAt != null ||
+        intent.failureReason != null ||
+        !Number.isSafeInteger(intent.requestedAt) ||
+        intent.requestedAt < 0 ||
+        !Number.isSafeInteger(intent.deadlineAt) ||
+        intent.deadlineAt <= intent.requestedAt ||
+        intent.deadlineAt <= Date.now()
+      )
+        throw new Error("Existing attempt is not unused; refusing mutation replay.");
+      ids.add(intent.id);
+      intents.set(intent.app, intent);
     }
   }
+
   let queued = 0;
   let alreadyCurrent = 0;
   const executionOrder = [...mappings].sort(([left], [right]) =>
