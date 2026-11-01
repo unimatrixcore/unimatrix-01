@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { RouterProvider } from "@tanstack/react-router";
 
 import { router } from "@/app/router";
+import { handleOriginMigration } from "@/lib/origin-migration";
 import { installStaleChunkRecovery } from "@/lib/stale-chunk-recovery";
 import "@/styles.css";
 
@@ -29,8 +30,10 @@ for (const tag of document.querySelectorAll("[data-prerendered-head]")) {
   tag.remove();
 }
 
-ReactDOM.createRoot(rootElement).render(
-  <React.StrictMode>
-    <RouterProvider router={router} />
-  </React.StrictMode>,
-);
+if (!handleOriginMigration(rootElement)) {
+  ReactDOM.createRoot(rootElement).render(
+    <React.StrictMode>
+      <RouterProvider router={router} />
+    </React.StrictMode>,
+  );
+}

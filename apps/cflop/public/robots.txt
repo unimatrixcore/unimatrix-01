@@ -8,4 +8,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://cflop.unimatrix-01.dev/sitemap.xml
+Sitemap: https://cflop.us/sitemap.xml
