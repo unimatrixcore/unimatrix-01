@@ -1,11 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import {
-  RiArrowRightUpLine,
-  RiCheckboxCircleLine,
-  RiErrorWarningLine,
-  RiRefreshLine,
-} from "@remixicon/react";
-import { ToolFooterLink, ToolShell } from "@unimatrix/chrome/tool";
+import { RiCheckboxCircleLine, RiErrorWarningLine, RiRefreshLine } from "@remixicon/react";
+import { ToolShell } from "@unimatrix/chrome/tool";
 import { Button, HealthHistory, type HealthHistoryDay } from "@unimatrix/ui/public";
 import type { PublicDeploymentStatusResponse } from "@unimatrix/shared";
 
@@ -79,12 +74,8 @@ export function PublicStatusPage() {
             : "Some services degraded";
   return (
     <ToolShell
-      className="max-w-4xl py-8 sm:py-12 lg:py-20 [&>main]:justify-start"
-      footerEnd={
-        <ToolFooterLink href="https://unimatrix-01.dev">
-          Main site <RiArrowRightUpLine aria-hidden="true" className="inline size-3" />
-        </ToolFooterLink>
-      }
+      className="max-w-4xl pt-8 sm:pt-12 lg:pt-20 [&>main]:justify-start"
+      homeHref="https://unimatrix-01.dev"
     >
       <div>
         <header className="flex items-center justify-between gap-4">

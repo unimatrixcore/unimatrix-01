@@ -534,9 +534,9 @@ describe("DeploysPage", () => {
       const invalidate = vi.spyOn(client, "invalidateQueries");
       fireEvent.click(redeploy);
       await waitFor(() => {
-        expect(requestedOptions(adminDeployManualRedeployContract)).toContainEqual({
-          body: { app: "api", requestId: requestUuid },
-        });
+        expect(requestedOptions(adminDeployManualRedeployContract)).toEqual([
+          { body: { app: "api", requestId: requestUuid } },
+        ]);
         expect(invalidate).toHaveBeenCalledWith({ queryKey: ["admin", "deploys"] });
         expect(screen.getByText("Deploys", { selector: 'button[role="tab"]' })).toHaveAttribute(
           "data-state",
@@ -580,9 +580,9 @@ describe("DeploysPage", () => {
     ).toHaveLength(0);
     fireEvent.click(within(menu).getByRole("menuitem", { name: /release-previous/u }));
     await waitFor(() => {
-      expect(requestedOptions(adminDeployRollbackContract)).toContainEqual({
-        body: { app: "api", requestId: requestUuid, targetAttemptId: olderId },
-      });
+      expect(requestedOptions(adminDeployRollbackContract)).toEqual([
+        { body: { app: "api", requestId: requestUuid, targetAttemptId: olderId } },
+      ]);
     });
   });
 
@@ -615,9 +615,9 @@ describe("DeploysPage", () => {
     expect(screen.queryByText(/Rollback of the deploy service/u)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /^Redeploy/u }));
     await waitFor(() => {
-      expect(requestedOptions(adminDeployManualRedeployContract)).toContainEqual({
-        body: { app: "deploy", requestId: requestUuid },
-      });
+      expect(requestedOptions(adminDeployManualRedeployContract)).toEqual([
+        { body: { app: "deploy", requestId: requestUuid } },
+      ]);
     });
   });
 
