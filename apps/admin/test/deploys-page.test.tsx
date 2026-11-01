@@ -508,23 +508,46 @@ describe("DeploysPage", () => {
   });
 
   it("records a direct redeploy once and invalidates deployment reads", async () => {
+    const normalRequest = request.getMockImplementation() as (
+      ...args: unknown[]
+    ) => Promise<unknown>;
+    let releaseLatest!: () => void;
+    const latestReady = new Promise<void>((resolve) => {
+      releaseLatest = resolve;
+    });
+    request.mockImplementation((contract, options) =>
+      contract === adminDeployAttemptHistoryContract &&
+      (options as { query?: { latestPerApp?: string } })?.query?.latestPerApp === "true"
+        ? latestReady.then(() => ({ attempts }))
+        : normalRequest(contract, options),
+    );
     const client = mount();
-    await ready();
-    const invalidate = vi.spyOn(client, "invalidateQueries");
-    fireEvent.click(screen.getByRole("button", { name: /^Redeploy/u }));
-    await waitFor(() => {
-      expect(request).toHaveBeenCalledWith(adminDeployManualRedeployContract, {
-        body: { app: "api", requestId: requestUuid },
+    try {
+      fireEvent.click(await screen.findByLabelText("Select api"));
+      const redeploy = await screen.findByLabelText(/^Redeploy/u);
+      await waitFor(() => expect(redeploy).toBeEnabled());
+      const invalidate = vi.spyOn(client, "invalidateQueries");
+      fireEvent.click(redeploy);
+      await waitFor(() => {
+        expect(request).toHaveBeenCalledWith(adminDeployManualRedeployContract, {
+          body: { app: "api", requestId: requestUuid },
+        });
+        expect(invalidate).toHaveBeenCalledWith({ queryKey: ["admin", "deploys"] });
+        expect(screen.getByText("Deploys", { selector: 'button[role="tab"]' })).toHaveAttribute(
+          "data-state",
+          "active",
+        );
       });
-    });
-    expect(
-      request.mock.calls.filter(([contract]) => contract === adminDeployManualRedeployContract),
-    ).toHaveLength(1);
-    await waitFor(() => {
-      expect(invalidate).toHaveBeenCalledWith({ queryKey: ["admin", "deploys"] });
-    });
-    expect(screen.getByRole("tab", { name: "Deploys" })).toHaveAttribute("data-state", "active");
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(
+        request.mock.calls.filter(([contract]) => contract === adminDeployManualRedeployContract),
+      ).toHaveLength(1);
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    } finally {
+      await act(async () => {
+        releaseLatest();
+        await latestReady;
+      });
+    }
   });
 
   it("offers only prior images with a digest-pinned current tag and submits the selected target", async () => {
