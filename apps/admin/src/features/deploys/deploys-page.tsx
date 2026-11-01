@@ -31,6 +31,9 @@ import {
   TabsTrigger,
   TabsContent,
   TooltipProvider,
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
   StatusDot,
   toast,
   Badge,
@@ -430,23 +433,40 @@ export function DeploysPage() {
                         <span className="hidden sm:inline">Redeploy {shortTag(runningTag)}</span>
                       </Button>
                       <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            aria-label="Roll back"
-                            title="Roll back"
-                            className="size-8 px-0 sm:h-8 sm:w-auto sm:gap-2 sm:px-2.5"
-                            size="sm"
-                            variant="outline"
-                            disabled={
-                              actionDisabled ||
-                              appName === "deploy" ||
-                              !targets.some((run) => run.image?.tag !== runningTag)
-                            }
-                          >
-                            <RiArrowGoBackLine aria-hidden="true" className="size-4" />
-                            <span className="hidden sm:inline">Roll back</span>
-                          </Button>
-                        </DropdownMenuTrigger>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span
+                              className="inline-flex"
+                              tabIndex={appName === "deploy" ? 0 : undefined}
+                              aria-label={
+                                appName === "deploy" ? "Why rollback is unavailable" : undefined
+                              }
+                            >
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  aria-label="Roll back"
+                                  title={appName === "deploy" ? undefined : "Roll back"}
+                                  className="size-8 px-0 sm:h-8 sm:w-auto sm:gap-2 sm:px-2.5"
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={
+                                    actionDisabled ||
+                                    appName === "deploy" ||
+                                    !targets.some((run) => run.image?.tag !== runningTag)
+                                  }
+                                >
+                                  <RiArrowGoBackLine aria-hidden="true" className="size-4" />
+                                  <span className="hidden sm:inline">Roll back</span>
+                                </Button>
+                              </DropdownMenuTrigger>
+                            </span>
+                          </TooltipTrigger>
+                          {appName === "deploy" && (
+                            <TooltipContent sideOffset={6}>
+                              Rollback of the deploy service requires host-local operation.
+                            </TooltipContent>
+                          )}
+                        </Tooltip>
                         <DropdownMenuContent align="end" className="w-80">
                           <DropdownMenuLabel>
                             Running: {shortTag(runningTag)} · choose a previous deploy
@@ -545,11 +565,6 @@ export function DeploysPage() {
                       </span>
                     </div>
                   </div>
-                  {appName === "deploy" && (
-                    <p className="text-xs text-muted-foreground">
-                      Rollback of the deploy service requires host-local operation.
-                    </p>
-                  )}
                   <Tabs value={activeTab} onValueChange={setTab} className="min-h-0 min-w-0 flex-1">
                     <ScrollArea
                       variant="overlay"
