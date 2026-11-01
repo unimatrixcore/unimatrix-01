@@ -1,5 +1,7 @@
 import {
   deployAttemptIntentSchema,
+  deployAttemptBatchIntentSchema,
+  deployAttemptBatchIntentResponseSchema,
   deployManualRedeployInputSchema,
   deployRollbackInputSchema,
   deployExecuteInputSchema,
@@ -17,6 +19,12 @@ export const deployAttemptIntentContract = defineApiContract({
   path: "/deployment/attempts/intent",
   bodySchema: deployAttemptIntentSchema,
   responseSchema: deployAttemptResponseSchema,
+});
+export const deployAttemptBatchIntentContract = defineApiContract({
+  method: "POST",
+  path: "/deployment/attempts/intent",
+  bodySchema: deployAttemptBatchIntentSchema,
+  responseSchema: deployAttemptBatchIntentResponseSchema,
 });
 export const deployAttemptReportContract = defineApiContract({
   method: "POST",

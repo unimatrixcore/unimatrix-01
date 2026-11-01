@@ -246,3 +246,115 @@ void test("latest-per-app reads keep quiet services visible without fetching eve
     await f.app.close();
   }
 });
+
+void test("batch intents authenticate once, capture per-app baselines and retry exact records", async () => {
+  const f = fixture();
+  const intents = ["admin", "api", "auth"].map((app) => ({
+    ...intent,
+    app,
+    image: { ...image, repository: `ghcr.io/unimatrixcore/unimatrix-${app}` },
+  }));
+  try {
+    for (const token of [undefined, f.read]) {
+      const response = await f.app.inject({
+        method: "POST",
+        url: "/deployment/attempts/intent",
+        payload: { intents },
+        headers: token === undefined ? {} : { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.statusCode, token === undefined ? 401 : 403);
+    }
+    const now = Date.now();
+    f.setEvidence([
+      { app: "admin", containerId: "b".repeat(64), observedAt: now, image },
+      { app: "api", containerId: "c".repeat(64), observedAt: now - 30_000, image },
+      { app: "auth", containerId: "d".repeat(64), observedAt: now, image },
+      { app: "auth", containerId: "e".repeat(64), observedAt: now, image },
+    ]);
+    const inject = (token = f.manage) =>
+      f.app.inject({
+        method: "POST",
+        url: "/deployment/attempts/intent",
+        payload: { intents },
+        headers: { authorization: `Bearer ${token}` },
+      });
+    const response = await inject();
+    assert.equal(response.statusCode, 200, response.body);
+    const records = response.json<{ attempts: DeployAttemptRecord[] }>().attempts;
+    assert.deepEqual(
+      records.map((record) => record.app),
+      ["admin", "api", "auth"],
+    );
+    assert.equal(records[0]?.baseline?.containerId, "b".repeat(64));
+    assert.equal(records[1]?.baseline, null);
+    assert.equal(records[2]?.baseline, null);
+    assert.ok(records.every((record) => record.outcome === "incomplete"));
+    const retry = await inject();
+    assert.equal(retry.statusCode, 200, retry.body);
+    assert.deepEqual(retry.json(), response.json());
+    assert.equal((await inject(f.other)).statusCode, 409);
+    assert.equal(f.app.deploymentAttempts.list(undefined, 100, Date.now()).length, 3);
+  } finally {
+    await f.app.close();
+  }
+});
+
+void test("a conflict in the second or last batch app rolls back every new reservation", async () => {
+  for (const blocked of ["api", "auth"]) {
+    const f = fixture();
+    const intents = ["admin", "api", "auth"].map((app) => ({
+      ...intent,
+      app,
+      image: { ...image, repository: `ghcr.io/unimatrixcore/unimatrix-${app}` },
+    }));
+    try {
+      await f.app.ready();
+      const existing = f.app.deploymentAttempts.intent(
+        { ...intents.find((input) => input.app === blocked)!, runId: "43" },
+        "existing-reporter",
+        null,
+        Date.now(),
+      );
+      const response = await f.app.inject({
+        method: "POST",
+        url: "/deployment/attempts/intent",
+        payload: { intents },
+        headers: { authorization: `Bearer ${f.manage}` },
+      });
+      assert.equal(response.statusCode, 409, response.body);
+      assert.deepEqual(
+        f.app.deploymentAttempts.list(undefined, 100, Date.now()).map((record) => record.id),
+        [existing.id],
+      );
+    } finally {
+      await f.app.close();
+    }
+  }
+});
+
+void test("invalid batch declarations and mixed runs reserve nothing", async () => {
+  const f = fixture();
+  try {
+    for (const [intents, status] of [
+      [[intent, { ...intent, app: "absent" }], 404],
+      [
+        [intent, { ...intent, app: "web", image: { ...image, repository: "ghcr.io/foreign/web" } }],
+        400,
+      ],
+      [[intent, { ...intent, app: "web", runId: "43" }], 400],
+      [[intent, intent], 400],
+      [[], 400],
+    ] as const) {
+      const response = await f.app.inject({
+        method: "POST",
+        url: "/deployment/attempts/intent",
+        payload: { intents },
+        headers: { authorization: `Bearer ${f.manage}` },
+      });
+      assert.equal(response.statusCode, status, response.body);
+      assert.deepEqual(f.app.deploymentAttempts.list(undefined, 100, Date.now()), []);
+    }
+  } finally {
+    await f.app.close();
+  }
+});

@@ -4,11 +4,13 @@ import {
   deployAttemptIntentContract,
   deployAttemptReportContract,
   deployAttemptHistoryContract,
-  deployAttemptIntentSchema,
+  deployAttemptIntentRequestSchema,
+  deployAttemptIntentResponseSchema,
   deployAttemptReportSchema,
   deployAttemptQuerySchema,
   deployAttemptLogsContract,
   deployAttemptLogsQuerySchema,
+  type DeployAttemptBaseline,
 } from "@unimatrix/shared";
 
 import { requireDeployCapability } from "../../plugins/auth.js";
@@ -69,36 +71,53 @@ export const deploymentAttemptsModule: FastifyPluginAsync = (app) => {
     url: deployAttemptIntentContract.path,
     preHandler: requireDeployCapability("manage"),
     schema: {
-      body: deployAttemptIntentSchema,
-      response: { 200: deployAttemptIntentContract.responseSchema },
+      body: deployAttemptIntentRequestSchema,
+      response: { 200: deployAttemptIntentResponseSchema },
     },
     handler: async (request) => {
-      const service = declaredApp(request.body.app);
-      if (
-        request.body.repository !== "unimatrixcore/unimatrix-01" ||
-        request.body.image.repository !== service.image
-      ) {
-        throw Object.assign(new Error("Deployment image or repository is not declared"), {
-          statusCode: 400,
-        });
+      const inputs = "intents" in request.body ? request.body.intents : [request.body];
+      for (const input of inputs) {
+        const service = declaredApp(input.app);
+        if (
+          input.repository !== "unimatrixcore/unimatrix-01" ||
+          input.image.repository !== service.image
+        ) {
+          throw Object.assign(new Error("Deployment image or repository is not declared"), {
+            statusCode: 400,
+          });
+        }
       }
       try {
-        const evidence = (await app.readRuntimeEvidence()).filter(
-          (entry) => entry.app === service.appDir,
-        );
+        const evidence = await app.readRuntimeEvidence();
         const now = Date.now();
-        const [before] = evidence;
-        const baseline =
-          evidence.length === 1 &&
-          before !== undefined &&
-          before.observedAt <= now &&
-          now - before.observedAt < 30_000
-            ? { containerId: before.containerId, observedAt: before.observedAt }
-            : null;
+        const baselines = new Map<string, DeployAttemptBaseline | null>();
+        for (const input of inputs) {
+          const matching = evidence.filter((entry) => entry.app === input.app);
+          const [before] = matching;
+          baselines.set(
+            input.app,
+            matching.length === 1 &&
+              before !== undefined &&
+              before.observedAt <= now &&
+              now - before.observedAt < 30_000
+              ? { containerId: before.containerId, observedAt: before.observedAt }
+              : null,
+          );
+        }
+        if ("intents" in request.body) {
+          return {
+            attempts: app.deploymentAttempts.intentBatch(
+              request.body.intents,
+              request.serviceCaller!.id,
+              baselines,
+              now,
+            ),
+          };
+        }
         return app.deploymentAttempts.intent(
           request.body,
           request.serviceCaller!.id,
-          baseline,
+          baselines.get(request.body.app) ?? null,
           now,
         );
       } catch (error) {

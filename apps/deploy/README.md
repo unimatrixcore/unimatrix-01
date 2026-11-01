@@ -166,6 +166,12 @@ supersedes a rollback; there is no hold to release. Execution requires a baselin
 30 seconds and refuses missing or stale evidence before mutations. Expired unstarted intents release reservations;
 uncertain tag writes and unresolved queues continue blocking even after timeout.
 
+The protected intent endpoint also accepts `{intents: [...]}` for one release's unique app set.
+It validates every declaration before reserving the batch in one SQLite transaction. A conflict,
+invalid baseline or previously started attempt rolls back every new reservation. Exact retries of
+an untouched batch retain their attempt IDs. Deploy this server support before switching the CI
+consumer to batch requests; an older server rejects the new body before reserving anything.
+
 Keep Dokploy UI env edits and `secrets-apply` outside execution windows: they do not share attempt
 reservations and Dokploy has no conditional env write. CI self-deployment runs last. Startup
 recovery converts interrupted queue claims to unknown results without replaying them; missing or
@@ -173,6 +179,24 @@ ambiguous runtime evidence can still leave a claim requiring host-level investig
 See [activation requirements](../../docs/deployment-attempts.md#restricted-ci-ingress-and-activation).
 Production rollback and CI supersession remain unverified; complete the controlled activation trial
 before relying on them operationally.
+
+### Cancel unused CI reservations
+
+After the originating CI job has finished, with no retry or request still in flight, a host operator
+can close its unused reservations before their deadline. Back up the live database through SQLite's
+backup API first. Prepare a private JSON manifest containing `repository`, `runId`, `runAttempt`,
+the original `reporterId` and the exact `attemptIds` for the entire reserved run cohort:
+
+```bash
+docker exec <deploy-container> node dist/cli/attempts.js \
+  cancel-unused --manifest /path/inside/container/cancellation.json
+```
+
+The command refuses the whole operation if any ID, caller or run differs, or if any reservation has
+started a tag write or queue request, observed replacement evidence, expired or already resolved.
+It checks and closes the cohort in one transaction, retaining each record as `failed` with a
+completion time. It changes no image tag, queue, token or running container. Cancellation cannot
+be replayed as execution; do not delete records or manufacture mutation reports to release them.
 
 ## Container observation
 

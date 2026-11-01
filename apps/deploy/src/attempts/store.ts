@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
 import Database from "better-sqlite3";
+import { z } from "zod";
 import {
   deployAttemptIntentSchema,
   hasUnresolvedDeploymentWork as hasUnresolvedWork,
@@ -40,7 +41,23 @@ export interface DeploymentExecutionClaim {
   claimed: boolean;
 }
 
+const cancelUnusedCiSchema = deployAttemptIntentSchema
+  .pick({ repository: true, runId: true, runAttempt: true })
+  .extend({
+    reporterId: z.string().min(1).max(128),
+    attemptIds: z.array(z.uuid()).min(1).max(64),
+  });
+
+export type CancelUnusedCiReservationsInput = z.output<typeof cancelUnusedCiSchema>;
+
 export interface DeploymentAttemptStore {
+  cancelUnusedCi(input: CancelUnusedCiReservationsInput, now: number): DeployAttemptRecord[];
+  intentBatch(
+    inputs: readonly DeployAttemptIntent[],
+    reporterId: string,
+    baselines: ReadonlyMap<string, DeployAttemptBaseline | null>,
+    now: number,
+  ): DeployAttemptRecord[];
   findRollback(
     input: DeployRollbackInput,
     reporterId: string,
@@ -101,6 +118,24 @@ function validateTime(now: number): void {
   if (!Number.isSafeInteger(now) || now < 0 || !Number.isSafeInteger(now + ATTEMPT_DEADLINE_MS)) {
     throw new Error("Invalid deployment observation time.");
   }
+}
+
+function isUnusedCiReservation(record: DeployAttemptRecord, now: number): boolean {
+  return (
+    record.trigger === "ci" &&
+    record.image !== null &&
+    record.outcome === "incomplete" &&
+    record.correlation === "pending" &&
+    record.tagWrite === null &&
+    record.queue === null &&
+    record.queueClaimedAt === null &&
+    record.after === null &&
+    record.landedAt === null &&
+    record.lateLandedAt === null &&
+    record.recreatedAt == null &&
+    record.completedAt == null &&
+    now < record.deadlineAt
+  );
 }
 
 export function openDeploymentAttemptStore(path: string): DeploymentAttemptStore {
@@ -181,7 +216,113 @@ export function openDeploymentAttemptStore(path: string): DeploymentAttemptStore
         throw conflict();
       return attempt;
     };
+    const reserveIntent = db.transaction(
+      (
+        input: DeployAttemptIntent,
+        reporterId: string,
+        baseline: DeployAttemptBaseline | null,
+        now: number,
+      ) => {
+        const parsed = deployAttemptIntentSchema.parse(input);
+        if (reporterId.length === 0 || reporterId.length > 128) throw conflict();
+        const before = deployAttemptBaselineSchema.nullable().parse(baseline);
+        if (before !== null && before.observedAt > now) throw conflict();
+        const records = maintain(now);
+        const key = JSON.stringify([
+          parsed.repository,
+          parsed.runId,
+          parsed.runAttempt,
+          parsed.app,
+        ]);
+        const existing = db
+          .prepare("SELECT record FROM deployment_attempts WHERE request_key = ?")
+          .get(key) as { record: string } | undefined;
+        if (existing !== undefined) {
+          const record = deployAttemptResponseSchema.parse(JSON.parse(existing.record));
+          if (
+            record.image === null ||
+            record.runId === null ||
+            record.runAttempt === null ||
+            record.trigger !== "ci"
+          )
+            throw conflict();
+          const priorIntent: DeployAttemptIntent = {
+            repository: record.repository,
+            runId: record.runId,
+            runAttempt: record.runAttempt,
+            app: record.app,
+            trigger: record.trigger,
+            image: record.image,
+            ...(record.commitSubject !== undefined ? { commitSubject: record.commitSubject } : {}),
+          };
+          if (
+            record.reporterId !== reporterId ||
+            JSON.stringify(priorIntent) !== JSON.stringify(parsed)
+          )
+            throw conflict();
+          return record;
+        }
+        if (records.length >= MAX_ATTEMPT_RECORDS) {
+          throw Object.assign(new Error("Deployment attempt capacity exhausted."), {
+            statusCode: 503,
+          });
+        }
+        const record: DeployAttemptRecord = {
+          ...parsed,
+          id: randomUUID(),
+          reporterId,
+          requestedAt: now,
+          deadlineAt: now + ATTEMPT_DEADLINE_MS,
+          baseline: before,
+          tagWrite: null,
+          queue: null,
+          queueClaimedAt: null,
+          outcome: "incomplete",
+          correlation: "pending",
+          after: null,
+          landedAt: null,
+          lateLandedAt: null,
+          completedAt: null,
+          failureReason: null,
+        };
+        if (records.some((previous) => previous.app === record.app && hasUnresolvedWork(previous)))
+          throw conflict();
+        db.prepare(
+          "INSERT INTO deployment_attempts (id, request_key, requested_at, record) VALUES (?, ?, ?, ?)",
+        ).run(record.id, key, now, JSON.stringify(record));
+        return record;
+      },
+    );
     return {
+      cancelUnusedCi: db.transaction((input: CancelUnusedCiReservationsInput, now: number) => {
+        const parsed = cancelUnusedCiSchema.parse(input);
+        validateTime(now);
+        const ids = new Set(parsed.attemptIds);
+        if (ids.size !== parsed.attemptIds.length) throw conflict();
+        const records = readRecords().filter(
+          (record) =>
+            record.repository === parsed.repository &&
+            record.runId === parsed.runId &&
+            record.runAttempt === parsed.runAttempt,
+        );
+        if (
+          records.length !== ids.size ||
+          records.some(
+            (record) =>
+              !ids.has(record.id) ||
+              record.reporterId !== parsed.reporterId ||
+              !isUnusedCiReservation(record, now),
+          )
+        )
+          throw conflict();
+        for (const record of records) {
+          record.outcome = "failed";
+          record.completedAt = now;
+          record.failureReason = null;
+          writeRecord(deployAttemptResponseSchema.parse(record));
+        }
+        return records;
+      }),
       findRollback: db.transaction(
         (input: DeployRollbackInput, reporterId: string, now: number) => {
           const parsed = deployRollbackInputSchema.parse(input);
@@ -346,85 +487,33 @@ export function openDeploymentAttemptStore(path: string): DeploymentAttemptStore
           return readManual(parsed, reporterId);
         },
       ),
-      intent: db.transaction(
+      intent: reserveIntent,
+      intentBatch: db.transaction(
         (
-          input: DeployAttemptIntent,
+          inputs: readonly DeployAttemptIntent[],
           reporterId: string,
-          baseline: DeployAttemptBaseline | null,
+          baselines: ReadonlyMap<string, DeployAttemptBaseline | null>,
           now: number,
         ) => {
-          const parsed = deployAttemptIntentSchema.parse(input);
-          if (reporterId.length === 0 || reporterId.length > 128) throw conflict();
-          const before = deployAttemptBaselineSchema.nullable().parse(baseline);
-          if (before !== null && before.observedAt > now) throw conflict();
-          const records = maintain(now);
-          const key = JSON.stringify([
-            parsed.repository,
-            parsed.runId,
-            parsed.runAttempt,
-            parsed.app,
-          ]);
-          const existing = db
-            .prepare("SELECT record FROM deployment_attempts WHERE request_key = ?")
-            .get(key) as { record: string } | undefined;
-          if (existing !== undefined) {
-            const record = deployAttemptResponseSchema.parse(JSON.parse(existing.record));
-            if (
-              record.image === null ||
-              record.runId === null ||
-              record.runAttempt === null ||
-              record.trigger !== "ci"
-            )
-              throw conflict();
-            const priorIntent: DeployAttemptIntent = {
-              repository: record.repository,
-              runId: record.runId,
-              runAttempt: record.runAttempt,
-              app: record.app,
-              trigger: record.trigger,
-              image: record.image,
-              ...(record.commitSubject !== undefined
-                ? { commitSubject: record.commitSubject }
-                : {}),
-            };
-            if (
-              record.reporterId !== reporterId ||
-              JSON.stringify(priorIntent) !== JSON.stringify(parsed)
-            )
-              throw conflict();
-            return record;
-          }
-          if (records.length >= MAX_ATTEMPT_RECORDS) {
-            throw Object.assign(new Error("Deployment attempt capacity exhausted."), {
-              statusCode: 503,
-            });
-          }
-          const record: DeployAttemptRecord = {
-            ...parsed,
-            id: randomUUID(),
-            reporterId,
-            requestedAt: now,
-            deadlineAt: now + ATTEMPT_DEADLINE_MS,
-            baseline: before,
-            tagWrite: null,
-            queue: null,
-            queueClaimedAt: null,
-            outcome: "incomplete",
-            correlation: "pending",
-            after: null,
-            landedAt: null,
-            lateLandedAt: null,
-            completedAt: null,
-            failureReason: null,
-          };
+          if (inputs.length < 1 || inputs.length > 64) throw conflict();
+          const parsed = inputs.map((input) => deployAttemptIntentSchema.parse(input));
+          const first = parsed[0]!;
           if (
-            records.some((previous) => previous.app === record.app && hasUnresolvedWork(previous))
+            new Set(parsed.map((input) => input.app)).size !== parsed.length ||
+            parsed.some(
+              (input) =>
+                input.repository !== first.repository ||
+                input.runId !== first.runId ||
+                input.runAttempt !== first.runAttempt ||
+                !baselines.has(input.app),
+            )
           )
             throw conflict();
-          db.prepare(
-            "INSERT INTO deployment_attempts (id, request_key, requested_at, record) VALUES (?, ?, ?, ?)",
-          ).run(record.id, key, now, JSON.stringify(record));
-          return record;
+          const records = parsed.map((input) =>
+            reserveIntent(input, reporterId, baselines.get(input.app) ?? null, now),
+          );
+          if (records.some((record) => !isUnusedCiReservation(record, now))) throw conflict();
+          return records;
         },
       ),
       reserveManual: db.transaction(
@@ -492,7 +581,12 @@ export function openDeploymentAttemptStore(path: string): DeploymentAttemptStore
         if (field === "queue" && record.image !== null && record.tagWrite !== "acknowledged")
           throw conflict();
         if (parsed.result === "started") {
-          if (record[field] !== null || now >= record.deadlineAt) throw conflict();
+          if (
+            (record.outcome !== "incomplete" && record.outcome !== "queued") ||
+            record[field] !== null ||
+            now >= record.deadlineAt
+          )
+            throw conflict();
           if (field === "queue") record.queueClaimedAt = now;
         } else if (record[field] !== "started" && record[field] !== parsed.result) {
           throw conflict();

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   deployAttemptIntentSchema,
+  deployAttemptBatchIntentSchema,
+  deployAttemptBatchIntentContract,
+  deployAttemptIntentRequestSchema,
   hasUnresolvedDeploymentWork,
   deployAttemptReportSchema,
   deployAttemptQuerySchema,
@@ -41,6 +44,27 @@ const intent = {
   },
 };
 describe("deployment attempt contracts", () => {
+  it("bounds atomic reservation batches to distinct apps in one CI run", () => {
+    const other = { ...intent, app: "web" };
+    const batch = { intents: [intent, other] };
+    expect(deployAttemptBatchIntentSchema.parse(batch)).toEqual(batch);
+    expect(deployAttemptIntentRequestSchema.parse(intent)).toEqual(intent);
+    expect(deployAttemptIntentRequestSchema.parse(batch)).toEqual(batch);
+    expect(deployAttemptBatchIntentContract.path).toBe(deployAttemptIntentContract.path);
+    for (const invalid of [
+      { intents: [] },
+      { intents: [intent, intent] },
+      { intents: Array.from({ length: 65 }, (_, index) => ({ ...intent, app: `app-${index}` })) },
+      { intents: [intent, { ...other, repository: "other/repository" }] },
+      { intents: [intent, { ...other, runId: "456" }] },
+      { intents: [intent, { ...other, runAttempt: 2 }] },
+      { intents: [intent], reporterId: "injected" },
+      { intents: [{ ...intent, baseline: { containerId: "b".repeat(64), observedAt: 1 } }] },
+    ]) {
+      expect(deployAttemptBatchIntentSchema.safeParse(invalid).success).toBe(false);
+      expect(deployAttemptIntentRequestSchema.safeParse(invalid).success).toBe(false);
+    }
+  });
   it("accepts bounded public commit subjects and rejects controls or arbitrary diagnostic output", () => {
     expect(
       deployAttemptIntentSchema.parse({ ...intent, commitSubject: "feat: deploy console" })
