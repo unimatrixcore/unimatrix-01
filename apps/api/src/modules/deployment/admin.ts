@@ -15,6 +15,8 @@ import {
   deployAttemptLogsQuerySchema,
   adminDeployManualRedeployContract,
   deployManualRedeployRequestSchema,
+  adminDeployRollbackContract,
+  deployRollbackRequestSchema,
 } from "@unimatrix/shared";
 import type { FastifyPluginAsync } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
@@ -47,6 +49,37 @@ export const adminDeploymentModule: FastifyPluginAsync<AdminDeploymentModuleOpti
       });
     }
   }
+
+  app.withTypeProvider<ZodTypeProvider>().route({
+    method: adminDeployRollbackContract.method,
+    url: adminDeployRollbackContract.path,
+    preHandler: requireAdminSection("deploys"),
+    schema: {
+      body: deployRollbackRequestSchema,
+      response: { 200: adminDeployRollbackContract.responseSchema },
+    },
+    handler: async (request) => {
+      const actorUserId = getRequiredAuthUserId(request);
+      try {
+        return await deployClient.rollback({ ...request.body, actorUserId });
+      } catch (error) {
+        const statusCode = error instanceof DeployClientError ? error.statusCode : undefined;
+        throw new ApiError({
+          statusCode: statusCode ?? 502,
+          code:
+            statusCode === 404
+              ? "NOT_FOUND"
+              : statusCode === 409
+                ? "CLIENT_ERROR"
+                : "INTERNAL_ERROR",
+          message:
+            statusCode === 409
+              ? "Deployment request conflicts with deployment policy or pending work"
+              : "Deployment request unavailable",
+        });
+      }
+    },
+  });
 
   app.withTypeProvider<ZodTypeProvider>().route({
     method: adminDeployManualRedeployContract.method,

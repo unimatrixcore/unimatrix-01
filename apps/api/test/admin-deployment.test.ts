@@ -97,6 +97,10 @@ function health(app: string): DeployHealthHistoryResponse {
 }
 
 const manualRequest = { app: "api", requestId: "11111111-1111-4111-8111-111111111111" };
+const rollbackRequest = {
+  ...manualRequest,
+  targetAttemptId: "22222222-2222-4222-8222-222222222222",
+};
 function manualAttempt(
   input = { ...manualRequest, actorUserId: "user_2cccccccccccccccccccccccccc" },
 ) {
@@ -125,6 +129,23 @@ function manualAttempt(
 
 function client(calls: unknown[] = []): DeployClient {
   return {
+    rollback: (input) => {
+      calls.push(["rollback", input]);
+      return Promise.resolve({
+        ...manualAttempt(input),
+        ...input,
+        trigger: "rollback" as const,
+        tagWrite: "acknowledged" as const,
+        image: {
+          repository: "ghcr.io/unimatrixcore/unimatrix-api",
+          tag: "a".repeat(40),
+          commit: "a".repeat(40),
+          platform: "linux/amd64",
+          digestKind: "manifest" as const,
+          digest: `sha256:${"b".repeat(64)}`,
+        },
+      });
+    },
     redeploy: (input) => {
       calls.push(["redeploy", input]);
       return Promise.resolve(manualAttempt(input));
@@ -330,6 +351,7 @@ void test("upstream failures become generic 502 errors without leaking values to
   const logs: string[] = [];
   const fail = () => Promise.reject(new Error(marker));
   const deployClient: DeployClient = {
+    rollback: fail,
     redeploy: fail,
     getDeclarations: fail,
     getState: fail,
@@ -493,6 +515,75 @@ void test("manual redeploy returns safe refusal statuses and hides unknown upstr
         failure instanceof DeployClientError ? failure.statusCode : 502,
       );
       assert.doesNotMatch(response.body + logs.join(""), /private-upstream-value/u);
+    } finally {
+      await cleanup();
+    }
+  }
+});
+
+void test("rollback requires deploy admin permission and forwards only verified actor attribution", async () => {
+  const calls: unknown[] = [];
+  const { app, cleanup } = createTestApp(undefined, { deployClient: client(calls) });
+  const request = {
+    method: "POST" as const,
+    url: "/deployment/admin/rollback",
+    payload: rollbackRequest,
+  };
+  try {
+    assert.equal((await app.inject(request)).statusCode, 401);
+    assert.equal(
+      (await app.inject({ ...request, headers: authHeaders({ auth: ["editor"] }) })).statusCode,
+      403,
+    );
+    for (const payload of [
+      { ...rollbackRequest, actorUserId: "spoofed" },
+      { ...rollbackRequest, image: { tag: "main" } },
+      { ...rollbackRequest, targetAttemptId: "invalid" },
+      { ...rollbackRequest, app: "../api" },
+    ]) {
+      assert.equal(
+        (await app.inject({ ...request, payload, headers: authHeaders() })).statusCode,
+        400,
+      );
+    }
+    assert.deepEqual(calls, []);
+    const response = await app.inject({ ...request, headers: authHeaders() });
+    assert.equal(response.statusCode, 200, response.body);
+    assert.equal(response.headers["cache-control"], "no-store");
+    assert.equal(response.json<{ trigger: string }>().trigger, "rollback");
+    assert.deepEqual(calls, [
+      ["rollback", { ...rollbackRequest, actorUserId: "user_2cccccccccccccccccccccccccc" }],
+    ]);
+  } finally {
+    await cleanup();
+  }
+});
+
+void test("rollback preserves safe refusal statuses without leaking upstream values", async () => {
+  for (const failure of [
+    new DeployClientError(404),
+    new DeployClientError(409),
+    new Error("private-rollback-value"),
+  ]) {
+    const logs: string[] = [];
+    const deployClient = client();
+    deployClient.rollback = () => Promise.reject(failure);
+    const { app, cleanup } = createTestApp(undefined, {
+      deployClient,
+      loggerStream: { write: (chunk) => logs.push(chunk) },
+    });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/deployment/admin/rollback",
+        payload: rollbackRequest,
+        headers: authHeaders(),
+      });
+      assert.equal(
+        response.statusCode,
+        failure instanceof DeployClientError ? failure.statusCode : 502,
+      );
+      assert.doesNotMatch(response.body + logs.join(""), /private-rollback-value/u);
     } finally {
       await cleanup();
     }

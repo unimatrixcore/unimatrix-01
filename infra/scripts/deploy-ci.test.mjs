@@ -67,18 +67,16 @@ function setup(t, apps = ["api", "auth"]) {
       states.set(state.id, state);
       return Response.json(state);
     }
-    if (path === "/deployment/attempts/report") {
+    if (path === "/deployment/execute") {
+      assert.equal(options.headers["x-api-key"], undefined);
+      assert.equal(options.headers.Authorization, "Bearer private-token");
       const state = states.get(body.attemptId);
-      state[body.stage === "tag-write" ? "tagWrite" : "queue"] = body.result;
+      assert.equal(body.app, state.app);
+      state.tagWrite = "acknowledged";
+      state.queue = "acknowledged";
       return Response.json(state);
     }
     if (path === "/api/domain.byComposeId") return Response.json([]);
-    if (path === "/api/project.update" || path === "/api/compose.deploy") {
-      assert.equal(options.headers.Authorization, undefined);
-      assert.equal(options.headers["x-api-key"], "private-key");
-      // A mutation's success payload may contain secrets and must not be parsed.
-      return new Response("unparseable private env payload");
-    }
     throw new Error("Unexpected request");
   }
   return { root, env, calls, fetchImpl, log: () => undefined };
@@ -147,40 +145,42 @@ test("a failed publication does not produce deployable image evidence", (t) => {
   assert.equal(existsSync(join(output, "api.json")), false);
 });
 
-test("acknowledges every durable intent and claim before a shared project mutation", async (t) => {
+test("reserves every intent before service execution and never writes Dokploy directly", async (t) => {
   const fixture = setup(t);
-  await deployCi(fixture);
+  const messages = [];
+  await deployCi({ ...fixture, log: (message) => messages.push(message) });
   const { calls } = fixture;
-  const mutationIndex = calls.findIndex(({ path }) => path === "/api/project.update");
+  const executionIndex = calls.findIndex(({ path }) => path === "/deployment/execute");
   assert.equal(
-    calls.slice(0, mutationIndex).filter(({ path }) => path.endsWith("/intent")).length,
+    calls.slice(0, executionIndex).filter(({ path }) => path.endsWith("/intent")).length,
     2,
   );
-  assert.equal(
-    calls.slice(0, mutationIndex).filter(({ body }) => body?.result === "started").length,
-    2,
+  assert.deepEqual(
+    calls.filter(({ path }) => path === "/deployment/execute").map(({ body }) => body),
+    [
+      { app: "api", attemptId: idFor("api") },
+      { app: "auth", attemptId: idFor("auth") },
+    ],
   );
-  assert.equal(calls.filter(({ path }) => path === "/api/project.update").length, 1);
-  assert.equal(calls.filter(({ path }) => path === "/api/compose.deploy").length, 2);
-  for (const app of ["api", "auth"]) {
-    const queueIndex = calls.findIndex(
-      ({ path, body }) => path === "/api/compose.deploy" && body.composeId === `compose-${app}`,
-    );
-    assert.equal(calls[queueIndex].body.title, `unimatrix-attempt:${idFor(app)}`);
-    assert.deepEqual(calls[queueIndex - 1].body, {
-      attemptId: idFor(app),
-      stage: "queue",
-      result: "started",
-    });
-    assert.deepEqual(calls[queueIndex + 1].body, {
-      attemptId: idFor(app),
-      stage: "queue",
-      result: "acknowledged",
-    });
-  }
+  assert.equal(
+    calls.some(({ path }) =>
+      ["/api/project.update", "/api/compose.update", "/api/compose.deploy"].includes(path),
+    ),
+    false,
+  );
+  assert.match(messages.at(-1), /Queued is not applied/);
 });
 
-test("an unavailable intent prevents all mutations and retries reporting only", async (t) => {
+test("the deployment service executes last so its restart cannot interrupt sibling execution", async (t) => {
+  const fixture = setup(t, ["deploy", "web", "api"]);
+  await deployCi(fixture);
+  assert.deepEqual(
+    fixture.calls.filter(({ path }) => path === "/deployment/execute").map(({ body }) => body.app),
+    ["api", "web", "deploy"],
+  );
+});
+
+test("an unavailable intent prevents all execution and retries only the durable reservation", async (t) => {
   const fixture = setup(t);
   const original = fixture.fetchImpl;
   let reports = 0;
@@ -191,15 +191,35 @@ test("an unavailable intent prevents all mutations and retries reporting only", 
   await assert.rejects(deployCi(fixture), /Durable deployment report unavailable/);
   assert.equal(reports, 3);
   assert.equal(
-    fixture.calls.some(
-      ({ path }) => path === "/api/project.update" || path === "/api/compose.deploy",
-    ),
+    fixture.calls.some(({ path }) => path === "/deployment/execute"),
     false,
   );
 });
 
-test("missing publication or reporting configuration fails before deployment discovery or writes", async (t) => {
-  for (const missing of ["DEPLOY_REPORT_TOKEN", "DEPLOY_REPORT_URL"]) {
+test("a conflicting rollback reservation prevents execution without retrying the conflict", async (t) => {
+  const fixture = setup(t);
+  const original = fixture.fetchImpl;
+  let reservations = 0;
+  fixture.fetchImpl = async (url, options) =>
+    url.endsWith("/intent")
+      ? (reservations++, new Response("private error", { status: 409 }))
+      : original(url, options);
+  await assert.rejects(deployCi(fixture), /Durable deployment report unavailable/);
+  assert.equal(reservations, 1);
+  assert.equal(
+    fixture.calls.some(({ path }) => path === "/deployment/execute"),
+    false,
+  );
+});
+
+test("missing publication or reporting configuration fails before discovery or writes", async (t) => {
+  for (const missing of [
+    "DEPLOY_REPORT_TOKEN",
+    "DEPLOY_REPORT_URL",
+    "GITHUB_REPOSITORY",
+    "GITHUB_RUN_ID",
+    "GITHUB_RUN_ATTEMPT",
+  ]) {
     const fixture = setup(t);
     delete fixture.env[missing];
     await assert.rejects(deployCi(fixture));
@@ -211,93 +231,55 @@ test("missing publication or reporting configuration fails before deployment dis
   assert.equal(fixture.calls.length, 0);
 });
 
-test("uncertain mutation claim is never retried and prevents the mutation", async (t) => {
-  const fixture = setup(t);
-  const original = fixture.fetchImpl;
-  let claims = 0;
-  fixture.fetchImpl = async (url, options) => {
-    if (JSON.parse(options.body ?? "null")?.result === "started") {
-      claims++;
-      throw new Error("Connection lost after persistence");
-    }
-    return original(url, options);
-  };
-  await assert.rejects(deployCi(fixture), /Durable deployment report unavailable/);
-  assert.equal(claims, 1);
-  assert.equal(
-    fixture.calls.some(({ path }) => path === "/api/project.update"),
-    false,
-  );
-});
-
-test("transport failure after tag mutation records unknown and never replays or queues", async (t) => {
-  const fixture = setup(t);
-  const original = fixture.fetchImpl;
-  let writes = 0;
-  fixture.fetchImpl = async (url, options) => {
-    if (url.endsWith("/api/project.update")) {
-      writes++;
-      throw new Error("Response lost");
-    }
-    return original(url, options);
-  };
-  await assert.rejects(deployCi(fixture), /unknown/);
-  assert.equal(writes, 1);
-  assert.equal(
-    fixture.calls.some(({ path }) => path === "/api/compose.deploy"),
-    false,
-  );
-  assert.equal(
-    fixture.calls.filter(({ body }) => body?.stage === "tag-write" && body.result === "unknown")
-      .length,
-    2,
-  );
-});
-
-test("transport failure after queue submission is unknown and never retried", async (t) => {
+test("lost execution acknowledgement is unknown and never replayed", async (t) => {
   const fixture = setup(t, ["api"]);
   const original = fixture.fetchImpl;
-  let queues = 0;
+  let executions = 0;
   fixture.fetchImpl = async (url, options) => {
-    if (url.endsWith("/api/compose.deploy")) {
-      queues++;
-      throw new Error("Response lost");
+    if (url.endsWith("/deployment/execute")) {
+      executions++;
+      throw new Error("Lost response after mutation");
     }
     return original(url, options);
   };
   await assert.rejects(deployCi(fixture), /unknown/);
-  assert.equal(queues, 1);
-  assert.deepEqual(fixture.calls.at(-1).body, {
-    attemptId: idFor("api"),
-    stage: "queue",
-    result: "unknown",
-  });
+  assert.equal(executions, 1);
 });
 
-test("proxy failures after a mutation remain unknown rather than definite rejection", async (t) => {
-  for (const status of [408, 500, 502, 504]) {
+test("a malformed execution response is unknown and never replayed", async (t) => {
+  const fixture = setup(t, ["api"]);
+  const original = fixture.fetchImpl;
+  let executions = 0;
+  fixture.fetchImpl = async (url, options) => {
+    if (url.endsWith("/deployment/execute")) {
+      executions++;
+      return new Response("private malformed response");
+    }
+    return original(url, options);
+  };
+  await assert.rejects(deployCi(fixture), /unknown/);
+  assert.equal(executions, 1);
+});
+
+test("rejected or uncertain execution is never retried", async (t) => {
+  for (const status of [400, 408, 409, 429, 500, 502, 504]) {
     const fixture = setup(t, ["api"]);
     const original = fixture.fetchImpl;
-    let mutations = 0;
+    let executions = 0;
     fixture.fetchImpl = async (url, options) => {
-      if (url.endsWith("/api/compose.deploy")) {
-        mutations++;
+      if (url.endsWith("/deployment/execute")) {
+        executions++;
         return new Response("private error body", { status });
       }
       return original(url, options);
     };
     await assert.rejects(deployCi(fixture), /unknown/);
-    assert.equal(mutations, 1);
-    assert.deepEqual(fixture.calls.at(-1).body, {
-      attemptId: idFor("api"),
-      stage: "queue",
-      result: "unknown",
-    });
+    assert.equal(executions, 1);
   }
 });
 
-test("an acknowledgement for another run or image cannot authorize mutations", async (t) => {
-  for (const field of ["runId", "app", "digest"]) {
+test("an intent acknowledgement for another run or image cannot authorize execution", async (t) => {
+  for (const field of ["runId", "app", "digest", "id"]) {
     const fixture = setup(t, ["api"]);
     const original = fixture.fetchImpl;
     fixture.fetchImpl = async (url, options) => {
@@ -310,28 +292,13 @@ test("an acknowledgement for another run or image cannot authorize mutations", a
     };
     await assert.rejects(deployCi(fixture), /Invalid durable intent acknowledgement/);
     assert.equal(
-      fixture.calls.some(({ path }) => path === "/api/project.update"),
+      fixture.calls.some(({ path }) => path === "/deployment/execute"),
       false,
     );
   }
 });
 
-test("lost terminal callback is retried without replaying the acknowledged mutation", async (t) => {
-  const fixture = setup(t, ["api"]);
-  const original = fixture.fetchImpl;
-  let callbackCalls = 0;
-  fixture.fetchImpl = async (url, options) => {
-    const body = options.body && JSON.parse(options.body);
-    if (body?.stage === "queue" && body.result === "acknowledged" && callbackCalls++ === 0)
-      throw new Error("Lost callback acknowledgement");
-    return original(url, options);
-  };
-  await deployCi(fixture);
-  assert.equal(callbackCalls, 2);
-  assert.equal(fixture.calls.filter(({ path }) => path === "/api/compose.deploy").length, 1);
-});
-
-test("a duplicate intent with previous mutation evidence cannot replay a deployment", async (t) => {
+test("a duplicate intent with prior mutation evidence cannot replay execution", async (t) => {
   const fixture = setup(t);
   const original = fixture.fetchImpl;
   fixture.fetchImpl = async (url, options) =>
@@ -345,12 +312,31 @@ test("a duplicate intent with previous mutation evidence cannot replay a deploym
       : original(url, options);
   await assert.rejects(deployCi(fixture), /refusing mutation replay/);
   assert.equal(
-    fixture.calls.some(({ path }) => path === "/api/project.update"),
+    fixture.calls.some(({ path }) => path === "/deployment/execute"),
     false,
   );
 });
 
-test("web cutover guard retains tag-write acknowledgement without inventing queued work", async (t) => {
+test("execution acknowledgement must match the attempt image and both mutation stages", async (t) => {
+  for (const field of ["id", "app", "runId", "digest", "tagWrite", "queue"]) {
+    const fixture = setup(t, ["api"]);
+    const original = fixture.fetchImpl;
+    let executions = 0;
+    fixture.fetchImpl = async (url, options) => {
+      const response = await original(url, options);
+      if (!url.endsWith("/deployment/execute")) return response;
+      executions++;
+      const record = await response.json();
+      if (field === "digest") record.image.digest = `sha256:${"c".repeat(64)}`;
+      else record[field] = "other";
+      return Response.json(record);
+    };
+    await assert.rejects(deployCi(fixture), /not acknowledged for the intended image/);
+    assert.equal(executions, 1);
+  }
+});
+
+test("web cutover guard prevents execution while the status hostname remains on web", async (t) => {
   const fixture = setup(t, ["web"]);
   const original = fixture.fetchImpl;
   fixture.fetchImpl = async (url, options) =>
@@ -359,24 +345,19 @@ test("web cutover guard retains tag-write acknowledgement without inventing queu
       : original(url, options);
   await assert.rejects(deployCi(fixture), /held until/);
   assert.equal(
-    fixture.calls.some(({ path }) => path === "/api/compose.deploy"),
-    false,
-  );
-  assert.equal(
-    fixture.calls.some(({ body }) => body?.stage === "queue"),
+    fixture.calls.some(({ path }) => path === "/deployment/execute"),
     false,
   );
 });
 
-test("disabled activation preserves orchestration without sending attempt traffic", async (t) => {
-  const fixture = setup(t);
-  fixture.env.DEPLOY_ATTEMPTS_ENABLED = "false";
-  delete fixture.env.DEPLOY_REPORT_TOKEN;
-  rmSync(join(fixture.root, "publication"), { recursive: true });
-  await deployCi(fixture);
-  assert.equal(
-    fixture.calls.some(({ path }) => path.startsWith("/deployment/")),
-    false,
-  );
-  assert.equal(fixture.calls.filter(({ path }) => path === "/api/compose.deploy").length, 2);
+test("disabled, missing, or malformed activation never falls back to uncoordinated deployment", async (t) => {
+  for (const value of [undefined, "false", "TRUE", "garbage"]) {
+    const fixture = setup(t);
+    if (value === undefined) delete fixture.env.DEPLOY_ATTEMPTS_ENABLED;
+    else fixture.env.DEPLOY_ATTEMPTS_ENABLED = value;
+    delete fixture.env.DEPLOY_REPORT_TOKEN;
+    rmSync(join(fixture.root, "publication"), { recursive: true });
+    await assert.rejects(deployCi(fixture), /Coordinated deployment execution must be enabled/);
+    assert.equal(fixture.calls.length, 0);
+  }
 });

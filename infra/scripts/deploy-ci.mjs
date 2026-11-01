@@ -49,11 +49,10 @@ export async function deployCi({
 } = {}) {
   const tag = required(env, "IMAGE_TAG");
   if (!/^[a-f0-9]{40}$/u.test(tag)) throw new Error("Invalid deployment commit.");
-  const enabled = env.DEPLOY_ATTEMPTS_ENABLED === "true";
-  if (env.DEPLOY_ATTEMPTS_ENABLED && !["true", "false"].includes(env.DEPLOY_ATTEMPTS_ENABLED))
-    throw new Error("Invalid attempt activation setting.");
-  const reportBase = enabled ? reportingUrl(required(env, "DEPLOY_REPORT_URL")) : null;
-  const reportToken = enabled ? required(env, "DEPLOY_REPORT_TOKEN") : null;
+  if (env.DEPLOY_ATTEMPTS_ENABLED !== "true")
+    throw new Error("Coordinated deployment execution must be enabled; no writes permitted.");
+  const reportBase = reportingUrl(required(env, "DEPLOY_REPORT_URL"));
+  const reportToken = required(env, "DEPLOY_REPORT_TOKEN");
   const base = required(env, "DOKPLOY_URL");
   const apiKey = required(env, "DOKPLOY_API_KEY");
   const headers = {
@@ -67,7 +66,7 @@ export async function deployCi({
     .sort();
   if (!apps.length) throw new Error("No compose apps found.");
   const publications = new Map();
-  if (enabled) {
+  {
     required(env, "GITHUB_REPOSITORY");
     required(env, "GITHUB_RUN_ID");
     required(env, "GITHUB_RUN_ATTEMPT");
@@ -117,19 +116,13 @@ export async function deployCi({
     }
     return { result: "acknowledged", status: 200, response };
   }
-  async function report(path, body) {
-    const attempts = body.result === "started" ? 1 : 3;
-    for (let retry = 0; retry < attempts; retry++) {
+  async function reserve(body) {
+    for (let retry = 0; retry < 3; retry++) {
+      const path = "/deployment/attempts/intent";
       const result = await call(path, body, true);
       if (result.result === "acknowledged") {
         try {
           const record = await boundedJson(result.response);
-          if (
-            path.endsWith("/report") &&
-            (record.id !== body.attemptId ||
-              record[body.stage === "tag-write" ? "tagWrite" : "queue"] !== body.result)
-          )
-            throw new Error("Invalid report acknowledgement.");
           return record;
         } catch {
           /* Retry only idempotent reporting. */
@@ -165,9 +158,9 @@ export async function deployCi({
       failures.push(`${app}: unique compose mapping unavailable`);
     else mappings.set(app, matches[0]);
   }
-  // A shared project tag write affects every mapped app, so all intents precede every write.
+  // Reserve every app before starting execution; CI and rollback share these durable claims.
   const intents = new Map();
-  if (enabled) {
+  {
     if (failures.length)
       throw new Error("Compose mapping incomplete; no deployment writes permitted.");
     for (const app of apps) {
@@ -179,7 +172,7 @@ export async function deployCi({
         trigger: "ci",
         image: publications.get(app),
       };
-      const intent = await report("/deployment/attempts/intent", request);
+      const intent = await reserve(request);
       if (
         typeof intent.id !== "string" ||
         !/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u.test(
@@ -195,41 +188,14 @@ export async function deployCi({
         throw new Error("Invalid durable intent acknowledgement.");
       if (intent.tagWrite !== null || intent.queue !== null)
         throw new Error("Existing attempt has mutation results; refusing mutation replay.");
-      intents.set(app, intent.id);
+      intents.set(app, intent);
     }
-  }
-  const written = new Set();
-  for (const project of new Set([...mappings.values()].map((mapping) => mapping.project))) {
-    if (enabled) {
-      for (const [app, mapping] of mappings)
-        if (mapping.project === project)
-          await report("/deployment/attempts/report", {
-            attemptId: intents.get(app),
-            stage: "tag-write",
-            result: "started",
-          });
-    }
-    const result = await call("/api/project.update", {
-      projectId: project,
-      env: `IMAGE_TAG=${tag}`,
-    });
-    // Successful mutation bodies contain plaintext env and must never be read.
-    await result.response?.body?.cancel().catch(() => undefined);
-    if (enabled) {
-      for (const [app, mapping] of mappings)
-        if (mapping.project === project)
-          await report("/deployment/attempts/report", {
-            attemptId: intents.get(app),
-            stage: "tag-write",
-            result: result.result,
-          });
-    }
-    if (result.result === "acknowledged") written.add(project);
-    else failures.push("Project image tag write was rejected or its result is unknown");
   }
   let queued = 0;
-  for (const [app, mapping] of mappings) {
-    if (!written.has(mapping.project)) continue;
+  const executionOrder = [...mappings].sort(([left], [right]) =>
+    left === "deploy" ? 1 : right === "deploy" ? -1 : left.localeCompare(right),
+  );
+  for (const [app, mapping] of executionOrder) {
     if (app === "web") {
       const result = await call(
         `/api/domain.byComposeId?composeId=${encodeURIComponent(mapping.compose)}`,
@@ -248,27 +214,36 @@ export async function deployCi({
         continue;
       }
     }
-    if (enabled)
-      await report("/deployment/attempts/report", {
-        attemptId: intents.get(app),
-        stage: "queue",
-        result: "started",
-      });
-    const result = await call("/api/compose.deploy", {
-      composeId: mapping.compose,
-      title: enabled ? `unimatrix-attempt:${intents.get(app)}` : `CI ${tag}`,
-    });
-    await result.response?.body?.cancel().catch(() => undefined);
-    if (enabled)
-      await report("/deployment/attempts/report", {
-        attemptId: intents.get(app),
-        stage: "queue",
-        result: result.result,
-      });
-    if (result.result === "acknowledged") {
-      queued++;
-      log(`${app}: deployment queued`);
-    } else failures.push(`${app}: queue request rejected or its result is unknown`);
+    const intent = intents.get(app);
+    const result = await call("/deployment/execute", { app, attemptId: intent.id }, true);
+    // Execution can already have mutated Dokploy when its response is lost. Never replay it.
+    if (result.result !== "acknowledged") {
+      failures.push(`${app}: execution rejected or its result is unknown`);
+      continue;
+    }
+    let record;
+    try {
+      record = await boundedJson(result.response);
+    } catch {
+      failures.push(`${app}: execution result is unknown`);
+      continue;
+    }
+    if (
+      record.id !== intent.id ||
+      ["repository", "runId", "runAttempt", "app", "trigger"].some(
+        (key) => record[key] !== intent[key],
+      ) ||
+      ["repository", "tag", "commit", "platform", "digestKind", "digest"].some(
+        (key) => record.image?.[key] !== intent.image[key],
+      ) ||
+      record.tagWrite !== "acknowledged" ||
+      record.queue !== "acknowledged"
+    ) {
+      failures.push(`${app}: execution was not acknowledged for the intended image`);
+      continue;
+    }
+    queued++;
+    log(`${app}: deployment queued`);
   }
   if (failures.length) throw new Error(failures.join("; "));
   log(`${queued} stack(s) queued at ${tag}. Queued is not applied.`);

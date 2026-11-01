@@ -6,7 +6,8 @@ and a settings-only apply (`src/reconcile/`, `pnpm --filter @unimatrix/deploy-ap
 diffs `src/reconcile/desired-state.gen.ts` against what Dokploy actually holds, prints drift, and can
 write `composePath`/`branch`/`autoDeploy` for one app at a time. It observes containers and persists
 internal HTTP health probes in its own SQLite database. It queues authenticated manual redeploys
-without changing image tags. It creates no services — see
+without changing image tags. CI execution and rollback change only the selected service image tag,
+using the env capability in `src/secret-env/image-tag.ts`. It creates no services — see
 `README.md` for what still has to happen by hand before
 this stack deploys, and for apply's full refusal set. It also holds a read-only resolver against the
 secrets store (`src/secret-env/`, `reconcile secrets-status <app>`) that resolves declared
@@ -74,6 +75,12 @@ against the store, and
   of them). `autoDeploy`'s written value always comes from the `RECONCILE_AUTO_DEPLOY` policy
   constant, never from the diff's `declared` string — the fork's `coerceSchema` treats `autoDeploy`
   as `z.coerce.boolean()`, under which the string `"false"` coerces to `true`.
+- **CI execution, rollback and manual redeploys share durable per-app reservations.** Unknown
+  tag writes or unresolved queues continue to block after timeout; never replay their mutations.
+  Rollback accepts only a retained verified landed attempt, refuses self and copies its immutable
+  target. CI overwrites that service tag on its next accepted deployment and executes self last.
+  Project env stays untouched. Keep env values inside the narrow image writer; reconciliation
+  remains value-free. External UI edits and `secrets-apply` do not share these reservations.
 - **`compose.update` is the only HTTP route on v0.29.13 that can write a compose service's `env`.**
   `compose.saveEnvironment` exists as a tRPC procedure but is absent from the exposed path map, so the
   sibling env client must use this same procedure rather than reaching for a narrower one.

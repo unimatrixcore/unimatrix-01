@@ -5,6 +5,7 @@ import {
 import {
   deployAttemptHistoryResponseSchema,
   deployManualRedeployRequestSchema,
+  deployRollbackRequestSchema,
   deployAttemptResponseSchema,
   deployAttemptQuerySchema,
   deployAttemptLogsQuerySchema,
@@ -74,5 +75,12 @@ export const adminDeployManualRedeployContract = defineApiContract({
   method: "POST",
   path: "/deployment/admin/redeploy",
   bodySchema: deployManualRedeployRequestSchema,
+  responseSchema: deployAttemptResponseSchema,
+});
+
+export const adminDeployRollbackContract = defineApiContract({
+  method: "POST",
+  path: "/deployment/admin/rollback",
+  bodySchema: deployRollbackRequestSchema,
   responseSchema: deployAttemptResponseSchema,
 });

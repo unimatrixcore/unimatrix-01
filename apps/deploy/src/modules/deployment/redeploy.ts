@@ -61,6 +61,7 @@ export const deploymentRedeployModule: FastifyPluginAsync = (app) => {
           now - before.observedAt < 30_000
             ? { containerId: before.containerId, observedAt: before.observedAt }
             : null;
+        if (baseline === null) refuse(503);
         const reservation = app.deploymentAttempts.reserveManual(
           request.body,
           reporterId,
@@ -83,7 +84,9 @@ export const deploymentRedeployModule: FastifyPluginAsync = (app) => {
             error instanceof DokployClientError &&
             error.status !== null &&
             error.status >= 400 &&
-            error.status < 500
+            error.status < 500 &&
+            error.status !== 408 &&
+            error.status !== 429
               ? "rejected"
               : "unknown";
         }

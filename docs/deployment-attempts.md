@@ -2,15 +2,20 @@
 
 The deploy service retains attempts on its existing SQLite volume. Internal callers use the
 contracts in `packages/shared/src/contracts/deployment-attempts.ts`: `manage` reports intent and
-mutation results; `read` can retrieve bounded history. The caller identity comes from the verified
+mutation results and executes reserved CI deployments; `read` retrieves bounded history. The caller identity comes from the verified
 service token. Reporting never mutates Dokploy. Manual redeploys use the same history with an
 unspecified target image and verified API user attribution; see
 [manual redeploys](../apps/deploy/README.md#manual-redeploys). Direct Dokploy UI operations have no
 recorded attempt.
 
-An intent captures a server-observed baseline, or explicit missing evidence. CI durably claims each
-tag write and queue request before sending it. Claims are exclusive: an interrupted claim is never
-automatically replayed. Retry the idempotent intent or terminal report, not a Dokploy mutation.
+An intent captures a server-observed baseline, or explicit missing evidence. Immediately before
+execution, the service refreshes that baseline from the runtime bridge and persists it atomically
+with the exclusive tag-write claim. This keeps sequential CI batches independent of intent age.
+Current evidence must be unique and younger than 30 seconds; missing or stale evidence refuses
+before any mutation. A claimed attempt never replaces its baseline on retry.
+An unexecuted intent can expire without leaving queued work. The execution route
+durably claims each service tag write and queue request before sending it. Claims are exclusive: an interrupted claim is never
+automatically replayed. Retrying a retained execution or rollback request returns its record without replaying a mutation.
 Cancellation between a claim and a mutation can therefore leave a record that needs investigation.
 A queue claim without its terminal acknowledgment or unknown-result report cannot establish landing,
 even if a matching image appears; the record times out if that report never arrives.
@@ -84,14 +89,14 @@ state. This establishes the source shape, not a scheduled bridge installation or
 ## Restricted CI ingress and activation
 
 Keep repository variable `DEPLOY_ATTEMPTS_ENABLED` unset or `false` until these steps are complete.
-Disabled mode retains the existing CI-to-Dokploy orchestration without recording attempts.
+CI refuses deployment while disabled; it never falls back to direct Dokploy mutations.
 
-1. Deploy the recording-capable service while preserving its data volume. Install and schedule the
+1. Bootstrap the execution-capable deploy service outside the CI execution path while preserving its data volume. Install and schedule the
    host bridge on unimatrix-03. Confirm the service user can read fresh snapshots across collector
    runs and after replacing the deploy container. Avoid overlapping collector jobs.
 2. Provision a dedicated HTTPS reporting origin behind a Cloudflare Access Service Auth policy.
-   Permit only POST `/deployment/attempts/intent` and POST `/deployment/attempts/report` at the
-   ingress; deny every other path and method before forwarding. Do not route the whole deploy
+   Permit only POST `/deployment/attempts/intent` and POST `/deployment/execute` at the
+   ingress; deny every other path and method, including rollback and reports, before forwarding. Do not route the whole deploy
    service through a generic Domains entry. The origin connection must use pinned HTTPS to
    `deploy:3001`, with hostname verification and the deploy certificate as its trust anchor.
    Keep internal history, reconciliation, state and token operations unreachable at that origin.
@@ -108,12 +113,13 @@ Disabled mode retains the existing CI-to-Dokploy orchestration without recording
    publication artifacts must refuse deployment.
 6. Set `DEPLOY_ATTEMPTS_ENABLED=true` only after those checks. Run a controlled deployment and
    verify durable intent precedes writes, queue acknowledgment precedes observed landing, and
-   restart resumes from the persisted baseline. Exercise callback loss, overlapping runs, late
+   restart resumes from the persisted baseline. Verify rollback changes only the selected service
+   and the next main deployment supersedes it. Exercise callback loss, overlapping runs, late
    landing, a same-tag rebuild with a different digest and unchanged-ID redeployment. Keep health
    and configuration readback as separate checks.
 
 Ingress provisioning, scheduled bridge installation, Actions publication capture and the controlled
 end-to-end trial have not been performed. Local regression tests cover their request ordering and
 correlation failure cases; they do not establish production reachability. Leave activation off until
-the live checks above pass. Disabling activation later creates an explicit history gap for subsequent
-CI deployments; it does not remove already recorded attempts or cancel queued work.
+the live checks above pass. Disabling activation later stops subsequent CI execution; it does not remove recorded attempts
+or cancel queued work.

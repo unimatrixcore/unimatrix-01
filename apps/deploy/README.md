@@ -93,7 +93,7 @@ when retrying that request. The API forwards the verified session user over its 
 service connection; its deploy token needs `manage` capability. The browser holds no Dokploy key.
 
 The internal `/deployment/redeploy` route accepts only a declared app, request UUID and attributed
-user. It refuses `deploy`, missing or ambiguous matches, foreign repositories and non-GitHub
+user. Fresh runtime evidence is required before reserving and queueing work. It refuses `deploy`, missing or ambiguous matches, foreign repositories and non-GitHub
 sources. It persists a reservation before queueing `compose.deploy` with the attempt UUID marker.
 Retries return the same retained record without another mutation, even if Dokploy is unavailable.
 Idempotency ends when a resolved record expires from history. Neither service nor project
@@ -106,13 +106,35 @@ rejection yields `failed`. A changed full container ID observed after the queue 
 the overlap guard but cannot establish that the configured image or runtime values landed.
 Manual attempts never claim `landed`. The 30-minute deadline yields `timed-out`, which does not
 prove Dokploy stopped; later recreation is recorded separately without erasing the timeout.
-Unresolved attempts keep blocking new manual requests for the app, including after timeout and
-normal history retention. Inspect associated logs and runtime state separately. CI may
-still record overlapping work, making correlation ambiguous.
+Unresolved attempts keep blocking new manual, rollback and CI requests for the app, including after
+timeout and normal history retention. Inspect associated logs and runtime state separately.
 
 Production manual queueing and UUID association have not been exercised. Before activation,
 verify the API's manage token, a controlled queue request, idempotent retry, attributed history and
 associated logs; check runtime image/configuration and health separately.
+
+## Rollback and CI execution
+
+Verified admins send `{app, requestId, targetAttemptId}` to `/deployment/admin/rollback` on the API.
+The target must be a retained, verified landed attempt for that app. The internal
+`/deployment/rollback` route copies its immutable image and attributes the verified user; callers
+cannot supply image metadata. It refuses self, unknown, ambiguous, foreign and unsupported targets.
+Retries return the same attempt without another mutation. History exposes the source attempt UUID.
+
+CI persists an intent and calls `/deployment/execute` with `{app, attemptId}` under the same caller
+identity. Both execution paths reserve the app in SQLite and write only its service-level
+`IMAGE_TAG`, pinned as `tag@manifest-digest`, preserving other env bytes and verifying the stored
+value before queueing. Project env and sibling tags remain unchanged. The next main CI deployment
+supersedes a rollback; there is no hold to release. Execution requires a baseline younger than
+30 seconds and refuses missing or stale evidence before mutations. Expired unstarted intents release reservations;
+uncertain tag writes and unresolved queues continue blocking even after timeout.
+
+Keep Dokploy UI env edits and `secrets-apply` outside execution windows: they do not share attempt
+reservations and Dokploy has no conditional env write. CI self-deployment runs last; replacement
+before queue-result persistence can leave an unresolved claim requiring host-level investigation.
+See [activation requirements](../../docs/deployment-attempts.md#restricted-ci-ingress-and-activation).
+Production rollback and CI supersession remain unverified; complete the controlled activation trial
+before relying on them operationally.
 
 ## Container observation
 
@@ -311,7 +333,7 @@ any write. Existing blobs using `export`, multiline quoted assignments, or synta
 physical-line parser cannot safely identify are refused as a whole; no key-like line inside
 another value can be replaced. Keys must use the environment-name grammar `[A-Za-z_][A-Za-z0-9_]*`. A blank existing assignment is an existing value and also requires `--overwrite`.
 
-The merge preserves every unrelated byte, including `IMAGE_TAG=${{project.IMAGE_TAG}}`, comments,
+The merge preserves every unrelated byte, including the service image tag, comments,
 blank lines and line endings. Comparison trims assignment padding and removes one matching outer
 quote pair. Single-quoted values decode escaped single quotes; double-quoted values decode JSON
 escapes and doubled dollars. Unquoted inline comments are excluded from comparison, and

@@ -353,29 +353,13 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
-  # Every `infra/docker/*-compose.yaml` names `image:` and no `build:`, so a
-  # deploy builds nothing: it writes the tag to run and then asks Dokploy to
-  # pull it. Two API calls, in that order, or the deploy re-runs the tag that
-  # was already there.
-  #
-  # Deliberately **not** armed as a required check, for the same reason as
-  # `Publish`: it never runs on `pull_request`, so arming it would create a
-  # required check that is permanently green on every PR while verifying
-  # nothing.
-  #
-  # The `if:` is narrower than `Publish`'s on purpose. A `workflow_dispatch`
-  # from a feature branch may publish a SHA-tagged image, but must never be
-  # able to point production at it.
-  #
-  # One job rather than a matrix: the calls (one per infra/docker/*-compose.yaml)
-  # share one credential and one project-level write, so a matrix would race on
-  # that write and report a red check per stack for one outage.
-  #
-  # The workflow-level `concurrency` block above has `cancel-in-progress: true`
-  # and covers this job, so a second push to `main` can cancel this one
-  # mid-flight — leaving `IMAGE_TAG` written with no deploy issued. The next
-  # merge heals it, but until then Dokploy's project env reads as deployed when
-  # nothing was.
+  # Deploy is deliberately not a required check: it runs only on a push to main.
+  # The deploy service owns service-scoped image writes and durable reservations shared
+  # with rollback. Actions never falls back to direct Dokploy mutations.
+  # A later main deployment replaces each service's rollback target with its publication.
+  # One job keeps requests sequential; deploy executes last because it restarts the observer.
+  # Cancellation can lose an execution acknowledgement. Durable attempts must be inspected
+  # before retrying; a new run cannot overwrite unresolved work.
   deploy:
     name: Deploy
     needs: [publish]
@@ -401,14 +385,13 @@ jobs:
 
       # Activation follows the source/reachability checks in docs/deployment.md.
       - name: Download publication identities
-        if: vars.DEPLOY_ATTEMPTS_ENABLED == 'true'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: publication-*-${{ github.run_attempt }}
           path: publication
           merge-multiple: true
 
-      - name: Point Dokploy at this commit and deploy
+      - name: Request coordinated deployment of this commit
         env:
           DOKPLOY_URL: https://dokploy.unimatrix-01.dev
           DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}

@@ -76,13 +76,18 @@ void test("durable intent is idempotent across restarts and conflicts cannot rew
         ),
       /conflicts/u,
     );
+    assert.throws(() =>
+      second.intent(
+        { ...intent, trigger: "rollback" } as unknown as DeployAttemptIntent,
+        "reporter",
+        before,
+        now,
+      ),
+    );
     assert.throws(
-      () => second.intent({ ...intent, trigger: "rollback" }, "reporter", before, now),
+      () => second.intent({ ...intent, runAttempt: 2 }, "reporter", before, now + 10),
       /conflicts/u,
     );
-    const rerun = second.intent({ ...intent, runAttempt: 2 }, "reporter", before, now + 10);
-    assert.notEqual(rerun.id, record.id);
-    assert.equal(rerun.correlation, "ambiguous");
     second.close();
   } finally {
     rmSync(directory, { recursive: true, force: true });
@@ -280,40 +285,29 @@ void test("a tag, changed ID, wrong digest, absent baseline, or missing queue re
   }
 });
 
-void test("overlapping and expired requests retain ambiguous correlation across restarts", () => {
+void test("overlapping and expired queued requests refuse new CI intents across restarts", () => {
   const directory = mkdtempSync(join(tmpdir(), "attempt-overlap-"));
   try {
     const path = join(directory, "db.sqlite");
     let store = openDeploymentAttemptStore(path);
     const first = store.intent(intent, "reporter", before, now);
-    store.report(
-      { attemptId: first.id, stage: "tag-write", result: "acknowledged" },
-      "reporter",
-      now,
-    );
-    store.report({ attemptId: first.id, stage: "queue", result: "acknowledged" }, "reporter", now);
-    const secondTime = now + ATTEMPT_DEADLINE_MS + 1;
-    const second = store.intent({ ...intent, runId: "124" }, "reporter", before, secondTime);
-    store.report(
-      { attemptId: second.id, stage: "tag-write", result: "acknowledged" },
-      "reporter",
-      secondTime,
-    );
-    store.report(
-      { attemptId: second.id, stage: "queue", result: "acknowledged" },
-      "reporter",
-      secondTime,
-    );
+    for (const stage of ["tag-write", "queue"] as const)
+      store.report({ attemptId: first.id, stage, result: "acknowledged" }, "reporter", now);
     store.close();
     store = openDeploymentAttemptStore(path);
-    store.observe([{ ...evidence, observedAt: secondTime + 1 }], secondTime + 1);
-    assert.deepEqual(
-      store.list("api", 100, secondTime + 1).map((record) => record.correlation),
-      ["ambiguous", "ambiguous"],
+    assert.throws(
+      () => store.intent({ ...intent, runId: "124" }, "reporter", before, first.deadlineAt),
+      /conflicts/u,
     );
-    assert.deepEqual(
-      store.list("api", 100, secondTime + 1).map((record) => record.outcome),
-      ["queued", "timed-out"],
+    store.observe([{ ...evidence, observedAt: first.deadlineAt + 1 }], first.deadlineAt + 1);
+    assert.equal(
+      store.get("api", first.id, first.deadlineAt + 1)!.lateLandedAt,
+      first.deadlineAt + 1,
+    );
+    assert.equal(
+      store.intent({ ...intent, runId: "124" }, "reporter", before, first.deadlineAt + 2)
+        .correlation,
+      "pending",
     );
     store.close();
   } finally {
@@ -540,7 +534,7 @@ void test("legacy attempts without queue timing remain readable but cannot estab
   }
 });
 
-void test("expired attempts without queue claims do not poison subsequent landing across restarts", () => {
+void test("expired unstarted or acknowledged writes release reservations while uncertain writes remain blocked", () => {
   for (const tagResult of [null, "started", "acknowledged", "unknown"] as const) {
     const directory = mkdtempSync(join(tmpdir(), "attempt-unclaimed-expiry-"));
     try {
@@ -563,6 +557,14 @@ void test("expired attempts without queue claims do not poison subsequent landin
       store.close();
       store = openRawStore(path);
       const later = abandoned.deadlineAt;
+      if (tagResult === "started" || tagResult === "unknown") {
+        assert.throws(
+          () => store.intent({ ...intent, runId: "124" }, "reporter", before, later),
+          /conflicts/u,
+        );
+        store.close();
+        continue;
+      }
       const next = store.intent({ ...intent, runId: "124" }, "reporter", before, later);
       assert.equal(next.correlation, "pending");
       if (tagResult === "acknowledged")
@@ -593,20 +595,18 @@ void test("expired attempts without queue claims do not poison subsequent landin
   }
 });
 
-void test("an expired queue claim still makes later requests ambiguous even without a completion report", () => {
+void test("an expired queue claim refuses later requests even without a completion report", () => {
   const store = openRawStore(":memory:");
   try {
     const first = store.intent(intent, "reporter", before, now);
     for (const result of ["started", "acknowledged"] as const)
       store.report({ attemptId: first.id, stage: "tag-write", result }, "reporter", now);
     store.report({ attemptId: first.id, stage: "queue", result: "started" }, "reporter", now);
-    const next = store.intent({ ...intent, runId: "124" }, "reporter", before, first.deadlineAt);
-    assert.equal(next.correlation, "ambiguous");
-    assert.equal(
-      store.list("api", 100, first.deadlineAt).find((record) => record.id === first.id)!
-        .correlation,
-      "ambiguous",
+    assert.throws(
+      () => store.intent({ ...intent, runId: "124" }, "reporter", before, first.deadlineAt),
+      /conflicts/u,
     );
+    assert.equal(store.get("api", first.id, first.deadlineAt)!.correlation, "pending");
   } finally {
     store.close();
   }
@@ -796,7 +796,6 @@ void test("manual recreation needs an unambiguous changed container after its du
     { baseline: before, sample: { ...evidence, app: "web" }, queue: true, ambiguous: false },
     { baseline: before, sample: { ...evidence, observedAt: now }, queue: true, ambiguous: false },
     { baseline: before, sample: evidence, queue: false, ambiguous: false },
-    { baseline: before, sample: evidence, queue: true, ambiguous: true },
   ]) {
     const store = openRawStore(":memory:");
     try {
@@ -818,7 +817,8 @@ void test("manual recreation needs an unambiguous changed container after its du
           now + 1,
         );
       }
-      if (example.ambiguous) store.intent(intent, "ci", before, now + 1);
+      if (example.ambiguous)
+        assert.throws(() => store.intent(intent, "ci", before, now + 1), /conflicts/u);
       store.observe([example.sample], now + 1000);
       const observed = store.get("api", attempt.id, now + 1000)!;
       assert.equal(observed.after, null);
@@ -830,7 +830,7 @@ void test("manual recreation needs an unambiguous changed container after its du
   }
 });
 
-void test("manual reservations reject unresolved CI work, while CI overlap stays recordable and ambiguous", () => {
+void test("manual reservations and CI intents mutually reject unresolved work", () => {
   for (const result of ["started", "acknowledged", "unknown"] as const) {
     const store = openRawStore(":memory:");
     try {
@@ -862,9 +862,8 @@ void test("manual reservations reject unresolved CI work, while CI overlap stays
       before,
       now,
     );
-    const ci = store.intent(intent, "ci", before, now);
-    assert.equal(ci.correlation, "ambiguous");
-    assert.equal(store.get("api", manual.attempt.id, now)!.correlation, "ambiguous");
+    assert.throws(() => store.intent(intent, "ci", before, now), /conflicts/u);
+    assert.equal(store.get("api", manual.attempt.id, now)!.correlation, "pending");
   } finally {
     store.close();
   }
@@ -893,5 +892,176 @@ void test("rejected manual queueing releases overlap refusal without allowing a 
     assert.equal(next.created, true);
   } finally {
     store.close();
+  }
+});
+
+void test("rollback selects landed immutable evidence and reserves atomically across connections", () => {
+  const directory = mkdtempSync(join(tmpdir(), "rollback-store-"));
+  try {
+    const path = join(directory, "db.sqlite");
+    const store = openDeploymentAttemptStore(path);
+    const target = store.intent(intent, "ci", before, now);
+    const input = {
+      app: "api",
+      requestId: "00000000-0000-4000-8000-000000000001",
+      actorUserId: "admin",
+      targetAttemptId: target.id,
+    };
+    assert.equal(store.findRollback(input, "api-service", now), undefined);
+    assert.throws(() => store.reserveRollback(input, "api-service", before, now), /conflicts/u);
+    for (const stage of ["tag-write", "queue"] as const)
+      store.report({ attemptId: target.id, stage, result: "acknowledged" }, "ci", now);
+    store.observe([evidence], now + 1000);
+    const second = openRawStore(path);
+    assert.throws(
+      () => second.reserveRollback({ ...input, app: "web" }, "api-service", null, now + 1000),
+      /conflicts/u,
+    );
+    assert.throws(() => second.reserveRollback(input, "", null, now + 1000), /conflicts/u);
+    assert.throws(
+      () =>
+        second.reserveRollback(
+          input,
+          "api-service",
+          { ...before, observedAt: now + 2000 },
+          now + 1000,
+        ),
+      /conflicts/u,
+    );
+    const reservation = store.reserveRollback(
+      input,
+      "api-service",
+      { containerId: evidence.containerId, observedAt: now + 1000 },
+      now + 1001,
+    );
+    assert.equal(reservation.created, true);
+    assert.equal(reservation.attempt.trigger, "rollback");
+    assert.deepEqual(reservation.attempt.image, intent.image);
+    assert.equal(reservation.attempt.runId, null);
+    assert.equal(reservation.attempt.actorUserId, "admin");
+    assert.equal(reservation.attempt.targetAttemptId, target.id);
+    assert.deepEqual(second.findRollback(input, "api-service", now + 1001), reservation.attempt);
+    assert.equal(second.reserveRollback(input, "api-service", null, now + 1001).created, false);
+    for (const change of [
+      { app: "web" },
+      { targetAttemptId: "00000000-0000-4000-8000-000000000003" },
+    ])
+      assert.throws(
+        () => second.findRollback({ ...input, ...change }, "api-service", now + 1001),
+        /conflicts/u,
+      );
+    assert.throws(() => second.findRollback(input, "other", now + 1001), /conflicts/u);
+    assert.throws(
+      () =>
+        second.reserveRollback(
+          { ...input, requestId: "00000000-0000-4000-8000-000000000002" },
+          "api-service",
+          null,
+          now + 1001,
+        ),
+      /conflicts/u,
+    );
+    assert.throws(
+      () => second.intent({ ...intent, runId: "124" }, "ci", before, now + 1001),
+      /conflicts/u,
+    );
+    assert.throws(() => second.reserveManual(input, "api-service", before, now + 1001));
+    assert.throws(
+      () => second.claimExecution("web", reservation.attempt.id, "api-service", now + 1001, before),
+      /conflicts/u,
+    );
+    assert.throws(
+      () => second.claimExecution("api", reservation.attempt.id, "other", now + 1001, before),
+      /conflicts/u,
+    );
+    assert.equal(
+      second.claimExecution("api", reservation.attempt.id, "api-service", now + 1001, before)
+        .claimed,
+      true,
+    );
+    assert.equal(
+      store.claimExecution("api", reservation.attempt.id, "api-service", now + 1001, before)
+        .claimed,
+      false,
+    );
+    store.report(
+      { attemptId: reservation.attempt.id, stage: "tag-write", result: "acknowledged" },
+      "api-service",
+      now + 1001,
+    );
+    store.report(
+      { attemptId: reservation.attempt.id, stage: "queue", result: "acknowledged" },
+      "api-service",
+      now + 1001,
+    );
+    store.observe(
+      [{ ...evidence, containerId: "e".repeat(64), observedAt: now + 2000 }],
+      now + 2000,
+    );
+    assert.equal(store.get("api", reservation.attempt.id, now + 2000)!.outcome, "landed");
+    assert.equal(
+      second.intent({ ...intent, runId: "124" }, "ci", before, now + 2001).correlation,
+      "pending",
+    );
+    second.close();
+    store.close();
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+void test("execution cannot claim expired intent or manual request", () => {
+  const store = openRawStore(":memory:");
+  try {
+    const attempt = store.intent(intent, "ci", before, now);
+    assert.throws(
+      () => store.claimExecution("api", attempt.id, "ci", attempt.deadlineAt, before),
+      /conflicts/u,
+    );
+    const manual = store.reserveManual(
+      { app: "web", requestId: "00000000-0000-4000-8000-000000000001", actorUserId: "admin" },
+      "api-service",
+      before,
+      now,
+    );
+    assert.throws(
+      () => store.claimExecution("web", manual.attempt.id, "api-service", now, before),
+      /conflicts/u,
+    );
+  } finally {
+    store.close();
+  }
+});
+
+void test("execution atomically refreshes its baseline once and rejects stale or future evidence", () => {
+  const directory = mkdtempSync(join(tmpdir(), "execution-baseline-"));
+  try {
+    const path = join(directory, "db.sqlite");
+    const first = openRawStore(path);
+    const record = first.intent(intent, "ci", before, now);
+    const executionTime = now + 60_000;
+    for (const observedAt of [now, executionTime + 1]) {
+      assert.throws(
+        () =>
+          first.claimExecution("api", record.id, "ci", executionTime, { ...before, observedAt }),
+        /conflicts/u,
+      );
+      assert.equal(first.get("api", record.id, executionTime)!.tagWrite, null);
+      assert.deepEqual(first.get("api", record.id, executionTime)!.baseline, before);
+    }
+    const refreshed = { containerId: "e".repeat(64), observedAt: executionTime };
+    assert.equal(
+      first.claimExecution("api", record.id, "ci", executionTime, refreshed).claimed,
+      true,
+    );
+    first.close();
+    const second = openRawStore(path);
+    assert.deepEqual(second.get("api", record.id, executionTime)!.baseline, refreshed);
+    const duplicate = second.claimExecution("api", record.id, "ci", executionTime, before);
+    assert.equal(duplicate.claimed, false);
+    assert.deepEqual(duplicate.attempt.baseline, refreshed);
+    second.close();
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
   }
 });

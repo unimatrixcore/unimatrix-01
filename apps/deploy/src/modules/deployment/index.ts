@@ -12,6 +12,7 @@ import {
 } from "@unimatrix/shared";
 
 import { DEPLOY_DECLARATIONS } from "../../declarations/manifest.gen.js";
+import { deploymentExecutionModule } from "./execute.js";
 
 import { PROBE_INTERVAL_MS } from "../../health-history/model.js";
 import { CONTAINER_POLL_INTERVAL_MS } from "../../observe/polling.js";
@@ -38,6 +39,7 @@ function unavailable() {
 }
 
 export const deploymentModule: FastifyPluginAsync = (app) => {
+  app.register(deploymentExecutionModule);
   const routes = app.withTypeProvider<ZodTypeProvider>();
   routes.addHook("onRequest", async (_request, reply) => {
     reply.header("Cache-Control", "no-store");

@@ -18,6 +18,9 @@ function deferred<T>() {
 function storeFixture(observe: DeploymentAttemptStore["observe"]) {
   let closed = false;
   const store: DeploymentAttemptStore = {
+    findRollback: () => assert.fail("unused"),
+    reserveRollback: () => assert.fail("unused"),
+    claimExecution: () => assert.fail("unused"),
     reserveManual: () => assert.fail("unused"),
     findManual: () => assert.fail("unused"),
     intent: () => assert.fail("unused"),

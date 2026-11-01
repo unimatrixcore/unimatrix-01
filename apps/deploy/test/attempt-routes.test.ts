@@ -155,39 +155,33 @@ void test("attempt routes authenticate writes, capture independent full baseline
 });
 
 void test("a missing or ambiguous bridge baseline cannot be invented by the caller", async () => {
-  const f = fixture();
-  try {
-    const headers = { authorization: `Bearer ${f.manage}` };
-    const missing = await f.app.inject({
-      method: "POST",
-      url: "/deployment/attempts/intent",
-      headers,
-      payload: intent,
-    });
-    assert.equal(missing.statusCode, 200, missing.body);
-    assert.equal(missing.json<DeployAttemptRecord>().baseline, null);
-    f.setEvidence(
-      ["b", "c"].map((id) => ({
-        app: "api",
-        containerId: id.repeat(64),
-        observedAt: Date.now(),
-        image: {
-          repository: image.repository,
-          platform: image.platform,
-          digestKind: "manifest" as const,
-          digest: image.digest,
-        },
-      })),
-    );
-    const ambiguous = await f.app.inject({
-      method: "POST",
-      url: "/deployment/attempts/intent",
-      headers,
-      payload: { ...intent, runAttempt: 2 },
-    });
-    assert.equal(ambiguous.statusCode, 200, ambiguous.body);
-    assert.equal(ambiguous.json<DeployAttemptRecord>().baseline, null);
-  } finally {
-    await f.app.close();
+  for (const mode of ["missing", "ambiguous"]) {
+    const f = fixture();
+    try {
+      if (mode === "ambiguous")
+        f.setEvidence(
+          ["b", "c"].map((id) => ({
+            app: "api",
+            containerId: id.repeat(64),
+            observedAt: Date.now(),
+            image: {
+              repository: image.repository,
+              platform: image.platform,
+              digestKind: "manifest" as const,
+              digest: image.digest,
+            },
+          })),
+        );
+      const response = await f.app.inject({
+        method: "POST",
+        url: "/deployment/attempts/intent",
+        headers: { authorization: `Bearer ${f.manage}` },
+        payload: intent,
+      });
+      assert.equal(response.statusCode, 200, response.body);
+      assert.equal(response.json<DeployAttemptRecord>().baseline, null);
+    } finally {
+      await f.app.close();
+    }
   }
 });

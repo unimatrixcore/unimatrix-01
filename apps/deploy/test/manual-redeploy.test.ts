@@ -18,6 +18,7 @@ function fixture() {
   let sourceType = "github";
   let queueError: Error | undefined;
   let readError = false;
+  let evidenceMode: "fresh" | "missing" | "stale" = "fresh";
   const app = buildApp(
     loadDeployRuntimeConfig({
       NODE_ENV: "test",
@@ -67,7 +68,24 @@ function fixture() {
             env: [],
           }),
       },
-      readRuntimeEvidence: () => Promise.resolve([]),
+      readRuntimeEvidence: () =>
+        Promise.resolve(
+          evidenceMode === "missing"
+            ? []
+            : [
+                {
+                  app: "api",
+                  containerId: "a".repeat(64),
+                  observedAt: Date.now() - (evidenceMode === "stale" ? 30_001 : 0),
+                  image: {
+                    repository: "ghcr.io/unimatrixcore/unimatrix-api",
+                    platform: "linux/amd64",
+                    digestKind: "manifest",
+                    digest: `sha256:${"b".repeat(64)}`,
+                  },
+                },
+              ],
+        ),
       redeployment: {
         queueRedeploy: (composeId, attemptId) => {
           calls.push(["queue", composeId, attemptId]);
@@ -105,6 +123,9 @@ function fixture() {
     },
     failReads: () => {
       readError = true;
+    },
+    setEvidenceMode: (value: "fresh" | "missing" | "stale") => {
+      evidenceMode = value;
     },
   };
 }
@@ -181,6 +202,8 @@ void test("missing, ambiguous, foreign and unsupported-source matches never queu
 void test("queue rejection and uncertain transport results are durably recorded without retries", async () => {
   for (const error of [
     new DokployClientError("private", 400),
+    new DokployClientError("private", 408),
+    new DokployClientError("private", 429),
     new DokployClientError("private", 500),
     new Error("private"),
   ]) {
@@ -197,6 +220,27 @@ void test("queue rejection and uncertain transport results are durably recorded 
       assert.doesNotMatch(response.body, /private/);
       await f.send();
       assert.equal(f.calls.filter(Array.isArray).length, 1);
+      if (!(error instanceof DokployClientError) || error.status !== 400) {
+        assert.equal((await f.send({ ...f.payload, requestId: randomUUID() })).statusCode, 409);
+        assert.equal(f.calls.filter(Array.isArray).length, 1);
+      }
+    } finally {
+      await f.app.close();
+    }
+  }
+});
+
+void test("manual redeploy refuses unavailable or stale baselines before reserving or queueing", async () => {
+  for (const mode of ["missing", "stale"] as const) {
+    const f = fixture();
+    try {
+      f.setEvidenceMode(mode);
+      assert.equal((await f.send()).statusCode, 503);
+      assert.equal(f.calls.filter(Array.isArray).length, 0);
+      assert.deepEqual(f.app.deploymentAttempts.list("api", 100, Date.now()), []);
+      f.setEvidenceMode("fresh");
+      const recovered = await f.send();
+      assert.equal(recovered.statusCode, 200, recovered.body);
     } finally {
       await f.app.close();
     }

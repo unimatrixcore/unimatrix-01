@@ -23,7 +23,7 @@ export const deployAttemptIntentSchema = z.strictObject({
   runId: runIdSchema,
   runAttempt: z.number().int().min(1).max(1_000_000),
   app: appSchema,
-  trigger: z.enum(["ci", "manual", "rollback"]),
+  trigger: z.literal("ci"),
   image: deployRequestedImageSchema,
 });
 export const deployManualRedeployRequestSchema = z.strictObject({
@@ -35,6 +35,20 @@ export const deployManualRedeployInputSchema = deployManualRedeployRequestSchema
 });
 export type DeployManualRedeployRequest = z.output<typeof deployManualRedeployRequestSchema>;
 export type DeployManualRedeployInput = z.output<typeof deployManualRedeployInputSchema>;
+
+export const deployRollbackRequestSchema = deployManualRedeployRequestSchema.extend({
+  targetAttemptId: z.uuid(),
+});
+export const deployRollbackInputSchema = deployRollbackRequestSchema.extend({
+  actorUserId: z.string().min(1).max(128),
+});
+export const deployExecuteInputSchema = z.strictObject({
+  app: appSchema,
+  attemptId: z.uuid(),
+});
+export type DeployRollbackRequest = z.output<typeof deployRollbackRequestSchema>;
+export type DeployRollbackInput = z.output<typeof deployRollbackInputSchema>;
+export type DeployExecuteInput = z.output<typeof deployExecuteInputSchema>;
 
 export const deployAttemptReportSchema = z.strictObject({
   attemptId: z.uuid(),
@@ -58,11 +72,13 @@ export const deployRuntimeEvidenceSchema = z.strictObject({
 const afterSchema = deployRuntimeEvidenceSchema.omit({ app: true });
 export const deployAttemptResponseSchema = deployAttemptIntentSchema
   .extend({
+    trigger: z.enum(["ci", "manual", "rollback"]),
     runId: runIdSchema.nullable(),
     runAttempt: z.number().int().min(1).max(1_000_000).nullable(),
     image: deployRequestedImageSchema.nullable(),
     actorUserId: z.string().min(1).max(128).optional(),
     requestId: z.uuid().optional(),
+    targetAttemptId: z.uuid().optional(),
     id: z.uuid(),
     reporterId: z.string().min(1).max(128),
     requestedAt: timestampSchema,
@@ -86,6 +102,7 @@ export const deployAttemptResponseSchema = deployAttemptIntentSchema
         record.runAttempt === null &&
         record.actorUserId !== undefined &&
         record.requestId !== undefined &&
+        record.targetAttemptId === undefined &&
         record.tagWrite === null &&
         record.outcome !== "landed" &&
         record.correlation !== "verified" &&
@@ -101,10 +118,17 @@ export const deployAttemptResponseSchema = deployAttemptIntentSchema
     return (
       record.recreatedAt == null &&
       record.outcome !== "recreated" &&
-      record.runId !== null &&
-      record.runAttempt !== null &&
-      record.actorUserId === undefined &&
-      record.requestId === undefined
+      ((record.trigger === "rollback" &&
+        record.runId === null &&
+        record.runAttempt === null &&
+        record.actorUserId !== undefined &&
+        record.requestId !== undefined &&
+        record.targetAttemptId !== undefined) ||
+        (record.runId !== null &&
+          record.runAttempt !== null &&
+          record.actorUserId === undefined &&
+          record.requestId === undefined &&
+          record.targetAttemptId === undefined))
     );
   }, "Attempt identity must match its target-image provenance");
 export const deployAttemptHistoryResponseSchema = z.strictObject({
