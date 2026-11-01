@@ -41,7 +41,8 @@ test("status uses the approved layout and 30 accessible daily bars on desktop an
   await expect(page.getByRole("tooltip")).toContainText("No observations");
   await expect(page.getByRole("navigation")).toHaveCount(0);
   await expect(page.getByRole("contentinfo")).toContainText(/©.*Gwen Phalan/);
-  await expect(page.getByRole("link", { name: /Main site/ })).toHaveAttribute(
+  await expect(page.getByRole("link", { name: /Main site/ })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /Gwen Phalan/ })).toHaveAttribute(
     "href",
     "https://unimatrix-01.dev",
   );
@@ -51,9 +52,22 @@ test("status uses the approved layout and 30 accessible daily bars on desktop an
   expect(header?.y).toBeLessThan(125);
   expect(overall?.y).toBeGreaterThan((header?.y ?? 0) + (header?.height ?? 0));
   expect(list?.y).toBeGreaterThan((overall?.y ?? 0) + (overall?.height ?? 0) + 60);
+  const footer = page.getByRole("contentinfo");
+  const desktopFooter = await footer.boundingBox();
+  expect(Math.round((desktopFooter?.y ?? 0) + (desktopFooter?.height ?? 0))).toBe(
+    page.viewportSize()!.height - 24,
+  );
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(history.getByRole("button")).toHaveCount(30);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  const mobileFooter = await footer.boundingBox();
+  expect(Math.round((mobileFooter?.y ?? 0) + (mobileFooter?.height ?? 0))).toBe(844 - 16);
+  await page.setViewportSize({ width: 390, height: 400 });
+  await footer.scrollIntoViewIfNeeded();
+  const compactFooter = await footer.boundingBox();
+  const compactList = await page.getByRole("list", { name: "Services" }).boundingBox();
+  expect(compactFooter!.y).toBeGreaterThan(compactList!.y + compactList!.height);
+  expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeGreaterThan(400);
   expect(errors).toEqual([]);
 });
 

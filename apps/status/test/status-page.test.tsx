@@ -53,7 +53,8 @@ describe("status root", () => {
     expect(screen.queryByRole("navigation")).not.toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: /No observations/ })).toHaveLength(30);
     expect(screen.getByRole("contentinfo")).toHaveTextContent(/©.*Gwen Phalan/);
-    expect(screen.getByRole("link", { name: /Main site/ })).toHaveAttribute(
+    expect(screen.queryByRole("link", { name: /Main site/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Gwen Phalan/ })).toHaveAttribute(
       "href",
       "https://unimatrix-01.dev",
     );
