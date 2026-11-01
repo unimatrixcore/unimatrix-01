@@ -120,10 +120,12 @@ request. On deploy startup, before accepting requests, interrupted `queue: start
 `queue: unknown` without requeueing. Fresh replacement evidence can then resolve the original
 attempt. Opening the store from a host CLI does not perform this recovery.
 
-Production force recreation and self-redeploy recovery remain unverified. During the controlled
-trial, verify one durable request, idempotent retry and attributed history. Check log association,
-the changed container ID, preserved volumes, applied configuration, health and browser reconnection
-independently; a completed redeploy does not guarantee associated logs.
+After runtime or recreation-policy changes, validate a controlled manual request and retry it with
+the same caller and UUID. Confirm the same durable attempt returns without another queue request.
+Check the changed container ID, image and configuration, preserved volumes and database integrity,
+health, retained browser selection and reconnection independently. A successful acknowledgment does
+not exercise lost-response recovery; validate that branch separately. Check log association
+independently too: a completed redeploy does not guarantee associated logs.
 
 ### Force recreation policy
 

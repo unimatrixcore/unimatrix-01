@@ -147,7 +147,9 @@ simulated tag-write rejection; no deployment was queued.
 The [coordinated rollout](https://github.com/unimatrixcore/unimatrix-01/actions/runs/41275979600)
 and [live already-current check](https://github.com/unimatrixcore/unimatrix-01/actions/runs/41278200680)
 completed, with separate runtime readback verifying image landing and healthy containers.
-Production force recreation, self-redeploy reconnection and rollback/supersession trials remain
-unverified. Complete the applicable controlled trials before relying on those behaviors.
+Revalidate manual recreation and browser reconnection after runtime or recreation-policy changes.
+Keep acknowledgment, replacement evidence and lost-response recovery as separate checks.
+Production rollback/supersession trials remain unverified; complete those controlled trials before
+relying on those behaviors.
 Disabling activation later stops subsequent CI execution; it does not remove recorded attempts or
 cancel queued work.
