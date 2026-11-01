@@ -55,6 +55,7 @@ export interface DeploymentAttemptStore {
     attemptId: string,
     reporterId: string,
     now: number,
+    baseline: DeployAttemptBaseline,
   ): DeploymentExecutionClaim;
   findManual(
     input: DeployManualRedeployInput,
@@ -248,7 +249,13 @@ export function openDeploymentAttemptStore(path: string): DeploymentAttemptStore
         },
       ),
       claimExecution: db.transaction(
-        (app: string, attemptId: string, reporterId: string, now: number) => {
+        (
+          app: string,
+          attemptId: string,
+          reporterId: string,
+          now: number,
+          baseline: DeployAttemptBaseline,
+        ) => {
           const attempt = maintain(now).find(
             (record) => record.id === attemptId && record.app === app,
           );
@@ -261,6 +268,9 @@ export function openDeploymentAttemptStore(path: string): DeploymentAttemptStore
             attempt.correlation !== "pending"
           )
             throw conflict();
+          const before = deployAttemptBaselineSchema.parse(baseline);
+          if (before.observedAt > now || now - before.observedAt >= 30_000) throw conflict();
+          attempt.baseline = before;
           attempt.tagWrite = "started";
           writeRecord(attempt);
           return { attempt, claimed: true };

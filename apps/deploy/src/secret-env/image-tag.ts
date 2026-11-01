@@ -42,21 +42,25 @@ export function createImageTagWriter(client: DokployEnvClient): ImageTagWriter {
       if (merged.refused.length > 0) throw new ImageTagWriteRefused();
       if (merged.changed.length > 0) {
         await client.updateComposeEnv(composeId, merged.env);
-        const confirmed = await client.getComposeEnv(composeId);
-        const check = mergeSecretEnv(
-          confirmed.env,
-          new Map([["IMAGE_TAG", new SecretValue(`${image.tag}@${image.digest}`)]]),
-          true,
-        );
-        if (
-          confirmed.composeId !== composeId ||
-          confirmed.owner !== RECONCILE_EXPECTED_OWNER ||
-          confirmed.repository !== RECONCILE_EXPECTED_REPOSITORY ||
-          confirmed.sourceType !== "github" ||
-          check.changed.length > 0 ||
-          check.refused.length > 0
-        )
+        try {
+          const confirmed = await client.getComposeEnv(composeId);
+          const check = mergeSecretEnv(
+            confirmed.env,
+            new Map([["IMAGE_TAG", new SecretValue(`${image.tag}@${image.digest}`)]]),
+            true,
+          );
+          if (
+            confirmed.composeId !== composeId ||
+            confirmed.owner !== RECONCILE_EXPECTED_OWNER ||
+            confirmed.repository !== RECONCILE_EXPECTED_REPOSITORY ||
+            confirmed.sourceType !== "github" ||
+            check.changed.length > 0 ||
+            check.refused.length > 0
+          )
+            throw new Error();
+        } catch {
           throw new Error("Image tag write could not be confirmed");
+        }
       }
     },
   };

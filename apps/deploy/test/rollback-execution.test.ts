@@ -536,16 +536,22 @@ void test("the next CI deployment supersedes a landed service rollback with its 
   }
 });
 
-void test("CI execution refuses absent or stale durable baseline without claiming a mutation", async () => {
+void test("CI execution refreshes missing or stale intent baselines before claiming each app", async () => {
   for (const mode of ["missing", "stale"] as const) {
     const f = fixture();
     try {
       const target = f.seed(false, "api", f.manage.record.id, mode);
       const response = await f.send("execute", { app: "api", attemptId: target.id });
-      assert.equal(response.statusCode, 503, response.body);
-      assert.equal(f.attempts.get("api", target.id, Date.now())?.tagWrite, null);
-      assert.equal(f.calls.includes("write"), false);
-      assert.equal(f.calls.includes("queue"), false);
+      assert.equal(response.statusCode, 200, response.body);
+      const claimed = f.attempts.get("api", target.id, Date.now())!;
+      assert.equal(claimed.tagWrite, "acknowledged");
+      assert.equal(claimed.baseline?.containerId, "d".repeat(64));
+      assert.ok(claimed.baseline.observedAt > target.requestedAt);
+      assert.equal(claimed.queue, "acknowledged");
+      f.setEvidence([]);
+      assert.equal((await f.send("execute", { app: "api", attemptId: target.id })).statusCode, 200);
+      assert.equal(f.calls.filter((entry) => entry === "write").length, 1);
+      assert.equal(f.calls.filter((entry) => entry === "queue").length, 1);
     } finally {
       await f.app.close();
     }
@@ -579,5 +585,90 @@ void test("rollback refuses missing, stale or ambiguous bridge baseline before r
     } finally {
       await f.app.close();
     }
+  }
+});
+
+void test("CI execution refuses missing, stale, future or ambiguous current evidence without claiming", async () => {
+  for (const mode of ["missing", "stale", "future", "ambiguous"] as const) {
+    const f = fixture();
+    try {
+      const target = f.seed(false);
+      const evidence = {
+        app: "api",
+        containerId: "e".repeat(64),
+        observedAt: Date.now() + (mode === "future" ? 60_000 : mode === "stale" ? -30_001 : 0),
+        image,
+      };
+      f.setEvidence(
+        mode === "missing" ? [] : mode === "ambiguous" ? [evidence, evidence] : [evidence],
+      );
+      const response = await f.send("execute", { app: "api", attemptId: target.id });
+      assert.equal(response.statusCode, 503, response.body);
+      assert.equal(f.attempts.get("api", target.id, Date.now())!.tagWrite, null);
+      assert.deepEqual(f.attempts.get("api", target.id, Date.now())!.baseline, target.baseline);
+      assert.equal(f.calls.includes("write"), false);
+      assert.equal(f.calls.includes("queue"), false);
+    } finally {
+      await f.app.close();
+    }
+  }
+});
+
+void test("a rejected post-write readback stays unknown and retains the app reservation", async () => {
+  const f = fixture();
+  try {
+    const target = f.seed(false);
+    let reads = 0;
+    let writes = 0;
+    f.app.imageTags = createImageTagWriter({
+      getComposeEnv: () => {
+        if (reads++ > 0) return Promise.reject(new DokployClientError("private-readback", 403));
+        return Promise.resolve({
+          composeId: "compose-api",
+          owner: "unimatrixcore",
+          repository: "unimatrix-01",
+          sourceType: "github",
+          env: new SecretValue("IMAGE_TAG=old\nTOKEN=private\n"),
+        });
+      },
+      updateComposeEnv: () => {
+        writes++;
+        return Promise.resolve();
+      },
+    });
+    const input = { app: "api", attemptId: target.id };
+    const response = await f.send("execute", input);
+    assert.equal(response.statusCode, 200, response.body);
+    const record = response.json<DeployAttemptRecord>();
+    assert.equal(writes, 1);
+    assert.equal(record.tagWrite, "unknown");
+    assert.equal(record.outcome, "incomplete");
+    assert.equal(record.queue, null);
+    assert.equal(f.calls.includes("queue"), false);
+    assert.doesNotMatch(response.body, /private/u);
+    const retry = await f.send("execute", input);
+    assert.equal(retry.statusCode, 200, retry.body);
+    assert.equal(writes, 1);
+    assert.equal(reads, 2);
+    const now = Date.now();
+    assert.throws(
+      () =>
+        f.attempts.intent(
+          {
+            repository: "unimatrixcore/unimatrix-01",
+            runId: "987654321",
+            runAttempt: 1,
+            app: "api",
+            trigger: "ci",
+            image,
+          },
+          f.manage.record.id,
+          { containerId: "d".repeat(64), observedAt: now },
+          now,
+        ),
+      /conflicts/u,
+    );
+  } finally {
+    await f.app.close();
   }
 });

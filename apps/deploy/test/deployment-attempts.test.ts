@@ -967,19 +967,21 @@ void test("rollback selects landed immutable evidence and reserves atomically ac
     );
     assert.throws(() => second.reserveManual(input, "api-service", before, now + 1001));
     assert.throws(
-      () => second.claimExecution("web", reservation.attempt.id, "api-service", now + 1001),
+      () => second.claimExecution("web", reservation.attempt.id, "api-service", now + 1001, before),
       /conflicts/u,
     );
     assert.throws(
-      () => second.claimExecution("api", reservation.attempt.id, "other", now + 1001),
+      () => second.claimExecution("api", reservation.attempt.id, "other", now + 1001, before),
       /conflicts/u,
     );
     assert.equal(
-      second.claimExecution("api", reservation.attempt.id, "api-service", now + 1001).claimed,
+      second.claimExecution("api", reservation.attempt.id, "api-service", now + 1001, before)
+        .claimed,
       true,
     );
     assert.equal(
-      store.claimExecution("api", reservation.attempt.id, "api-service", now + 1001).claimed,
+      store.claimExecution("api", reservation.attempt.id, "api-service", now + 1001, before)
+        .claimed,
       false,
     );
     store.report(
@@ -1013,7 +1015,7 @@ void test("execution cannot claim expired intent or manual request", () => {
   try {
     const attempt = store.intent(intent, "ci", before, now);
     assert.throws(
-      () => store.claimExecution("api", attempt.id, "ci", attempt.deadlineAt),
+      () => store.claimExecution("api", attempt.id, "ci", attempt.deadlineAt, before),
       /conflicts/u,
     );
     const manual = store.reserveManual(
@@ -1023,10 +1025,43 @@ void test("execution cannot claim expired intent or manual request", () => {
       now,
     );
     assert.throws(
-      () => store.claimExecution("web", manual.attempt.id, "api-service", now),
+      () => store.claimExecution("web", manual.attempt.id, "api-service", now, before),
       /conflicts/u,
     );
   } finally {
     store.close();
+  }
+});
+
+void test("execution atomically refreshes its baseline once and rejects stale or future evidence", () => {
+  const directory = mkdtempSync(join(tmpdir(), "execution-baseline-"));
+  try {
+    const path = join(directory, "db.sqlite");
+    const first = openRawStore(path);
+    const record = first.intent(intent, "ci", before, now);
+    const executionTime = now + 60_000;
+    for (const observedAt of [now, executionTime + 1]) {
+      assert.throws(
+        () =>
+          first.claimExecution("api", record.id, "ci", executionTime, { ...before, observedAt }),
+        /conflicts/u,
+      );
+      assert.equal(first.get("api", record.id, executionTime)!.tagWrite, null);
+      assert.deepEqual(first.get("api", record.id, executionTime)!.baseline, before);
+    }
+    const refreshed = { containerId: "e".repeat(64), observedAt: executionTime };
+    assert.equal(
+      first.claimExecution("api", record.id, "ci", executionTime, refreshed).claimed,
+      true,
+    );
+    first.close();
+    const second = openRawStore(path);
+    assert.deepEqual(second.get("api", record.id, executionTime)!.baseline, refreshed);
+    const duplicate = second.claimExecution("api", record.id, "ci", executionTime, before);
+    assert.equal(duplicate.claimed, false);
+    assert.deepEqual(duplicate.attempt.baseline, refreshed);
+    second.close();
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
   }
 });

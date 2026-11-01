@@ -8,8 +8,11 @@ unspecified target image and verified API user attribution; see
 [manual redeploys](../apps/deploy/README.md#manual-redeploys). Direct Dokploy UI operations have no
 recorded attempt.
 
-An intent captures a server-observed baseline, or explicit missing evidence. Execution requires
-a nonmissing baseline younger than 30 seconds; missing or stale evidence refuses before any mutation.
+An intent captures a server-observed baseline, or explicit missing evidence. Immediately before
+execution, the service refreshes that baseline from the runtime bridge and persists it atomically
+with the exclusive tag-write claim. This keeps sequential CI batches independent of intent age.
+Current evidence must be unique and younger than 30 seconds; missing or stale evidence refuses
+before any mutation. A claimed attempt never replaces its baseline on retry.
 An unexecuted intent can expire without leaving queued work. The execution route
 durably claims each service tag write and queue request before sending it. Claims are exclusive: an interrupted claim is never
 automatically replayed. Retrying a retained execution or rollback request returns its record without replaying a mutation.

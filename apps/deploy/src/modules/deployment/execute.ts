@@ -4,6 +4,7 @@ import {
   deployRollbackContract,
   deployRollbackInputSchema,
   type DeployAttemptRecord,
+  type DeployAttemptBaseline,
 } from "@unimatrix/shared";
 import type { FastifyInstance, FastifyPluginAsync } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
@@ -63,6 +64,20 @@ function mutationFailure(error: unknown): "rejected" | "unknown" {
     : "unknown";
 }
 
+async function readBaseline(app: FastifyInstance, appDir: string): Promise<DeployAttemptBaseline> {
+  const evidence = (await app.readRuntimeEvidence()).filter((entry) => entry.app === appDir);
+  const now = Date.now();
+  const [before] = evidence;
+  if (
+    evidence.length !== 1 ||
+    before === undefined ||
+    before.observedAt > now ||
+    now - before.observedAt >= 30_000
+  )
+    refuse(503);
+  return { containerId: before.containerId, observedAt: before.observedAt };
+}
+
 async function execute(
   app: FastifyInstance,
   record: DeployAttemptRecord,
@@ -71,14 +86,14 @@ async function execute(
 ): Promise<DeployAttemptRecord> {
   if (app.imageTags === undefined || app.redeployment === undefined || record.image === null)
     refuse(503);
-  const now = Date.now();
-  if (
-    record.baseline === null ||
-    record.baseline.observedAt > now ||
-    now - record.baseline.observedAt >= 30_000
-  )
-    refuse(503);
-  const claim = app.deploymentAttempts.claimExecution(record.app, record.id, reporterId, now);
+  const baseline = await readBaseline(app, record.app);
+  const claim = app.deploymentAttempts.claimExecution(
+    record.app,
+    record.id,
+    reporterId,
+    Date.now(),
+    baseline,
+  );
   if (!claim.claimed) return claim.attempt;
   const report = (
     stage: "tag-write" | "queue",
@@ -152,17 +167,8 @@ export const deploymentExecutionModule: FastifyPluginAsync = (app) => {
         if (prior !== undefined) return prior;
         if (app.imageTags === undefined || app.redeployment === undefined) refuse(503);
         const composeId = await resolveCompose(app, appDir);
-        const evidence = (await app.readRuntimeEvidence()).filter((entry) => entry.app === appDir);
+        const baseline = await readBaseline(app, appDir);
         const now = Date.now();
-        const [before] = evidence;
-        const baseline =
-          evidence.length === 1 &&
-          before !== undefined &&
-          before.observedAt <= now &&
-          now - before.observedAt < 30_000
-            ? { containerId: before.containerId, observedAt: before.observedAt }
-            : null;
-        if (baseline === null) refuse(503);
         const reservation = app.deploymentAttempts.reserveRollback(
           request.body,
           reporterId,
