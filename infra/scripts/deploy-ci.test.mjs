@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { execFileSync } from "node:child_process";
 
 import { deployCi } from "./deploy-ci.mjs";
 import { publicationFromPush, publishImage } from "./publish-image.mjs";
@@ -81,6 +82,40 @@ function setup(t, apps = ["api", "auth"]) {
   }
   return { root, env, calls, fetchImpl, log: () => undefined };
 }
+
+test("intent records the deployed commit's public subject without shell interpretation", async (t) => {
+  const fixture = setup(t, ["api"]);
+  const git = (args) =>
+    execFileSync("git", args, {
+      cwd: fixture.root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  git(["init"]);
+  git([
+    "-c",
+    "user.name=Test",
+    "-c",
+    "user.email=test@example.test",
+    "commit",
+    "--allow-empty",
+    "-m",
+    "feat: deploy $(private) `literal` subject",
+  ]);
+  const revision = git(["rev-parse", "HEAD"]);
+  fixture.env.IMAGE_TAG = revision;
+  const path = join(fixture.root, "publication/api.json");
+  const publication = JSON.parse(readFileSync(path, "utf8"));
+  publication.image.tag = revision;
+  publication.image.commit = revision;
+  writeFileSync(path, JSON.stringify(publication));
+  await deployCi(fixture);
+  assert.equal(
+    fixture.calls.find(({ path: route }) => route === "/deployment/attempts/intent").body
+      .commitSubject,
+    "feat: deploy $(private) `literal` subject",
+  );
+});
 
 test("captures the digest returned by that publication, refusing missing or ambiguous push evidence", () => {
   const image = { repository: "ghcr.io/unimatrixcore/unimatrix-api", tag: commit, app: "api" };

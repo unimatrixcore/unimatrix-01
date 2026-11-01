@@ -18,6 +18,8 @@ const imageSchema = z.strictObject({
   RepoDigests: z.array(z.string().max(512)).max(64),
   Os: z.literal("linux"),
   Architecture: z.enum(["amd64", "arm64"]),
+  Revision: z.string().nullable().optional(),
+  CommitSubject: z.string().max(512).nullable().optional(),
 });
 const manifestSchema = z.object({
   schemaVersion: z.literal(2),
@@ -46,7 +48,14 @@ export async function collectRuntimeEvidence(
   for (const id of ids) {
     try {
       const container = z
-        .strictObject({ Id: z.literal(id), Image: digestSchema })
+        .strictObject({
+          Id: z.literal(id),
+          Image: digestSchema,
+          Name: z.string().max(256).optional(),
+          StartedAt: z.string().optional(),
+          Health: z.enum(["healthy", "unhealthy", "starting"]).nullable().optional(),
+          ImageReference: z.string().max(2048).optional(),
+        })
         .parse(
           JSON.parse(
             await docker([
@@ -54,7 +63,7 @@ export async function collectRuntimeEvidence(
               "--type",
               "container",
               "--format",
-              '{"Id":{{json .Id}},"Image":{{json .Image}}}',
+              '{"Id":{{json .Id}},"Image":{{json .Image}},"Name":{{json .Name}},"StartedAt":{{json .State.StartedAt}},"Health":{{if .State.Health}}{{json .State.Health.Status}}{{else}}null{{end}},"ImageReference":{{json .Config.Image}}}',
               id,
             ]),
           ),
@@ -65,7 +74,7 @@ export async function collectRuntimeEvidence(
             "image",
             "inspect",
             "--format",
-            '{"Id":{{json .Id}},"RepoDigests":{{json .RepoDigests}},"Os":{{json .Os}},"Architecture":{{json .Architecture}}}',
+            '{"Id":{{json .Id}},"RepoDigests":{{json .RepoDigests}},"Os":{{json .Os}},"Architecture":{{json .Architecture}},"Revision":{{json (index .Config.Labels "org.opencontainers.image.revision")}},"CommitSubject":{{json (index .Config.Labels "org.opencontainers.image.commit.subject")}}}',
             container.Image,
           ]),
         ),
@@ -95,6 +104,26 @@ export async function collectRuntimeEvidence(
         app,
         containerId: id,
         observedAt,
+        ...(container.Name === undefined
+          ? {}
+          : {
+              metadata: {
+                name: container.Name.replace(/^\//u, ""),
+                startedAt:
+                  container.StartedAt !== undefined &&
+                  Number.isFinite(Date.parse(container.StartedAt)) &&
+                  Date.parse(container.StartedAt) >= 0
+                    ? Date.parse(container.StartedAt)
+                    : null,
+                health: container.Health ?? null,
+                imageTag:
+                  container.ImageReference?.startsWith(`${candidate.repository}:`) === true
+                    ? container.ImageReference.slice(candidate.repository.length + 1)
+                    : null,
+                commit: /^[a-f0-9]{40}$/u.test(image.Revision ?? "") ? image.Revision! : null,
+                commitSubject: image.CommitSubject || null,
+              },
+            }),
         image: {
           repository: candidate.repository,
           platform: `linux/${image.Architecture}`,

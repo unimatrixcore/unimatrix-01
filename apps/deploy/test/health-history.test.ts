@@ -126,7 +126,7 @@ void test("unsupported schema versions fail closed and release the file", () => 
   const path = join(directory, "history.sqlite");
   try {
     const db = new Database(path);
-    db.pragma("user_version = 2");
+    db.pragma("user_version = 3");
     db.close();
     assert.throws(() => openHealthHistoryStore(path, ["api"]), /Unsupported/);
   } finally {
@@ -150,5 +150,59 @@ void test("UTC daily summaries split an observation at midnight", () => {
     assert.ok(days.at(-2)!.coveragePercent < 1);
   } finally {
     store.close();
+  }
+});
+
+void test("version-one health history migrates without losing samples and persists measured latency", () => {
+  const directory = mkdtempSync(join(tmpdir(), "deploy-health-v1-"));
+  const path = join(directory, "history.sqlite");
+  const legacy = new Database(path);
+  legacy.exec(
+    "CREATE TABLE health_probes (app TEXT NOT NULL,bucket INTEGER NOT NULL,checked_at INTEGER NOT NULL,state TEXT NOT NULL,PRIMARY KEY(app,bucket)) WITHOUT ROWID",
+  );
+  legacy
+    .prepare("INSERT INTO health_probes VALUES (?,?,?,?)")
+    .run("api", Math.floor(NOW / PROBE_INTERVAL_MS), NOW, "up");
+  legacy.pragma("user_version = 1");
+  legacy.close();
+  let store = openHealthHistoryStore(path, ["api"], NOW);
+  try {
+    assert.deepEqual(store.snapshot("api", NOW).current, {
+      app: "api",
+      checkedAt: NOW,
+      state: "up",
+    });
+    const inspect = new Database(path);
+    assert.equal(inspect.pragma("user_version", { simple: true }), 2);
+    inspect.close();
+    const later = NOW + PROBE_INTERVAL_MS;
+    store.record({ app: "api", checkedAt: later, state: "down", durationMs: 82 }, later);
+    store.close();
+    store = openHealthHistoryStore(path, ["api"], later);
+    assert.equal(store.snapshot("api", later).current.durationMs, 82);
+    assert.deepEqual(
+      store.snapshot("api", later).recent.map((entry) => entry.durationMs),
+      [undefined, 82],
+    );
+    store.record(
+      { app: "api", checkedAt: later + 1, state: "unknown", durationMs: 999 },
+      later + 1,
+    );
+    assert.equal(store.snapshot("api", later + 1).current.durationMs, undefined);
+    assert.throws(() => {
+      store.record({ app: "api", checkedAt: later, state: "up", durationMs: -1 }, later);
+    });
+    assert.throws(() => {
+      store.record({ app: "api", checkedAt: later, state: "up", durationMs: 1.5 }, later);
+    });
+    const future = later + HISTORY_RETENTION_MS + 2 * PROBE_INTERVAL_MS;
+    store.record({ app: "api", checkedAt: future, state: "up", durationMs: 5 }, future);
+    assert.deepEqual(store.snapshot("api", future).recent, [
+      { app: "api", checkedAt: future, state: "up", durationMs: 5 },
+    ]);
+    assert.equal(store.snapshot("api", future + PROBE_INTERVAL_MS).current.durationMs, undefined);
+  } finally {
+    store.close();
+    rmSync(directory, { recursive: true, force: true });
   }
 });

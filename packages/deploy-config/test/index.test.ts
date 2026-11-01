@@ -48,7 +48,7 @@ describe("deployDeclarationsModule", () => {
         { name: "HOST", value: { kind: "literal", value: "0.0.0.0" } },
         { name: "COMPUTED", value: { kind: "generated", name: "COMPUTED", value: "a,b" } },
         { name: "OPTIONAL", value: { kind: "variable", name: "PLATFORM_OPTIONAL", default: "" } },
-        { name: "TOKEN", value: { kind: "variable", name: "PLATFORM_TOKEN" } },
+        { name: "TOKEN", value: { kind: "variable", name: "PLATFORM_TOKEN", bootstrap: true } },
         {
           name: "KEY",
           value: { kind: "secrets-store", name: "PLATFORM_KEY", secret: TEST_SECRET },
@@ -91,7 +91,10 @@ describe("deployDeclarationsModule", () => {
               defaultValue: "",
             },
           },
-          { name: "TOKEN", source: { kind: "variable", name: "PLATFORM_TOKEN", required: true } },
+          {
+            name: "TOKEN",
+            source: { kind: "variable", name: "PLATFORM_TOKEN", required: true, bootstrap: true },
+          },
         ],
         dockerfileEnv: [{ name: "NODE_ENV", value: "production" }],
         buildArgs: [],

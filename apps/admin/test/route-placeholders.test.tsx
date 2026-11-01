@@ -2,20 +2,18 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { Route as AnalyticsRoute } from "../src/routes/analytics.lazy.js";
-import { Route as DeploysRoute } from "../src/routes/deploys.lazy.js";
 import { Route as FeedbackRoute } from "../src/routes/feedback.lazy.js";
 import { Route as SocialRoute } from "../src/routes/social.lazy.js";
 
 /**
- * The four still-unbuilt section routes render the same placeholder with a
+ * The still-unbuilt section routes render the same placeholder with a
  * different label. One assertion each is enough to prove the route wires the
  * right label through, not a repeat of `NotBuiltPlaceholder`'s own test.
- * Content and Secrets are not here — each is built, gated, and covered by its
+ * Content, Deploys and Secrets are not here — each is built, gated, and covered by its
  * own suite.
  */
 const ROUTES = [
   { Route: FeedbackRoute, label: "Feedback" },
-  { Route: DeploysRoute, label: "Deploys" },
   { Route: AnalyticsRoute, label: "Analytics" },
   { Route: SocialRoute, label: "Social" },
 ];

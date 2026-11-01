@@ -17,6 +17,7 @@ const sourceSchema = z.discriminatedUnion("kind", [
     name: nameSchema,
     required: z.boolean(),
     defaultValue: valueSchema.optional(),
+    bootstrap: z.boolean().optional(),
   }),
   z.strictObject({
     kind: z.literal("secrets-store"),

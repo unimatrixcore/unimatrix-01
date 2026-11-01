@@ -25,6 +25,13 @@ export const deployAttemptIntentSchema = z.strictObject({
   app: appSchema,
   trigger: z.literal("ci"),
   image: deployRequestedImageSchema,
+  commitSubject: z
+    .string()
+    .min(1)
+    .max(240)
+    .regex(/^[^\p{Cc}]+$/u)
+    .nullable()
+    .optional(),
 });
 export const deployManualRedeployRequestSchema = z.strictObject({
   app: appSchema,
@@ -56,6 +63,7 @@ export const deployAttemptReportSchema = z.strictObject({
   result: resultSchema,
 });
 export const deployAttemptQuerySchema = z.strictObject({
+  latestPerApp: z.literal("true").optional(),
   app: appSchema.optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
@@ -68,6 +76,19 @@ export const deployRuntimeEvidenceSchema = z.strictObject({
   containerId: containerIdSchema,
   observedAt: timestampSchema,
   image: deployRuntimeImageSchema,
+  metadata: z
+    .strictObject({
+      name: z.string().min(1).max(256),
+      startedAt: timestampSchema.nullable(),
+      health: z.enum(["healthy", "unhealthy", "starting"]).nullable(),
+      imageTag: z.string().max(128).nullable(),
+      commit: z
+        .string()
+        .regex(/^[a-f0-9]{40}$/u)
+        .nullable(),
+      commitSubject: z.string().max(512).nullable(),
+    })
+    .optional(),
 });
 const afterSchema = deployRuntimeEvidenceSchema.omit({ app: true });
 export const deployAttemptResponseSchema = deployAttemptIntentSchema
@@ -93,6 +114,19 @@ export const deployAttemptResponseSchema = deployAttemptIntentSchema
     after: afterSchema.nullable(),
     landedAt: timestampSchema.nullable(),
     lateLandedAt: timestampSchema.nullable(),
+    completedAt: timestampSchema.nullable().optional(),
+    failureReason: z
+      .enum([
+        "Image tag update was rejected. No deployment was queued.",
+        "Dokploy rejected the deployment queue request.",
+        "Image tag update has an unknown result. Resolve the pending operation before retrying.",
+        "Deployment queue has an unknown result. Resolve the pending operation before retrying.",
+        "No fresh baseline container was recorded; replacement cannot be verified.",
+        "Runtime image correlation is ambiguous; deployment cannot be verified.",
+        "The deployment deadline passed without a verified replacement container.",
+      ])
+      .nullable()
+      .optional(),
   })
   .refine((record) => {
     if (record.image === null) {
@@ -143,6 +177,32 @@ const logSelection = {
   app: appSchema,
   attemptId: z.uuid(),
   policy: z.literal("recognized-events-only"),
+  diagnosticLines: z
+    .array(
+      z.enum([
+        "▶ Deployment attempt accepted and recorded.",
+        "Immutable target image recorded from CI publication.",
+        "Rollback targets a previously verified deployed image.",
+        "Manual redeploy uses the service configuration; no immutable target image was supplied.",
+        "Baseline container recorded before deployment.",
+        "No baseline container was recorded; replacement cannot be verified.",
+        "Image tag update started.",
+        "Image tag update acknowledged.",
+        "✖ Image tag update rejected; no deployment was queued.",
+        "Image tag update result is unknown; retry is blocked until resolved.",
+        "Deployment queue request started.",
+        "Deployment queue request acknowledged; awaiting runtime verification.",
+        "✖ Deployment queue request rejected.",
+        "Deployment queue result is unknown; retry is blocked until resolved.",
+        "✔ Requested image verified in a replacement container.",
+        "✔ Replacement container observed; deployed image remains unverified.",
+        "✖ Deployment did not verify before its deadline.",
+        "Requested image verified after the deployment deadline.",
+        "Replacement container observed after the deployment deadline; image remains unverified.",
+      ]),
+    )
+    .max(20)
+    .optional(),
 };
 export const deployAttemptLogsResponseSchema = z.discriminatedUnion("status", [
   z.strictObject({
@@ -171,3 +231,22 @@ export type DeployAttemptBaseline = z.output<typeof deployAttemptBaselineSchema>
 export type DeployRuntimeEvidence = z.output<typeof deployRuntimeEvidenceSchema>;
 
 export type DeployAttemptRuntimeEvidence = DeployRuntimeEvidence;
+
+export function hasUnresolvedDeploymentWork(
+  record: Pick<
+    DeployAttemptRecord,
+    "outcome" | "recreatedAt" | "lateLandedAt" | "queue" | "tagWrite"
+  >,
+): boolean {
+  return (
+    record.outcome !== "failed" &&
+    record.outcome !== "landed" &&
+    record.outcome !== "recreated" &&
+    record.recreatedAt == null &&
+    record.lateLandedAt === null &&
+    (record.outcome !== "timed-out" ||
+      record.queue !== null ||
+      record.tagWrite === "started" ||
+      record.tagWrite === "unknown")
+  );
+}

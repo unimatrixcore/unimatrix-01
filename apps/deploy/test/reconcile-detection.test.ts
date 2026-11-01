@@ -4,7 +4,7 @@ import test from "node:test";
 import { buildApp } from "../src/app.js";
 import { loadDeployRuntimeConfig } from "../src/config.js";
 import type { DokployClient } from "../src/dokploy/client.js";
-import type { DokployProject } from "../src/dokploy/schemas.js";
+import type { DokployCompose, DokployProject } from "../src/dokploy/schemas.js";
 import { createReconciliationDetector, RECONCILE_INTERVAL_MS } from "../src/reconcile/detection.js";
 import { DEPLOY_DESIRED_STATE } from "../src/reconcile/desired-state.gen.js";
 import { openServiceTokenStore } from "../src/service-tokens/store.js";
@@ -210,5 +210,70 @@ void test("app listen starts detection and app close waits for the active run", 
   } finally {
     release?.([]);
     await app.close();
+  }
+});
+
+void test("scheduled detection includes public routing drift from its existing per-service read", async () => {
+  const api = DEPLOY_DESIRED_STATE.find((service) => service.appDir === "api")!;
+  let reads = 0;
+  let domains: DokployCompose["domains"] = [
+    { host: "api.unimatrix-01.dev", https: true, port: 8080, path: "/" },
+  ];
+  const detector = createReconciliationDetector(
+    {
+      getProjects: () =>
+        Promise.resolve([
+          {
+            projectId: "p",
+            name: "p",
+            environments: [
+              {
+                environmentId: "e",
+                name: "e",
+                compose: [{ composeId: "c", composeStatus: "done", name: "api" }],
+              },
+            ],
+          },
+        ]),
+      getCompose: () => {
+        reads += 1;
+        return Promise.resolve({
+          composeId: "c",
+          name: "api",
+          environmentId: "e",
+          composePath: api.composePath,
+          sourceType: "github",
+          branch: "main",
+          autoDeploy: false,
+          owner: "unimatrixcore",
+          repository: "unimatrix-01",
+          env: api.env.map((entry) => ({ key: entry.name, blank: false })),
+          ...(domains === undefined ? {} : { domains }),
+        });
+      },
+    },
+    [api],
+  );
+  try {
+    await detector.poll();
+    assert.equal(reads, 1);
+    const result = detector.snapshot().results[0];
+    assert.equal(result?.outcome, "diffed");
+    if (result?.outcome !== "diffed" || result.diff.verdict !== "matched")
+      assert.fail("Expected matched diff");
+    assert.equal(result.diff.routing?.status, "drift");
+    assert.equal(result.diff.routing?.portMismatch, true);
+    assert.equal(result.diff.routing?.declaredPort, 3001);
+    assert.equal(result.diff.inSync, false);
+    assert.equal(detector.snapshot().status, "checked");
+    domains = undefined;
+    await detector.poll();
+    const unavailable = detector.snapshot().results[0];
+    if (unavailable?.outcome !== "diffed" || unavailable.diff.verdict !== "matched")
+      assert.fail("Expected matched diff");
+    assert.equal(unavailable.diff.routing?.status, "unavailable");
+    assert.deepEqual(unavailable.diff.routing?.missingHosts, []);
+  } finally {
+    await detector.stop();
   }
 });

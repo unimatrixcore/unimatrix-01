@@ -12,6 +12,7 @@ import {
   ATTEMPT_DEADLINE_MS,
   ATTEMPT_RETENTION_MS,
   MAX_ATTEMPT_RECORDS,
+  describeAttemptFailure,
 } from "../src/attempts/model.js";
 
 function openDeploymentAttemptStore(path: string) {
@@ -55,6 +56,60 @@ const evidence: DeployRuntimeEvidence = {
     digest: intent.image.digest,
   },
 };
+
+void test("attempt history preserves public commit metadata and records actual completion and closed failure reasons", () => {
+  const store = openDeploymentAttemptStore(":memory:");
+  try {
+    const attempt = store.intent(
+      { ...intent, commitSubject: "feat: expose deployment evidence" },
+      "reporter",
+      before,
+      now,
+    );
+    assert.equal(attempt.commitSubject, "feat: expose deployment evidence");
+    const failed = store.report(
+      { attemptId: attempt.id, stage: "tag-write", result: "rejected" },
+      "reporter",
+      now + 1000,
+    );
+    assert.equal(failed.completedAt, now + 1000);
+    assert.equal(failed.failureReason, "Image tag update was rejected. No deployment was queued.");
+    assert.equal(store.get("api", attempt.id, now + 2000)?.completedAt, now + 1000);
+    const timed = {
+      ...failed,
+      outcome: "timed-out" as const,
+      tagWrite: "acknowledged" as const,
+      queue: "acknowledged" as const,
+    };
+    assert.equal(
+      describeAttemptFailure({ ...timed, baseline: null }),
+      "No fresh baseline container was recorded; replacement cannot be verified.",
+    );
+    assert.equal(
+      describeAttemptFailure({ ...timed, correlation: "ambiguous" }),
+      "Runtime image correlation is ambiguous; deployment cannot be verified.",
+    );
+    assert.equal(
+      describeAttemptFailure(timed),
+      "The deployment deadline passed without a verified replacement container.",
+    );
+    assert.equal(
+      describeAttemptFailure({ ...timed, queue: "rejected" }),
+      "Dokploy rejected the deployment queue request.",
+    );
+    assert.equal(
+      describeAttemptFailure({ ...timed, tagWrite: "unknown" }),
+      "Image tag update has an unknown result. Resolve the pending operation before retrying.",
+    );
+    assert.equal(
+      describeAttemptFailure({ ...timed, queue: "unknown" }),
+      "Deployment queue has an unknown result. Resolve the pending operation before retrying.",
+    );
+    assert.equal(describeAttemptFailure({ ...timed, lateLandedAt: now + 3000 }), null);
+  } finally {
+    store.close();
+  }
+});
 
 void test("durable intent is idempotent across restarts and conflicts cannot rewrite requested image or reporter", () => {
   const directory = mkdtempSync(join(tmpdir(), "attempt-store-"));

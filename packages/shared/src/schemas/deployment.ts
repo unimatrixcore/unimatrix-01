@@ -28,6 +28,17 @@ const containerObservationSchema = z.discriminatedUnion("kind", [
     state: z.string().max(1024),
     status: z.string().max(1024),
     containerAgeMs: z.null(),
+    name: z.string().max(256).nullable().default(null),
+    startedAt: timestampSchema.nullable().default(null),
+    health: z.enum(["healthy", "unhealthy", "starting"]).nullable().default(null),
+    imageTag: z.string().max(128).nullable().default(null),
+    commit: z
+      .string()
+      .regex(/^[a-f0-9]{40}$/u)
+      .nullable()
+      .default(null),
+    commitSubject: z.string().max(512).nullable().default(null),
+    runtimeMetadataObservedAt: timestampSchema.nullable().default(null),
     firstObservedAt: timestampSchema,
     lastRecreatedAt: timestampSchema.nullable(),
     freshness: freshnessSchema,
@@ -41,6 +52,21 @@ export const deployStateResponseSchema = z.strictObject({
       z.strictObject({
         appDir: appIdentifierSchema,
         publicStatus: z.boolean(),
+        dokployUrl: z.url().nullable().default(null),
+        domains: z
+          .array(
+            z.strictObject({
+              host: z.string().max(253),
+              https: z.boolean(),
+              port: z.number().int().min(1).max(65535).nullable(),
+              path: z.string().max(2048).nullable(),
+            }),
+          )
+          .max(100)
+          .nullable()
+          .default(null),
+        metadataObservedAt: timestampSchema.nullable().default(null),
+        metadataFreshness: freshnessSchema.default("missing"),
         container: containerObservationSchema,
       }),
     )
@@ -52,6 +78,7 @@ const healthObservationSchema = z.strictObject({
   app: appIdentifierSchema,
   checkedAt: timestampSchema,
   state: healthStateSchema,
+  durationMs: timestampSchema.optional(),
 });
 const healthSummarySchema = z.strictObject({
   from: timestampSchema,
@@ -69,6 +96,7 @@ export const deployHealthHistoryResponseSchema = z.strictObject({
     app: appIdentifierSchema,
     state: healthStateSchema,
     checkedAt: timestampSchema.nullable(),
+    durationMs: timestampSchema.optional(),
   }),
   summary: healthSummarySchema,
   days: z.array(healthSummarySchema).max(30),
@@ -115,6 +143,19 @@ const appDiffSchema = z.discriminatedUnion("verdict", [
       )
       .max(4),
     inSync: z.boolean(),
+    routing: z
+      .strictObject({
+        sourcePath: z.literal("apps/deploy/src/reconcile/routing-policy.ts"),
+        status: z.enum(["in-sync", "drift", "unavailable", "not-declared"]),
+        expectedHosts: z.array(z.string().max(253)).max(100),
+        observedHosts: z.array(z.string().max(253)).max(100).nullable(),
+        missingHosts: z.array(z.string().max(253)).max(100),
+        unexpectedHosts: z.array(z.string().max(253)).max(100),
+        declaredPort: z.number().int().min(1).max(65535),
+        observedPorts: z.array(z.number().int().min(1).max(65535).nullable()).max(100).nullable(),
+        portMismatch: z.boolean(),
+      })
+      .optional(),
   }),
 ]);
 

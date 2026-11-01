@@ -185,3 +185,64 @@ void test("a missing or ambiguous bridge baseline cannot be invented by the call
     }
   }
 });
+
+void test("latest-per-app reads keep quiet services visible without fetching every history", async () => {
+  const f = fixture();
+  try {
+    await f.app.ready();
+    const now = Date.now() - 1000;
+    const store = f.app.deploymentAttempts;
+    const old = store.intent(
+      intent,
+      "reporter",
+      { containerId: "b".repeat(64), observedAt: now },
+      now,
+    );
+    store.report({ attemptId: old.id, stage: "tag-write", result: "started" }, "reporter", now + 1);
+    store.report(
+      { attemptId: old.id, stage: "tag-write", result: "rejected" },
+      "reporter",
+      now + 2,
+    );
+    const recent = store.intent(
+      { ...intent, runId: "43" },
+      "reporter",
+      { containerId: "b".repeat(64), observedAt: now + 3 },
+      now + 3,
+    );
+    const web = store.intent(
+      {
+        ...intent,
+        app: "web",
+        image: { ...image, repository: "ghcr.io/unimatrixcore/unimatrix-web" },
+      },
+      "reporter",
+      { containerId: "c".repeat(64), observedAt: now },
+      now,
+    );
+    const headers = { authorization: `Bearer ${f.read}` };
+    const response = await f.app.inject({
+      url: "/deployment/attempts?latestPerApp=true&limit=100",
+      headers,
+    });
+    assert.equal(response.statusCode, 200, response.body);
+    assert.deepEqual(
+      response.json<{ attempts: DeployAttemptRecord[] }>().attempts.map((record) => record.id),
+      [recent.id, web.id],
+    );
+    const selected = await f.app.inject({
+      url: "/deployment/attempts?app=api&latestPerApp=true",
+      headers,
+    });
+    assert.deepEqual(
+      selected.json<{ attempts: DeployAttemptRecord[] }>().attempts.map((record) => record.id),
+      [recent.id],
+    );
+    assert.equal(
+      (await f.app.inject({ url: "/deployment/attempts?latestPerApp=false", headers })).statusCode,
+      400,
+    );
+  } finally {
+    await f.app.close();
+  }
+});

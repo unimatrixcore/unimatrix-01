@@ -57,6 +57,33 @@ export const dokployProjectSchema = z.object({
 
 export const dokployProjectsSchema = z.array(dokployProjectSchema);
 
+export const dokployDomainsSchema = z
+  .array(
+    z.object({
+      host: z
+        .string()
+        .min(1)
+        .max(253)
+        .regex(
+          /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/u,
+        ),
+      https: z.boolean(),
+      port: z.number().int().min(1).max(65535).nullable(),
+      path: z
+        .string()
+        .max(2048)
+        .refine(
+          (path) =>
+            path.startsWith("/") &&
+            !path.startsWith("//") &&
+            !path.includes("\\") &&
+            [...path].every((character) => character.charCodeAt(0) > 31),
+        )
+        .nullable(),
+    }),
+  )
+  .max(100);
+
 /** One `env` line's key and whether its value is blank — never the value itself. */
 export interface DokployComposeEnvKeyState {
   readonly key: string;
@@ -93,10 +120,10 @@ export function readEnvKeyStates(env: string | null): readonly DokployComposeEnv
  * total, including `appName, autoDeploy, branch, command, composeFile, composeId, composePath,
  * composeStatus, composeType, createdAt, description, domains, env, environment, environmentId,
  * github, githubId, mounts, name, owner, repository, server, serverId, sourceType, suffix,
- * triggerType, watchPaths`. Only the fields `src/reconcile/diff.ts` and `src/reconcile/apply.ts`
- * compare are declared here; the rest — `domains` and `watchPaths` included, both deliberately out
- * of scope — are stripped by `z.object`'s default behaviour, same reasoning as
- * `dokployProjectSchema`. `owner`/`repository` anchor a name-matched service to this repository
+ * triggerType, watchPaths`. Domain metadata is a separate optional read from the public
+ * declaration. Its host/https/port/path fields follow Dokploy's domain schema; absent data stays
+ * unknown. Unused fields are stripped by `z.object`, as in `dokployProjectSchema`.
+ * `owner`/`repository` anchor a name-matched service to this repository
  * before `apply.ts` writes anything to it — see that file's `refused-foreign-repo` outcome.
  *
  * `env` arrives as a decrypted plaintext blob — measured, for the `api` service, holding
@@ -116,6 +143,7 @@ export const dokployComposeSchema = z.object({
   owner: z.string().nullable(),
   repository: z.string().nullable(),
   env: z.string().nullable().transform(readEnvKeyStates),
+  domains: dokployDomainsSchema.nullable().optional(),
 });
 
 /**

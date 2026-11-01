@@ -322,6 +322,7 @@ jobs:
           SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}
           IS_MAIN_PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         run: |
+          commit_subject="$(git log -1 --format=%s "$REVISION")"
           tag_args=(--tag "$IMAGE:$REVISION")
           if [ "$IS_MAIN_PUSH" = "true" ]; then
             tag_args+=(--tag "$IMAGE:main")
@@ -331,6 +332,7 @@ jobs:
             --file "apps/$APP/Dockerfile" \
             --label "org.opencontainers.image.source=$SOURCE_URL" \
             --label "org.opencontainers.image.revision=$REVISION" \
+            --label "org.opencontainers.image.commit.subject=$commit_subject" \
             "${tag_args[@]}" \
             .
 

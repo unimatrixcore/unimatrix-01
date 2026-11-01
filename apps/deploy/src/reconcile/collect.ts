@@ -1,6 +1,7 @@
 import type { DeployDesiredState } from "@unimatrix/deploy-config";
 
 import type { DokployClient } from "../dokploy/client.js";
+import { compareRouting } from "./routing-policy.js";
 import { diffApp, findComposeMatches, type AppDiff } from "./diff.js";
 
 export interface DiffedAppRunResult {
@@ -32,6 +33,7 @@ export interface ReconcileRun {
 export async function collectReconcileRun(
   client: Pick<DokployClient, "getProjects" | "getCompose">,
   desired: DeployDesiredState,
+  includeRouting = false,
 ): Promise<ReconcileRun> {
   const projects = await client.getProjects();
 
@@ -53,11 +55,17 @@ export async function collectReconcileRun(
 
     try {
       const detail = await client.getCompose(onlyMatch.composeId);
-      results.push({
-        appDir: service.appDir,
-        outcome: "diffed",
-        diff: diffApp(service, matches, detail),
-      });
+      const diff = diffApp(service, matches, detail);
+      if (includeRouting && diff.verdict === "matched") {
+        const routing = compareRouting(service, detail.domains);
+        results.push({
+          appDir: service.appDir,
+          outcome: "diffed",
+          diff: { ...diff, routing, inSync: diff.inSync && routing.status !== "drift" },
+        });
+      } else {
+        results.push({ appDir: service.appDir, outcome: "diffed", diff });
+      }
     } catch (error) {
       results.push({
         appDir: service.appDir,

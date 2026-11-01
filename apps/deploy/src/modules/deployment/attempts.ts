@@ -134,7 +134,16 @@ export const deploymentAttemptsModule: FastifyPluginAsync = (app) => {
       if (request.query.app !== undefined) declaredApp(request.query.app);
       try {
         return {
-          attempts: app.deploymentAttempts.list(request.query.app, request.query.limit, Date.now()),
+          attempts:
+            request.query.latestPerApp === "true"
+              ? DEPLOY_DESIRED_STATE.filter(
+                  (service) =>
+                    request.query.app === undefined || service.appDir === request.query.app,
+                )
+                  .flatMap((service) => app.deploymentAttempts.list(service.appDir, 1, Date.now()))
+                  .sort((a, b) => b.requestedAt - a.requestedAt)
+                  .slice(0, request.query.limit)
+              : app.deploymentAttempts.list(request.query.app, request.query.limit, Date.now()),
         };
       } catch (error) {
         safeFailure(error);

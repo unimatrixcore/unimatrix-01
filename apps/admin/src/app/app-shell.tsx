@@ -36,6 +36,8 @@ export function AppShell({ children }: AppShellProps) {
       accountControl={({ collapsed }) => <AccountControl collapsed={collapsed} />}
       homeLabel="Unimatrix Admin"
       scroll={
+        pathname === "/deploys" ||
+        pathname === "/deploys/" ||
         pathname === "/content" ||
         pathname.startsWith("/content/") ||
         pathname === "/secrets" ||
@@ -44,7 +46,7 @@ export function AppShell({ children }: AppShellProps) {
           : "page"
       }
       sections={sections}
-      width="wide"
+      width={pathname.replace(/\/$/u, "") === "/deploys" ? "full" : "wide"}
       sectionsHomeHref="/"
       showFooter={false}
     >

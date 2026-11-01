@@ -1,3 +1,4 @@
+import type { DeployAttemptRuntimeEvidence } from "@unimatrix/shared";
 import type { DeployDesiredState } from "@unimatrix/deploy-config";
 
 import type { DokployClient } from "../dokploy/client.js";
@@ -21,8 +22,15 @@ export interface MatchedContainerObservation {
   readonly state: string;
   /** Dokploy's human-readable Docker status. It describes uptime coarsely, not creation time. */
   readonly status: string;
-  /** The response has no CreatedAt field, so exact container age is unavailable. */
+  /** Docker-only age stays unknown; bridge-derived start time travels separately. */
   readonly containerAgeMs: null;
+  readonly name?: string | null;
+  readonly startedAt?: number | null;
+  readonly health?: "healthy" | "unhealthy" | "starting" | null;
+  readonly imageTag?: string | null;
+  readonly commit?: string | null;
+  readonly commitSubject?: string | null;
+  readonly runtimeMetadataObservedAt?: number | null;
   readonly firstObservedAt: number;
   readonly lastRecreatedAt: number | null;
 }
@@ -45,6 +53,7 @@ function observeContainer(
   candidates: readonly DokployContainer[],
   previous: MatchedContainerObservation | undefined,
   observedAt: number,
+  evidence: readonly DeployAttemptRuntimeEvidence[],
 ): ContainerObservation {
   if (candidates.length !== 1) {
     return {
@@ -61,6 +70,10 @@ function observeContainer(
   }
 
   const sameContainer = previous?.containerId === container.containerId;
+  const runtime = evidence.find(
+    (entry) => entry.app === appDir && entry.containerId === container.containerId,
+  );
+  const metadata = runtime?.metadata;
   return {
     appDir,
     kind: "matched",
@@ -70,6 +83,17 @@ function observeContainer(
     state: container.state,
     status: container.status,
     containerAgeMs: null,
+    name: metadata?.name ?? container.name,
+    startedAt: metadata?.startedAt ?? null,
+    health: metadata?.health ?? null,
+    imageTag:
+      metadata?.imageTag ??
+      (container.image.includes("@") || !container.image.includes(":")
+        ? null
+        : container.image.slice(container.image.lastIndexOf(":") + 1)),
+    commit: metadata?.commit ?? null,
+    commitSubject: metadata?.commitSubject ?? null,
+    runtimeMetadataObservedAt: metadata === undefined ? null : runtime!.observedAt,
     firstObservedAt: sameContainer ? previous.firstObservedAt : observedAt,
     lastRecreatedAt:
       previous === undefined ? null : sameContainer ? previous.lastRecreatedAt : observedAt,
@@ -86,6 +110,7 @@ export function createContainerObserver(
   desired: DeployDesiredState,
   now: () => number = Date.now,
   onReadFailure: () => void = () => undefined,
+  readRuntimeEvidence: () => Promise<DeployAttemptRuntimeEvidence[]> = () => Promise.resolve([]),
 ): ContainerObserver {
   let snapshot: readonly ContainerObservation[] = desired.map(({ appDir }) => ({
     appDir,
@@ -103,6 +128,7 @@ export function createContainerObserver(
       const observedAt = now();
       try {
         const containers = await client.getContainers();
+        const evidence = await readRuntimeEvidence().catch(() => []);
         const imageCounts = new Map<string, number>();
         for (const service of desired) {
           imageCounts.set(service.image, (imageCounts.get(service.image) ?? 0) + 1);
@@ -125,6 +151,7 @@ export function createContainerObserver(
             candidates,
             lastMatched.get(service.appDir),
             observedAt,
+            evidence,
           );
           if (observation.kind === "matched") lastMatched.set(service.appDir, observation);
           return observation;

@@ -9,6 +9,7 @@ export const healthObservationSchema = z.object({
   app: z.string().min(1),
   checkedAt: z.number().int().nonnegative().safe(),
   state: z.enum(["up", "down", "unknown"]),
+  durationMs: z.number().int().nonnegative().safe().optional(),
 });
 
 export type HealthObservation = z.infer<typeof healthObservationSchema>;

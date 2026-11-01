@@ -68,6 +68,13 @@ void test("matches the declared image repository and keeps age distinct from coa
     state: "running",
     status: "Up 2 hours",
     containerAgeMs: null,
+    name: "unrelated-generated-name",
+    startedAt: null,
+    health: null,
+    imageTag: "old-tag",
+    commit: null,
+    commitSubject: null,
+    runtimeMetadataObservedAt: null,
     firstObservedAt: 100,
     lastRecreatedAt: null,
   });
@@ -239,4 +246,51 @@ void test("concurrent callers share a single in-flight Docker read", async () =>
   assert.equal(reads, 1);
   release?.([container()]);
   await first;
+});
+
+void test("runtime metadata attaches only to the same app and exact container identity", async () => {
+  const metadata = {
+    name: "actual-container",
+    startedAt: 10,
+    health: "healthy" as const,
+    imageTag: "sha-new",
+    commit: "a".repeat(40),
+    commitSubject: "New commit",
+  };
+  const evidence = {
+    app: "api",
+    containerId: "a".repeat(64),
+    observedAt: 100,
+    metadata,
+    image: {
+      repository: desired[0]!.image,
+      platform: "linux/amd64",
+      digestKind: "manifest" as const,
+      digest: `sha256:${"b".repeat(64)}`,
+    },
+  };
+  const observer = createContainerObserver(
+    { getContainers: () => Promise.resolve([container({ containerId: evidence.containerId })]) },
+    desired.slice(0, 1),
+    () => 100,
+    undefined,
+    () => Promise.resolve([evidence]),
+  );
+  const observed = (await observer.poll())[0];
+  assert.equal(observed?.kind, "matched");
+  if (observed?.kind === "matched") {
+    assert.equal(observed.startedAt, 10);
+    assert.equal(observed.health, "healthy");
+    assert.equal(observed.name, "actual-container");
+    assert.equal(observed.runtimeMetadataObservedAt, 100);
+  }
+  const other = createContainerObserver(
+    { getContainers: () => Promise.resolve([container({ containerId: "different" })]) },
+    desired.slice(0, 1),
+    () => 100,
+    undefined,
+    () => Promise.resolve([evidence]),
+  );
+  const unmatched = (await other.poll())[0];
+  if (unmatched?.kind === "matched") assert.equal(unmatched.startedAt, null);
 });

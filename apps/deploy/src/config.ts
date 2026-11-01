@@ -17,6 +17,7 @@ export interface DeployRuntimeConfig {
   nodeEnv: DeployNodeEnv;
   logLevel: DeployLogLevel;
   dokployBaseUrl: string;
+  dokployPublicUrl?: string | null;
   databasePath: string;
 }
 
@@ -26,6 +27,7 @@ export interface DeployRuntimeEnv {
   NODE_ENV?: string | undefined;
   LOG_LEVEL?: string | undefined;
   DOKPLOY_BASE_URL?: string | undefined;
+  DOKPLOY_PUBLIC_URL?: string | undefined;
   DOKPLOY_API_KEY?: string | undefined;
   DEPLOY_DATABASE_PATH?: string | undefined;
 }
@@ -159,6 +161,30 @@ function parseDokployBaseUrl(value: string | undefined): string {
   return trimmedValue;
 }
 
+function parseDokployPublicUrl(value: string | undefined, nodeEnv: DeployNodeEnv): string | null {
+  if (value === undefined) return null;
+  let url: URL;
+  try {
+    url = new URL(value.trim());
+  } catch {
+    throw createDeployConfigError("DOKPLOY_PUBLIC_URL must be an absolute http(s) origin.");
+  }
+  if (
+    (url.protocol !== "http:" && url.protocol !== "https:") ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash ||
+    url.pathname !== "/"
+  )
+    throw createDeployConfigError(
+      "DOKPLOY_PUBLIC_URL must be an absolute http(s) origin without credentials, path, query or fragment.",
+    );
+  if (nodeEnv === "production" && url.protocol !== "https:")
+    throw createDeployConfigError("DOKPLOY_PUBLIC_URL must use HTTPS in production.");
+  return url.origin;
+}
+
 /**
  * A presence-and-non-empty check only — this module cannot import the client that reads the key
  * (see {@link DeployRuntimeConfig}). Kept here anyway so a compose file that forgot to name the
@@ -187,6 +213,7 @@ export function loadDeployRuntimeConfig(env: DeployRuntimeEnv = process.env): De
     nodeEnv,
     logLevel: parseLogLevel(env.LOG_LEVEL, nodeEnv),
     dokployBaseUrl: parseDokployBaseUrl(env.DOKPLOY_BASE_URL),
+    dokployPublicUrl: parseDokployPublicUrl(env.DOKPLOY_PUBLIC_URL, nodeEnv),
     databasePath: readOptionalString(
       "DEPLOY_DATABASE_PATH",
       env.DEPLOY_DATABASE_PATH,

@@ -28,6 +28,13 @@ const matchedContainer = {
   state: "running",
   status: "Up 1 hour",
   containerAgeMs: null,
+  name: null,
+  startedAt: null,
+  health: null,
+  imageTag: null,
+  commit: null,
+  commitSubject: null,
+  runtimeMetadataObservedAt: null,
   firstObservedAt: 100,
   lastRecreatedAt: null,
   freshness: "fresh",
@@ -59,7 +66,20 @@ const matchedDiff = {
 };
 
 function state(container: unknown) {
-  return { checkedAt: 123, apps: [{ appDir: "api", publicStatus: false, container }] };
+  return {
+    checkedAt: 123,
+    apps: [
+      {
+        appDir: "api",
+        publicStatus: false,
+        container,
+        dokployUrl: null,
+        domains: null,
+        metadataObservedAt: null,
+        metadataFreshness: "missing",
+      },
+    ],
+  };
 }
 
 function reconciliation(diff: unknown) {
@@ -292,4 +312,25 @@ describe("deployment read contracts", () => {
       ).toBe(false);
     }
   });
+});
+
+it("preserves optional measured probe latency and rejects invalid durations", () => {
+  const observation = { app: "api", state: "up", checkedAt: 100, durationMs: 82 };
+  const measured = { ...history, current: observation, recent: [observation] };
+  expect(deployHealthHistoryResponseSchema.parse(measured)).toEqual(measured);
+  expect(deployHealthHistoryResponseSchema.parse(history)).toEqual(history);
+  for (const durationMs of [-1, 1.5, Infinity]) {
+    expect(
+      deployHealthHistoryResponseSchema.safeParse({
+        ...measured,
+        current: { ...observation, durationMs },
+      }).success,
+    ).toBe(false);
+    expect(
+      deployHealthHistoryResponseSchema.safeParse({
+        ...measured,
+        recent: [{ ...observation, durationMs }],
+      }).success,
+    ).toBe(false);
+  }
 });

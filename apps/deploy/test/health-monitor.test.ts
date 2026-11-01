@@ -185,3 +185,71 @@ void test("closing before listen releases the health database", async () => {
   await app.close();
   assert.throws(() => app.healthHistory.snapshot("api", Date.now()), /not open/);
 });
+
+void test("probe latency uses monotonic elapsed time and omits unknown observations", async () => {
+  const observations: HealthObservation[] = [];
+  let wallTime = NOW;
+  let elapsed = 100;
+  const monitor = createHealthMonitor(
+    [TARGET, { ...TARGET, app: "down" }, { ...TARGET, app: "unknown", configured: false }],
+    {
+      record(observation) {
+        observations.push(observation);
+      },
+      snapshot: () => assert.fail("unused"),
+      close: () => {},
+    },
+    () => wallTime,
+    async (target) => {
+      elapsed += target.app === "api" ? 25.7 : 31;
+      wallTime -= 1000;
+      await Promise.resolve();
+      return target.app === "api" ? "up" : target.app === "down" ? "down" : "unknown";
+    },
+    () => elapsed,
+  );
+  try {
+    await monitor.poll();
+    assert.equal(observations.length, 3);
+    for (const entry of observations) {
+      if (entry.state === "unknown") assert.equal(entry.durationMs, undefined);
+      else assert.ok(typeof entry.durationMs === "number" && entry.durationMs > 0);
+    }
+    assert.ok(observations.every((entry) => entry.checkedAt < NOW));
+  } finally {
+    await monitor.stop();
+  }
+});
+
+void test("a real configured probe records elapsed latency while missing configuration does not", async () => {
+  const endpoint = createServer((_request, response) => {
+    setTimeout(() => response.end("ok"), 15);
+  });
+  await new Promise<void>((resolve) => endpoint.listen(0, "127.0.0.1", resolve));
+  const address = endpoint.address();
+  assert.ok(address && typeof address !== "string");
+  const store = openHealthHistoryStore(":memory:", ["api", "unknown"], NOW);
+  const monitor = createHealthMonitor(
+    [
+      { ...TARGET, url: `http://127.0.0.1:${address.port}` },
+      { ...TARGET, app: "unknown", configured: false },
+    ],
+    store,
+    () => NOW,
+  );
+  try {
+    await monitor.poll();
+    assert.equal(store.snapshot("api", NOW).current.state, "up");
+    assert.ok((store.snapshot("api", NOW).current.durationMs ?? 0) >= 10);
+    assert.equal(store.snapshot("unknown", NOW).current.durationMs, undefined);
+  } finally {
+    await monitor.stop();
+    store.close();
+    endpoint.closeAllConnections();
+    await new Promise<void>((resolve) =>
+      endpoint.close(() => {
+        resolve();
+      }),
+    );
+  }
+});

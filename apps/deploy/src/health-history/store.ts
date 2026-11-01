@@ -15,7 +15,12 @@ import {
 
 export interface HealthSnapshot {
   app: string;
-  current: { app: string; state: HealthObservation["state"]; checkedAt: number | null };
+  current: {
+    app: string;
+    state: HealthObservation["state"];
+    checkedAt: number | null;
+    durationMs?: number | undefined;
+  };
   summary: HealthSummary;
   days: readonly HealthSummary[];
   recent: readonly HealthObservation[];
@@ -40,7 +45,7 @@ export function openHealthHistoryStore(
     db.pragma("journal_size_limit = 1048576");
     db.pragma("busy_timeout = 5000");
     const version = db.pragma("user_version", { simple: true });
-    if (version !== 0 && version !== 1)
+    if (version !== 0 && version !== 1 && version !== 2)
       throw new Error("Unsupported health history schema version.");
     db.transaction(() => {
       db.exec(`CREATE TABLE IF NOT EXISTS health_probes (
@@ -51,18 +56,22 @@ export function openHealthHistoryStore(
         PRIMARY KEY (app, bucket)
       ) WITHOUT ROWID`);
       db.exec("CREATE INDEX IF NOT EXISTS health_probes_time ON health_probes (checked_at)");
-      db.pragma("user_version = 1");
+      if (version !== 2)
+        db.exec(
+          "ALTER TABLE health_probes ADD COLUMN duration_ms INTEGER CHECK (duration_ms IS NULL OR duration_ms >= 0)",
+        );
+      db.pragma("user_version = 2");
     })();
     const appSet = new Set(apps);
     // A restart can observe a change in the same minute. Keep the latest result; the earlier
     // portion becomes unknown instead of attributing it to that replacement result.
     const insert = db.prepare(
-      "INSERT INTO health_probes (app, bucket, checked_at, state) VALUES (?, ?, ?, ?) ON CONFLICT(app, bucket) DO UPDATE SET checked_at = excluded.checked_at, state = excluded.state",
+      "INSERT INTO health_probes (app, bucket, checked_at, state, duration_ms) VALUES (?, ?, ?, ?, ?) ON CONFLICT(app, bucket) DO UPDATE SET checked_at = excluded.checked_at, state = excluded.state, duration_ms = excluded.duration_ms",
     );
     const prune = db.prepare("DELETE FROM health_probes WHERE checked_at < ? OR checked_at > ?");
     prune.run(now - HISTORY_RETENTION_MS - PROBE_INTERVAL_MS, now);
     const read = db.prepare(
-      "SELECT app, checked_at AS checkedAt, state FROM health_probes WHERE app = ? AND checked_at >= ? AND checked_at <= ? ORDER BY checked_at",
+      "SELECT app, checked_at AS checkedAt, state, duration_ms AS durationMs FROM health_probes WHERE app = ? AND checked_at >= ? AND checked_at <= ? ORDER BY checked_at",
     );
     const deleteApp = db.prepare("DELETE FROM health_probes WHERE app = ?");
     for (const row of db.prepare("SELECT DISTINCT app FROM health_probes").all()) {
@@ -76,6 +85,7 @@ export function openHealthHistoryStore(
         Math.floor(observation.checkedAt / PROBE_INTERVAL_MS),
         observation.checkedAt,
         observation.state,
+        observation.state === "unknown" ? null : (observation.durationMs ?? null),
       );
     });
     return {
@@ -93,9 +103,18 @@ export function openHealthHistoryStore(
           throw new Error("Health history requires a declared app and a valid timestamp.");
         }
         const from = now - HISTORY_RETENTION_MS;
-        const observations = read
-          .all(app, from - PROBE_INTERVAL_MS, now)
-          .map((row) => healthObservationSchema.parse(row));
+        const observations = read.all(app, from - PROBE_INTERVAL_MS, now).map((row) => {
+          const { durationMs, ...observation } = row as {
+            durationMs: number | null;
+            app: string;
+            checkedAt: number;
+            state: string;
+          };
+          return healthObservationSchema.parse({
+            ...observation,
+            ...(durationMs === null ? {} : { durationMs }),
+          });
+        });
         const latest = observations.at(-1);
         const current: HealthSnapshot["current"] =
           latest && now - latest.checkedAt < PROBE_INTERVAL_MS

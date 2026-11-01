@@ -12,7 +12,7 @@ resets on process restart.
 
 ## The irreducible bootstrap set
 
-Three credentials can never come from the secrets store this service will
+The bootstrap credentials cannot come from the secrets store this service will
 eventually manage, and this service cannot be what creates itself in Dokploy
 the first time:
 
@@ -151,13 +151,21 @@ An image match alone cannot prove which Compose stack owns a container if anothe
 same image repository.
 
 An observed container ID change records recreation. The Docker `status` text is retained for coarse
-display, but the response has no creation timestamp, so exact container age is unavailable. The
-first observation time measures only how long this service has seen that ID. Observations reset on
+display, and a fresh host-local runtime-evidence bridge can supply Docker's exact start timestamp, health,
+image tag and OCI commit metadata. The bridge joins only on app and full container ID; without it
+those fields remain unknown. The first observation time measures only how long this service has seen that ID. Observations reset on
 service restart and do not establish that a requested image or configuration was deployed.
 
 `GET /deployment/state` returns the snapshot for all declared apps, or one selected by `?app=api`.
 Container freshness is `missing` before observation, `fresh` for less than 30 seconds, and `stale`
 after that. A stale matched record describes the last observation, not current running state.
+
+Attempt history accepts `latestPerApp=true` for one retained latest record per declared service;
+selected-service histories remain bounded by `limit`. This lets the admin list refresh without
+fetching every service's history or losing quiet services behind busy ones. Public commit subjects,
+completion times and failure reasons come from durable attempts; safe lifecycle diagnostics are
+returned alongside recognized Dokploy events, including when a raw log cannot be associated.
+Other upstream output is withheld to protect credentials.
 
 ## Internal health history
 
@@ -178,7 +186,9 @@ Uptime is up time divided by observed up-or-down time; coverage is observed time
 whole window. With no observed time, uptime is null. Daily summaries use UTC boundaries and include
 the elapsed portion of today. The internal snapshot includes the rolling 30-day summary, daily
 summaries for today and the preceding 29 UTC days,
-and the most recent 60 probes. `GET /deployment/health?app=api` returns that snapshot, including
+and the most recent 60 probes, including measured request latency where available.
+Probe latency uses a monotonic clock; unknown observations and pre-migration rows have no
+latency value. The health database upgrades its v1 rows to v2 without discarding history. `GET /deployment/health?app=api` returns that snapshot, including
 `missing`, `fresh` or `stale` freshness at the 60-second sampling boundary. A fresh `unknown`
 sample is distinct from missing history or a stale sample.
 
@@ -222,8 +232,9 @@ replaces the snapshot with that result for every app. Invalid or oversized detec
 become failed-read results rather than retaining old success. An invalid response snapshot returns
 503, as do observation or health snapshots that cannot be validated or read.
 
-The state and reconciliation routes read process-local snapshots, and the health route reads
-SQLite. Reads do not trigger upstream polling or apply configuration. Existing per-peer request
+The state route combines the process-local container snapshot with read-only Dokploy service metadata,
+including domains and an operator link rooted at `DOKPLOY_PUBLIC_URL`. Reconciliation reads the scheduled
+snapshot, and health reads SQLite. These reads trigger no check, apply or deployment. Existing per-peer request
 limits apply to all of these routes.
 
 ## Scheduled drift detection
@@ -234,7 +245,10 @@ overlap; shutdown stops the schedule and awaits an active check. The snapshot re
 so `not-checked` is distinct from an in-sync result. A failed read replaces the affected findings
 with an error rather than presenting the previous result as a successful check.
 
-Detection uses the same key-state and settings diff as `reconcile report`. It does not read the
+Detection uses the same key-state and settings diff as `reconcile report`, plus a routing comparison
+against `src/reconcile/routing-policy.ts`. It checks expected hosts and generated container ports against
+the same Dokploy read. Missing domain data or unknown target ports remain unavailable; they do not
+establish routing sync. Routing checks never change Dokploy. It does not read the
 secrets store or compare stored secret values with Dokploy values: a `set` key establishes
 presence only. It creates no service, writes no settings or env, and triggers no deploy.
 Undeclared keys and emergency Dokploy edits remain untouched. Resolve drift through the
@@ -266,9 +280,9 @@ reduced to that before it reaches reconciliation (`readEnvKeyStates`,
 Unsupported env syntax, including multiline quoted assignments, yields a read failure rather
 than allowing value text to be mistaken for an undeclared key.
 
-It deliberately does not check a service's Domains entry (out of scope — `packages/deploy-config`
-holds no domain data at all) or its `watchPaths`/`composeFile` (inert while `autoDeploy` is off, and
-the inline-source field of a source type this repo does not use).
+The host-local report excludes Domains; the scheduled console snapshot includes the separate
+routing-policy comparison. Neither checks `watchPaths` or `composeFile` (inert while `autoDeploy`
+is off, and the inline-source field of a source type this repo does not use).
 
 Same env requirement as `pnpm --filter @unimatrix/deploy-app dev` — `DOKPLOY_BASE_URL` and
 `DOKPLOY_API_KEY` on the command line, locally or in production:

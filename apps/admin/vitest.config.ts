@@ -66,15 +66,8 @@ export default defineConfig({
     // copied from a sibling: `@unimatrix/config-vitest` owns the provider,
     // reporters and exclusions, and each workspace supplies its own numbers.
     //
-    // Re-measured 2026-08-11 after the secrets console landed: 71.22%
-    // statements / 76.27% functions, held a few points under by
-    // `infra/scripts/check-coverage-drift.mjs`, which fails a floor sitting
-    // more than five points below what the suite actually covers.
-    // `src/main.tsx`, `src/routes/__root.tsx`, `createAppRouter`, and every
-    // route's non-lazy file still sit at zero — they are bootstrap and route
-    // registration, exercised by the browser and by nothing else here.
     coverage: createCoverageConfig({
-      thresholds: { statements: 68, functions: 73 },
+      thresholds: { statements: 75, functions: 78 },
     }),
     environment: "jsdom",
     include: ["test/**/*.test.ts", "test/**/*.test.tsx"],

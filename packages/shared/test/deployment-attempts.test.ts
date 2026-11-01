@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   deployAttemptIntentSchema,
+  hasUnresolvedDeploymentWork,
   deployAttemptReportSchema,
   deployAttemptQuerySchema,
   deployAttemptIntentContract,
@@ -40,6 +41,37 @@ const intent = {
   },
 };
 describe("deployment attempt contracts", () => {
+  it("accepts bounded public commit subjects and rejects controls or arbitrary diagnostic output", () => {
+    expect(
+      deployAttemptIntentSchema.parse({ ...intent, commitSubject: "feat: deploy console" })
+        .commitSubject,
+    ).toBe("feat: deploy console");
+    for (const commitSubject of ["", "a".repeat(241), "line\nline", "secret\u001b[0m"]) {
+      expect(deployAttemptIntentSchema.safeParse({ ...intent, commitSubject }).success).toBe(false);
+    }
+    const output = {
+      app: "api",
+      attemptId: "00000000-0000-4000-8000-000000000000",
+      policy: "recognized-events-only",
+      status: "unavailable",
+      reason: "unassociated",
+      diagnosticLines: ["▶ Deployment attempt accepted and recorded."],
+    };
+    expect(deployAttemptLogsResponseSchema.safeParse(output).success).toBe(true);
+    expect(
+      deployAttemptLogsResponseSchema.safeParse({ ...output, diagnosticLines: ["private-secret"] })
+        .success,
+    ).toBe(false);
+    expect(
+      deployAttemptLogsResponseSchema.safeParse({
+        ...output,
+        diagnosticLines: Array.from(
+          { length: 21 },
+          () => "▶ Deployment attempt accepted and recorded.",
+        ),
+      }).success,
+    ).toBe(false);
+  });
   it("requires exact log selection and only bounded recognized event output", () => {
     const query = { app: "api", attemptId: "00000000-0000-4000-8000-000000000000" };
     expect(deployAttemptLogsQuerySchema.parse(query)).toEqual(query);
@@ -312,4 +344,30 @@ it("unspecified manual targets cannot carry fictitious CI identity or verified l
     { ...record, landedAt: 1 },
   ])
     expect(deployAttemptResponseSchema.safeParse(invalid).success).toBe(false);
+});
+
+describe("deployment overlap policy", () => {
+  it("preserves unresolved mutations after timeout until runtime evidence resolves them", () => {
+    const base = {
+      outcome: "timed-out" as const,
+      recreatedAt: null,
+      lateLandedAt: null,
+      queue: null,
+      tagWrite: null,
+    };
+    expect(hasUnresolvedDeploymentWork(base)).toBe(false);
+    for (const tagWrite of ["started", "unknown"] as const)
+      expect(hasUnresolvedDeploymentWork({ ...base, tagWrite })).toBe(true);
+    expect(hasUnresolvedDeploymentWork({ ...base, queue: "acknowledged" })).toBe(true);
+    expect(hasUnresolvedDeploymentWork({ ...base, outcome: "queued" })).toBe(true);
+    expect(hasUnresolvedDeploymentWork({ ...base, outcome: "incomplete" })).toBe(true);
+    for (const outcome of ["failed", "landed", "recreated"] as const)
+      expect(hasUnresolvedDeploymentWork({ ...base, outcome, queue: "acknowledged" })).toBe(false);
+    expect(hasUnresolvedDeploymentWork({ ...base, queue: "acknowledged", recreatedAt: 1 })).toBe(
+      false,
+    );
+    expect(hasUnresolvedDeploymentWork({ ...base, queue: "acknowledged", lateLandedAt: 1 })).toBe(
+      false,
+    );
+  });
 });
