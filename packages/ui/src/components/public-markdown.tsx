@@ -162,7 +162,7 @@ export function PublicMarkdown({ className, markdown, renderInternalLink }: Publ
           {...props}
           alt={alt ?? ""}
           className={cn(
-            "my-8 block w-full border border-border/70 bg-background/45 object-cover shadow-[0_24px_80px_-52px_color-mix(in_oklab,var(--foreground)_75%,transparent)]",
+            "my-8 block w-full border border-border/70 bg-background/45 object-cover",
             imageClassName,
           )}
           loading="lazy"
