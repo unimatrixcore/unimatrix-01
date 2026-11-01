@@ -1,32 +1,98 @@
-name: CI deployment preflight diagnosis
+name: CI ingress validation
 on:
   workflow_dispatch:
 permissions:
-  contents: read
+  actions: read
 jobs:
-  diagnose:
+  probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 5
     steps:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24.18.0
-      - name: Read deployment preflight status
+      - name: Download the main run publication
         env:
-          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          release_attempt=$(gh api repos/unimatrixcore/unimatrix-01/actions/runs/41275979600 --jq .run_attempt)
+          gh run download 41275979600 --repo unimatrixcore/unimatrix-01 --name "publication-deploy-${release_attempt}" --dir publication
+      - name: Verify already-current execution without deployment mutations
+        env:
+          DEPLOY_REPORT_URL: ${{ vars.DEPLOY_REPORT_URL }}
+          DEPLOY_REPORT_TOKEN: ${{ secrets.DEPLOY_REPORT_TOKEN }}
           CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
           CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
-          DEPLOY_REPORT_TOKEN: ${{ secrets.DEPLOY_REPORT_TOKEN }}
         run: |
           node --input-type=module <<'JS'
-          const access = {'CF-Access-Client-Id':process.env.CF_ACCESS_CLIENT_ID,'CF-Access-Client-Secret':process.env.CF_ACCESS_CLIENT_SECRET};
-          for (const [origin,path,method,auth] of [
-            ['https://dokploy.unimatrix-01.dev','/api/project.all','GET',{'x-api-key':process.env.DOKPLOY_API_KEY}],
-            ['https://deploy-ci.unimatrix-01.dev','/deployment/attempts/intent','POST',{Authorization:`Bearer ${process.env.DEPLOY_REPORT_TOKEN}`}],
-          ]) {
-            const r=await fetch(origin+path,{method,redirect:'manual',headers:{...access,...auth,'Content-Type':'application/json'},...(method==='POST'?{body:'{}'}:{}),signal:AbortSignal.timeout(15000)});
-            console.log(`${path}: HTTP ${r.status}`);
-            if(path==='/api/project.all' && r.status===200){const p=await r.json(); console.log(JSON.stringify({inventoryArray:Array.isArray(p),appMappingCounts:Object.fromEntries(['admin','api','auth','cflop','deploy','secrets','status','web'].map(app=>[app,Array.isArray(p)?p.flatMap(x=>(x.environments??[]).flatMap(e=>e.compose??[])).filter(c=>c.name===app).length:0]))}));}
-            else await r.body?.cancel();
+          import {readFileSync} from 'node:fs';
+          const publication = JSON.parse(readFileSync('publication/deploy.json','utf8'));
+          if (publication.app !== 'deploy' || publication.image.commit !== '980daccbcab6df8015529cf05ffec461de1a35c9') throw new Error('Unexpected release publication');
+          const base = process.env.DEPLOY_REPORT_URL;
+          if (base !== 'https://deploy-ci.unimatrix-01.dev') throw new Error('Unexpected reporting origin');
+          for (const key of ['DEPLOY_REPORT_TOKEN', 'CF_ACCESS_CLIENT_ID', 'CF_ACCESS_CLIENT_SECRET']) {
+            if (!process.env[key]) throw new Error('Missing probe credential');
           }
+          const access = {
+            'CF-Access-Client-Id': process.env.CF_ACCESS_CLIENT_ID,
+            'CF-Access-Client-Secret': process.env.CF_ACCESS_CLIENT_SECRET,
+          };
+          const checks = [
+            ['POST', '/deployment/attempts/intent', false, false, [403]],
+            ['POST', '/deployment/attempts/intent', true, false, [401]],
+            ['POST', '/deployment/attempts/intent', true, true, [400]],
+            ['POST', '/deployment/execute', true, false, [401]],
+            ['POST', '/deployment/execute', true, true, [400]],
+            ['GET', '/deployment/attempts/intent', true, true, [404]],
+            ['GET', '/health', true, true, [404]],
+            ['POST', '/deployment/rollback', true, true, [404]],
+            ['POST', '/deployment/attempts/report', true, true, [404]],
+          ];
+          for (const [method, path, withAccess, withToken, expected] of checks) {
+            const response = await fetch(base + path, {
+              method, redirect: 'error', signal: AbortSignal.timeout(15000),
+              headers: {
+                'content-type': 'application/json',
+                ...(withAccess ? access : {}),
+                ...(withToken ? {Authorization: `Bearer ${process.env.DEPLOY_REPORT_TOKEN}`} : {}),
+              },
+              ...(method === 'POST' ? {body: '{}'} : {}),
+            });
+            const status = response.status;
+            await response.body?.cancel();
+            console.log(`${method} ${path}: ${status} (Access=${withAccess}, service token=${withToken})`);
+            if (!expected.includes(status)) throw new Error('Reporting boundary probe failed');
+          }
+          const payload = {
+            repository: 'unimatrixcore/unimatrix-01', runId: process.env.GITHUB_RUN_ID,
+            runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT), app: 'deploy', trigger: 'ci',
+            image: publication.image,
+            commitSubject: 'CI activation verification: already-current, no deployment queued',
+          };
+          async function intent(body) {
+            return fetch(base + '/deployment/attempts/intent', {
+              method: 'POST', redirect: 'error', signal: AbortSignal.timeout(15000),
+              headers: {...access, 'content-type': 'application/json', Authorization: `Bearer ${process.env.DEPLOY_REPORT_TOKEN}`},
+              body: JSON.stringify(body),
+            });
+          }
+          const first = await intent(payload);
+          if (first.status !== 200) throw new Error('Valid intent was refused');
+          const record = await first.json();
+          const repeated = await intent(payload);
+          if (repeated.status !== 200) throw new Error('Repeated intent was refused');
+          const repeatRecord = await repeated.json();
+          if (record.id !== repeatRecord.id || record.baseline === null || record.tagWrite !== null || record.queue !== null) throw new Error('Intent idempotency/baseline failed');
+          const conflict = await intent({...payload, image: {...payload.image, digest: 'sha256:' + '0'.repeat(64)}});
+          if (conflict.status !== 409) throw new Error('Conflicting intent was not rejected');
+          await conflict.body?.cancel();
+          const execution = await fetch(base + '/deployment/execute', {
+            method: 'POST', redirect: 'error', signal: AbortSignal.timeout(15000),
+            headers: {...access, 'content-type': 'application/json', Authorization: `Bearer ${process.env.DEPLOY_REPORT_TOKEN}`},
+            body: JSON.stringify({app: 'deploy', attemptId: record.id}),
+          });
+          if (execution.status !== 200) throw new Error('Already-current execution failed');
+          const completed = await execution.json();
+          if (completed.outcome !== 'already-current' || completed.queue !== null || completed.tagWrite !== null || completed.landedAt !== null || completed.baseline?.containerId !== completed.after?.containerId) throw new Error('Already-current invariant failed');
+          console.log(`Live already-current attempt ${record.id}: resolved without tag write or queue; same verified container.`);
           JS
