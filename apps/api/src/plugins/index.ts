@@ -1,3 +1,4 @@
+import type { SecretRegistryEntry } from "@unimatrix/shared";
 import type { FastifyInstance } from "fastify";
 
 import { setupHttpValidation } from "../lib/http/validation.js";
@@ -9,6 +10,9 @@ import { setupObservability } from "./observability.js";
 import { setupRateLimit } from "./rate-limit.js";
 import { setupSecretsManagement } from "./secrets-management.js";
 import { setupSecurity } from "./security.js";
+
+// Add registry constants here only when an API feature consumes them.
+const API_INTEGRATION_CREDENTIALS: readonly SecretRegistryEntry[] = [];
 
 export interface SetupCorePluginsOptions {
   /**
@@ -40,6 +44,7 @@ export function setupCorePlugins(
   // independent of Clerk configuration, unlike setupAuth().
   setupDatabase(app);
   setupIntegrationCredentials(app, {
+    entries: API_INTEGRATION_CREDENTIALS,
     ...(options.secretsFetch === undefined ? {} : { fetch: options.secretsFetch }),
     ...(options.integrationNames === undefined ? {} : { names: options.integrationNames }),
   });

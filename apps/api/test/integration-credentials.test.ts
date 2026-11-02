@@ -6,11 +6,17 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { createDatabase } from "@unimatrix/db";
-import { integrationSecretNames, type SecretRegistryEntry } from "@unimatrix/shared";
+import {
+  integrationSecretNames,
+  SECRET_REGISTRY,
+  type SecretRegistryEntry,
+} from "@unimatrix/shared";
+import Fastify from "fastify";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
 import { buildApp, type BuildApiAppOptions } from "../src/app.js";
 import { loadApiRuntimeConfig, type ApiRuntimeEnv } from "../src/config.js";
+import { setupIntegrationCredentials } from "../src/plugins/integration-credentials.js";
 
 const MIGRATIONS_FOLDER = fileURLToPath(new URL("../../../packages/db/drizzle", import.meta.url));
 
@@ -20,7 +26,7 @@ const SECRETS_ENV: ApiRuntimeEnv = {
 };
 
 /**
- * The registry's integration tier is empty, so these stand in for it through
+ * The API has no integration consumers, so these stand in for them through
  * `BuildApiAppOptions.integrationNames` — the plugin's degradation behaviour
  * is what these tests are about, not which names it happens to declare. The
  * entries stand in for the registry constants `get()` takes; the seam itself
@@ -132,6 +138,28 @@ function createTestApp(env: ApiRuntimeEnv, options: BuildApiAppOptions = {}): Te
     },
   };
 }
+
+void test("the loader fetches only the consumer's explicit registry entries", async () => {
+  const app = Fastify({ logger: false });
+  app.decorate("runtimeConfig", loadApiRuntimeConfig(SECRETS_ENV));
+  setupIntegrationCredentials(app, {
+    entries: [GITHUB_TOKEN_SECRET],
+    fetch: createFakeSecretsFetch({ "github/token": { status: 200, value: "selected" } }),
+  });
+
+  try {
+    await app.ready();
+    assert.equal(app.integrationCredentials.get(GITHUB_TOKEN_SECRET)?.reveal(), "selected");
+    assert.equal(app.integrationCredentials.get(DISCORD_WEBHOOK_SECRET), undefined);
+    assert.deepEqual(await app.integrationCredentials.refresh(), {
+      loaded: [GITHUB_TOKEN_SECRET.name],
+      denied: [],
+      failed: [],
+    });
+  } finally {
+    await app.close();
+  }
+});
 
 void test("a boot fetch populates the cache and get(entry) returns the value", async () => {
   const { app, cleanup } = createTestApp(SECRETS_ENV, {
@@ -312,7 +340,13 @@ void test("with secretsStore null nothing is decorated and no fetch is attempted
   }
 });
 
-void test("without an override the plugin fetches exactly the registry's integration names", async () => {
+void test("production selection ignores unrelated registry entries at boot and refresh", async (t) => {
+  const unrelated = fakeRegistryEntry("integrations/unrelated/access-token");
+  const registry = SECRET_REGISTRY as SecretRegistryEntry[];
+  registry.push(unrelated);
+  t.after(() => {
+    registry.splice(registry.indexOf(unrelated), 1);
+  });
   const fetched: string[] = [];
   const trackedFetch: typeof fetch = (input, init) => {
     const url = new URL(
@@ -327,7 +361,16 @@ void test("without an override the plugin fetches exactly the registry's integra
   try {
     await app.ready();
 
-    assert.deepEqual(fetched, [...integrationSecretNames()]);
+    assert.ok(integrationSecretNames().includes(unrelated.name));
+    assert.deepEqual(fetched, []);
+    assert.deepEqual(await app.integrationCredentials.refresh(), {
+      loaded: [],
+      denied: [],
+      failed: [],
+    });
+    assert.deepEqual(fetched, []);
+    assert.equal(app.integrationCredentials.get(unrelated), undefined);
+    assert.equal((await app.inject({ method: "GET", url: "/health" })).statusCode, 200);
   } finally {
     await app.close();
     cleanup();

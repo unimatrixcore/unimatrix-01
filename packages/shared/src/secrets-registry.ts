@@ -107,8 +107,8 @@ export const SECRET_REGISTRY: readonly SecretRegistryEntry[] = [
 ];
 
 /**
- * The names `apps/api` fetches from the secrets store at boot. Empty: no
- * integration is wired yet.
+ * Inventory of integration-tier names. Consumers select their required
+ * registry entries separately; inventory membership does not grant access.
  *
  * Written `map` then `filter` rather than the more obvious `filter` then
  * `map`, because with the integration tier empty the second callback of that

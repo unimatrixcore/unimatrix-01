@@ -44,7 +44,7 @@ const SECRETS_ENV: ApiRuntimeEnv = {
 };
 
 /**
- * The registry's integration tier is empty, so this route would refresh
+ * The API has no integration consumers, so this route would refresh
  * nothing without the `integrationNames` seam — and a route that returns
  * three empty arrays proves nothing about whether it re-fetched.
  */
