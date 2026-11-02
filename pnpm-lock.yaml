@@ -849,6 +849,9 @@ importers:
       '@clerk/themes':
         specifier: ^2.4.57
         version: 2.4.57(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      zod:
+        specifier: ^4.3.6
+        version: 4.4.3
     devDependencies:
       '@types/node':
         specifier: ^24.13.3

@@ -8,15 +8,15 @@ All Unimatrix services are subdomains of `unimatrix-01.dev`. Clerk's primary dom
 
 | Import path | Runtime | Contents |
 | --- | --- | --- |
-| `@unimatrix/auth` | any (zero runtime deps) | `AppSlug`, `Role`, `AdminSection`, `UserPermissionsMetadata`, `SessionPermissionsClaim`, `hasPermission`, `isAdmin`, `canAccessAdminSection` |
-| `@unimatrix/auth/server` | Node (Fastify 5) | `registerClerkAuth`, `requireAuth`, `requirePermission`, `requireAdminSection`, `getAuthUserId`, `getSessionPermissionsClaim`, `AuthError` |
+| `@unimatrix/auth` | any (zero runtime deps) | Permission types/predicates, `ServicePrincipal`, `ServiceCredentialKind`, `hasServiceCapability` |
+| `@unimatrix/auth/server` | Node (Fastify 5) | Session registration/guards/accessors, `AuthError`, `createServiceCallerVerifier` |
 | `@unimatrix/auth/react` | browser (React 19) | `AuthProvider`, `usePermissions`, plus re-exports of `SignIn`, `SignUp`, `UserButton`, `UserProfile`, `SignedIn`, `SignedOut`, `RedirectToSignIn`, `useAuth`, `useUser` |
 
 Use `.` from anywhere you only need types or the pure permission-check helpers (e.g. shared validation logic). Use `./server` only in `apps/api` (or another Fastify backend). Use `./react` only in a Vite/React frontend.
 
 ## Permission scheme
 
-Permissions are stored in Clerk `user.publicMetadata` under a single `permissions` key, mapping each app slug to the roles the user holds for that app. This is the **single source of truth** — nothing else stores or derives permissions independently.
+Browser-session permissions are stored in Clerk `user.publicMetadata` under a single `permissions` key, mapping each app slug to the roles the user holds for that app. Service callers use explicit credential scopes instead.
 
 ```json
 {
@@ -67,6 +67,63 @@ canAccessAdminSection(perms, "content"); // today: equivalent to isAdmin(perms)
 On the client, call the plain `getToken()` from `useAuth()` with **no `template` argument** — that returns the (customized) session token, which is exactly what the backend expects as the Bearer token. `apps/api` verifies it networklessly via `jwtKey` (see below) and reads `getAuth(request).sessionClaims.permissions`; `@unimatrix/auth/server`'s `getSessionPermissionsClaim()` reads it from there. `@unimatrix/auth/react`'s `usePermissions()` instead reads `user.publicMetadata.permissions` directly (no token involved), which is why both places agree on the same `permissions` shape.
 
 `SessionPermissionsClaim` types the claim's role arrays loosely as `string[]` (rather than `Role[]`) because they come from an external, verified-but-untyped token — `hasPermission`/`isAdmin` validate the contents at read time.
+
+## Delegated and programmatic service callers
+
+`createServiceCallerVerifier` from `@unimatrix/auth/server` verifies OAuth access tokens and
+user API keys independently of the browser-session guards. Pass the bearer credential to the
+appropriate method explicitly; session cookies and platform administrator permissions do not
+grant service capabilities. Each call requires a nonempty list of capabilities, all of which
+must be recognized by the service and granted by the credential.
+
+```ts
+import { createServiceCallerVerifier } from "@unimatrix/auth/server";
+
+const callers = createServiceCallerVerifier({
+  secretKey: config.clerkSecretKey,
+  publishableKey: config.clerkPublishableKey,
+  jwtKey: config.clerkJwtKey,
+  issuer: config.clerkIssuer,
+  ownerUserId: config.ownerUserId,
+  resource: config.resource,
+  capabilities: ["canvas:read"],
+});
+
+const principal = await callers.verifyOAuthCaller(bearerToken, ["canvas:read"]);
+// For a script credential, call callers.verifyApiKeyCaller instead.
+```
+
+The returned `ServicePrincipal` contains the verified user, credential/client identifiers,
+resource and recognized capabilities. Its dependency-free type and `hasServiceCapability`
+helper are exported from `@unimatrix/auth`. Pass the principal to in-process workflows;
+never construct it from caller-supplied user IDs or scope lists.
+
+OAuth requires an access-token JWT (`at+jwt` or `application/at+jwt`) signed by the configured
+Clerk key, with the exact configured issuer and resource audience, valid time claims, and
+explicit signed scopes (`scp` array or `scope` string). Verification also calls Clerk's
+access-token verification endpoint on every request, checks current expiry/revocation, and
+matches credential ID, subject and client against the signed claims. Capabilities must occur
+in both the signed scopes and current provider scopes. Opaque OAuth tokens are rejected:
+the installed SDK's verified resource object does not expose an audience or issuer.
+
+API keys are verified online on every call using the configured Clerk instance. Provision
+user-owned keys with explicit scopes and a backend-issued `claims.resource` equal to the
+service's configured HTTPS resource identifier. Keys without that claim are rejected,
+including keys created through UI flows that cannot attach it. An organization key's creator
+does not make it a user-owned credential. Provider-managed keys with no expiration remain
+valid until revoked; configured expirations are enforced. API keys have no JWT issuer claim;
+the configured instance's authenticated verification endpoint establishes their provider.
+
+Verification returns sanitized `AuthError` failures without provider messages, credentials,
+claims or error causes. Invalid credentials, resource mismatches and provider failures return
+401; a verified non-owner or insufficient capabilities returns 403. No successful principal
+is cached across requests.
+
+The signed-token and denial tests use synthetic credentials and mocked provider responses.
+Configured-instance issuance, resource claims, consent, renewal, live revocation, enabled
+features and ChatGPT/Codex compatibility still require the synthetic client proof in
+`canvas.todo.md` before coursework integration. These tests do not establish provider or
+client compatibility, and incompatible provider behavior requires an owner decision.
 
 ## Clerk Dashboard domain setup
 
