@@ -31,12 +31,13 @@
     "check:doc-script-refs": "bash ./infra/scripts/check-doc-script-refs.sh",
     "check:deploy-config": "node ./infra/scripts/validate-deploy-config.mjs && node ./infra/scripts/generate-deploy-config.mjs --check",
     "check:runner-labels": "node ./infra/scripts/check-runner-labels.mjs",
+    "check:ci": "node --test ./infra/scripts/ci-*.test.mjs ./infra/scripts/check-coverage-drift.test.mjs ./infra/scripts/trim-turbo-cache.test.mjs",
     "check:coverage-drift": "node ./infra/scripts/check-coverage-drift.mjs",
     "check:todo-citations": "bash ./infra/scripts/check-todo-citations.sh",
     "check:scratch-untracked": "node ./infra/scripts/check-scratch-not-tracked.mjs",
-    "check": "pnpm format:check && pnpm deps:check && pnpm check:app-wiring && pnpm check:codex-context && pnpm check:stale-comments && pnpm check:doc-script-refs && pnpm check:deploy-config && pnpm check:runner-labels && pnpm check:todo-citations && pnpm check:scratch-untracked && turbo run lint typecheck test && pnpm check:coverage-drift",
+    "check": "pnpm format:check && pnpm deps:check && pnpm check:app-wiring && pnpm check:codex-context && pnpm check:stale-comments && pnpm check:doc-script-refs && pnpm check:deploy-config && pnpm check:runner-labels && pnpm check:ci && pnpm check:todo-citations && pnpm check:scratch-untracked && turbo run lint typecheck test && pnpm check:coverage-drift",
     "knip": "knip",
-    "verify": "pnpm format:check && pnpm deps:check && pnpm check:app-wiring && pnpm check:codex-context && pnpm check:stale-comments && pnpm check:doc-script-refs && pnpm check:deploy-config && pnpm check:runner-labels && pnpm check:todo-citations && pnpm check:scratch-untracked && turbo run build lint typecheck test && pnpm check:coverage-drift"
+    "verify": "pnpm format:check && pnpm deps:check && pnpm check:app-wiring && pnpm check:codex-context && pnpm check:stale-comments && pnpm check:doc-script-refs && pnpm check:deploy-config && pnpm check:runner-labels && pnpm check:ci && pnpm check:todo-citations && pnpm check:scratch-untracked && turbo run build lint typecheck test && pnpm check:coverage-drift"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",

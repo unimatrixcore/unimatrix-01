@@ -24,12 +24,16 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
+    env:
+      CI_PLAN_PATH: /tmp/unimatrix-ci-plan.json
+      TURBO_CACHE_DIR: .turbo/cache
 
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - name: Set up pnpm
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
@@ -42,6 +46,10 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
+
+      - name: Select affected workspaces
+        id: plan
+        run: node infra/scripts/ci-plan.mjs --output "$CI_PLAN_PATH"
 
       # Pure bash, reads only `apps/*` and this file, so it runs before the
       # install and costs nothing. It lives here rather than only inside
@@ -98,6 +106,7 @@ jobs:
           git ls-files -z -- '*.sh' | xargs -0 -r shellcheck --
 
       - name: Set up .NET for the Jellyfin plugin
+        if: steps.plan.outputs.dotnet == 'true'
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: "10.0.x"
@@ -116,12 +125,6 @@ jobs:
       - name: Deploy config
         run: pnpm check:deploy-config
 
-      - name: Install Playwright Chromium
-        run: |
-          pnpm --filter @unimatrix/web exec playwright install --with-deps chromium
-          pnpm --filter @unimatrix/cflop exec playwright install --with-deps chromium
-          pnpm --filter @unimatrix/status exec playwright install --with-deps chromium
-
       # Runs before the expensive steps: formatting is the cheapest thing that
       # can be wrong, so failing here saves a full build/test cycle.
       - name: Format
@@ -134,26 +137,45 @@ jobs:
       - name: Dependency versions
         run: pnpm deps:check
 
+      - name: CI selection, coverage, and cache fixtures
+        run: pnpm check:ci
+
+      # Only main populates the shared task cache. PRs reuse it without
+      # retaining another archive for every PR revision.
+      - name: Restore Turbo task cache
+        id: turbo-cache
+        if: steps.plan.outputs.has_tasks == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo/cache
+          key: turbo-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.node-version', 'package.json', 'pnpm-lock.yaml', 'turbo.json') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.node-version', 'package.json', 'pnpm-lock.yaml', 'turbo.json') }}-
+
+      - name: Install Playwright Chromium
+        if: steps.plan.outputs.browser == 'true'
+        run: pnpm exec playwright install --with-deps chromium
+
       - name: Build
-        run: pnpm build
+        run: node infra/scripts/ci-plan.mjs run build --plan "$CI_PLAN_PATH"
 
       - name: Lint
-        run: pnpm lint
+        run: node infra/scripts/ci-plan.mjs run lint --plan "$CI_PLAN_PATH"
 
       - name: Typecheck
-        run: pnpm typecheck
+        run: node infra/scripts/ci-plan.mjs run typecheck --plan "$CI_PLAN_PATH"
 
       - name: Test
         # Each workspace starts its own test workers; avoid multiplying those
         # pools across ten simultaneous suites on the hosted runner.
-        run: pnpm test --concurrency=2
+        run: node infra/scripts/ci-plan.mjs run test --plan "$CI_PLAN_PATH"
 
       # Reads the `coverage/coverage-summary.json` the step above writes, so it
       # has to follow it. Catches a floor left far below what its workspace
       # actually measures — slack a real regression can hide inside while the
       # gate stays green.
       - name: Coverage drift
-        run: pnpm check:coverage-drift
+        run: node infra/scripts/check-coverage-drift.mjs --plan "$CI_PLAN_PATH"
 
       # Last, because it is the slowest step: a real Chrome run against every
       # previewable route. `pnpm test` has already built both apps, and the
@@ -162,11 +184,27 @@ jobs:
       #
       # Reports stay on the runner. They are uploaded as a build artifact
       # below, never to an external service.
-      - name: Lighthouse budgets
-        run: pnpm lighthouse
+      - name: Web Lighthouse budgets
+        if: steps.plan.outputs.lighthouse_web == 'true'
+        run: node infra/scripts/lighthouse.mjs apps/web
+
+      - name: CFLOP Lighthouse budgets
+        if: steps.plan.outputs.lighthouse_cflop == 'true'
+        run: node infra/scripts/lighthouse.mjs apps/cflop
+
+      - name: Bound Turbo task cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.plan.outputs.has_tasks == 'true' && steps.turbo-cache.outputs.cache-hit != 'true'
+        run: node infra/scripts/trim-turbo-cache.mjs .turbo/cache
+
+      - name: Save Turbo task cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.plan.outputs.has_tasks == 'true' && steps.turbo-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo/cache
+          key: ${{ steps.turbo-cache.outputs.cache-primary-key }}
 
       - name: Upload Lighthouse reports
-        if: always()
+        if: always() && (steps.plan.outputs.lighthouse_web == 'true' || steps.plan.outputs.lighthouse_cflop == 'true')
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: lighthouse-reports
@@ -226,12 +264,8 @@ jobs:
       # cache to invalidate, the build context is the repo itself, and the image
       # lands in the local daemon where the cflop step below needs it.
       #
-      # A layer cache cannot buy wall clock here however well it works: compare
-      # any run's `Images (*)` durations against `Verify` in the same run — the
-      # whole matrix finishes minutes before `Verify` does, so this job is never
-      # the critical path. A per-app Blacksmith sticky-disk cache was measured
-      # over three runs on main and produced zero `CACHED` layers in all 18
-      # jobs, while adding ~5s of action setup to each.
+      # Image builds remain independent of workspace selection: they verify
+      # container assembly and serving contracts that the selected tasks do not.
       - name: Build ${{ matrix.app }} image
         run: docker build --file "apps/${{ matrix.app }}/Dockerfile" --tag "unimatrix-${{ matrix.app }}:ci" .
 
@@ -272,9 +306,6 @@ jobs:
   # than a 200 with a not-found card. Without the dependency, a broken serving
   # contract reddens `Images (cflop)` and publishes the image regardless.
   #
-  # The wait costs nothing measurable — the whole `images` matrix finishes in
-  # well under a minute against `Verify`'s ~6, so `verify` is the long pole
-  # either way, on a path nothing downstream waits on yet.
   publish:
     name: Publish
     needs: [verify, images]

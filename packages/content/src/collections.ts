@@ -18,22 +18,21 @@ export const contentCollections = [
   {
     key: "home",
     title: "Home / About",
-    description: "Singleton homepage and about copy rooted at content/home.",
+    description: "Singleton homepage and about copy.",
     directory: "home",
     entryShape: "singleton",
   },
   {
     key: "projects",
     title: "Projects",
-    description:
-      "Repo-backed project entries rooted at content/projects for the public site baseline.",
+    description: "Authored project entries.",
     directory: "projects",
     entryShape: "list",
   },
   {
     key: "blog",
     title: "Blog",
-    description: "Repo-backed blog entries rooted at content/blog for the public site baseline.",
+    description: "Authored blog entries.",
     directory: "blog",
     entryShape: "list",
   },

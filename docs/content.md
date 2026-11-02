@@ -1,83 +1,38 @@
 # Content workflow
 
-This page defines the current public authored-content surface and the rules
-for changing it. Use it when you add, edit, validate, or wire content into
-the web app.
-
 ## Where content lives
 
-`content/home/index.md` is compiled into the web bundle and feeds `/` and
-`/about`. Blog and project entries live in the content database behind the API
-and are fetched at runtime; `content/blog/*.md` and `content/projects/*.md`
-remain only as seed input for
-`pnpm --filter @unimatrix/api seed:content`.
+Edit homepage and About copy in `apps/web/src/features/content/home.md`.
+`site-content.ts` parses it into the web app bundle. Keep the heading available
+when the content API is unreachable.
 
-## Public route surface
+Blog and project entries live in the content database behind the API. Create,
+edit, and publish them through `apps/admin`; publishing changes the live site
+without a deploy. The web app fetches these entries at runtime through
+`apps/web/src/features/content/queries`.
 
-The current content collections map to the following public routes.
+## Public routes
 
-- `/` for the homepage and public orientation content
-- `/about` for the remainder of `content/home/index.md`
-- `/projects` and `/projects/:slug` for the project listing and detail routes
-- `/blog` and `/blog/:slug` for the writing listing and detail routes
+- `/` combines app-owned copy with featured projects and recent blog entries.
+- `/about` uses app-owned copy.
+- `/projects` and `/projects/:slug` show project listings and details.
+- `/blog` and `/blog/:slug` show blog listings and details.
 
-Unknown project and blog slugs intentionally fall into the app's not-found
-experience instead of an unhandled content error.
+Unknown project and blog slugs render the app's not-found experience.
 
-## Authoring rules
+## Authoring and validation
 
-Keep public authored content constrained to the current typed collection
-model.
+Blog and project input follows the content contracts in `packages/shared`.
+Authored bodies render as safe GitHub-flavored Markdown; raw HTML and executable
+MDX must not execute. Repo-operating documentation belongs under `docs/`.
 
-- `content/home/index.md` stays Git-backed; blog and project entries are
-  created through the admin surface against the API.
-- Match frontmatter to the typed collection contracts in `packages/content`.
-- Expect invalid or missing fields to fail with file-specific validation
-  errors.
-- Keep a markdown body after the frontmatter block for every current content
-  file.
-- The public site renders authored content with safe GitHub-flavored
-  markdown.
-- Raw HTML and executable MDX remain out of scope.
-- Keep the public v1 content set curated. Repo-internal docs, policy pages,
-  and future content domains stay out of scope unless a later issue expands
-  the boundary.
-
-## Authoring checklist
-
-The sequence differs by collection, because only one of them is still a file.
-
-1. **Home** — edit `content/home/index.md`, match the frontmatter to the typed schema in
-   `packages/content`, and run the validation commands below. It is compiled into the bundle, so it
-   ships with the next build.
-2. **A blog or project entry** — create it through the admin surface. It lands in the content
-   database and is live without a deploy. Do not add a markdown file for it.
-3. **A seed file** under `content/blog` or `content/projects` — match the same schema, then re-seed
-   with `pnpm --filter @unimatrix/api seed:content`. Editing one changes nothing on the live site
-   until that runs.
-
-## Validation commands
-
-Use the commands below to validate authored content and registry wiring.
+For homepage or About copy changes, run the web unit and smoke suites and check
+the rendered pages in a browser:
 
 ```bash
-pnpm --filter @unimatrix/content lint
-pnpm --filter @unimatrix/content typecheck
-pnpm --filter @unimatrix/content test
-pnpm --filter @unimatrix/content build
-pnpm --filter @unimatrix/web test
+pnpm --filter @unimatrix/web test:unit
+pnpm --filter @unimatrix/web test:smoke
 ```
 
-`apps/web/test/content-registry.test.ts` fails if blog or project markdown is
-imported back into the web bundle alongside the database.
-
-## Docs versus public content
-
-This repo keeps repo-operating docs and public content separate on purpose.
-
-- `docs/` contains repo-internal operating documentation for contributors
-  and agents.
-- `content/` contains the public authored content that the web app renders.
-
-Do not create repo-operating documents under `content/docs`. That path is
-reserved for future public-site content, not internal contributor guidance.
+`apps/web/test/content-registry.test.ts` fails if blog or project Markdown is
+imported into the web bundle alongside the database.

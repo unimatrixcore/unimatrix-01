@@ -29,9 +29,8 @@ versions, use `./infra/scripts/pnpm-with-pinned-node.sh install
 The workspace roster is `pnpm-workspace.yaml`; `AGENTS.md` carries the
 per-package boundaries.
 
-`content/home/index.md` is site copy compiled into the web bundle;
-`content/blog` and `content/projects` are seed input for the content
-database (`pnpm --filter @unimatrix/api seed:content`).
+Homepage and About copy ships with `apps/web`; blog and project entries are
+managed through `apps/admin` and fetched from the API at runtime.
 
 ## Docs
 

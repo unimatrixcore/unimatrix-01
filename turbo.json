@@ -1,14 +1,26 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": [".node-version", ".npmrc", "pnpm-workspace.yaml"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*"],
+      "env": ["NODE_ENV", "VITE_*"],
       "outputs": ["dist/**"]
     },
-    "lint": {},
+    "lint": {
+      "dependsOn": ["^lint"]
+    },
     "test": {
+      "cache": false,
       "dependsOn": ["^build"],
       "outputs": ["coverage/**"]
+    },
+    "@unimatrix/tv#build": {
+      "cache": false,
+      "dependsOn": ["^build"],
+      "env": ["NODE_ENV"],
+      "outputs": ["dist/**"]
     },
     "typecheck": {
       "dependsOn": ["^typecheck"]

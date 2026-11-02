@@ -43,13 +43,7 @@ const ALLOWED_PACKAGE_IMPORTS = {
     "shared",
     "ui",
   ],
-  // `content` is here for `scripts/seed-content.ts` only — the one-way import
-  // of the repository's authored markdown into the content database. No route
-  // module reads markdown from disk. The rule has no per-directory
-  // granularity, so this grant is workspace-wide even though only that script
-  // uses it; `@unimatrix/content` stays a devDependency of `apps/api` so it is
-  // absent from the deployable image.
-  "apps/api": ["auth", "content", "db", "deploy-client", "deploy-config", "secrets", "shared"],
+  "apps/api": ["auth", "db", "deploy-client", "deploy-config", "secrets", "shared"],
   // Never `db`: this service's SQLite file lives on its own volume, not
   // packages/db's (single-writer, already owned by the API container) — see
   // apps/secrets/AGENTS.md.

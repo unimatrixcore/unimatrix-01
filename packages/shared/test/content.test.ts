@@ -22,12 +22,6 @@ describe("urlSchema scheme restriction", () => {
     expect(parseWithLiveUrl("http://localhost:5173")).toBe(true);
   });
 
-  it("accepts the URL the seed content actually carries", () => {
-    // `liveUrl` in `content/projects/cflop.md`. A seed that stops parsing would
-    // be a worse outcome than the inconsistency this fixes.
-    expect(parseWithLiveUrl("https://cflop.unimatrix-01.dev")).toBe(true);
-  });
-
   it("rejects javascript: URLs", () => {
     expect(parseWithLiveUrl("javascript:alert(1)")).toBe(false);
     // Scheme matching is case-insensitive in the URL parser, so a mixed-case
