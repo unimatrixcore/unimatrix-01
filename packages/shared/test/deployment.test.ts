@@ -75,6 +75,7 @@ function state(container: unknown) {
         container,
         dokployUrl: null,
         domains: null,
+        primaryDomain: null,
         metadataObservedAt: null,
         metadataFreshness: "missing",
       },
@@ -177,6 +178,33 @@ describe("deployment read contracts", () => {
         deployStateResponseSchema.safeParse(
           state({ ...matchedContainer, [key]: "x".repeat(length) }),
         ).success,
+      ).toBe(false);
+    }
+  });
+
+  it("preserves explicit primary domains and defaults older responses to unavailable", () => {
+    const response = state(unknownContainer);
+    const primaryDomain = { host: "cflop.us", https: true, port: 8080, path: "/" };
+    const app = { ...response.apps[0]!, primaryDomain, domains: [primaryDomain] };
+    expect(
+      deployStateResponseSchema.parse({ ...response, apps: [app] }).apps[0]?.primaryDomain,
+    ).toEqual(primaryDomain);
+    const { primaryDomain: omitted, ...olderApp } = response.apps[0]!;
+    expect(omitted).toBeNull();
+    expect(
+      deployStateResponseSchema.parse({ ...response, apps: [olderApp] }).apps[0]?.primaryDomain,
+    ).toBeNull();
+    for (const invalid of [
+      { ...primaryDomain, port: 0 },
+      { ...primaryDomain, https: "true" },
+      { ...primaryDomain, host: "x".repeat(254) },
+      { ...primaryDomain, secret: "must-not-cross-boundary" },
+    ]) {
+      expect(
+        deployStateResponseSchema.safeParse({
+          ...response,
+          apps: [{ ...app, primaryDomain: invalid }],
+        }).success,
       ).toBe(false);
     }
   });

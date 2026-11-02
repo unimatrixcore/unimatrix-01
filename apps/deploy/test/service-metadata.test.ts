@@ -46,6 +46,7 @@ void test("service metadata uses unique observed mapping and an explicit public 
     dokployUrl:
       "https://dokploy.example/dashboard/project/project%2Fid/environment/env%2Fid/services/compose/compose%2Fid",
     domains: [{ host: "api.example.com", https: true, port: 3001, path: "/api" }],
+    primaryDomain: { host: "api.example.com", https: true, port: 3001, path: "/api" },
     metadataObservedAt: 100,
     metadataFreshness: "fresh",
   });
@@ -56,6 +57,66 @@ void test("service metadata uses unique observed mapping and an explicit public 
     null,
   );
   assert.equal(unconfigured.get("api")?.dokployUrl, null);
+});
+
+void test("cflop primary domain follows explicit policy independently of Dokploy order", async () => {
+  const primary = { host: "cflop.us", https: false, port: 8080, path: "/cube" };
+  const compatibility = [
+    { ...primary, host: "cflop.unimatrix-01.dev", https: true, path: "/" },
+    { ...primary, host: "cube.unimatrix-01.dev", https: true, path: "/" },
+  ];
+  const cflopProject = {
+    ...project,
+    environments: [
+      {
+        ...project.environments[0]!,
+        compose: [{ composeId: "compose/id", name: "cflop", composeStatus: "done" }],
+      },
+    ],
+  };
+  for (const domains of [
+    [...compatibility, primary],
+    [primary, ...compatibility.toReversed()],
+    [compatibility[0]!, { ...primary, host: "CFLOP.US" }, compatibility[1]!],
+    compatibility,
+    [],
+    null,
+  ]) {
+    const parsed = dokployComposeSchema.parse({ ...compose, name: "cflop", domains });
+    const metadata = await readServiceMetadata(
+      {
+        getProjects: () => Promise.resolve([cflopProject]),
+        getCompose: () => Promise.resolve(parsed),
+      },
+      ["cflop"],
+      null,
+    );
+    const value = metadata.get("cflop");
+    assert.deepEqual(value?.domains, domains);
+    assert.deepEqual(
+      value?.primaryDomain,
+      domains?.find((domain) => domain.host.toLowerCase() === "cflop.us") ?? null,
+    );
+  }
+});
+
+void test("unconfigured applications preserve first-domain fallback and unavailable domains", async () => {
+  for (const domains of [
+    [
+      { host: "api.example.com", https: true, port: 3001, path: "/api" },
+      { host: "other.example.com", https: false, port: 3001, path: null },
+    ],
+    [],
+    null,
+  ]) {
+    const parsed = dokployComposeSchema.parse({ ...compose, domains });
+    const metadata = await readServiceMetadata(
+      { getProjects: () => Promise.resolve([project]), getCompose: () => Promise.resolve(parsed) },
+      ["api"],
+      null,
+    );
+    assert.deepEqual(metadata.get("api")?.primaryDomain, domains?.[0] ?? null);
+  }
 });
 
 void test("failed, ambiguous and mismatched reads remain unavailable", async () => {
@@ -106,6 +167,7 @@ void test("invalid optional domains stay unavailable without discarding service 
       () => 100,
     );
     assert.equal(metadata.get("api")?.domains, null);
+    assert.equal(metadata.get("api")?.primaryDomain, null);
     assert.equal(
       metadata.get("api")?.dokployUrl,
       "https://dokploy.example/dashboard/project/project%2Fid/environment/env%2Fid/services/compose/compose%2Fid",

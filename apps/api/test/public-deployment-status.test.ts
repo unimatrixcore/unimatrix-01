@@ -15,6 +15,7 @@ function state(): DeployStateResponse {
       publicStatus: appDir !== "private",
       dokployUrl: null,
       domains: null,
+      primaryDomain: null,
       metadataObservedAt: null,
       metadataFreshness: "missing",
       container: {

@@ -45,6 +45,13 @@ const containerObservationSchema = z.discriminatedUnion("kind", [
   }),
 ]);
 
+const deployDomainSchema = z.strictObject({
+  host: z.string().max(253),
+  https: z.boolean(),
+  port: z.number().int().min(1).max(65535).nullable(),
+  path: z.string().max(2048).nullable(),
+});
+
 export const deployStateResponseSchema = z.strictObject({
   checkedAt: timestampSchema,
   apps: z
@@ -53,18 +60,8 @@ export const deployStateResponseSchema = z.strictObject({
         appDir: appIdentifierSchema,
         publicStatus: z.boolean(),
         dokployUrl: z.url().nullable().default(null),
-        domains: z
-          .array(
-            z.strictObject({
-              host: z.string().max(253),
-              https: z.boolean(),
-              port: z.number().int().min(1).max(65535).nullable(),
-              path: z.string().max(2048).nullable(),
-            }),
-          )
-          .max(100)
-          .nullable()
-          .default(null),
+        domains: z.array(deployDomainSchema).max(100).nullable().default(null),
+        primaryDomain: deployDomainSchema.nullable().default(null),
         metadataObservedAt: timestampSchema.nullable().default(null),
         metadataFreshness: freshnessSchema.default("missing"),
         container: containerObservationSchema,
