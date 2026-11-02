@@ -1,17 +1,12 @@
 import type { Page, Route } from "@playwright/test";
 
 /**
- * Blog and project content is served by the API now, and the Playwright run
+ * Blog and project content is served by the API, and the Playwright run
  * starts `vite preview` with no API behind it. Every content request is
  * therefore fulfilled here.
  *
- * The fixture mirrors the two entries the repository ships (and that
- * `pnpm --filter @unimatrix/api seed:content` imports), so the smoke
- * assertions keep checking real copy rather than lorem ipsum. It is
- * hard-coded rather than parsed from `content/*.md` at test time because
- * Playwright will not transpile package sources resolved through
- * `node_modules`, and depending on a prior `pnpm build` would make the smoke
- * suite fail for a reason that has nothing to do with the site.
+ * Stable authored fixtures keep the smoke assertions independent of the
+ * live content database and its publication state.
  *
  * App-local by rule: `@unimatrix/e2e-helpers` is app-agnostic, and this knows
  * exactly what apps/web publishes.

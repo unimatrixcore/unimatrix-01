@@ -6,8 +6,6 @@
     "paths": {
       "@unimatrix/auth": ["../../packages/auth/src/index.ts"],
       "@unimatrix/auth/server": ["../../packages/auth/src/server.ts"],
-      "@unimatrix/content": ["../../packages/content/src/index.ts"],
-      "@unimatrix/content/node": ["../../packages/content/src/node.ts"],
       "@unimatrix/db": ["../../packages/db/src/index.ts"],
       "@unimatrix/deploy-client": ["../../packages/deploy-client/src/index.ts"],
       "@unimatrix/deploy-config": ["../../packages/deploy-config/src/index.ts"],
@@ -17,10 +15,7 @@
     },
     "types": ["node"]
   },
-  // `scripts/` and `deploy.config.ts` are checked but deliberately absent
-  // from `tsconfig.build.json`: neither is part of the deployable server
-  // build — the seed script is a maintenance tool run through tsx, and
-  // `deploy.config.ts` is read by infra/scripts through Node type stripping,
-  // never imported by app code.
-  "include": ["deploy.config.ts", "scripts/**/*.ts", "src/**/*.ts", "test/**/*.ts"]
+  // `deploy.config.ts` is checked here but excluded from the server build;
+  // infra/scripts reads it through Node type stripping.
+  "include": ["deploy.config.ts", "src/**/*.ts", "test/**/*.ts"]
 }

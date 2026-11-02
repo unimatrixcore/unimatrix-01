@@ -1,7 +1,7 @@
 # AGENTS.md
 
 ## 1. Overview
-`apps/web` is the Vite + React public site for Unimatrix. It is fully anonymous — no Clerk, no sign-in affordance, no account-scoped UI. Blog and project content is fetched from the API at runtime; `content/home/index.md` is the only file compiled into the bundle. Public-site composition stays separate from shared UI primitives. Content is managed from `apps/admin`, not here: `/admin` and `/admin/*` are redirect-only routes pointing at that origin, and this app holds no editing surface and no authenticated API client.
+`apps/web` is the Vite + React public site for Unimatrix. It is fully anonymous — no Clerk, no sign-in affordance, no account-scoped UI. Blog and project content is fetched from the API at runtime; homepage and About copy ships in the app source. Public-site composition stays separate from shared UI primitives. Blog and project content is managed from `apps/admin`, not here: `/admin` and `/admin/*` are redirect-only routes pointing at that origin, and this app holds no editing surface and no authenticated API client.
 
 ## 2. Folder Structure
 - `src/app`: `router.tsx` (router creation), `app-shell.tsx` (shell layout), `providers.tsx` (provider wiring).
@@ -20,7 +20,7 @@
 - **Shared UI boundary**: App code consumes shared primitives from `@unimatrix/ui/public`, while `src/features/public-site/components.tsx` owns public-site-specific compositions such as `PublicSectionHeading`, `PublicDecisionCard`, and `PublicProjectLedgerItem`.
 - **Package aliasing**: `vite.config.ts` aliases workspace imports to package source, so they are real build inputs — `resolve.alias` there is the list.
 - **Admin redirect**: `src/routes/admin.tsx` and `src/routes/admin.$.tsx` each throw a full-document `redirect` to `https://admin.unimatrix-01.dev/` in `beforeLoad`, so an old `/admin` link still lands somewhere. They hold no UI and deliberately drop the query string, since the admin route paths differ from the ones a stale link carries. `admin.tsx` is the parent layout of `admin.$.tsx`, so its `beforeLoad` already covers every `/admin/*` match; the second file is belt-and-braces.
-- **Content loading**: Blog and project entries are fetched at runtime from the API (`src/features/content/queries`). `src/features/content/site-content.ts` holds only the home/about singleton, the one file still compiled into the bundle.
+- **Content loading**: Blog and project entries are fetched at runtime from the API (`src/features/content/queries`). Edit homepage and About copy in `src/features/content/home.md`; `site-content.ts` parses it into the bundle so it remains available when the API is unreachable.
 - **Safe markdown rendering**: Route components use `LazyPublicMarkdown` plus `renderPublicMarkdownInternalLink` to render authored markdown. Raw HTML and runtime MDX stay disabled; safe GFM rendering lives in `@unimatrix/ui`.
 - **Testing split**: Behavior-heavy UI and content rules live under `test/`, while the browser-only checks — the smoke path plus the layout and `ResizeObserver` regressions no jsdom test can catch — live under `e2e/`.
 

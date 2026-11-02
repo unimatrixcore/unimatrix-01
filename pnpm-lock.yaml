@@ -201,9 +201,6 @@ importers:
       '@unimatrix/config-typescript':
         specifier: workspace:*
         version: link:../../packages/config-typescript
-      '@unimatrix/content':
-        specifier: workspace:*
-        version: link:../../packages/content
       '@unimatrix/deploy-config':
         specifier: workspace:*
         version: link:../../packages/deploy-config

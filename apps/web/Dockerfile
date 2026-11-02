@@ -21,7 +21,6 @@ RUN pnpm install --frozen-lockfile
 ARG VITE_API_BASE_URL=https://api.unimatrix-01.dev
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 COPY --from=prune /workspace/out/full/ .
-COPY content/home ./content/home
 RUN pnpm --filter @unimatrix/web build
 
 FROM nginxinc/nginx-unprivileged:1.31-alpine@sha256:d9083fe47768377ef55dedafd67d4da7c2f2bc2bece7554954f29359deb0dce9 AS runtime

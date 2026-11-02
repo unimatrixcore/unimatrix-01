@@ -88,10 +88,8 @@ export interface StaticSpaAppConfig extends DeployAppConfigBase {
   readonly buildArgs: readonly DeployBuildArg[];
   /**
    * Repo-root-relative paths `COPY`d into the build stage on top of the
-   * pruned workspace, e.g. `"content/home"`. `turbo prune` emits workspace
-   * packages only, so an app that imports something outside every workspace
-   * — `apps/web` reads `content/home/index.md` straight off disk — cannot
-   * build without it named here.
+   * pruned workspace. `turbo prune` emits workspace packages only, so an
+   * app's build inputs outside those packages must be named here.
    */
   readonly extraBuildPaths?: readonly string[];
 }

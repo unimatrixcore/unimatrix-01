@@ -15,7 +15,7 @@ function readSiteContentSource(): string {
  */
 describe("site content registry", () => {
   it("registers the home singleton", () => {
-    expect(readSiteContentSource()).toMatch(/content\/home\/index\.md/u);
+    expect(readSiteContentSource()).toContain('import homeSource from "./home.md?raw"');
   });
 
   it("does not bundle blog or project markdown", () => {
