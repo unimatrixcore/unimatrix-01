@@ -6,15 +6,15 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "build": "vite build && vite build --ssr prerender/entry.tsx --outDir .prerender --emptyOutDir && node .prerender/entry.js",
+    "build": "node ../../infra/scripts/run-local-workload.mjs -- sh -c 'vite build && vite build --ssr prerender/entry.tsx --outDir .prerender --emptyOutDir && node .prerender/entry.js \"$@\"' --",
     "dev": "vite",
     "gen:algs": "vite build --ssr scripts/generate-algorithm-data.ts --outDir .generate --emptyOutDir && node .generate/generate-algorithm-data.js",
-    "lint": "eslint .",
+    "lint": "node ../../infra/scripts/run-local-workload.mjs -- eslint .",
     "preview": "vite preview",
-    "test": "pnpm run test:unit && pnpm run test:smoke",
-    "test:smoke": "playwright test",
-    "test:unit": "pnpm exec turbo run build --filter=@unimatrix/ui && vitest run",
-    "typecheck": "tsc -p tsconfig.json"
+    "test": "node ../../infra/scripts/run-local-workload.mjs -- sh -c 'pnpm run test:unit && pnpm run test:smoke \"$@\"' --",
+    "test:smoke": "node ../../infra/scripts/run-local-workload.mjs -- playwright test",
+    "test:unit": "node ../../infra/scripts/run-local-workload.mjs -- sh -c 'pnpm exec turbo run build --filter=@unimatrix/ui && vitest run \"$@\"' --",
+    "typecheck": "node ../../infra/scripts/run-local-workload.mjs -- tsc -p tsconfig.json"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",

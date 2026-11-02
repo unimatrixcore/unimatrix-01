@@ -6,14 +6,14 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "build": "vite build",
+    "build": "node ../../infra/scripts/run-local-workload.mjs -- vite build",
     "dev": "vite",
-    "lint": "eslint .",
+    "lint": "node ../../infra/scripts/run-local-workload.mjs -- eslint .",
     "preview": "vite preview",
-    "test": "pnpm run test:unit && pnpm run test:smoke",
-    "test:smoke": "playwright test",
-    "test:unit": "pnpm exec turbo run build --filter=@unimatrix/ui && vitest run",
-    "typecheck": "tsc -p tsconfig.json"
+    "test": "node ../../infra/scripts/run-local-workload.mjs -- sh -c 'pnpm run test:unit && pnpm run test:smoke \"$@\"' --",
+    "test:smoke": "node ../../infra/scripts/run-local-workload.mjs -- playwright test",
+    "test:unit": "node ../../infra/scripts/run-local-workload.mjs -- sh -c 'pnpm exec turbo run build --filter=@unimatrix/ui && vitest run \"$@\"' --",
+    "typecheck": "node ../../infra/scripts/run-local-workload.mjs -- tsc -p tsconfig.json"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",

@@ -13,9 +13,9 @@
     "./react": "./src/react.ts"
   },
   "scripts": {
-    "lint": "eslint .",
-    "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json"
+    "lint": "node ../../infra/scripts/run-local-workload.mjs -- eslint .",
+    "test": "node ../../infra/scripts/run-local-workload.mjs -- vitest run",
+    "typecheck": "node ../../infra/scripts/run-local-workload.mjs -- tsc -p tsconfig.json"
   },
   "dependencies": {
     "@unimatrix/ui": "workspace:*"

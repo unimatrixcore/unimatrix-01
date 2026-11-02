@@ -516,6 +516,8 @@ function staticSpaDockerfileBody(
   lines.push(
     "",
     "FROM base AS build",
+    "ENV UNIMATRIX_CONTAINER_BUILD=1",
+    "COPY infra/scripts/run-local-workload.mjs ./infra/scripts/run-local-workload.mjs",
     "COPY --from=prune /workspace/out/json/ .",
     "RUN pnpm install --frozen-lockfile",
   );
@@ -594,6 +596,8 @@ function nodeApiDockerfileBody(
   lines.push(
     "",
     "FROM base AS build",
+    "ENV UNIMATRIX_CONTAINER_BUILD=1",
+    "COPY infra/scripts/run-local-workload.mjs ./infra/scripts/run-local-workload.mjs",
     "COPY --from=prune /workspace/out/json/ .",
     "RUN pnpm install --frozen-lockfile",
     "COPY --from=prune /workspace/out/full/ .",

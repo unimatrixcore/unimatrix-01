@@ -29,5 +29,11 @@
       "cache": false,
       "persistent": true
     }
-  }
+  },
+  "globalPassThroughEnv": [
+    "UNIMATRIX_LOCAL_WORKLOAD",
+    "UNIMATRIX_CONTAINER_BUILD",
+    "GITHUB_ACTIONS",
+    "RUNNER_ENVIRONMENT"
+  ]
 }

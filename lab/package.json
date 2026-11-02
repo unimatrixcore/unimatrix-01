@@ -7,8 +7,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "lint": "eslint src",
-    "typecheck": "tsc -p tsconfig.json"
+    "lint": "node ../infra/scripts/run-local-workload.mjs -- eslint src",
+    "typecheck": "node ../infra/scripts/run-local-workload.mjs -- tsc -p tsconfig.json"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.1",

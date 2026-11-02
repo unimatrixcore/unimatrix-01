@@ -13,9 +13,9 @@
     "./tool": "./src/tool.ts"
   },
   "scripts": {
-    "lint": "eslint .",
-    "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json"
+    "lint": "node ../../infra/scripts/run-local-workload.mjs -- eslint .",
+    "test": "node ../../infra/scripts/run-local-workload.mjs -- vitest run",
+    "typecheck": "node ../../infra/scripts/run-local-workload.mjs -- tsc -p tsconfig.json"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^7.0.1",

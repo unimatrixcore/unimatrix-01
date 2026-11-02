@@ -15,19 +15,19 @@
     }
   },
   "scripts": {
-    "build:client": "node ./scripts/build-client.mjs",
-    "build:plugin": "dotnet build ./dotnet/UnimatrixTV.csproj -c Release",
-    "build:requests": "node ./scripts/build-requests.mjs",
+    "build:client": "node ../../infra/scripts/run-local-workload.mjs -- node ./scripts/build-client.mjs",
+    "build:plugin": "node ../../infra/scripts/run-local-workload.mjs -- dotnet build ./dotnet/UnimatrixTV.csproj -c Release",
+    "build:requests": "node ../../infra/scripts/run-local-workload.mjs -- node ./scripts/build-requests.mjs",
     "package": "node ./scripts/package-plugin.mjs",
-    "build": "pnpm build:client && pnpm build:plugin && pnpm build:requests && pnpm package",
+    "build": "node ../../infra/scripts/run-local-workload.mjs -- sh -c 'pnpm build:client && pnpm build:plugin && pnpm build:requests && pnpm package \"$@\"' --",
     "deploy:live": "node ./scripts/deploy.mjs",
-    "lint": "eslint .",
-    "test": "vitest run && pnpm test:requests && pnpm test:plugin && pnpm test:deployment && pnpm test:automation",
-    "typecheck": "tsc -p tsconfig.json",
-    "test:requests": "node requests/run-tests.cjs",
-    "test:plugin": "node scripts/test-plugin.mjs",
-    "test:deployment": "node --test scripts/deploy.test.mjs",
-    "test:automation": "python3 -B -m unittest discover -s automation -p 'test_*.py'"
+    "lint": "node ../../infra/scripts/run-local-workload.mjs -- eslint .",
+    "test": "node ../../infra/scripts/run-local-workload.mjs -- sh -c 'vitest run && pnpm test:requests && pnpm test:plugin && pnpm test:deployment && pnpm test:automation \"$@\"' --",
+    "typecheck": "node ../../infra/scripts/run-local-workload.mjs -- tsc -p tsconfig.json",
+    "test:requests": "node ../../infra/scripts/run-local-workload.mjs -- node requests/run-tests.cjs",
+    "test:plugin": "node ../../infra/scripts/run-local-workload.mjs -- node scripts/test-plugin.mjs",
+    "test:deployment": "node ../../infra/scripts/run-local-workload.mjs -- node --test scripts/deploy.test.mjs",
+    "test:automation": "node ../../infra/scripts/run-local-workload.mjs -- python3 -B -m unittest discover -s automation -p 'test_*.py'"
   },
   "devDependencies": {
     "@unimatrix/config-eslint": "workspace:*",
