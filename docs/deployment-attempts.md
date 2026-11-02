@@ -125,8 +125,9 @@ CI refuses deployment while disabled; it never falls back to direct Dokploy muta
    host bridge on unimatrix-03. Confirm the service user can read fresh snapshots across collector
    runs and after replacing the deploy container. Avoid overlapping collector jobs.
 2. Provision a dedicated HTTPS reporting origin behind a Cloudflare Access Service Auth policy.
-   Permit only POST `/deployment/attempts/intent` and POST `/deployment/execute` at the
-   ingress; deny every other path and method, including rollback and reports, before forwarding. Do not route the whole deploy
+   Permit only POST `/deployment/attempts/intent`, POST `/deployment/execute` and
+   GET `/deployment/baselines` at the ingress; deny every other path and method, including
+   rollback and reports, before forwarding. Do not route the whole deploy
    service through a generic Domains entry. The origin connection must use pinned HTTPS to
    `deploy:3001`, with hostname verification and the deploy certificate as its trust anchor.
    Keep internal history, reconciliation, state and token operations unreachable at that origin.
@@ -135,18 +136,29 @@ CI refuses deployment while disabled; it never falls back to direct Dokploy muta
    `DEPLOY_REPORT_URL`. Authorize the existing Actions Cloudflare service token for this reporting
    application as well. Do not print credentials, request bodies or upstream response bodies.
 4. Exercise the restricted origin from a GitHub-hosted runner: verify the service identity, reject
-   anonymous and read-token writes, reject unrelated routes, and persist an intent without any
-   Dokploy mutation. Repeat it to confirm the stable ID; conflict its digest to confirm rejection.
+   anonymous and read-token writes, reject unrelated routes, and read baselines with the CI token.
+   Confirm only fresh, unique declared image evidence with a commit is returned, and unresolved
+   work withholds its app's baseline. Persist an intent without any Dokploy mutation. Repeat it to
+   confirm the stable ID; conflict its digest to confirm rejection.
 5. Verify a `Publish` run's artifact against its own successful SHA-tag push output. Publication
    captures that push's digest, never a later SHA-tag lookup. Artifacts are scoped to the workflow
-   run attempt; rerun all Publish and Deploy jobs together. A failed-jobs-only rerun without matching
-   publication artifacts must refuse deployment.
+   run attempt; rerun Plan deployment, Publish and Deploy together. A failed-jobs-only rerun without
+   matching plan and publication artifacts must refuse deployment. Verify skipped services retain
+   their image identities and an empty plan makes no intent or execution requests.
 6. Set `DEPLOY_ATTEMPTS_ENABLED=true` only after those checks. Run a controlled deployment and
    verify durable intent precedes writes, queue acknowledgment precedes observed landing, and
    restart resumes from the persisted baseline. Verify rollback changes only the selected service
    and the next main deployment supersedes it. Exercise callback loss, overlapping runs, late
    landing, a same-tag rebuild with a different digest and unchanged-ID redeployment. Keep health
    and configuration readback as separate checks.
+
+Affected-service planning requires the running deploy image to serve the baselines contract in
+`packages/shared/src/contracts/deployment-baselines.ts` and the restricted ingress to allow its
+exact GET path. Until both are installed, an unavailable baseline read selects all services,
+so the first merge can bootstrap the endpoint through the existing coordinated rollout. Baseline
+access through the production ingress and affected-service retention have not been exercised by
+the local implementation checks. Add the narrow GET allowance and verify them from a GitHub-hosted
+runner before relying on selective deployment; do not broaden access to other internal reads.
 
 The reporting origin is `https://deploy-ci.unimatrix-01.dev`, protected by Service Auth for the
 existing GitHub Actions identity. On unimatrix-03, `unimatrix-runtime-evidence.timer` runs the

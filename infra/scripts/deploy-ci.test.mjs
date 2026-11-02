@@ -7,6 +7,7 @@ import { execFileSync } from "node:child_process";
 
 import { deployCi } from "./deploy-ci.mjs";
 import { publicationFromPush, publishImage } from "./publish-image.mjs";
+import { createDeploymentPlan } from "./deploy-plan.mjs";
 
 const commit = "a".repeat(40);
 const digest = `sha256:${"b".repeat(64)}`;
@@ -18,6 +19,12 @@ function setup(t, apps = ["api", "auth"]) {
   mkdirSync(join(root, "infra/docker"), { recursive: true });
   mkdirSync(join(root, "publication"));
   for (const app of apps) {
+    mkdirSync(join(root, "apps", app), { recursive: true });
+    writeFileSync(join(root, "apps", app, "Dockerfile"), "FROM scratch\n");
+    writeFileSync(
+      join(root, "apps", app, "package.json"),
+      JSON.stringify({ name: `@unimatrix/${app}` }),
+    );
     writeFileSync(join(root, "infra/docker", `${app}-compose.yaml`), "");
     writeFileSync(
       join(root, "publication", `${app}.json`),
@@ -46,7 +53,12 @@ function setup(t, apps = ["api", "auth"]) {
     GITHUB_REPOSITORY: "unimatrixcore/unimatrix-01",
     GITHUB_RUN_ID: "123",
     GITHUB_RUN_ATTEMPT: "1",
+    DEPLOY_PLAN_PATH: "deployment-plan.json",
   };
+  writeFileSync(
+    join(root, env.DEPLOY_PLAN_PATH),
+    JSON.stringify(createDeploymentPlan({ root, env })),
+  );
   const calls = [];
   const states = new Map();
   async function fetchImpl(url, options) {
@@ -140,6 +152,10 @@ test("intent records the deployed commit's public subject without shell interpre
   ]);
   const revision = git(["rev-parse", "HEAD"]);
   fixture.env.IMAGE_TAG = revision;
+  writeFileSync(
+    join(fixture.root, fixture.env.DEPLOY_PLAN_PATH),
+    JSON.stringify(createDeploymentPlan({ root: fixture.root, env: fixture.env })),
+  );
   const path = join(fixture.root, "publication/api.json");
   const publication = JSON.parse(readFileSync(path, "utf8"));
   publication.image.tag = revision;
@@ -248,6 +264,117 @@ test("reserves every intent before service execution and never writes Dokploy di
     false,
   );
   assert.match(messages.at(-1), /Queued is not applied/);
+});
+
+function scopedFixture(t, changedApp) {
+  const fixture = setup(t);
+  const git = (args) =>
+    execFileSync("git", args, {
+      cwd: fixture.root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  git(["init"]);
+  git(["add", "apps", "infra"]);
+  git(["-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "-m", "baseline"]);
+  const base = git(["rev-parse", "HEAD"]);
+  if (changedApp) {
+    writeFileSync(join(fixture.root, "apps", changedApp, "index.ts"), "changed\n");
+    git(["add", "apps"]);
+    git([
+      "-c",
+      "user.name=Test",
+      "-c",
+      "user.email=test@example.test",
+      "commit",
+      "-m",
+      "app change",
+    ]);
+  }
+  fixture.env.IMAGE_TAG = git(["rev-parse", "HEAD"]);
+  const baselines = new Map(
+    ["api", "auth"].map((app) => [
+      app,
+      {
+        commit: base,
+        containerId: "c".repeat(64),
+        observedAt: Date.now(),
+        image: {
+          repository: `ghcr.io/unimatrixcore/unimatrix-${app}`,
+          platform: "linux/amd64",
+          digestKind: "manifest",
+          digest,
+        },
+      },
+    ]),
+  );
+  writeFileSync(
+    join(fixture.root, fixture.env.DEPLOY_PLAN_PATH),
+    JSON.stringify(createDeploymentPlan({ root: fixture.root, env: fixture.env, baselines })),
+  );
+  rmSync(join(fixture.root, "publication"), { recursive: true });
+  if (changedApp) {
+    mkdirSync(join(fixture.root, "publication"));
+    writeFileSync(
+      join(fixture.root, "publication", `${changedApp}.json`),
+      JSON.stringify({
+        app: changedApp,
+        image: {
+          ...baselines.get(changedApp).image,
+          tag: fixture.env.IMAGE_TAG,
+          commit: fixture.env.IMAGE_TAG,
+        },
+      }),
+    );
+  }
+  const originalFetch = fixture.fetchImpl;
+  fixture.fetchImpl = (url, options) => {
+    if (new URL(url).pathname !== "/deployment/baselines") return originalFetch(url, options);
+    const checkedAt = Date.now();
+    return Response.json({
+      checkedAt,
+      apps: [...baselines].map(([app, baseline]) => ({
+        app,
+        baseline: { ...baseline, observedAt: checkedAt },
+      })),
+    });
+  };
+  return { ...fixture, baselines };
+}
+
+test("affected plan reserves and executes only selected services without other publications", async (t) => {
+  const fixture = scopedFixture(t, "api");
+  await deployCi(fixture);
+  assert.deepEqual(
+    fixture.calls.find(({ path }) => path.endsWith("/intent")).body.intents.map(({ app }) => app),
+    ["api"],
+  );
+  assert.deepEqual(
+    fixture.calls.filter(({ path }) => path === "/deployment/execute").map(({ body }) => body.app),
+    ["api"],
+  );
+});
+
+test("an empty affected plan makes no discovery, reservations or writes and needs no publications", async (t) => {
+  const fixture = scopedFixture(t, null);
+  const messages = [];
+  await deployCi({ ...fixture, log: (message) => messages.push(message) });
+  assert.deepEqual(fixture.calls, []);
+  assert.match(messages[0], /No affected services/u);
+});
+
+test("a skipped service changed during publication blocks every deployment mutation", async (t) => {
+  const fixture = scopedFixture(t, "api");
+  fixture.baselines.set("auth", { ...fixture.baselines.get("auth"), commit: "d".repeat(40) });
+  await assert.rejects(deployCi(fixture), /changed after planning/u);
+  assert.deepEqual(fixture.calls, []);
+});
+
+test("missing or altered deployment plans cannot authorize writes", async (t) => {
+  const fixture = setup(t);
+  rmSync(join(fixture.root, fixture.env.DEPLOY_PLAN_PATH));
+  await assert.rejects(deployCi(fixture));
+  assert.deepEqual(fixture.calls, []);
 });
 
 test("the deployment service executes last so its restart cannot interrupt sibling execution", async (t) => {
