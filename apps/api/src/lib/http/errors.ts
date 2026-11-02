@@ -1,6 +1,12 @@
-import { AuthError } from "@unimatrix/auth/server";
 import type { FastifyError } from "fastify";
 import { hasZodFastifySchemaValidationErrors } from "fastify-type-provider-zod";
+
+import { AuthError } from "@unimatrix/auth/server";
+import {
+  createErrorEnvelope,
+  type ServiceErrorEnvelope,
+  type ServiceErrorEnvelopeOptions,
+} from "@unimatrix/service-http";
 
 export type ApiErrorCode =
   | "VALIDATION_ERROR"
@@ -25,15 +31,7 @@ export interface ApiErrorDetails {
   issues?: ApiValidationIssue[];
 }
 
-export interface ApiErrorEnvelope {
-  error: {
-    code: ApiErrorCode;
-    message: string;
-    statusCode: number;
-    details?: ApiErrorDetails;
-  };
-  requestId: string;
-}
+export type ApiErrorEnvelope = ServiceErrorEnvelope<ApiErrorCode, ApiErrorDetails>;
 
 interface ApiErrorOptions {
   statusCode: number;
@@ -69,29 +67,16 @@ export class ApiError extends Error {
   }
 }
 
-interface ApiErrorEnvelopeOptions {
-  requestId: string;
-  code: ApiErrorCode;
-  message: string;
-  statusCode: number;
-  details?: ApiErrorDetails;
-}
+type ApiErrorEnvelopeOptions = ServiceErrorEnvelopeOptions<ApiErrorCode, ApiErrorDetails>;
 
 function createApiErrorEnvelope(options: ApiErrorEnvelopeOptions): ApiErrorEnvelope {
-  const error: ApiErrorEnvelope["error"] = {
+  return createErrorEnvelope({
+    requestId: options.requestId,
     code: options.code,
     message: options.message,
     statusCode: options.statusCode,
-  };
-
-  if (hasApiErrorDetails(options.details)) {
-    error.details = options.details;
-  }
-
-  return {
-    error,
-    requestId: options.requestId,
-  };
+    ...(hasApiErrorDetails(options.details) ? { details: options.details } : {}),
+  });
 }
 
 export function createNotFoundErrorEnvelope(requestId: string): ApiErrorEnvelope {

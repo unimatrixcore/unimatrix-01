@@ -43,7 +43,7 @@ const ALLOWED_PACKAGE_IMPORTS = {
     "shared",
     "ui",
   ],
-  "apps/api": ["auth", "db", "deploy-client", "deploy-config", "secrets", "shared"],
+  "apps/api": ["auth", "db", "deploy-client", "deploy-config", "secrets", "service-http", "shared"],
   // Never `db`: this service's SQLite file lives on its own volume, not
   // packages/db's (single-writer, already owned by the API container) — see
   // apps/secrets/AGENTS.md.
@@ -69,6 +69,7 @@ const ALLOWED_PACKAGE_IMPORTS = {
   "apps/admin": ["api-client", "app-config", "auth", "chrome", "deploy-config", "shared", "ui"],
   "packages/api-client": ["shared"],
   "packages/deploy-client": ["shared"],
+  "packages/service-http": [],
   // Env validation for the Vite apps' config boundaries. A leaf on purpose:
   // `zod` is its only dependency and stays its implementation detail — apps
   // compose schemas through `envSchema` instead of importing zod themselves.
