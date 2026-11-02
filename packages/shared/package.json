@@ -16,10 +16,10 @@
     "./secrets-registry": "./src/secrets-registry.ts"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
-    "lint": "eslint .",
-    "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json"
+    "build": "node ../../infra/scripts/run-local-workload.mjs -- tsc -p tsconfig.build.json",
+    "lint": "node ../../infra/scripts/run-local-workload.mjs -- eslint .",
+    "test": "node ../../infra/scripts/run-local-workload.mjs -- vitest run",
+    "typecheck": "node ../../infra/scripts/run-local-workload.mjs -- tsc -p tsconfig.json"
   },
   "devDependencies": {
     "@unimatrix/config-eslint": "workspace:*",

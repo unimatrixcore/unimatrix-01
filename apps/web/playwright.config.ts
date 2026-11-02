@@ -2,6 +2,9 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   reporter: "list",
+  ...(process.env.GITHUB_ACTIONS === "true" && process.env.RUNNER_ENVIRONMENT === "github-hosted"
+    ? {}
+    : { workers: 1 }),
   retries: process.env.CI ? 1 : 0,
   testDir: "./e2e",
   use: {

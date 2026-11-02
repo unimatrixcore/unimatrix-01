@@ -9,8 +9,8 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "lint": "eslint .",
-    "typecheck": "tsc -p tsconfig.json"
+    "lint": "node ../../infra/scripts/run-local-workload.mjs -- eslint .",
+    "typecheck": "node ../../infra/scripts/run-local-workload.mjs -- tsc -p tsconfig.json"
   },
   "peerDependencies": {
     "@axe-core/playwright": ">=4.12.1",

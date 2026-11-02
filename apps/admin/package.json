@@ -6,13 +6,13 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "build": "vite build",
+    "build": "node ../../infra/scripts/run-local-workload.mjs -- vite build",
     "dev": "vite",
-    "lint": "eslint .",
+    "lint": "node ../../infra/scripts/run-local-workload.mjs -- eslint .",
     "preview": "vite preview",
-    "test": "pnpm run test:unit",
-    "test:unit": "pnpm exec turbo run build --filter=@unimatrix/ui && vitest run",
-    "typecheck": "tsc -p tsconfig.json"
+    "test": "node ../../infra/scripts/run-local-workload.mjs -- pnpm run test:unit",
+    "test:unit": "node ../../infra/scripts/run-local-workload.mjs -- sh -c 'pnpm exec turbo run build --filter=@unimatrix/ui && vitest run \"$@\"' --",
+    "typecheck": "node ../../infra/scripts/run-local-workload.mjs -- tsc -p tsconfig.json"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.1",

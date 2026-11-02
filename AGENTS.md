@@ -96,7 +96,7 @@ The packages below sit deliberately below `latest`. Each has a reason that is no
 - **Composing guidance goes through `writing-docs` when the words are written**, including comments, PR bodies and guidance drafted in chat. Use `composing-context` for agent-facing instructions. Native reminders cover successful `apply_patch` edits, so manually load the skills for prose composed elsewhere.
 
 ## Validation
-- Run the narrowest relevant checks for the files you changed
+- Run the narrowest relevant checks for the files you changed. Root and workspace build, lint, test and typecheck scripts apply local CPU limits and serialize heavy work across worktrees automatically; keep that protection in the scripts rather than relying on session coordination.
 - Use `pnpm check` as the normal pre-review gate
 - Use `pnpm verify` when changes span multiple workspaces or affect runtime/build behavior
 - Deeper checks (web, cflop): `pnpm --filter <package> test:unit`, `pnpm --filter <package> test:smoke`

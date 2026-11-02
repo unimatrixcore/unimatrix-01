@@ -16,6 +16,8 @@ COPY . .
 RUN turbo prune @unimatrix/auth-app --docker
 
 FROM base AS build
+ENV UNIMATRIX_CONTAINER_BUILD=1
+COPY infra/scripts/run-local-workload.mjs ./infra/scripts/run-local-workload.mjs
 COPY --from=prune /workspace/out/json/ .
 RUN pnpm install --frozen-lockfile
 ARG VITE_API_BASE_URL=https://api.unimatrix-01.dev

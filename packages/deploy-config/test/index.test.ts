@@ -194,6 +194,10 @@ describe("staticSpaApp / dockerfileFor / composeFor", () => {
 
     expect(dockerfile).toContain("RUN turbo prune @unimatrix/web --docker");
     expect(dockerfile).toContain("COPY --from=prune /workspace/out/json/ .");
+    expect(dockerfile).toContain("ENV UNIMATRIX_CONTAINER_BUILD=1");
+    expect(dockerfile).toContain(
+      "COPY infra/scripts/run-local-workload.mjs ./infra/scripts/run-local-workload.mjs",
+    );
     expect(dockerfile).toContain("RUN pnpm install --frozen-lockfile");
     expect(dockerfile).not.toContain("COPY . .\nRUN pnpm install");
     expect(dockerfile).not.toContain("find . -name");
@@ -398,6 +402,10 @@ describe("nodeApiApp / dockerfileFor / composeFor", () => {
 
     expect(dockerfile).toContain("RUN turbo prune @unimatrix/api --docker");
     expect(dockerfile).toContain("COPY --from=prune /workspace/out/json/ .");
+    expect(dockerfile).toContain("ENV UNIMATRIX_CONTAINER_BUILD=1");
+    expect(dockerfile).toContain(
+      "COPY infra/scripts/run-local-workload.mjs ./infra/scripts/run-local-workload.mjs",
+    );
     expect(dockerfile).toContain("RUN pnpm install --frozen-lockfile");
     expect(dockerfile).not.toContain("COPY . .\nRUN pnpm install");
     expect(dockerfile).not.toContain("find . -name");
