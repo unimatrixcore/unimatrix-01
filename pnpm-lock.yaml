@@ -319,6 +319,12 @@ importers:
       '@unimatrix/auth':
         specifier: workspace:*
         version: link:../../packages/auth
+      '@unimatrix/canvas':
+        specifier: workspace:*
+        version: link:../../packages/canvas
+      '@unimatrix/secrets':
+        specifier: workspace:*
+        version: link:../../packages/secrets
       '@unimatrix/mcp':
         specifier: workspace:*
         version: link:../../packages/mcp
@@ -938,6 +944,31 @@ importers:
       vitest:
         specifier: ^5.0.1
         version: 5.0.1(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(@vitest/coverage-v8@5.0.1)(jsdom@30.0.1)(msw@2.12.10(@types/node@24.13.3)(typescript@6.0.3))(vite@8.2.4(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.1))
+
+  packages/canvas:
+    dependencies:
+      zod:
+        specifier: ^4.3.6
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^24.13.3
+        version: 24.13.3
+      '@unimatrix/config-eslint':
+        specifier: workspace:*
+        version: link:../config-eslint
+      '@unimatrix/config-typescript':
+        specifier: workspace:*
+        version: link:../config-typescript
+      eslint:
+        specifier: ^10.8.1
+        version: 10.8.1(jiti@2.7.0)
+      tsx:
+        specifier: ^4.23.12
+        version: 4.23.12
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
 
   packages/chrome:
     dependencies:

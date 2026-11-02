@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  CANVAS_ACCESS_TOKEN_SECRET,
   integrationSecretNames,
   secretNameSchema,
   secretTierForName,
@@ -40,6 +41,11 @@ describe("SECRET_REGISTRY", () => {
 });
 
 describe("integrationSecretNames", () => {
+  it("declares the Admin-managed Canvas name in the integration tier", () => {
+    expect(CANVAS_ACCESS_TOKEN_SECRET.name).toBe("integrations/canvas/access-token");
+    expect(secretTierForName(CANVAS_ACCESS_TOKEN_SECRET.name)).toBe("integration");
+    expect(integrationSecretNames()).toContain(CANVAS_ACCESS_TOKEN_SECRET.name);
+  });
   it("returns nothing outside the integration tier", () => {
     const names = integrationSecretNames();
 

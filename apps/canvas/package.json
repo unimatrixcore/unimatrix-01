@@ -16,6 +16,8 @@
   "dependencies": {
     "@fastify/rate-limit": "^11.2.0",
     "@unimatrix/auth": "workspace:*",
+    "@unimatrix/canvas": "workspace:*",
+    "@unimatrix/secrets": "workspace:*",
     "@unimatrix/mcp": "workspace:*",
     "@unimatrix/service-http": "workspace:*",
     "@unimatrix/shared": "workspace:*",

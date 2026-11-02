@@ -5,7 +5,9 @@ import {
   createServiceCallerVerifier,
   type ServiceCallerVerifier,
 } from "@unimatrix/auth/server";
-import { defineTool } from "@unimatrix/mcp";
+import { CanvasConnectionError, createCanvasConnection } from "@unimatrix/canvas";
+import { createSecretsClient, type SecretsClient } from "@unimatrix/secrets/client";
+import { defineTool, ToolExecutionError } from "@unimatrix/mcp";
 import { registerMcpRoutes } from "@unimatrix/mcp/fastify";
 import {
   buildSafeLoggerOptions,
@@ -14,6 +16,8 @@ import {
   type SafeLoggerOptions,
 } from "@unimatrix/service-http";
 import {
+  canvasConnectionStatusContract,
+  canvasConnectionStatusSchema,
   canvasSyntheticCoursesContract,
   canvasSyntheticCoursesSchema,
   canvasSyntheticEchoInputSchema,
@@ -25,10 +29,13 @@ import Fastify, { LogController, type FastifyInstance, type FastifyRequest } fro
 import { z } from "zod";
 
 import type { CanvasConfig } from "./config.js";
+import { createCanvasCredentialLoader } from "./credentials.js";
 import { echoSynthetic, getSyntheticStatus, listSyntheticCourses } from "./synthetic.js";
 
 export interface BuildCanvasAppOptions {
   verifier?: ServiceCallerVerifier;
+  secretsClient?: SecretsClient;
+  canvasFetch?: typeof globalThis.fetch;
   logger?: false | SafeLoggerOptions;
 }
 
@@ -51,6 +58,18 @@ export function buildApp(
       ...config,
       capabilities: CANVAS_CAPABILITIES,
     });
+  const secretsClient =
+    options.secretsClient ??
+    createSecretsClient({
+      baseUrl: config.secretsBaseUrl,
+      serviceToken: config.secretsReadToken,
+      caCertificatePem: config.secretsCertificatePem,
+    });
+  const connection = createCanvasConnection({
+    userId: config.canvasUserId,
+    loadCredential: createCanvasCredentialLoader(secretsClient),
+    ...(options.canvasFetch === undefined ? {} : { fetch: options.canvasFetch }),
+  });
   const app = Fastify({
     bodyLimit: 65_536,
     forceCloseConnections: true,
@@ -78,7 +97,7 @@ export function buildApp(
   });
   app.setErrorHandler((error: Error & { statusCode?: number }, request, reply) => {
     const statusCode =
-      error instanceof AuthError
+      error instanceof AuthError || error instanceof CanvasConnectionError
         ? error.statusCode
         : error.statusCode !== undefined &&
             Number.isInteger(error.statusCode) &&
@@ -87,7 +106,7 @@ export function buildApp(
           ? error.statusCode
           : 500;
     const code =
-      error instanceof AuthError
+      error instanceof AuthError || error instanceof CanvasConnectionError
         ? error.code
         : statusCode === 429
           ? "RATE_LIMITED"
@@ -95,7 +114,7 @@ export function buildApp(
             ? "INTERNAL_ERROR"
             : "INVALID_REQUEST";
     const message =
-      error instanceof AuthError
+      error instanceof AuthError || error instanceof CanvasConnectionError
         ? error.message
         : statusCode === 429
           ? "Too many requests."
@@ -143,6 +162,12 @@ export function buildApp(
     preHandler: (request) => authenticate(request, "canvas:read"),
     handler: () => listSyntheticCourses(),
   });
+  app.route({
+    method: canvasConnectionStatusContract.method,
+    url: canvasConnectionStatusContract.path,
+    preHandler: (request) => authenticate(request, "canvas:status"),
+    handler: () => connection.status(),
+  });
   registerMcpRoutes(app, {
     name: "canvas-synthetic-proof",
     version: "0.1.0",
@@ -154,6 +179,25 @@ export function buildApp(
     verifyOAuthCaller: (token, capabilities) => verifier.verifyOAuthCaller(token, capabilities),
     maxRequestBytes: 65_536,
     tools: [
+      defineTool({
+        name: "canvas_connection_status",
+        description: "Verify current credential access and the configured Canvas account.",
+        capabilities: ["canvas:status"],
+        inputSchema: z.strictObject({}),
+        outputSchema: canvasConnectionStatusSchema,
+        annotations: { ...annotations, openWorldHint: true },
+        execute: async (_input, context) => {
+          try {
+            const data = await connection.status(context.signal);
+            return { data, text: JSON.stringify(data) };
+          } catch (error) {
+            if (error instanceof CanvasConnectionError) {
+              throw new ToolExecutionError(`${error.code}: ${error.message}`);
+            }
+            throw error;
+          }
+        },
+      }),
       defineTool({
         name: "canvas_status",
         description:

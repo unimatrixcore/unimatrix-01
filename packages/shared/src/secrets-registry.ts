@@ -88,6 +88,13 @@ export const CLERK_PUBLISHABLE_KEY_SECRET = {
     "Clerk's browser SDK in apps/admin and apps/auth, inlined at image build, and apps/api's Clerk client. Public — it ships in those two bundles. A wrong value makes sign-in fail on both SPAs, and mismatches the API's instance.",
 } as const satisfies SecretRegistryEntry;
 
+export const CANVAS_ACCESS_TOKEN_SECRET = {
+  name: "integrations/canvas/access-token",
+  tier: "integration",
+  consumedBy:
+    "Canvas account verification and read-only workflows. Missing, rejected or wrong-account credentials deny Canvas reads.",
+} as const satisfies SecretRegistryEntry;
+
 /**
  * What the system expects to exist. The admin console lists this union'd with
  * whatever the store actually holds, so a credential the running code needs
@@ -104,16 +111,13 @@ export const SECRET_REGISTRY: readonly SecretRegistryEntry[] = [
   CLERK_SECRET_KEY_SECRET,
   CLERK_JWT_KEY_SECRET,
   CLERK_PUBLISHABLE_KEY_SECRET,
+  CANVAS_ACCESS_TOKEN_SECRET,
 ];
 
 /**
  * Inventory of integration-tier names. Consumers select their required
  * registry entries separately; inventory membership does not grant access.
  *
- * Written `map` then `filter` rather than the more obvious `filter` then
- * `map`, because with the integration tier empty the second callback of that
- * order never runs and the package's 100% function-coverage floor fails on a
- * correct implementation.
  */
 export function integrationSecretNames(): readonly string[] {
   return SECRET_REGISTRY.map((entry) => entry.name).filter(
