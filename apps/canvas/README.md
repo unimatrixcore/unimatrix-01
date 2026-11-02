@@ -1,8 +1,10 @@
-# Synthetic caller proof
+# Canvas connection and synthetic caller proof
 
-This service returns fixed synthetic courses through API-key HTTP routes and OAuth MCP
-tools. Both adapters call the same functions in process. `connection: "synthetic"` describes
-the fixture, not a usable school connection.
+The protected `GET /api/v1/connection` and `canvas_connection_status` tool read the
+Admin-managed integration credential and verify the configured Canvas account. The courses
+and original status operations still return fixed synthetic data for caller verification.
+Both interfaces call the same in-process connection. `connection: "synthetic"` describes
+the caller-proof fixture.
 
 Build dependencies with `pnpm exec turbo run --concurrency=1 build --filter=@unimatrix/canvas-app...`,
 then run `pnpm --filter @unimatrix/canvas-app start` with environment supplied by the operator.
@@ -12,6 +14,10 @@ Required boot settings:
 
 | Setting | Value |
 | --- | --- |
+| `CANVAS_USER_ID` | Exact positive decimal Canvas user ID, independent of the Clerk subject; preserve it as a string |
+| `SECRETS_BASE_URL` | HTTPS origin of the private secrets service |
+| `SECRETS_CANVAS_READ_TOKEN` | Dedicated store token with `read` capability scoped to `integrations/canvas/` |
+| `SECRETS_TLS_CERT_BASE64` | Base64 PEM certificate pinned for the secrets service, with matching hostname |
 | `CANVAS_OWNER_USER_ID` | Stable Clerk `user_…` subject |
 | `CANVAS_RESOURCE_URL` | Canonical external HTTPS URL ending in `/mcp` |
 | `CANVAS_ALLOWED_HOSTS` | Comma-separated hostnames, including the resource hostname |
@@ -42,6 +48,40 @@ audience, signed scopes, and online verification. Opaque tokens fail closed. The
 found that an already-issued JWT remains usable after its refresh grant is revoked; see
 [the acceptance evidence](PROOF.md) before adding coursework workflows. Changing provider,
 token format or substituting local keys requires an owner decision.
+
+## Connection access and replacement
+
+Provision and rotate `integrations/canvas/access-token` through Admin Secrets, in the
+Integrations tier. Preserve the existing entry's name. Issue the bootstrap store token
+using the secrets service's `service-token issue` command with a distinct operator name,
+`--scope integrations/canvas/ --capability read`; deliver its output through deployment
+secret configuration. Never use an Admin management token or the API's integration-read
+token here. Token scope is enforced by the store; Canvas requests only the declared name.
+The bootstrap token, Clerk caller credentials and Canvas access token have separate
+revocation paths.
+
+Every connection operation reads the current value and calls the fixed HTTPS
+`https://learn.maricopa.edu/api/v1/users/self` endpoint, requesting string IDs and rejecting
+redirects. The returned ID must equal `CANVAS_USER_ID`. No Canvas credential or account
+verification is cached between operations. The domain connection retains only a keyed
+in-memory fingerprint to invalidate future content caches when the value changes; neither
+the fingerprint nor credential is returned. Cache callbacks run after current store access
+and account verification, including on content-cache hits. Operations share serial admission
+and a ten-second deadline, including queue time.
+
+`/health` reports process liveness independently. Caller authentication failures remain
+401/403. Connection errors use safe codes: `CREDENTIAL_DENIED`, `CREDENTIAL_MISSING` and
+`CREDENTIAL_UNAVAILABLE` (503), `CANVAS_ACCOUNT_MISMATCH` (409), and upstream rejection,
+unavailability or malformed-response errors (502). MCP tool errors carry the same codes.
+A store 404 can mean either absence or an out-of-scope name. Neither response bodies nor
+nested causes from the store or Canvas are exposed. Recovery requires repairing the scoped
+store token, rotating the Canvas entry, or correcting the configured account binding;
+there is no second token-entry UI.
+
+Local synthetic responses exercise replacement, mismatched accounts, expiry/revocation,
+store denial and serialization. Actual Canvas permissions remain unverified until authorized
+representative live reads and comparison with the owner's Canvas UI. Deployment and school
+API requests require their separate release task.
 
 ## External acceptance
 

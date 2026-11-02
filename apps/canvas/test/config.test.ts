@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { rootCertificates } from "node:tls";
 
 import { loadCanvasConfig } from "../src/config.js";
 
 export const syntheticEnv = {
+  CANVAS_USER_ID: "9007199254740993123",
+  SECRETS_BASE_URL: "https://secrets:3001/",
+  SECRETS_CANVAS_READ_TOKEN: "synthetic-canvas-store-reader",
+  SECRETS_TLS_CERT_BASE64: Buffer.from(rootCertificates[0]!).toString("base64"),
   CANVAS_OWNER_USER_ID: "user_synthetic_owner",
   CANVAS_RESOURCE_URL: "https://canvas.example/mcp",
   CANVAS_ALLOWED_HOSTS: "canvas.example,127.0.0.1",
@@ -24,6 +29,11 @@ void test("requires explicit owner, resource, allowlists and Clerk configuration
 
 void test("rejects malformed owner and resource configuration without echoing input", () => {
   const cases = [
+    ["CANVAS_USER_ID", "1.5"],
+    ["CANVAS_USER_ID", "9007199254740993123bad"],
+    ["SECRETS_BASE_URL", "http://secrets:3001/"],
+    ["SECRETS_BASE_URL", "https://secrets:3001/other"],
+    ["SECRETS_TLS_CERT_BASE64", "invalid-certificate"],
     ["CANVAS_OWNER_USER_ID", "org_wrong"],
     ["CANVAS_OWNER_USER_ID", "user_has whitespace"],
     ["CANVAS_RESOURCE_URL", "http://canvas.example/mcp"],

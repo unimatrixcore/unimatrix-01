@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { request, type IncomingHttpHeaders } from "node:http";
 import test from "node:test";
+import { rootCertificates } from "node:tls";
 import type { ServicePrincipal } from "@unimatrix/auth";
+import { SecretValue, SecretsClientError } from "@unimatrix/secrets/client";
 import { AuthError, type ServiceCallerVerifier } from "@unimatrix/auth/server";
 import { canvasSyntheticCoursesSchema, canvasSyntheticStatusSchema } from "@unimatrix/shared";
 
@@ -9,6 +11,10 @@ import { buildApp } from "../src/app.js";
 import { loadCanvasConfig } from "../src/config.js";
 
 const config = loadCanvasConfig({
+  CANVAS_USER_ID: "9007199254740993123",
+  SECRETS_BASE_URL: "https://secrets:3001/",
+  SECRETS_CANVAS_READ_TOKEN: "synthetic-canvas-store-reader",
+  SECRETS_TLS_CERT_BASE64: Buffer.from(rootCertificates[0]!).toString("base64"),
   CANVAS_OWNER_USER_ID: "user_synthetic_owner",
   CANVAS_RESOURCE_URL: "https://canvas.example/mcp",
   CANVAS_ALLOWED_HOSTS: "canvas.example,127.0.0.1",
@@ -68,7 +74,37 @@ async function fixture(t: { after: (cleanup: () => Promise<void>) => void }) {
     verifyApiKeyCaller: verify("api_key"),
     verifyOAuthCaller: verify("oauth_token"),
   };
-  const app = buildApp(config, { verifier, logger: false });
+  const store = {
+    value: "synthetic-canvas-token",
+    failure: null as Error | null,
+    reads: [] as string[],
+  };
+  const upstream = { id: config.canvasUserId, status: 200, calls: 0 };
+  const app = buildApp(config, {
+    verifier,
+    logger: false,
+    secretsClient: {
+      getSecretValue: (name) => {
+        store.reads.push(name);
+        if (store.failure) return Promise.reject(store.failure);
+        return Promise.resolve(new SecretValue(store.value));
+      },
+    },
+    canvasFetch: (url, init) => {
+      upstream.calls++;
+      assert.equal(
+        url instanceof Request ? url.url : url.toString(),
+        "https://learn.maricopa.edu/api/v1/users/self",
+      );
+      assert.equal(init?.redirect, "error");
+      assert.equal(new Headers(init?.headers).get("authorization"), `Bearer ${store.value}`);
+      return Promise.resolve(
+        new globalThis.Response(JSON.stringify({ id: upstream.id }), {
+          status: upstream.status,
+        }),
+      );
+    },
+  });
   t.after(() => app.close());
   await app.listen({ host: "127.0.0.1", port: 0 });
   const address = app.server.address();
@@ -151,7 +187,7 @@ async function fixture(t: { after: (cleanup: () => Promise<void>) => void }) {
         : {},
     );
   }
-  return { app, send, mcp, records, calls, failures };
+  return { app, send, mcp, records, calls, failures, store, upstream };
 }
 
 function decoded(response: Response): unknown {
@@ -399,4 +435,61 @@ void test("rejects untrusted MCP hosts and origins while admitting clients witho
     403,
   );
   assert.equal((await mcp("tools/list", {}, "oauth-full")).status, 200);
+});
+
+void test("connection status rereads the Admin credential through HTTP and MCP", async (t) => {
+  const { send, mcp, store, upstream } = await fixture(t);
+  assert.equal((await send("/api/v1/connection")).status, 401);
+  assert.equal(store.reads.length, 0);
+  assert.deepEqual(decoded(await send("/api/v1/connection", "api-full")), {
+    connection: "connected",
+  });
+  store.value = "replacement-canvas-token";
+  const response = result(
+    await mcp("tools/call", { name: "canvas_connection_status", arguments: {} }, "oauth-full"),
+  );
+  assert.deepEqual(response.structuredContent, { connection: "connected" });
+  assert.deepEqual(store.reads, [
+    "integrations/canvas/access-token",
+    "integrations/canvas/access-token",
+  ]);
+  assert.equal(upstream.calls, 2);
+  upstream.id = "9007199254740993999";
+  const mismatch = await send("/api/v1/connection", "api-full");
+  assert.equal(mismatch.status, 409);
+  assert.match(mismatch.text, /CANVAS_ACCOUNT_MISMATCH/);
+  assert.ok(!mismatch.text.includes(store.value));
+  assert.ok(!mismatch.text.includes(upstream.id));
+});
+
+void test("store failures and upstream rejection remain distinct from caller auth and liveness", async (t) => {
+  const { send, mcp, store, upstream } = await fixture(t);
+  for (const [status, code] of [
+    [403, "CREDENTIAL_DENIED"],
+    [404, "CREDENTIAL_MISSING"],
+    [500, "CREDENTIAL_UNAVAILABLE"],
+  ] as const) {
+    store.failure = new SecretsClientError("private-store-error", { status });
+    const http = await send("/api/v1/connection", "api-full");
+    assert.equal(http.status, 503);
+    assert.match(http.text, new RegExp(code));
+    const tool = result(
+      await mcp("tools/call", { name: "canvas_connection_status", arguments: {} }, "oauth-full"),
+    );
+    assert.equal(tool.isError, true);
+    assert.match(JSON.stringify(tool), new RegExp(code));
+    for (const serialized of [http.text, JSON.stringify(tool)]) {
+      assert.ok(!serialized.includes("private-store-error"));
+      assert.ok(!serialized.includes(store.value));
+    }
+  }
+  assert.equal(upstream.calls, 0);
+  store.failure = null;
+  for (const status of [401, 403]) {
+    upstream.status = status;
+    const rejected = await send("/api/v1/connection", "api-full");
+    assert.equal(rejected.status, 502);
+    assert.match(rejected.text, /CANVAS_CREDENTIAL_REJECTED/);
+  }
+  assert.deepEqual(decoded(await send("/health")), { status: "ok" });
 });

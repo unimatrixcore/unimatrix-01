@@ -1,9 +1,14 @@
+import { X509Certificate } from "node:crypto";
 import { isIP } from "node:net";
 
 export interface CanvasConfig {
   host: string;
   port: number;
   ownerUserId: string;
+  canvasUserId: string;
+  secretsBaseUrl: string;
+  secretsReadToken: string;
+  secretsCertificatePem: string;
   resource: string;
   allowedHosts: string[];
   allowedOrigins: string[];
@@ -46,6 +51,20 @@ function hostnames(env: NodeJS.ProcessEnv, name: string): string[] {
 }
 
 export function loadCanvasConfig(env: NodeJS.ProcessEnv = process.env): CanvasConfig {
+  const canvasUserId = required(env, "CANVAS_USER_ID");
+  if (!/^[1-9][0-9]*$/u.test(canvasUserId)) throw new Error("Invalid CANVAS_USER_ID.");
+  const secretsBaseUrl = httpsUrl(env, "SECRETS_BASE_URL");
+  if (secretsBaseUrl.pathname !== "/") throw new Error("Invalid SECRETS_BASE_URL.");
+  const encodedCertificate = required(env, "SECRETS_TLS_CERT_BASE64");
+  let secretsCertificatePem: string;
+  try {
+    const certificate = Buffer.from(encodedCertificate, "base64");
+    if (certificate.toString("base64") !== encodedCertificate) throw new Error();
+    secretsCertificatePem = certificate.toString("utf8");
+    new X509Certificate(secretsCertificatePem);
+  } catch {
+    throw new Error("Invalid SECRETS_TLS_CERT_BASE64.");
+  }
   const ownerUserId = required(env, "CANVAS_OWNER_USER_ID");
   if (!/^user_\S+$/u.test(ownerUserId)) throw new Error("Invalid CANVAS_OWNER_USER_ID.");
   const resource = httpsUrl(env, "CANVAS_RESOURCE_URL");
@@ -72,6 +91,10 @@ export function loadCanvasConfig(env: NodeJS.ProcessEnv = process.env): CanvasCo
     host,
     port,
     ownerUserId,
+    canvasUserId,
+    secretsBaseUrl: secretsBaseUrl.href,
+    secretsReadToken: required(env, "SECRETS_CANVAS_READ_TOKEN"),
+    secretsCertificatePem,
     resource: resource.href,
     allowedHosts,
     allowedOrigins,
