@@ -22,7 +22,7 @@ export interface BuildApiAppOptions {
   loggerStream?: ApiLoggerStream;
   /** Test seam: the `fetch` the integration-credentials plugin uses instead of the global. */
   secretsFetch?: typeof globalThis.fetch;
-  /** Test seam: the integration names to fetch instead of the registry's. */
+  /** Test seam: the integration names to fetch instead of the API consumer's. */
   integrationNames?: readonly string[];
 }
 

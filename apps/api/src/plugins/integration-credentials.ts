@@ -1,6 +1,6 @@
 import { createSecretsClient, SecretsClientError } from "@unimatrix/secrets/client";
 import type { SecretValue } from "@unimatrix/secrets";
-import { integrationSecretNames, secretNameSchema } from "@unimatrix/shared";
+import { secretNameSchema } from "@unimatrix/shared";
 import type { SecretRegistryEntry } from "@unimatrix/shared";
 import type { FastifyInstance } from "fastify";
 
@@ -37,12 +37,9 @@ declare module "fastify" {
 }
 
 export interface SetupIntegrationCredentialsOptions {
+  entries: readonly SecretRegistryEntry[];
   fetch?: typeof globalThis.fetch;
-  /**
-   * Test seam: the names to fetch instead of `integrationSecretNames()`. The
-   * registry's integration tier is empty, so nothing else can exercise the
-   * refresh bucketing this plugin exists for. Production passes nothing.
-   */
+  /** Test seam: names to fetch instead of the consumer's required entries. */
   names?: readonly string[];
 }
 
@@ -62,13 +59,12 @@ const BOOT_DEADLINE_MS = 10_000;
  * configured — following `setupAuth`'s no-op shape rather than decorating an
  * always-empty `get()` that would read as configured when it is not.
  *
- * The names come from `SECRET_REGISTRY`'s integration tier, not from env: a
- * tier is a property of a name rather than of an environment, and the prose
- * the console shows before a destructive action cannot live in a comma-list.
+ * The consumer supplies its required registry entries. Registry inventory
+ * alone must never grant a service access to another consumer's credentials.
  */
 export function setupIntegrationCredentials(
   app: FastifyInstance,
-  options: SetupIntegrationCredentialsOptions = {},
+  options: SetupIntegrationCredentialsOptions,
 ): void {
   const { secretsStore } = app.runtimeConfig;
 
@@ -79,7 +75,7 @@ export function setupIntegrationCredentials(
     return;
   }
 
-  const names = options.names ?? integrationSecretNames();
+  const names = options.names ?? options.entries.map((entry) => entry.name);
 
   // Loud and immediate rather than a per-refresh 404 the store would report
   // as `denied`. `packages/shared`'s own test asserts this over the whole
