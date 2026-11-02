@@ -116,7 +116,7 @@ The packages below sit deliberately below `latest`. Each has a reason that is no
 - **Never add self-hosted Actions runners on the owner's hardware** — this repo is public, so fork PRs would execute untrusted code on the home lab. `check-runner-labels.mjs` allowlists GitHub-hosted labels by shape and fails everything else, a paid vendor's runner included: standard runners are free and unmetered on a public repo, so admitting one is a vendor decision and takes an edit to that file
 - Pin third-party actions to a commit SHA with the version in a trailing comment
 - Adding a Dockerfile means adding it to CI's `Images` matrix **and** to the required checks, or it is unverified
-- **A passing bot check does not prove a review ran.** Follow `.agents/skills/ship-pr/SKILL.md`: CodeRabbit is the default reviewer; when it is rate limited, request real Codex Code Review on the PR with `@codex review` and wait for completion.
+- Follow `.agents/skills/ship-pr/SKILL.md` for the PR review limit, reviewer priority, and rate-limit fallback. A passing bot check does not prove a review ran.
 - Dependabot and CI mechanics — cooldowns, the `engines.node` trap that silently disabled npm updates, `minimumReleaseAge`, the `Images` matrix rationale — are in `.github/AGENTS.md`. Read it before editing anything Dependabot or CI reads
 
 ## Git And PR Rules
