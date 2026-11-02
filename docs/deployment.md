@@ -323,7 +323,7 @@ host-level investigation even when the container changed. Expired intents with n
 release automatically. Do not delete unresolved records merely to unblock CI. Out-of-band Dokploy
 edits and `secrets-apply` must be kept outside the execution window.
 
-Service rollback, CI supersession and production ingress have not been exercised live. Before
+Service rollback and CI supersession have not been exercised live. Before
 activation, run a controlled rollback, verify sibling tags remain unchanged, retry the same request,
 and confirm a subsequent CI deployment replaces the rollback target. Local tests use simulated
 Dokploy responses; they do not establish production reachability or Docker pull behavior.

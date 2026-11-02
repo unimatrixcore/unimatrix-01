@@ -255,7 +255,7 @@ export function Overview({
           <div
             ref={recentHistoryRef}
             aria-label="Recent deploy history"
-            className="-mx-4 h-0 min-h-40 flex-1 overflow-hidden"
+            className={cn("-mx-4 h-0 flex-1 overflow-hidden", attempts.length > 0 && "min-h-40")}
             role="region"
           >
             <ul>
@@ -263,7 +263,7 @@ export function Overview({
                 const tone = attemptTone(attempt);
                 return (
                   <li
-                    className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-1 border-b border-border/60 px-5 py-3 hover:bg-muted/40 sm:flex sm:gap-4"
+                    className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 border-b border-border/60 px-5 py-3 hover:bg-muted/40 sm:flex sm:gap-4"
                     key={attempt.id}
                   >
                     <span
@@ -287,9 +287,10 @@ export function Overview({
                     </span>
                     <span
                       className={cn(
-                        "col-start-3 row-start-1 shrink-0 text-xs",
+                        "col-start-3 row-start-1 min-w-0 truncate text-xs",
                         STATUS_TEXT_CLASSES[tone],
                       )}
+                      title={outcomeLabel(attempt)}
                     >
                       {outcomeLabel(attempt)}
                     </span>
