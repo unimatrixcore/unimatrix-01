@@ -1,0 +1,48 @@
+{
+  "name": "@unimatrix/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Authenticated reusable MCP tools and Streamable HTTP hosting.",
+  "license": "MIT",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./fastify": {
+      "types": "./dist/fastify.d.ts",
+      "default": "./dist/fastify.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "@unimatrix/config-eslint": "workspace:*",
+    "@unimatrix/config-typescript": "workspace:*",
+    "@unimatrix/config-vitest": "workspace:*",
+    "@vitest/coverage-v8": "^5.0.1",
+    "eslint": "^10.8.1",
+    "fastify": "^5.12.6",
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.1"
+  },
+  "peerDependencies": {
+    "fastify": "^5.12.6"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "^2.4.0",
+    "@modelcontextprotocol/node": "^2.1.2",
+    "@modelcontextprotocol/fastify": "^2.0.1",
+    "@unimatrix/auth": "workspace:*",
+    "zod": "^4.3.6"
+  }
+}

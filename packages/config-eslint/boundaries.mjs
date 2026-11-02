@@ -70,6 +70,7 @@ const ALLOWED_PACKAGE_IMPORTS = {
   "packages/api-client": ["shared"],
   "packages/deploy-client": ["shared"],
   "packages/service-http": [],
+  "packages/mcp": ["auth"],
   // Env validation for the Vite apps' config boundaries. A leaf on purpose:
   // `zod` is its only dependency and stays its implementation detail — apps
   // compose schemas through `envSchema` instead of importing zod themselves.

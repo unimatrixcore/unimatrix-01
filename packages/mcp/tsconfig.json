@@ -1,0 +1,9 @@
+{
+  "extends": "@unimatrix/config-typescript/library.json",
+  "compilerOptions": {
+    "composite": false,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts", "vitest.config.ts"]
+}
