@@ -3,6 +3,10 @@ import type { DokployCompose } from "../dokploy/schemas.js";
 
 export const ROUTING_POLICY_PATH = "apps/deploy/src/reconcile/routing-policy.ts";
 
+export const DEPLOY_PRIMARY_HOSTS: Readonly<Record<string, string>> = {
+  cflop: "cflop.us",
+};
+
 export const DEPLOY_ROUTING_HOSTS: Readonly<Record<string, readonly string[]>> = {
   admin: ["admin.unimatrix-01.dev"],
   api: ["api.unimatrix-01.dev"],

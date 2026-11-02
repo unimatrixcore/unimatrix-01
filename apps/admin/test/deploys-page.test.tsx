@@ -235,6 +235,7 @@ beforeEach(() => {
         publicStatus: true,
         dokployUrl: null,
         domains: null,
+        primaryDomain: null,
         metadataObservedAt: null,
         metadataFreshness: "missing",
         container: {
@@ -263,6 +264,7 @@ beforeEach(() => {
         publicStatus: false,
         dokployUrl: null,
         domains: null,
+        primaryDomain: null,
         metadataObservedAt: null,
         metadataFreshness: "missing",
         container: {
@@ -317,6 +319,39 @@ beforeEach(() => {
 });
 
 describe("DeploysPage", () => {
+  it.each([false, true])(
+    "links the selected primary domain regardless of observed order (%s)",
+    async (reverse) => {
+      const primaryDomain = { host: "cflop.us", https: true, port: 80, path: "/" };
+      const compatibilityDomain = { ...primaryDomain, host: "cflop.unimatrix-01.dev" };
+      state.apps[0] = {
+        ...state.apps[0]!,
+        appDir: "cflop",
+        domains: reverse
+          ? [primaryDomain, compatibilityDomain]
+          : [compatibilityDomain, primaryDomain],
+        primaryDomain,
+      };
+      mount();
+      fireEvent.click(await screen.findByRole("button", { name: "Select cflop" }));
+      expect(await screen.findByRole("link", { name: "cflop.us" })).toHaveAttribute(
+        "href",
+        "https://cflop.us/",
+      );
+      expect(
+        screen.queryByRole("link", { name: compatibilityDomain.host }),
+      ).not.toBeInTheDocument();
+    },
+  );
+
+  it("shows an unknown domain when the primary domain is unavailable", async () => {
+    state.apps[0]!.domains = [{ host: "cflop.unimatrix-01.dev", https: true, port: 80, path: "/" }];
+    mount();
+    await ready();
+    expect(screen.getByText("Domain unknown")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "cflop.unimatrix-01.dev" })).not.toBeInTheDocument();
+  });
+
   it("warms unselected service details without fetching logs or restarting on fleet polls", async () => {
     const queryClient = mount();
     await ready();

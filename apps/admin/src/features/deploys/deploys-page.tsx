@@ -542,21 +542,21 @@ export function DeploysPage() {
                         ·
                       </span>
                       <span className="inline-flex h-5 items-center gap-1.5">
-                        {app.domains?.length ? (
+                        {app.primaryDomain ? (
                           <RiGlobalLine aria-hidden="true" className="size-3.5" />
                         ) : (
                           <RiServerLine aria-hidden="true" className="size-3.5" />
                         )}
-                        {app.domains == null ? (
+                        {app.domains == null || (app.domains.length > 0 && !app.primaryDomain) ? (
                           "Domain unknown"
-                        ) : app.domains[0] ? (
+                        ) : app.primaryDomain ? (
                           <a
                             className="inline-flex items-center gap-1 text-foreground underline decoration-border underline-offset-4 hover:decoration-foreground"
                             target="_blank"
                             rel="noreferrer"
-                            href={`${app.domains[0].https ? "https" : "http"}://${app.domains[0].host}${app.domains[0].path ?? "/"}`}
+                            href={`${app.primaryDomain.https ? "https" : "http"}://${app.primaryDomain.host}${app.primaryDomain.path ?? "/"}`}
                           >
-                            {app.domains[0].host}
+                            {app.primaryDomain.host}
                             <RiExternalLinkLine aria-hidden="true" className="size-3" />
                           </a>
                         ) : (

@@ -2,10 +2,11 @@ import type { DeployStateResponse } from "@unimatrix/shared";
 
 import type { DokployClient } from "../dokploy/client.js";
 import { findComposeMatches } from "../reconcile/diff.js";
+import { DEPLOY_PRIMARY_HOSTS } from "../reconcile/routing-policy.js";
 
 type ServiceMetadata = Pick<
   DeployStateResponse["apps"][number],
-  "dokployUrl" | "domains" | "metadataObservedAt" | "metadataFreshness"
+  "dokployUrl" | "domains" | "primaryDomain" | "metadataObservedAt" | "metadataFreshness"
 >;
 
 export async function readServiceMetadata(
@@ -32,9 +33,15 @@ export async function readServiceMetadata(
           )
             return;
           const path = `/dashboard/project/${encodeURIComponent(match.projectId)}/environment/${encodeURIComponent(compose.environmentId)}/services/compose/${encodeURIComponent(compose.composeId)}`;
+          const primaryHost = DEPLOY_PRIMARY_HOSTS[app];
+          const primaryDomain =
+            primaryHost === undefined
+              ? compose.domains?.[0]
+              : compose.domains?.find((domain) => domain.host.toLowerCase() === primaryHost);
           metadata.set(app, {
             dokployUrl: publicUrl == null ? null : new URL(path, publicUrl).href,
             domains: compose.domains ?? null,
+            primaryDomain: primaryDomain ?? null,
             metadataObservedAt: now(),
             metadataFreshness: "fresh",
           });
