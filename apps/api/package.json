@@ -22,6 +22,7 @@
     "@unimatrix/db": "workspace:*",
     "@unimatrix/deploy-client": "workspace:*",
     "@unimatrix/secrets": "workspace:*",
+    "@unimatrix/service-http": "workspace:*",
     "@unimatrix/shared": "workspace:*",
     "drizzle-orm": "^0.45.1",
     "fastify": "^5.12.6",

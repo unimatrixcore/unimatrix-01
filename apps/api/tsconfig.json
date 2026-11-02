@@ -11,6 +11,7 @@
       "@unimatrix/deploy-config": ["../../packages/deploy-config/src/index.ts"],
       "@unimatrix/secrets": ["../../packages/secrets/src/index.ts"],
       "@unimatrix/secrets/client": ["../../packages/secrets/src/client.ts"],
+      "@unimatrix/service-http": ["../../packages/service-http/src/index.ts"],
       "@unimatrix/shared": ["../../packages/shared/src/index.ts"]
     },
     "types": ["node"]
