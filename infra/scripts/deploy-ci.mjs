@@ -154,6 +154,13 @@ export async function deployCi({
       .split(",")
       .some((capability) => capability.trim() === "commit-subject-v1");
   await health.response?.body?.cancel().catch(() => undefined);
+  if (!supportsCommitSubject) {
+    log(
+      health.result === "acknowledged"
+        ? "::warning::Deploy service did not advertise commit-subject-v1; commit subjects will be unavailable."
+        : `::warning::Deploy capability read failed (HTTP ${health.status}); commit subjects will be unavailable. Check GET /health ingress access.`,
+    );
+  }
   const projectResult = await call("/api/project.all");
   if (projectResult.result !== "acknowledged") throw new Error("Dokploy project discovery failed.");
   let projects;

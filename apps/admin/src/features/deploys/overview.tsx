@@ -11,6 +11,7 @@ import {
   RiTimeLine,
   RiUploadCloud2Line,
 } from "@remixicon/react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type {
   DeployAttemptRecord,
   DeployHealthHistoryResponse,
@@ -172,6 +173,32 @@ export function Overview({
   onTab,
   onAttempt,
 }: OverviewProps) {
+  const recentHistoryRef = useRef<HTMLDivElement>(null);
+  const recentRowHeight = useRef(0);
+  const [visibleAttempts, setVisibleAttempts] = useState<number | null>(null);
+  const firstAttemptId = attempts[0]?.id;
+  const hasVisibleAttempts = visibleAttempts !== 0;
+  useLayoutEffect(() => {
+    const history = recentHistoryRef.current;
+    if (!history) return;
+    const row = history.querySelector("li");
+    const measure = () => {
+      const rowHeight = row?.getBoundingClientRect().height ?? 0;
+      if (rowHeight > 0) {
+        recentRowHeight.current = rowHeight;
+      }
+      if (recentRowHeight.current > 0) {
+        setVisibleAttempts(Math.floor(history.clientHeight / recentRowHeight.current));
+      }
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(history);
+    if (row) observer.observe(row);
+    return () => {
+      observer.disconnect();
+    };
+  }, [attempts.length, firstAttemptId, hasVisibleAttempts]);
   const now = Date.now();
   const summary = reconciliation ? reconciliationSummary(reconciliation, app.appDir) : null;
   const result = reconciliation?.results.find((entry) => entry.appDir === app.appDir);
@@ -225,51 +252,66 @@ export function Overview({
             />
           }
         >
-          <ul className="divide-y divide-border/60">
-            {attempts.slice(0, 4).map((attempt) => {
-              const tone = attemptTone(attempt);
-              return (
-                <li
-                  className="-mx-4 flex w-[calc(100%+2rem)] min-w-0 items-center gap-4 px-5 py-3 hover:bg-muted/40"
-                  key={attempt.id}
-                >
-                  <span
-                    aria-hidden="true"
-                    className={cn("size-2 shrink-0 rounded-full", STATUS_DOT_CLASSES[tone])}
-                  />
-                  <span
-                    className="w-20 shrink-0 font-mono text-xs text-foreground"
-                    title={attempt.image?.tag}
+          <div
+            ref={recentHistoryRef}
+            aria-label="Recent deploy history"
+            className="-mx-4 h-0 min-h-40 flex-1 overflow-hidden"
+            role="region"
+          >
+            <ul>
+              {attempts.slice(0, visibleAttempts ?? attempts.length).map((attempt) => {
+                const tone = attemptTone(attempt);
+                return (
+                  <li
+                    className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-1 border-b border-border/60 px-5 py-3 hover:bg-muted/40 sm:flex sm:gap-4"
+                    key={attempt.id}
                   >
-                    {attempt.image ? shortTag(attempt.image.tag) : "Configured"}
-                  </span>
-                  <span
-                    className="min-w-0 flex-1 truncate text-xs text-muted-foreground"
-                    title={attempt.commitSubject ?? undefined}
-                  >
-                    {attempt.commitSubject ?? "Commit subject unavailable"}
-                  </span>
-                  <span className={cn("shrink-0 text-xs", STATUS_TEXT_CLASSES[tone])}>
-                    {outcomeLabel(attempt)}
-                  </span>
-                  <span className="w-16 shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground">
-                    {relativeAge(attempt.requestedAt, now)}
-                  </span>
-                  <Button
-                    aria-label={`Log for ${attempt.image ? shortTag(attempt.image.tag) : "configured image"}`}
-                    className="size-6 shrink-0"
-                    onClick={() => {
-                      onAttempt(attempt.id);
-                    }}
-                    size="icon-sm"
-                    variant="ghost"
-                  >
-                    <RiTerminalBoxLine aria-hidden="true" className="size-4" />
-                  </Button>
-                </li>
-              );
-            })}
-          </ul>
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        "row-span-2 size-2 shrink-0 rounded-full",
+                        STATUS_DOT_CLASSES[tone],
+                      )}
+                    />
+                    <span
+                      className="min-w-0 truncate font-mono text-xs text-foreground sm:w-20 sm:shrink-0"
+                      title={attempt.image?.tag}
+                    >
+                      {attempt.image ? shortTag(attempt.image.tag) : "Configured"}
+                    </span>
+                    <span
+                      className="col-start-2 row-start-2 min-w-0 flex-1 truncate text-xs text-muted-foreground"
+                      title={attempt.commitSubject ?? undefined}
+                    >
+                      {attempt.commitSubject ?? "Commit subject unavailable"}
+                    </span>
+                    <span
+                      className={cn(
+                        "col-start-3 row-start-1 shrink-0 text-xs",
+                        STATUS_TEXT_CLASSES[tone],
+                      )}
+                    >
+                      {outcomeLabel(attempt)}
+                    </span>
+                    <span className="col-start-3 row-start-2 shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground sm:w-16">
+                      {relativeAge(attempt.requestedAt, now)}
+                    </span>
+                    <Button
+                      aria-label={`Log for ${attempt.image ? shortTag(attempt.image.tag) : "configured image"}`}
+                      className="col-start-4 row-span-2 row-start-1 size-6 shrink-0"
+                      onClick={() => {
+                        onAttempt(attempt.id);
+                      }}
+                      size="icon-sm"
+                      variant="ghost"
+                    >
+                      <RiTerminalBoxLine aria-hidden="true" className="size-4" />
+                    </Button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
           {!attempts.length ? (
             <p className="text-sm text-muted-foreground">
               {historyState === "ready"

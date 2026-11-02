@@ -252,7 +252,9 @@ choose its own trusted identity. No env blob, credential, raw Dokploy response o
 text belongs in an attempt. Shared HTTP contracts use static paths with validated bodies/queries.
 The restricted authenticated ingress from GitHub-hosted CI requires provisioning and reachability
 verification before activation; permit only the CI intent and execution mutations plus
-`GET /deployment/baselines` for planning. Keep other internal reads and rollback inaccessible
+`GET /deployment/baselines` for planning and `GET /health` for capability negotiation.
+Install [the restricted router](../infra/traefik/unimatrix-deploy-ci.yml) in the host's
+`/etc/dokploy/traefik/dynamic/` directory. Keep other internal reads and rollback inaccessible
 through that ingress.
 
 **Landed requires both a changed container ID and an exact immutable image match.** Store the
