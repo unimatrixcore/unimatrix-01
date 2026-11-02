@@ -109,10 +109,28 @@ app at a different API origin or Clerk instance means editing its
 
 ## Published GHCR images
 
-CI's `Publish` job (`.github/workflows/ci.yml`) builds every `apps/*/Dockerfile`
-with no build args and pushes it to `ghcr.io/unimatrixcore/unimatrix-<app>` on
-every push to `main`, tagged with the commit SHA and a moving `main` tag. The
-packages are public, so Dokploy pulls them unauthenticated.
+CI's `Publish` job (`.github/workflows/ci.yml`) builds the affected services' Dockerfiles
+with no build args and pushes them to `ghcr.io/unimatrixcore/unimatrix-<app>` on a
+push to `main`, tagged with the commit SHA and a moving `main` tag. Unaffected services
+retain their published tags and running commit IDs. Manual dispatch publishes the full roster
+under SHA tags without moving `main` or deploying. The packages are public, so Dokploy pulls
+them unauthenticated.
+
+Before publication, `infra/scripts/deploy-plan.mjs` derives workspace dependencies from package
+manifests at both the target commit and each service's verified running commit. It follows
+transitive consumers automatically, including dependency removals; there is no separate service
+dependency list. App files and their Compose file select that app, shared workspace changes
+select their consumers, and unknown or repository-wide build inputs select conservatively.
+Guidance-only changes produce no publications or deployment requests when all services have
+usable baselines and no earlier undeployed changes.
+
+The authenticated `GET /deployment/baselines` read supplies fresh running commit and immutable
+image evidence, withholding a baseline for missing, ambiguous, stale or unresolved work. A missing
+baseline or unavailable Git history selects the service rather than authorizing a skip. Comparing
+against the running commit includes changes from canceled or partially completed releases and
+reflects service-specific rollbacks; comparing only the latest push would miss those changes.
+The retained deployment plan belongs to one commit and workflow attempt, and both Publish and
+Deploy validate and consume that same plan. Required image-build checks still run for every app.
 
 Every `infra/docker/<app>-compose.yaml` declares `image:` and no `build:`, so
 nothing is built on the deploy host: each stack pulls
@@ -151,17 +169,20 @@ version, so this is once per app, not once per deploy.
 
 CI's `Deploy` job (`.github/workflows/ci.yml`) runs after `Publish`, on a push
 to `main` and nowhere else — a `workflow_dispatch` from a feature branch
-publishes a SHA-tagged image but can never point production at it. CI validates each publication
-and reserves every app's attempt through the authenticated deploy service before execution.
-It then calls `POST /deployment/execute` once per app, with `deploy` last. The service resolves
-the declared repository-owned compose service, writes and verifies that service's digest-pinned
+publishes SHA-tagged images but can never point production at them. Before execution, CI
+rechecks the skipped services' baselines against fresh runtime evidence. A changed or unavailable
+baseline stops the run before deployment mutations; create a new plan rather than reuse the stale
+skip decision. CI validates each selected publication and reserves all selected apps' attempts in
+one atomic batch through the authenticated deploy service before execution. An empty selection
+queues nothing. It then calls `POST /deployment/execute` once per selected app, with `deploy` last.
+The service resolves the declared repository-owned compose service, writes and verifies that service's digest-pinned
 `IMAGE_TAG`, and queues `compose.deploy` under the durable attempt ID. CI makes no Dokploy mutations.
 Missing activation or reporting configuration fails closed; there is no direct-write fallback.
 
 Rollback and CI share SQLite reservations per app. Unresolved queueing or uncertain tag writes
 block another request, including after timeout. A rollback changes only the selected service;
-the next main CI deployment replaces its tag with the newly published image after the prior
-attempt resolves. There is no persistent rollback hold. Do not edit Dokploy env or run
+the next main CI deployment affecting that service replaces its tag with the newly published
+image after the prior attempt resolves. There is no persistent rollback hold. Do not edit Dokploy env or run
 `secrets-apply` concurrently with execution: external env writers do not participate in these
 reservations and Dokploy has no conditional env update. Execution requires a baseline less than
 30 seconds old; missing or stale evidence refuses mutations rather than queueing unresolvable work.
@@ -230,7 +251,9 @@ boundary. Read tokens cannot write attempts. The reporter cannot submit a `lande
 choose its own trusted identity. No env blob, credential, raw Dokploy response or arbitrary log
 text belongs in an attempt. Shared HTTP contracts use static paths with validated bodies/queries.
 The restricted authenticated ingress from GitHub-hosted CI requires provisioning and reachability
-verification before activation; it must expose only CI intent and execution mutations, never internal reads or rollback.
+verification before activation; permit only the CI intent and execution mutations plus
+`GET /deployment/baselines` for planning. Keep other internal reads and rollback inaccessible
+through that ingress.
 
 **Landed requires both a changed container ID and an exact immutable image match.** Store the
 requested repository, platform, digest kind and digest separately from display tags and commit metadata. The
@@ -288,8 +311,9 @@ interrupt the request; CI self-deployment remains supported and runs last.
 The service copies the target's image into a new attributed rollback attempt, reserves the app,
 then writes the selected service's digest-pinned tag and queues deployment. Siblings' configured
 tags are unchanged. Queue acknowledgement does not prove landing; verify the recreated container's
-immutable image and health separately. The next main CI deployment resumes normal delivery and
-replaces this service's rollback tag once the outstanding request resolves.
+immutable image and health separately. The next main CI deployment compares against the verified
+running rollback commit and resumes delivery when that service's inputs differ, once the
+outstanding request resolves.
 
 Unknown tag-write or queue results require investigation, never mutation replay. Queued attempts
 remain reserved until matching runtime evidence resolves them; a missed queue callback can require

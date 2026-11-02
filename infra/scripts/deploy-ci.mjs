@@ -1,7 +1,8 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
+import { readDeploymentPlan, verifySkippedBaselines } from "./deploy-plan.mjs";
 
 function required(env, name) {
   if (!env[name]) throw new Error(`Missing ${name}.`);
@@ -73,11 +74,8 @@ export async function deployCi({
     "CF-Access-Client-Id": required(env, "CF_ACCESS_CLIENT_ID"),
     "CF-Access-Client-Secret": required(env, "CF_ACCESS_CLIENT_SECRET"),
   };
-  const apps = readdirSync(resolve(root, "infra/docker"))
-    .filter((name) => name.endsWith("-compose.yaml"))
-    .map((name) => name.slice(0, -13))
-    .sort();
-  if (!apps.length) throw new Error("No compose apps found.");
+  const plan = readDeploymentPlan(root, env);
+  const apps = plan.apps.filter((entry) => entry.deploy).map((entry) => entry.app);
   const publications = new Map();
   {
     required(env, "GITHUB_REPOSITORY");
@@ -143,6 +141,11 @@ export async function deployCi({
       } else if (result.status >= 400 && result.status < 500 && result.status !== 429) break;
     }
     throw new Error("Durable deployment report unavailable.");
+  }
+  await verifySkippedBaselines(plan, env, fetchImpl);
+  if (!apps.length) {
+    log("No affected services; existing images retained. No deployment writes requested.");
+    return;
   }
   const health = await call("/health", undefined, true);
   const supportsCommitSubject =

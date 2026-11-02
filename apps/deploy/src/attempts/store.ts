@@ -51,6 +51,7 @@ const cancelUnusedCiSchema = deployAttemptIntentSchema
 export type CancelUnusedCiReservationsInput = z.output<typeof cancelUnusedCiSchema>;
 
 export interface DeploymentAttemptStore {
+  hasUnresolvedWork(app: string, now: number): boolean;
   cancelUnusedCi(input: CancelUnusedCiReservationsInput, now: number): DeployAttemptRecord[];
   intentBatch(
     inputs: readonly DeployAttemptIntent[],
@@ -624,6 +625,9 @@ export function openDeploymentAttemptStore(path: string): DeploymentAttemptStore
           writeRecord(record);
         }
       }),
+      hasUnresolvedWork: db.transaction((app: string, now: number) =>
+        maintain(now).some((record) => record.app === app && hasUnresolvedWork(record)),
+      ),
       list: db.transaction((app: string | undefined, limit: number, now: number) => {
         if (!Number.isInteger(limit) || limit < 1 || limit > 100)
           throw new Error("Invalid deployment history limit.");

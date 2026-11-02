@@ -4,12 +4,14 @@ import { healthModule } from "./health/index.js";
 import { deploymentModule } from "./deployment/index.js";
 import { deploymentAttemptsModule } from "./deployment/attempts.js";
 import { deploymentRedeployModule } from "./deployment/redeploy.js";
+import { deploymentBaselinesModule } from "./deployment/baselines.js";
 
 export const registerModules: FastifyPluginAsync = (app) => {
   app.register(healthModule);
   app.register(deploymentModule);
   app.register(deploymentAttemptsModule);
   app.register(deploymentRedeployModule);
+  app.register(deploymentBaselinesModule);
 
   return Promise.resolve();
 };

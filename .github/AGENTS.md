@@ -61,15 +61,20 @@ this file holds the mechanics, each of which was learned the hard way.
   but only for an app it can classify: a new Vite or Dockerized app satisfies it or the check goes
   red, while an `apps/*` directory with neither `vite.config.ts` nor `Dockerfile` is skipped and
   passes.
-- `Publish` builds and pushes every `apps/*/Dockerfile` to
-  `ghcr.io/unimatrixcore/unimatrix-<app>` on a push to `main` and on `workflow_dispatch` from any
-  branch; only the push-to-`main` path moves the `:main` tag. Its `app: [...]` matrix must match
+- `Publish` builds and pushes affected `apps/*/Dockerfile` images to
+  `ghcr.io/unimatrixcore/unimatrix-<app>` on a push to `main`; manual `workflow_dispatch` publishes
+  all images from any branch. Only the push-to-`main` path moves the `:main` tag.
+  `infra/scripts/deploy-plan.mjs` derives dependencies from current and deployed workspace manifests
+  and compares each service's fresh verified running commit with the target tree. Publish and Deploy
+  consume the same run-bound plan; Deploy revalidates skipped baselines before mutations. Missing
+  provenance or comparison history selects conservatively. CI ingress must allow the authenticated
+  `GET /deployment/baselines` read or every service is selected. The full `app: [...]` matrix must match
   `Images`' — `check-app-wiring.sh` above enforces that across both. It is deliberately not a
   required check: it never runs on `pull_request`, so arming it would create a required check that
   is permanently green on every PR without verifying anything there.
 - `Deploy` follows `Publish` on a push to `main` alone. It reserves durable attempts and requests
   `/deployment/execute`; the deploy service writes each service's `IMAGE_TAG` and queues Dokploy.
-  The next main deployment replaces a service's rollback target. Actions must never fall back to
+  The next affected deployment replaces that service's rollback target. Actions must never fall back to
   project tag writes or direct queue mutations: that would bypass the reservations shared with
   rollback. Missing activation or reporting configuration fails closed. A green `Deploy` proves
   queue acknowledgement, not that the image is serving. The job retains Dokploy credentials only

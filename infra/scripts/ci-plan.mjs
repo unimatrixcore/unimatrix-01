@@ -9,6 +9,32 @@ const tasks = new Set(["build", "lint", "typecheck", "test"]);
 const smokeApps = new Set(["apps/web", "apps/cflop", "apps/status"]);
 const lighthouseApps = new Set(["apps/web", "apps/cflop"]);
 
+export function workspaceFromManifest(path, manifest) {
+  if (typeof manifest.name !== "string" || !/^@unimatrix\/[a-z0-9-]+$/u.test(manifest.name)) {
+    throw new Error(`Invalid workspace name in ${path}/package.json`);
+  }
+  const dependencies = new Set();
+  for (const field of [
+    "dependencies",
+    "devDependencies",
+    "optionalDependencies",
+    "peerDependencies",
+  ]) {
+    const entries = manifest[field];
+    if (entries === undefined) continue;
+    if (
+      !entries ||
+      typeof entries !== "object" ||
+      Array.isArray(entries) ||
+      Object.values(entries).some((version) => typeof version !== "string")
+    ) {
+      throw new Error(`Invalid ${field} in ${path}/package.json`);
+    }
+    for (const name of Object.keys(entries)) dependencies.add(name);
+  }
+  return { name: manifest.name, path, dependencies: [...dependencies] };
+}
+
 export function discoverWorkspaces(repoRoot) {
   const directories = [];
   for (const parent of ["apps", "packages"]) {
@@ -23,35 +49,10 @@ export function discoverWorkspaces(repoRoot) {
   const names = new Set();
   const workspaces = directories.sort().map((path) => {
     const manifest = JSON.parse(readFileSync(join(repoRoot, path, "package.json"), "utf8"));
-    if (typeof manifest.name !== "string" || !/^@unimatrix\/[a-z0-9-]+$/u.test(manifest.name)) {
-      throw new Error(`Invalid workspace name in ${path}/package.json`);
-    }
+    const workspace = workspaceFromManifest(path, manifest);
     if (names.has(manifest.name)) throw new Error(`Duplicate workspace name: ${manifest.name}`);
     names.add(manifest.name);
-    const dependencies = new Set();
-    for (const field of [
-      "dependencies",
-      "devDependencies",
-      "optionalDependencies",
-      "peerDependencies",
-    ]) {
-      const entries = manifest[field];
-      if (entries === undefined) continue;
-      if (
-        !entries ||
-        typeof entries !== "object" ||
-        Array.isArray(entries) ||
-        Object.values(entries).some((version) => typeof version !== "string")
-      ) {
-        throw new Error(`Invalid ${field} in ${path}/package.json`);
-      }
-      for (const name of Object.keys(entries)) dependencies.add(name);
-    }
-    return {
-      name: manifest.name,
-      path,
-      dependencies: [...dependencies],
-    };
+    return workspace;
   });
   if (!workspaces.length) throw new Error("No workspaces found; refusing an empty CI inventory");
   return workspaces;
@@ -78,8 +79,8 @@ export function createCIPlan({ workspaces, changedPaths, fullReason }) {
     ) {
       throw new Error("Invalid changed path in CI comparison");
     }
-    const workspace = workspaces.find((candidate) => path.startsWith(`${candidate.path}/`));
-    if (workspace) selected.add(workspace.name);
+    const owners = workspaces.filter((candidate) => path.startsWith(`${candidate.path}/`));
+    if (owners.length) for (const workspace of owners) selected.add(workspace.name);
     else if (!guidanceOnly(path)) {
       full = true;
       reason ??= `Repository-wide or unknown input changed: ${path}`;
@@ -145,6 +146,7 @@ export function readChangedPaths(repoRoot, base, head) {
     {
       cwd: repoRoot,
       encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
       maxBuffer: 16 * 1024 * 1024,
     },
   )
