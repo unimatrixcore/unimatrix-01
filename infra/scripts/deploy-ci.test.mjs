@@ -584,6 +584,8 @@ test("disabled, missing, or malformed activation never falls back to uncoordinat
 test("batch intents omit unadvertised optional commit-subject fields", async (t) => {
   const fixture = setup(t, ["api", "deploy"]);
   const original = fixture.fetchImpl;
+  const lines = [];
+  fixture.log = (line) => lines.push(line);
   let reservations = 0;
   fixture.fetchImpl = async (url, options) => {
     const path = new URL(url).pathname;
@@ -604,6 +606,12 @@ test("batch intents omit unadvertised optional commit-subject fields", async (t)
   };
   await deployCi(fixture);
   assert.equal(reservations, 1);
+  assert.equal(
+    lines.includes(
+      "::warning::Deploy service did not advertise commit-subject-v1; commit subjects will be unavailable.",
+    ),
+    true,
+  );
   assert.deepEqual(
     fixture.calls.filter(({ path }) => path === "/deployment/execute").map(({ body }) => body.app),
     ["api", "deploy"],
@@ -630,6 +638,40 @@ test("unknown or missing capability headers never authorize optional reservation
     };
     await deployCi(fixture);
     assert.equal(reservations, 1);
+  }
+});
+
+test("inaccessible capability reads warn without exposing response or transport details", async (t) => {
+  for (const status of [302, 404, 503, 0]) {
+    const fixture = setup(t, ["api"]);
+    const original = fixture.fetchImpl;
+    const lines = [];
+    fixture.log = (line) => lines.push(line);
+    fixture.fetchImpl = async (url, options) => {
+      if (new URL(url).pathname === "/health") {
+        if (status === 0) throw new Error("private transport details");
+        return new Response("private response details", {
+          status,
+          headers: { "X-Deploy-Capabilities": "private header details" },
+        });
+      }
+      return original(url, options);
+    };
+    await deployCi(fixture);
+    assert.deepEqual(
+      lines.filter((line) => line.startsWith("::warning::")),
+      [
+        `::warning::Deploy capability read failed (HTTP ${status}); commit subjects will be unavailable. Check GET /health ingress access.`,
+      ],
+    );
+    assert.equal(
+      lines.some((line) => line.includes("private")),
+      false,
+    );
+    assert.equal(
+      fixture.calls.some(({ path }) => path === "/deployment/execute"),
+      true,
+    );
   }
 });
 

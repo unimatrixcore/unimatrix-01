@@ -126,10 +126,12 @@ CI refuses deployment while disabled; it never falls back to direct Dokploy muta
    runs and after replacing the deploy container. Avoid overlapping collector jobs.
 2. Provision a dedicated HTTPS reporting origin behind a Cloudflare Access Service Auth policy.
    Permit only POST `/deployment/attempts/intent`, POST `/deployment/execute` and
-   GET `/deployment/baselines` at the ingress; deny every other path and method, including
+   GET `/deployment/baselines` and GET `/health` at the ingress; deny every other path and method, including
    rollback and reports, before forwarding. Do not route the whole deploy
    service through a generic Domains entry. The origin connection must use pinned HTTPS to
    `deploy:3001`, with hostname verification and the deploy certificate as its trust anchor.
+   Install [the restricted router](../infra/traefik/unimatrix-deploy-ci.yml) in
+   `/etc/dokploy/traefik/dynamic/`, preserving the backend certificate at its declared path.
    Keep internal history, reconciliation, state and token operations unreachable at that origin.
 3. Issue a deploy-owned `manage` token named for CI using the host-local token CLI. Store it as
    Actions secret `DEPLOY_REPORT_TOKEN`; configure the HTTPS origin as repository variable
@@ -137,6 +139,8 @@ CI refuses deployment while disabled; it never falls back to direct Dokploy muta
    application as well. Do not print credentials, request bodies or upstream response bodies.
 4. Exercise the restricted origin from a GitHub-hosted runner: verify the service identity, reject
    anonymous and read-token writes, reject unrelated routes, and read baselines with the CI token.
+   Confirm GET `/health` returns 200 with `X-Deploy-Capabilities: commit-subject-v1`; unavailable
+   capability negotiation omits commit subjects from new attempts even when execution succeeds.
    Confirm only fresh, unique declared image evidence with a commit is returned, and unresolved
    work withholds its app's baseline. Persist an intent without any Dokploy mutation. Repeat it to
    confirm the stable ID; conflict its digest to confirm rejection.
@@ -154,11 +158,11 @@ CI refuses deployment while disabled; it never falls back to direct Dokploy muta
 
 Affected-service planning requires the running deploy image to serve the baselines contract in
 `packages/shared/src/contracts/deployment-baselines.ts` and the restricted ingress to allow its
-exact GET path. Until both are installed, an unavailable baseline read selects all services,
-so the first merge can bootstrap the endpoint through the existing coordinated rollout. Baseline
-access through the production ingress and affected-service retention have not been exercised by
-the local implementation checks. Add the narrow GET allowance and verify them from a GitHub-hosted
-runner before relying on selective deployment; do not broaden access to other internal reads.
+exact GET path. An unavailable baseline read selects all services conservatively.
+The [hosted ingress check](https://github.com/unimatrixcore/unimatrix-01/actions/runs/41539555304)
+returned 200 for authenticated baselines with evidence for every declared service, 401 without
+the deploy token, and 200 for health with the commit-subject capability. Unrelated routes remained
+404. Recheck these boundaries after replacing the router or its authentication configuration.
 
 The reporting origin is `https://deploy-ci.unimatrix-01.dev`, protected by Service Auth for the
 existing GitHub Actions identity. On unimatrix-03, `unimatrix-runtime-evidence.timer` runs the

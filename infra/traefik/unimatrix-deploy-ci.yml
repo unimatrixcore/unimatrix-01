@@ -1,0 +1,22 @@
+http:
+  routers:
+    unimatrix-deploy-ci:
+      rule: "Host(`deploy-ci.unimatrix-01.dev`) && ((Method(`POST`) && (Path(`/deployment/attempts/intent`) || Path(`/deployment/execute`))) || (Method(`GET`) && (Path(`/deployment/baselines`) || Path(`/health`))))"
+      priority: 10000
+      entryPoints:
+        - websecure
+      service: unimatrix-deploy-ci
+      tls:
+        certResolver: letsencrypt
+  services:
+    unimatrix-deploy-ci:
+      loadBalancer:
+        serversTransport: unimatrix-deploy-ci
+        servers:
+          - url: https://deploy:3001
+  serversTransports:
+    unimatrix-deploy-ci:
+      serverName: deploy
+      insecureSkipVerify: false
+      rootCAs:
+        - /etc/dokploy/traefik/dynamic/certs/deploy-ci-backend.pem
