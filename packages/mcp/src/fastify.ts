@@ -6,7 +6,7 @@ import { AuthError, type ServiceCallerVerifier } from "@unimatrix/auth/server";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 
-import { createToolServer, type McpServerOptions } from "./server.js";
+import { createToolServer, validateServerOptions, type McpServerOptions } from "./server.js";
 
 export interface McpRoutesOptions extends McpServerOptions {
   resource: string;
@@ -47,6 +47,7 @@ function safeUrl(value: string, allowLocalhost: boolean): URL {
 
 export function registerMcpRoutes(app: FastifyInstance, options: McpRoutesOptions): void {
   const config = configurationSchema.parse(options);
+  validateServerOptions(options);
   const resource = safeUrl(config.resource, config.allowInsecureLocalhost);
   if (resource.pathname !== "/mcp") throw new Error("MCP resource must use the /mcp path");
   const authorizationServers = config.authorizationServers.map((value) => {
@@ -150,6 +151,9 @@ export function registerMcpRoutes(app: FastifyInstance, options: McpRoutesOption
           throw new Error("MCP principal handoff failed");
         return createToolServer(options, principal);
       });
+      for (const [name, value] of Object.entries(reply.getHeaders())) {
+        if (value !== undefined) reply.raw.setHeader(name, value);
+      }
       reply.hijack();
       try {
         await toNodeHandler(handler)(

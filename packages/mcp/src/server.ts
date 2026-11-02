@@ -123,19 +123,26 @@ export function defineTool<Input extends z.ZodObject, Output extends z.ZodObject
   });
 }
 
-export function createToolServer(
-  options: McpServerOptions,
-  principal: ServicePrincipal,
-): McpServer {
+export function validateServerOptions(options: McpServerOptions): number {
   const maxResultBytes = options.maxResultBytes ?? 64 * 1024;
   if (!Number.isSafeInteger(maxResultBytes) || maxResultBytes < 256) {
     throw new TypeError("maxResultBytes must be an integer of at least 256");
   }
   const names = new Set<string>();
-  const server = new McpServer({ name: options.name, version: options.version });
   for (const tool of options.tools) {
     if (names.has(tool.name)) throw new TypeError("Duplicate MCP tool name");
     names.add(tool.name);
+  }
+  return maxResultBytes;
+}
+
+export function createToolServer(
+  options: McpServerOptions,
+  principal: ServicePrincipal,
+): McpServer {
+  const maxResultBytes = validateServerOptions(options);
+  const server = new McpServer({ name: options.name, version: options.version });
+  for (const tool of options.tools) {
     if (tool.capabilities.every((capability) => hasServiceCapability(principal, capability))) {
       tool.register(server, principal, maxResultBytes);
     }

@@ -6,7 +6,7 @@ import {
 } from "@modelcontextprotocol/server";
 import type { ServicePrincipal } from "@unimatrix/auth";
 import { AuthError } from "@unimatrix/auth/server";
-import Fastify from "fastify";
+import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
@@ -51,8 +51,12 @@ interface HttpResult {
   text: string;
 }
 
-async function fixture(overrides: Partial<McpRoutesOptions> = {}) {
+async function fixture(
+  overrides: Partial<McpRoutesOptions> = {},
+  configure?: (app: FastifyInstance) => void,
+) {
   const app = Fastify({ trustProxy: true });
+  configure?.(app);
   const verifyOAuthCaller = vi.fn(() => Promise.resolve(principal));
   const options: McpRoutesOptions = {
     name: "synthetic",
@@ -144,6 +148,30 @@ function decoded(response: HttpResult): unknown {
 }
 
 describe("authenticated MCP HTTP routes", () => {
+  it.each([false, true])(
+    "preserves host-owned headers over a socket (modern: %s)",
+    async (modern) => {
+      const { send } = await fixture({}, (app) => {
+        app.addHook("onRequest", async (_request, reply) => {
+          reply.header("Access-Control-Allow-Origin", "https://client.example");
+          reply.header("X-Content-Type-Options", "nosniff");
+          reply.header("Set-Cookie", ["first=1; Secure", "second=2; Secure"]);
+          reply.header("Content-Type", "application/host-default");
+        });
+      });
+      const response = await send(message("tools/list", {}, modern), {
+        authorization: "Bearer synthetic",
+        ...(modern ? { "mcp-protocol-version": "2026-07-28", "mcp-method": "tools/list" } : {}),
+      });
+      expect(response.status).toBe(200);
+      expect(response.headers["access-control-allow-origin"]).toBe("https://client.example");
+      expect(response.headers["x-content-type-options"]).toBe("nosniff");
+      expect(response.headers["set-cookie"]).toEqual(["first=1; Secure", "second=2; Secure"]);
+      expect(response.headers["content-type"]).toMatch(/application\/json|text\/event-stream/);
+      expect(decoded(response)).toHaveProperty("result.tools");
+    },
+  );
+
   it("serves anonymous metadata from fixed configuration despite forwarded headers", async () => {
     const { send, verifyOAuthCaller } = await fixture();
     for (const path of [
@@ -374,8 +402,11 @@ describe("authenticated MCP HTTP routes", () => {
     { allowedHosts: [] },
     { allowedOrigins: [] },
     { tools: [{ ...sampleTool, capabilities: ['scope"injection'] }] },
+    { maxResultBytes: 255 },
+    { maxResultBytes: 1.5 },
+    { tools: [sampleTool, sampleTool] },
   ])("rejects unsafe host configuration before serving", async (overrides) => {
-    await expect(fixture(overrides)).rejects.toThrow();
+    await expect(fixture(overrides).then(() => undefined)).rejects.toThrow();
   });
 
   it("allows explicitly configured loopback HTTP development resources", async () => {
