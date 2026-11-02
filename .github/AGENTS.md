@@ -32,6 +32,15 @@ this file holds the mechanics, each of which was learned the hard way.
 
 ## CI
 
+- `Verify` always runs repository guards, then filters workspace tasks on PRs
+  through `infra/scripts/ci-plan.mjs`. Main/manual runs and uncertain comparisons
+  select everything. Keep required check names reporting on every PR; workflow
+  path filters can leave required checks pending forever. Browser setup and
+  Lighthouse follow the same plan, but image checks remain unconditional.
+- Turbo caches static tasks; tests and the host-SDK-dependent TV build run fresh.
+  Only successful main runs save the bounded cache, and PRs only restore it.
+  `pnpm check:ci` proves selection failures, required coverage artifacts, and
+  invalidation when shared configuration sources change.
 - CI's `Images` job builds every `apps/*/Dockerfile`. The required status checks on `main` are
   whatever GitHub’s `rules/branches/main` API reports rather than a list here. This exists because `Verify` is Vite and tsc only and never touches
   a Dockerfile, so a dependency could pass every check while making the deployable image unbuildable.
@@ -70,7 +79,8 @@ this file holds the mechanics, each of which was learned the hard way.
   `check-stale-comments.mjs` (`Stale comments`) fails when a backticked
   `PascalCase` name in a comment exists in no code; an "occluder" mechanism was deleted and five
   comments across four workspaces outlived it. `check-coverage-drift.mjs` (`Coverage drift`) runs
-  **after** `pnpm test` because it reads the `coverage/coverage-summary.json` that run writes, and
+  **after** tests because it requires each selected Vitest workspace's
+  `coverage/coverage-summary.json`, and
   fails when a floor sits more than 5 points under the measurement — `packages/auth` gated at 26
   while measuring 73.84. The 5 points are deliberate: V8 re-attributes functions between Node
   majors, so a floor pinned to the exact figure reddens on the next runtime bump for no real reason.

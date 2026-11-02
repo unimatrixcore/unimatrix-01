@@ -19,10 +19,8 @@
 //
 // Reads `coverage/coverage-summary.json`, which exists because
 // `packages/config-vitest` requests the `json-summary` reporter. Run it after the
-// tests; it asserts on their artifacts rather than re-running them. The summaries
-// survive a turbo cache hit because `turbo.json` declares `coverage/**` as a `test`
-// output — without that, a replayed `test` writes no files and every workspace here
-// reports `skip`.
+// tests; it asserts on their artifacts rather than re-running them. Selected
+// tests run fresh, and a missing expected summary fails the check.
 //
 // `apps/api` is not covered here. It runs the Node test runner rather than vitest
 // and emits no such summary, so its floors are asserted by the
@@ -30,100 +28,111 @@
 // `package.json` and read from its test output.
 import { readFileSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readCIPlan } from "./ci-plan.mjs";
 
-const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-
-// How far a floor may sit below the measurement before it is slack rather than a
-// ratchet. Wider than any V8 re-attribution observed in this repo.
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const ALLOWED_SLACK = 5;
 
-const configs = execFileSync("git", ["ls-files", "*/vitest.config.ts"], {
-  cwd: repoRoot,
-  encoding: "utf8",
-})
-  .split("\n")
-  .filter(Boolean);
-
-let failures = 0;
-let compared = 0;
-const skipped = [];
-
-const fail = (msg) => {
-  console.log(`  FAIL  ${msg}`);
-  failures += 1;
-};
-
-console.log(
-  `check-coverage-drift: floors must sit within ${ALLOWED_SLACK} points of the measurement\n`,
-);
-
-for (const config of configs) {
-  const workspace = dirname(config);
-  const source = readFileSync(join(repoRoot, config), "utf8");
-
-  // Only the `thresholds: { ... }` object, so a commented-out number nearby
-  // cannot be read as the live one.
-  const block = source.match(/thresholds:\s*\{([^}]*)\}/);
-  if (!block) {
-    skipped.push(`${workspace} (declares no thresholds)`);
-    continue;
-  }
-
-  const declared = {};
-  for (const [, key, value] of block[1].matchAll(/(statements|functions)\s*:\s*(\d+(?:\.\d+)?)/g)) {
-    declared[key] = Number(value);
-  }
-
-  const summaryPath = join(repoRoot, workspace, "coverage", "coverage-summary.json");
-  if (!existsSync(summaryPath)) {
-    skipped.push(`${workspace} (no coverage/coverage-summary.json — run its tests first)`);
-    continue;
-  }
-
-  const { total } = JSON.parse(readFileSync(summaryPath, "utf8"));
-
-  for (const metric of ["statements", "functions"]) {
-    if (declared[metric] === undefined) continue;
-    const measured = total?.[metric]?.pct;
-    if (typeof measured !== "number") {
-      fail(`${workspace}: coverage summary has no ${metric} percentage`);
+export function checkCoverageDrift(root, selectedWorkspaces = null, log = console.log) {
+  const selected = selectedWorkspaces === null ? null : new Set(selectedWorkspaces);
+  const configs = execFileSync("git", ["ls-files", "-z", "*/vitest.config.ts"], {
+    cwd: root,
+    encoding: "utf8",
+  })
+    .split("\0")
+    .filter(Boolean);
+  let failures = 0;
+  let compared = 0;
+  let expected = 0;
+  const fail = (message) => {
+    log(`  FAIL  ${message}`);
+    failures += 1;
+  };
+  log(`check-coverage-drift: floors must sit within ${ALLOWED_SLACK} points of the measurement\n`);
+  for (const config of configs) {
+    const workspace = dirname(config);
+    if (selected !== null && !selected.has(workspace)) continue;
+    const source = readFileSync(join(root, config), "utf8");
+    const block = source.match(/thresholds:\s*\{([^}]*)\}/);
+    if (!block) continue;
+    const declared = {};
+    for (const [, key, value] of block[1].matchAll(
+      /(statements|functions)\s*:\s*(\d+(?:\.\d+)?)/g,
+    )) {
+      declared[key] = Number(value);
+    }
+    if (!Object.keys(declared).length) {
+      fail(`${workspace}: no readable coverage floors in thresholds`);
       continue;
     }
-    compared += 1;
-    const slack = measured - declared[metric];
-    if (slack > ALLOWED_SLACK) {
-      fail(
-        `${workspace}: ${metric} floor is ${declared[metric]} but measures ${measured.toFixed(2)} ` +
-          `(${slack.toFixed(2)} points of slack) — ratchet it to ~${Math.floor(measured) - 3} ` +
-          `in ${workspace}/vitest.config.ts`,
-      );
-    } else if (slack < 0) {
-      // The gate itself would already be red; say why rather than letting this
-      // check look like the cause.
-      fail(
-        `${workspace}: ${metric} measures ${measured.toFixed(2)}, below its own floor of ${declared[metric]}`,
-      );
-    } else {
-      console.log(`  ok    ${workspace}: ${metric} ${declared[metric]} vs ${measured.toFixed(2)}`);
+    expected += 1;
+    const summaryPath = join(root, workspace, "coverage/coverage-summary.json");
+    if (!existsSync(summaryPath)) {
+      fail(`${workspace}: missing coverage/coverage-summary.json for selected tests`);
+      continue;
+    }
+    let summary;
+    try {
+      summary = JSON.parse(readFileSync(summaryPath, "utf8"));
+    } catch {
+      fail(`${workspace}: coverage summary is not valid JSON`);
+      continue;
+    }
+    for (const metric of ["statements", "functions"]) {
+      if (declared[metric] === undefined) continue;
+      const measured = summary?.total?.[metric]?.pct;
+      if (
+        typeof measured !== "number" ||
+        !Number.isFinite(measured) ||
+        measured < 0 ||
+        measured > 100
+      ) {
+        fail(`${workspace}: coverage summary has no valid ${metric} percentage`);
+        continue;
+      }
+      compared += 1;
+      const slack = measured - declared[metric];
+      if (slack > ALLOWED_SLACK) {
+        fail(
+          `${workspace}: ${metric} floor is ${declared[metric]} but measures ${measured.toFixed(2)} ` +
+            `(${slack.toFixed(2)} points of slack) — ratchet it to ~${Math.floor(measured) - 3} ` +
+            `in ${workspace}/vitest.config.ts`,
+        );
+      } else if (slack < 0) {
+        fail(
+          `${workspace}: ${metric} measures ${measured.toFixed(2)}, below its own floor of ${declared[metric]}`,
+        );
+      } else log(`  ok    ${workspace}: ${metric} ${declared[metric]} vs ${measured.toFixed(2)}`);
     }
   }
+  if (selected === null && expected === 0)
+    fail("no workspace coverage was compared — the check cannot pass vacuously");
+  if (selected !== null && expected === 0 && failures === 0)
+    log("  ok    no selected workspace declares Vitest coverage floors");
+  log(
+    `\ncheck-coverage-drift: ${failures ? `${failures} failure(s)` : `${compared} floor(s) within ${ALLOWED_SLACK} points of the measurement`}`,
+  );
+  return { failures, compared, expected };
 }
 
-for (const entry of skipped) console.log(`  skip  ${entry}`);
-
-if (compared === 0) {
-  fail("no workspace coverage was compared — the check cannot pass vacuously");
+export function main(argv = process.argv.slice(2)) {
+  if (argv.length && (argv.length !== 2 || argv[0] !== "--plan"))
+    throw new Error("Expected --plan <file> or no arguments");
+  const plan = argv.length ? readCIPlan(repoRoot, argv[1]) : null;
+  const result = checkCoverageDrift(
+    repoRoot,
+    plan && !plan.full ? plan.packages.map(({ path }) => path) : null,
+  );
+  if (result.failures) process.exitCode = 1;
 }
 
-console.log("");
-
-if (failures > 0) {
-  console.log(`check-coverage-drift: ${failures} failure(s)`);
-  process.exit(1);
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  try {
+    main();
+  } catch (error) {
+    console.error(`check-coverage-drift: ${error.message}`);
+    process.exitCode = 1;
+  }
 }
-
-console.log(
-  `check-coverage-drift: ${compared} floor(s) within ${ALLOWED_SLACK} points of the measurement`,
-);

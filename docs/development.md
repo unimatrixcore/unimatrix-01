@@ -148,6 +148,31 @@ A separate `Images` job builds every
 touches a Dockerfile. `.github/workflows/ci.yml` is the authority on the exact
 step list.
 
+On pull requests, `infra/scripts/ci-plan.mjs` selects changed workspaces and
+their transitive consumers from package manifests. Repository-wide guards still
+run. Unknown paths, toolchain changes, and unavailable comparison history select
+every workspace; guidance-only changes outside workspaces can select none.
+Pushes to `main` and manual runs select every workspace. Browser setup and
+Lighthouse follow the selected apps, while image checks remain unconditional.
+
+Build, lint, and typecheck results can reuse Turbo's cache. Tests run fresh, as
+does the TV plugin build whose output depends on the host .NET SDK. Successful
+`main` runs save a bounded task-cache archive; PRs only restore it. The workflow
+uses standard GitHub-hosted runners and does not raise cache storage limits.
+
+To inspect a PR selection locally, supply its complete base and head commit SHAs:
+
+```bash
+node infra/scripts/ci-plan.mjs --event pull_request --base <base-sha> --head <head-sha> --output /tmp/ci-plan.json
+node infra/scripts/ci-plan.mjs run test --plan /tmp/ci-plan.json
+node infra/scripts/check-coverage-drift.mjs --plan /tmp/ci-plan.json
+```
+
+Build selected workspaces before tests that preview an app. Coverage drift
+requires a summary for every selected workspace declaring Vitest thresholds;
+Node-test-only or explicitly empty selections require no Vitest summary.
+`pnpm check:ci` exercises selection, coverage failure cases, and cache invalidation.
+
 Keep ad-hoc browser screenshots and other debug artifacts in ignored
 `.notes/` scratch space, or leave them uncommitted instead of placing them
 in the repo root.

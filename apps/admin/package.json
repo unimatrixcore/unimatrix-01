@@ -11,7 +11,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "pnpm run test:unit",
-    "test:unit": "pnpm --filter @unimatrix/ui build && vitest run",
+    "test:unit": "pnpm exec turbo run build --filter=@unimatrix/ui && vitest run",
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {
