@@ -54,6 +54,7 @@ export type CanvasRead = z.infer<typeof readSchema>;
 
 export interface CanvasEndpoint {
   url: URL;
+  urls: URL[];
   schema: z.ZodType;
   list: boolean;
   source: string;
@@ -201,8 +202,7 @@ export function buildEndpoint(input: CanvasRead): CanvasEndpoint {
       path = "/courses";
       schema = courseSchema;
       query.set("enrollment_type", "student");
-      query.append("enrollment_state[]", "active");
-      if (read.concluded) query.append("enrollment_state[]", "completed");
+      query.set("enrollment_state", "active");
       break;
     case "course":
       path = `/courses/${read.courseId}`;
@@ -288,9 +288,16 @@ export function buildEndpoint(input: CanvasRead): CanvasEndpoint {
   if (list) query.set("per_page", "100");
   const url = new URL(`/api/v1${path}`, CANVAS_ORIGIN);
   url.search = query.toString();
+  const urls = [url];
+  if (read.endpoint === "courses" && read.concluded) {
+    const completed = new URL(url);
+    completed.searchParams.set("enrollment_state", "completed");
+    urls.push(completed);
+  }
   const responseSchema = list ? z.array(schema).max(1000) : schema;
   return {
     url,
+    urls,
     schema: z
       .unknown()
       .superRefine((value, context) => {

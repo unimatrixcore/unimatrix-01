@@ -488,3 +488,100 @@ await test("an intermediate rejected credential prevents revival of original cac
     { code: "CANVAS_INVALID_CURSOR" },
   );
 });
+
+await test("course reads use scalar enrollment filters and exclude unrequested invited courses", async () => {
+  const states: (string | null)[] = [];
+  const f = fixture((url) => {
+    const state = url.searchParams.get("enrollment_state");
+    states.push(state);
+    return Response.json(
+      state === "active"
+        ? [row("1")]
+        : state === "completed"
+          ? [row("1"), row("2")]
+          : [row("1"), row("2"), row("3")],
+    );
+  });
+  const active = await f.transport.read(courses, { caller });
+  assert.deepEqual(active.sources[0]?.data, [row("1")]);
+  assert.deepEqual(states, ["active"]);
+  const combined = await f.transport.read({ endpoint: "courses", concluded: true }, { caller });
+  assert.deepEqual(combined.sources[0]?.data, [row("1"), row("2")]);
+  assert.equal(combined.sources[0]?.coverage, "complete");
+  assert.deepEqual(states, ["active", "active", "completed"]);
+  assert.deepEqual(
+    combined.sources[0]?.sourceLinks.map((url) =>
+      new URL(url).searchParams.get("enrollment_state"),
+    ),
+    ["active", "completed"],
+  );
+});
+
+await test("course continuation preserves selection pagination and deduplicates across enrollment states", async () => {
+  const read: CanvasRead = { endpoint: "courses", concluded: true };
+  const pageTwo = buildEndpoint(read).url;
+  pageTwo.searchParams.set("page", "two");
+  const completedPageTwo = new URL(pageTwo);
+  completedPageTwo.searchParams.set("enrollment_state", "completed");
+  const f = fixture((url) => {
+    if (url.searchParams.get("enrollment_state") === "completed") {
+      return url.searchParams.has("page")
+        ? Response.json([row("2"), row("3")])
+        : Response.json([row("2")], {
+            headers: { link: `<${completedPageTwo.href}>; rel="next"` },
+          });
+    }
+    if (url.searchParams.has("page")) return Response.json([row("1"), row("2")]);
+    return Response.json([row("1")], { headers: { link: `<${pageTwo.href}>; rel="next"` } });
+  });
+  const first = await f.transport.read(read, { caller, maxPages: 1 });
+  assert.equal(first.sources[0]?.coverage, "partial");
+  assert.ok(first.continuation);
+  const second = await f.transport.read(read, {
+    caller,
+    maxPages: 1,
+    continuation: first.continuation,
+  });
+  assert.deepEqual(second.sources[0]?.data, [row("2")]);
+  assert.equal(second.sources[0]?.coverage, "partial");
+  assert.ok(second.continuation);
+  const third = await f.transport.read(read, { caller, continuation: second.continuation });
+  assert.deepEqual(third.sources[0]?.data, [row("3")]);
+  assert.equal(third.sources[0]?.coverage, "complete");
+  assert.equal(third.continuation, undefined);
+});
+
+await test("unread or denied completed enrollments cannot report complete course coverage", async () => {
+  const read: CanvasRead = { endpoint: "courses", concluded: true };
+  const f = fixture((url) =>
+    url.searchParams.get("enrollment_state") === "completed"
+      ? new Response(null, { status: 403 })
+      : Response.json([row("1")]),
+  );
+  const budgeted = await f.transport.read(read, { caller, maxRequests: 2 });
+  assert.equal(budgeted.sources[0]?.coverage, "partial");
+  assert.ok(budgeted.continuation);
+  const deniedContinuation = await f.transport.read(read, {
+    caller,
+    continuation: budgeted.continuation,
+  });
+  assert.equal(deniedContinuation.sources[0]?.coverage, "partial");
+  assert.deepEqual(deniedContinuation.sources[0]?.data, []);
+  const emptyActive = fixture((url) =>
+    Response.json(url.searchParams.get("enrollment_state") === "active" ? [] : [row("2")]),
+  );
+  const incompleteEmpty = await emptyActive.transport.read(read, { caller, maxRequests: 2 });
+  assert.equal(incompleteEmpty.sources[0]?.coverage, "partial");
+  assert.deepEqual(incompleteEmpty.sources[0]?.data, []);
+  assert.ok(incompleteEmpty.continuation);
+  const completed = await emptyActive.transport.read(read, {
+    caller,
+    continuation: incompleteEmpty.continuation,
+  });
+  assert.equal(completed.sources[0]?.coverage, "complete");
+  assert.deepEqual(completed.sources[0]?.data, [row("2")]);
+  const denied = await f.transport.read(read, { caller: "denied" });
+  assert.deepEqual(denied.sources[0]?.data, [row("1")]);
+  assert.equal(denied.sources[0]?.coverage, "partial");
+  assert.deepEqual(denied.sources[0]?.warnings, ["CANVAS_RESOURCE_UNAVAILABLE"]);
+});

@@ -19,7 +19,13 @@ await test("endpoint reads keep large identifiers and fix origin and own-account
   );
   const courses = buildEndpoint({ endpoint: "courses", concluded: true });
   assert.equal(courses.url.searchParams.get("enrollment_type"), "student");
-  assert.deepEqual(courses.url.searchParams.getAll("enrollment_state[]"), ["active", "completed"]);
+  assert.equal(courses.url.searchParams.get("enrollment_state"), "active");
+  assert.deepEqual(
+    courses.urls.map((url) => url.searchParams.get("enrollment_state")),
+    ["active", "completed"],
+  );
+  assert.ok(courses.urls.every((url) => !url.searchParams.has("enrollment_state[]")));
+  assert.equal(buildEndpoint({ endpoint: "courses" }).urls.length, 1);
 });
 
 await test("page selectors distinguish numeric slugs from explicit IDs and the front page", () => {

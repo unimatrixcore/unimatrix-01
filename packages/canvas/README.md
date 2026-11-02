@@ -11,7 +11,12 @@ The adapters must supply `caller` from verified authentication, never request in
 package provides transport; student membership authorization and coursework interpretation
 belong in the consuming workflows. Course IDs alone do not establish membership.
 
-Every source includes retrieval time, cache age, a source URL, data, warnings and coverage:
+Course lists request active student enrollments by default. `concluded: true` combines separate
+active and completed enrollment reads, deduplicated by course ID. Both selections share page
+and request budgets and continuation progress; an incomplete selection prevents complete coverage.
+
+Every source includes retrieval time, cache age, a source URL, all selection URLs in
+`sourceLinks`, data, warnings and coverage:
 `complete`, `partial`, `unavailable`, or `not_requested`. A source that has never been attempted
 has a null retrieval time. Continuation preserves earlier source retrieval times. An empty data array only establishes
 an empty upstream result when coverage is complete. Continuation returns the next chunk,

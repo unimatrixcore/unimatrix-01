@@ -12,6 +12,7 @@ export interface CanvasReadOptions extends CanvasOperationOptions {
 }
 export interface CanvasSourceResult {
   source: string;
+  sourceLinks: string[];
   coverage: "complete" | "partial" | "unavailable" | "not_requested";
   data: unknown[];
   retrievedAt: string | null;
@@ -28,6 +29,7 @@ export interface CanvasTransport {
   invalidate(): void;
 }
 interface Progress {
+  variant: number;
   next: string | undefined;
   visited: Set<string>;
   seen: Set<string>;
@@ -143,7 +145,7 @@ export function createCanvasTransport(connection: CanvasConnection): CanvasTrans
     const key = JSON.stringify([
       operation,
       options.caller,
-      endpoints.map((endpoint) => endpoint.url.href),
+      endpoints.map((endpoint) => endpoint.urls.map((url) => url.href)),
     ]);
     const settings: CanvasOperationOptions = {
       ...(options.signal === undefined ? {} : { signal: options.signal }),
@@ -173,6 +175,7 @@ export function createCanvasTransport(connection: CanvasConnection): CanvasTrans
       const progress: Progress[] = state
         ? structuredClone(state.progress)
         : endpoints.map((endpoint) => ({
+            variant: 0,
             next: endpoint.url.href,
             visited: new Set<string>(),
             seen: new Set<string>(),
@@ -190,6 +193,7 @@ export function createCanvasTransport(connection: CanvasConnection): CanvasTrans
         if (!current) throw new CanvasConnectionError("CANVAS_INVALID_CURSOR");
         const source: CanvasSourceResult = {
           source: endpoint.source,
+          sourceLinks: endpoint.urls.map((url) => url.href),
           coverage: current.done ? current.coverage : "not_requested",
           data: [],
           retrievedAt: current.retrievedAt,
@@ -216,7 +220,9 @@ export function createCanvasTransport(connection: CanvasConnection): CanvasTrans
               progress.reduce((sum, entry) => sum + entry.seen.size, 0) + values.length > 5000
             )
               throw new CanvasConnectionError("CANVAS_INVALID_RESPONSE");
-            const next = endpoint.list ? safeNext(response, endpoint.url) : undefined;
+            const initial = endpoint.urls[current.variant];
+            if (!initial) throw new CanvasConnectionError("CANVAS_INVALID_CURSOR");
+            const next = endpoint.list ? safeNext(response, initial) : undefined;
             if (
               next &&
               (next === current.next ||
@@ -233,19 +239,23 @@ export function createCanvasTransport(connection: CanvasConnection): CanvasTrans
               }
             }
             current.next = next;
+            if (!next && endpoint.urls[current.variant + 1]) {
+              current.variant++;
+              current.next = endpoint.urls[current.variant]?.href;
+            }
             pages++;
           }
           current.done = !current.next;
           source.coverage = current.done
             ? "complete"
-            : source.data.length
+            : current.visited.size > 0
               ? "partial"
               : "not_requested";
           if (!current.done) source.warnings.push("CANVAS_BUDGET_EXHAUSTED");
         } catch (error) {
           if (!(error instanceof CanvasConnectionError)) throw error;
           if (["REQUEST_CANCELLED", "CANVAS_CREDENTIAL_REJECTED"].includes(error.code)) throw error;
-          source.coverage = source.data.length ? "partial" : "unavailable";
+          source.coverage = current.visited.size > 0 ? "partial" : "unavailable";
           source.warnings.push(error.code);
           if (error.code !== "CANVAS_BUDGET_EXHAUSTED") {
             current.done = true;
