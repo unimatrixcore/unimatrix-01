@@ -64,7 +64,7 @@ function safeUrl(value: string, base?: string): string | null {
     const url = new URL(value, base);
     if (!["https:", "http:"].includes(url.protocol) || url.username || url.password) return null;
     return url.href.replace(
-      /[()<>"\\]/gu,
+      /[()<>"\\|]/gu,
       (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
     );
   } catch {
@@ -98,10 +98,49 @@ const excluded = new Set([
   "TRACK",
 ]);
 
+function isExcluded(node: HTMLElement): boolean {
+  return (
+    excluded.has(node.nodeName.toUpperCase()) ||
+    node.hasAttribute("hidden") ||
+    node.getAttribute("aria-hidden") === "true"
+  );
+}
+
+function visibleCodeText(node: Node): string {
+  if (node.nodeType === 3) return node.nodeValue ?? "";
+  if (node.nodeType === 1 && isExcluded(node as HTMLElement)) return "";
+  return Array.from(node.childNodes).map(visibleCodeText).join("");
+}
+
+function inTableCell(node: HTMLElement): boolean {
+  let parent = node.parentElement;
+  while (parent) {
+    if (parent.nodeName === "TD" || parent.nodeName === "TH") return true;
+    parent = parent.parentElement;
+  }
+  return false;
+}
+
+function tableCode(text: string): string {
+  return text
+    .replace(/\r\n?|\n/gu, " ")
+    .split("|")
+    .map((part) => {
+      if (!part) return "";
+      const fence = "`".repeat(
+        Math.max(1, ...(part.match(/`+/gu) ?? []).map((run) => run.length + 1)),
+      );
+      const padding = /^`|^ .*?[^ ].* $|`$/u.test(part) ? " " : "";
+      return `${fence}${padding}${part}${padding}${fence}`;
+    })
+    .join("&#124;");
+}
+
 function converter(baseUrl: string): TurndownService {
   const service = new TurndownService({ headingStyle: "atx", codeBlockStyle: "fenced" });
   const escape = service.escape.bind(service);
-  service.escape = (value) => escape(value).replace(/</gu, "\\<").replace(/>/gu, "\\>");
+  service.escape = (value) =>
+    escape(value).replace(/[&<>|]/gu, (character) => `&#${character.charCodeAt(0)};`);
   let emittedCharacters = 0;
   function bounded(value: string): string {
     emittedCharacters += value.length;
@@ -124,12 +163,17 @@ function converter(baseUrl: string): TurndownService {
   service.addRule("codeBlocks", {
     filter: "pre",
     replacement: (_content, node) => {
-      const text = node.textContent ?? "";
+      const text = visibleCodeText(node);
+      if (inTableCell(node)) return bounded(`\n\n${tableCode(text)}\n\n`);
       const fences = text.match(/`+/gu) ?? [];
       const length = Math.max(3, ...fences.map((fence) => fence.length + 1));
       const fence = "`".repeat(length);
       return bounded(`\n\n${fence}\n${text.replace(/\n$/u, "")}\n${fence}\n\n`);
     },
+  });
+  service.addRule("tableCode", {
+    filter: (node) => node.nodeName === "CODE" && inTableCell(node),
+    replacement: (_content, node) => bounded(tableCode(visibleCodeText(node))),
   });
   service.addRule("tableCells", {
     filter: ["th", "td"],
@@ -138,7 +182,7 @@ function converter(baseUrl: string): TurndownService {
         const value = node.getAttribute(attribute);
         return value && value !== "1" ? [`${attribute}=${service.escape(value)}`] : [];
       });
-      const text = content.trim().replace(/\|/gu, "\\|").replace(/\n+/gu, " ");
+      const text = content.trim().replace(/\n+/gu, " ");
       return bounded(` ${text}${spans.length ? ` [${spans.join(", ")}]` : ""} |`);
     },
   });
@@ -168,10 +212,7 @@ function converter(baseUrl: string): TurndownService {
     },
   });
   service.addRule("excluded", {
-    filter: (node) =>
-      excluded.has(node.nodeName.toUpperCase()) ||
-      node.hasAttribute("hidden") ||
-      node.getAttribute("aria-hidden") === "true",
+    filter: isExcluded,
     replacement: () => "",
   });
   return service;
@@ -195,7 +236,7 @@ export function convertHtmlDocument(input: HtmlDocumentRequest): DocumentTextRes
     }
   }
   const documentId = createHash("sha256")
-    .update(JSON.stringify(["document-text-v1", baseUrl, request.html]))
+    .update(JSON.stringify(["document-text-v2", baseUrl, request.html]))
     .digest("hex");
   if (request.continuation && request.continuation.documentId !== documentId)
     throw new DocumentTextError("invalid_continuation");

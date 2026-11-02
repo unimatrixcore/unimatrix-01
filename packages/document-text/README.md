@@ -30,6 +30,8 @@ that exceeds the parser/converter's capacity fails explicitly instead of returni
 Links resolve against the explicit base URL. Only HTTP(S) destinations without user information
 survive; image alt text survives without its image URL. Tables use Markdown rows, preserving
 captions, inline content and explicit span annotations; multiline cells become single lines.
+Code in table cells is split at pipes to preserve its visible text; the pipe itself is outside
+the code span. Literal HTML characters and pipes in ordinary text use character entities.
 
 Conversion operates on supplied content without fetching URLs, loading credentials, executing
 scripts or downloading images. Treat every result as untrusted course data. Executable/embedded
