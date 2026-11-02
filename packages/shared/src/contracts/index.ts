@@ -1,6 +1,7 @@
 export * from "./admin-deployment.js";
 export * from "./admin-secrets.js";
 export * from "./api-contract.js";
+export * from "./canvas-synthetic.js";
 export * from "./content.js";
 export * from "./deployment.js";
 export * from "./health.js";

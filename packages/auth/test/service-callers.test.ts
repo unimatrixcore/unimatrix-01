@@ -116,6 +116,59 @@ describe("delegated service callers", () => {
     ).resolves.toHaveProperty("capabilities", ["canvas:read"]);
   });
 
+  it("accepts an OAuth verification result without type after signed token verification", async () => {
+    const credential: Partial<ReturnType<typeof oauthCredential>> = oauthCredential();
+    delete credential.type;
+    verifyOAuth.mockResolvedValue(credential);
+    const token = jwt();
+
+    const principal = await createServiceCallerVerifier(options).verifyOAuthCaller(token, required);
+
+    expect(principal).toMatchObject({
+      credentialKind: "oauth_token",
+      userId: ownerUserId,
+      credentialId: "oat_synthetic",
+      clientId: "client_synthetic",
+      resource,
+      capabilities: ["canvas:read", "canvas:status"],
+    });
+    expect(verifyOAuth).toHaveBeenCalledWith(token);
+  });
+
+  it("accepts provider expiry in seconds matching the verified JWT", async () => {
+    const payload = claims();
+    verifyOAuth.mockResolvedValue(oauthCredential({ type: undefined, expiration: payload.exp }));
+
+    await expect(
+      createServiceCallerVerifier(options).verifyOAuthCaller(jwt(payload), required),
+    ).resolves.toMatchObject({
+      credentialKind: "oauth_token",
+      userId: ownerUserId,
+      capabilities: ["canvas:read", "canvas:status"],
+    });
+  });
+
+  it("rejects provider expiry in seconds that differs from the verified JWT", async () => {
+    const payload = claims();
+    verifyOAuth.mockResolvedValue(oauthCredential({ expiration: Number(payload.exp) + 60 }));
+
+    await expect(
+      createServiceCallerVerifier(options).verifyOAuthCaller(jwt(payload), required),
+    ).rejects.toMatchObject({ statusCode: 401 });
+  });
+
+  it.each([
+    ["revoked", { revoked: true }],
+    ["expired", { expired: true }],
+  ])("rejects a %s provider credential with matching seconds expiry", async (_label, override) => {
+    const payload = claims();
+    verifyOAuth.mockResolvedValue(oauthCredential({ expiration: payload.exp, ...override }));
+
+    await expect(
+      createServiceCallerVerifier(options).verifyOAuthCaller(jwt(payload), required),
+    ).rejects.toMatchObject({ statusCode: 401 });
+  });
+
   it("rejects malformed scp rather than falling back to broader scope", async () => {
     await expect(
       createServiceCallerVerifier(options).verifyOAuthCaller(
@@ -193,6 +246,7 @@ describe("delegated service callers", () => {
     ["client id", { clientId: "client_other" }],
     ["subject", { subject: "user_other" }],
     ["credential kind", { type: "api_key" }],
+    ["null credential kind", { type: null }],
     ["revoked", { revoked: true }],
     ["expired flag", { expired: true }],
     ["past expiry", { expiration: Date.now() - 1 }],
@@ -256,10 +310,12 @@ describe("programmatic service callers", () => {
     ["wrong resource", { claims: { resource: "https://other.example.test" } }, 401],
     ["missing resource", { claims: null }, 401],
     ["wrong kind", { type: "oauth_token" }, 401],
+    ["missing kind", { type: undefined }, 401],
     ["empty id", { id: "" }, 401],
     ["revoked", { revoked: true }, 401],
     ["expired flag", { expired: true }, 401],
     ["past expiry", { expiration: Date.now() - 1 }, 401],
+    ["seconds expiry", { expiration: Math.floor(Date.now() / 1000) + 600 }, 401],
     ["invalid expiry", { expiration: Number.NaN }, 401],
     ["missing scope", { scopes: ["canvas:status"] }, 403],
     ["malformed scopes", { scopes: "canvas:read" }, 401],

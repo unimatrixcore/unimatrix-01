@@ -1,4 +1,5 @@
 export * from "./content.js";
+export * from "./canvas-synthetic.js";
 export * from "./deployment.js";
 export * from "./health.js";
 export * from "./integrations.js";
