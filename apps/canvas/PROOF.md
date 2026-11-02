@@ -11,10 +11,11 @@ through both supported MCP protocol paths, credential separation, capability den
 per-request verification, protected status, Host/Origin checks, sanitized errors and
 request-size rejection. Its verifier is injected; it does not prove Clerk or client behavior.
 
-On 2026-11-02, the rate-limit follow-up passed the 15-test socket/config suite. HTTP and MCP
+On 2026-11-02, the review follow-up passed the 16-test socket/config suite. HTTP and MCP
 shared a peer-IP budget, stopped verification after exhaustion, rejected forwarded-IP bypass,
 and returned safe correlated 429 responses before body parsing. Another peer retained its
-own allowance and liveness remained available. These rate-limit checks ran locally; the live
+own allowance and liveness remained available. Unsupported media types retained a safe 415
+response without reflecting the parser error. These follow-up checks ran locally; the live
 provider trials below used the preceding build.
 
 A standalone production dependency bundle passed a separate dummy-config socket check:

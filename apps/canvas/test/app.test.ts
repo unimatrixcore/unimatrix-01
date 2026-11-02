@@ -330,6 +330,22 @@ void test("oversized request bodies are rejected without reflecting content", as
   assert.ok(!response.text.includes(privateValue));
 });
 
+void test("unsupported media types retain a safe client-error response", async (t) => {
+  const { send } = await fixture(t);
+  const mediaType = "application/x-private-marker";
+  const response = await send(
+    "/mcp",
+    "oauth-full",
+    { jsonrpc: "2.0", id: 1, method: "tools/list" },
+    { "content-type": mediaType },
+  );
+  assert.equal(response.status, 415);
+  assert.match(response.text, /INVALID_REQUEST/);
+  assert.ok(!response.text.includes(mediaType));
+  assert.ok(!response.text.includes("FST_ERR_CTP_INVALID_MEDIA_TYPE"));
+  assert.ok(response.headers["x-request-id"]);
+});
+
 void test("honors injected verifier denials and rechecks credentials for every request", async (t) => {
   const { send, mcp, records, calls } = await fixture(t);
   const base = records.get("api-full");

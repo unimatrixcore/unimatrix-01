@@ -80,7 +80,10 @@ export function buildApp(
     const statusCode =
       error instanceof AuthError
         ? error.statusCode
-        : error.statusCode === 400 || error.statusCode === 413 || error.statusCode === 429
+        : error.statusCode !== undefined &&
+            Number.isInteger(error.statusCode) &&
+            error.statusCode >= 400 &&
+            error.statusCode < 500
           ? error.statusCode
           : 500;
     const code =
