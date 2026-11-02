@@ -1,8 +1,10 @@
-import { clerkPlugin, getAuth } from "@clerk/fastify";
+import { clerkPlugin, createClerkClient, getAuth, verifyToken } from "@clerk/fastify";
 import type { FastifyInstance, FastifyRequest } from "fastify";
+import { z } from "zod";
 
 import type { AdminSection, AppSlug, Role, SessionPermissionsClaim } from "./permissions.js";
 import { canAccessAdminSection, hasPermission } from "./permissions.js";
+import type { ServicePrincipal } from "./service-principal.js";
 
 /**
  * The kinds of failures `requireAuth()` and `requirePermission()` can
@@ -218,4 +220,201 @@ export function requireAdminSection(section: AdminSection) {
       throw new AuthError({ kind: "forbidden" });
     }
   };
+}
+
+export interface ServiceCallerPolicy {
+  ownerUserId: string;
+  resource: string;
+  /** Exact provider scopes this service recognizes as capabilities. */
+  capabilities: readonly string[];
+}
+
+export interface ServiceCallerVerificationOptions extends ServiceCallerPolicy {
+  secretKey: string;
+  jwtKey: string;
+  issuer: string;
+  publishableKey: string;
+}
+
+export interface ServiceCallerVerifier {
+  verifyOAuthCaller(
+    token: string,
+    requiredCapabilities: readonly string[],
+  ): Promise<ServicePrincipal>;
+  verifyApiKeyCaller(
+    token: string,
+    requiredCapabilities: readonly string[],
+  ): Promise<ServicePrincipal>;
+}
+
+const scopeListSchema = z.array(z.string());
+
+const serviceCredentialSchema = z.object({
+  id: z.string().min(1),
+  type: z.enum(["oauth_token", "api_key"]),
+  subject: z.string().min(1),
+  scopes: scopeListSchema,
+  revoked: z.boolean(),
+  expired: z.boolean(),
+  expiration: z.number().nullable(),
+});
+
+const oauthCredentialSchema = serviceCredentialSchema.extend({ clientId: z.string().min(1) });
+const apiKeyCredentialSchema = serviceCredentialSchema.extend({
+  claims: z.object({ resource: z.string() }),
+});
+
+/**
+ * Separate from session guards. OAuth needs a signed resource audience and an
+ * online revocation check; opaque OAuth tokens cannot establish that audience
+ * through the installed SDK. API keys must carry a backend-issued resource claim.
+ */
+export function createServiceCallerVerifier(
+  options: ServiceCallerVerificationOptions,
+): ServiceCallerVerifier {
+  const { ownerUserId, resource, issuer, secretKey, jwtKey, publishableKey } = options;
+  const capabilities = [...options.capabilities];
+  if (
+    !/^user_\S+$/u.test(ownerUserId) ||
+    !isHttpsIdentifier(resource) ||
+    !isHttpsIdentifier(issuer) ||
+    !secretKey.trim() ||
+    !jwtKey.trim() ||
+    !publishableKey.trim() ||
+    capabilities.length === 0 ||
+    capabilities.some((scope) => !scope || /\s/u.test(scope))
+  ) {
+    throw new Error("Invalid service caller verification configuration.");
+  }
+
+  const client = createClerkClient({ secretKey, jwtKey, publishableKey });
+
+  function authorize(
+    credential: {
+      id: string;
+      type: string;
+      subject: string;
+      scopes: string[];
+      revoked: boolean;
+      expired: boolean;
+      expiration: number | null;
+    },
+    kind: ServicePrincipal["credentialKind"],
+    required: readonly string[],
+    clientId: string | null,
+  ): ServicePrincipal {
+    if (
+      credential.type !== kind ||
+      credential.revoked !== false ||
+      credential.expired !== false ||
+      (credential.expiration !== null &&
+        (!Number.isFinite(credential.expiration) || credential.expiration <= Date.now())) ||
+      (kind === "oauth_token" && (credential.expiration === null || !clientId))
+    ) {
+      throw new AuthError({ kind: "unauthorized" });
+    }
+    if (credential.subject !== ownerUserId) {
+      throw new AuthError({ kind: "forbidden" });
+    }
+    const granted = capabilities.filter((scope) => credential.scopes.includes(scope));
+    if (required.length === 0 || required.some((scope) => !granted.includes(scope))) {
+      throw new AuthError({ kind: "forbidden" });
+    }
+    return Object.freeze({
+      credentialKind: kind,
+      userId: credential.subject,
+      credentialId: credential.id,
+      clientId,
+      resource,
+      capabilities: Object.freeze(granted),
+    });
+  }
+
+  async function verifyOAuthCaller(
+    token: string,
+    required: readonly string[],
+  ): Promise<ServicePrincipal> {
+    try {
+      const claims = await verifyToken(token, {
+        jwtKey,
+        audience: resource,
+        headerType: ["at+jwt", "application/at+jwt"],
+        clockSkewInMs: 0,
+      });
+      if (
+        claims.iss !== issuer ||
+        !(
+          claims.aud === resource ||
+          (Array.isArray(claims.aud) && claims.aud.includes(resource))
+        ) ||
+        !Number.isFinite(claims.exp) ||
+        claims.exp * 1000 <= Date.now()
+      ) {
+        throw new AuthError({ kind: "unauthorized" });
+      }
+      const credential = oauthCredentialSchema.parse(
+        await client.idPOAuthAccessToken.verify(token),
+      );
+      if (
+        credential.subject !== claims.sub ||
+        credential.id !== claims.jti ||
+        credential.clientId !== claims.client_id
+      ) {
+        throw new AuthError({ kind: "unauthorized" });
+      }
+      // Capabilities must be present in both signed consent and current provider state.
+      const signedScopes =
+        claims.scp !== undefined
+          ? isScopeList(claims.scp)
+            ? claims.scp
+            : []
+          : typeof claims.scope === "string"
+            ? claims.scope.split(" ")
+            : [];
+      return authorize(
+        {
+          ...credential,
+          scopes: credential.scopes.filter((scope) => signedScopes.includes(scope)),
+        },
+        "oauth_token",
+        required,
+        credential.clientId,
+      );
+    } catch (error) {
+      if (error instanceof AuthError) throw error;
+      throw new AuthError({ kind: "unauthorized" });
+    }
+  }
+
+  async function verifyApiKeyCaller(
+    token: string,
+    required: readonly string[],
+  ): Promise<ServicePrincipal> {
+    try {
+      if (!token.startsWith("ak_")) throw new AuthError({ kind: "unauthorized" });
+      const credential = apiKeyCredentialSchema.parse(await client.apiKeys.verify(token));
+      if (credential.claims?.resource !== resource) {
+        throw new AuthError({ kind: "unauthorized" });
+      }
+      return authorize(credential, "api_key", required, null);
+    } catch (error) {
+      if (error instanceof AuthError) throw error;
+      throw new AuthError({ kind: "unauthorized" });
+    }
+  }
+
+  return { verifyOAuthCaller, verifyApiKeyCaller };
+}
+
+function isHttpsIdentifier(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password && !url.hash;
+  } catch {
+    return false;
+  }
+}
+
+function isScopeList(value: unknown): value is string[] {
+  return scopeListSchema.safeParse(value).success;
 }

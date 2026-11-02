@@ -4,7 +4,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     coverage: createCoverageConfig({
-      thresholds: { statements: 70, functions: 62 },
+      thresholds: { statements: 82, functions: 74 },
     }),
     environment: "node",
     include: ["test/**/*.test.ts"],
