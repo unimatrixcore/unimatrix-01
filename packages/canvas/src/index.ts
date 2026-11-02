@@ -1,32 +1,17 @@
 import { createHmac, randomBytes } from "node:crypto";
 import { z } from "zod";
 
-const errors = {
-  CREDENTIAL_DENIED: [503, "Canvas credential access was denied."],
-  CREDENTIAL_MISSING: [503, "Canvas integration credential is missing or inaccessible."],
-  CREDENTIAL_UNAVAILABLE: [503, "Canvas credential store is unavailable."],
-  CANVAS_ACCOUNT_MISMATCH: [409, "Canvas credential belongs to a different account."],
-  CANVAS_CREDENTIAL_REJECTED: [502, "Canvas rejected the integration credential."],
-  CANVAS_UNAVAILABLE: [502, "Canvas is unavailable."],
-  CANVAS_INVALID_RESPONSE: [502, "Canvas returned an invalid account response."],
-  CANVAS_REQUEST_FAILED: [502, "Canvas request failed."],
-  REQUEST_CANCELLED: [503, "Canvas operation was cancelled."],
-} as const;
+import { CanvasConnectionError } from "./errors.js";
+import {
+  abortable,
+  checkSignal,
+  createCanvasRequester,
+  readJson,
+  type CanvasBudget,
+} from "./request.js";
 
-export type CanvasConnectionErrorCode = keyof typeof errors;
-
-export class CanvasConnectionError extends Error {
-  readonly code: CanvasConnectionErrorCode;
-  readonly statusCode: 409 | 502 | 503;
-
-  constructor(code: CanvasConnectionErrorCode) {
-    super(errors[code][1]);
-    this.name = "CanvasConnectionError";
-    this.code = code;
-    this.statusCode = errors[code][0];
-  }
-}
-
+export { CanvasConnectionError } from "./errors.js";
+export type { CanvasConnectionErrorCode } from "./errors.js";
 export interface CanvasConnectionStatus {
   connection: "connected";
 }
@@ -36,9 +21,14 @@ export interface CanvasConnectionOptions {
   loadCredential: (signal?: AbortSignal) => Promise<string>;
   fetch?: typeof globalThis.fetch;
   onCredentialChange?: () => void;
+  deadlineMs?: number;
 }
 
 export interface CanvasConnection {
+  withSession<T>(
+    operation: (session: CanvasSession) => Promise<T>,
+    options?: CanvasOperationOptions,
+  ): Promise<T>;
   status(signal?: AbortSignal): Promise<CanvasConnectionStatus>;
   withVerifiedCredential<T>(
     operation: (token: string, signal: AbortSignal) => Promise<T>,
@@ -48,59 +38,15 @@ export interface CanvasConnection {
 
 const accountSchema = z.object({ id: z.string().regex(/^[1-9]\d*$/u) });
 const ACCOUNT_URL = "https://learn.maricopa.edu/api/v1/users/self";
-const MAX_ACCOUNT_BYTES = 65_536;
 
-function checkSignal(signal: AbortSignal): void {
-  if (signal.aborted) throw new CanvasConnectionError("REQUEST_CANCELLED");
+export interface CanvasSession {
+  generation: string;
+  budget: CanvasBudget;
+  request(url: URL): Promise<Response>;
 }
-
-async function waitForTurn(previous: Promise<void>, signal: AbortSignal): Promise<void> {
-  checkSignal(signal);
-  let abort!: () => void;
-  const cancelled = new Promise<never>((_resolve, reject) => {
-    abort = () => {
-      reject(new CanvasConnectionError("REQUEST_CANCELLED"));
-    };
-    signal.addEventListener("abort", abort, { once: true });
-  });
-  try {
-    await Promise.race([previous, cancelled]);
-  } finally {
-    signal.removeEventListener("abort", abort);
-  }
-}
-
-async function readAccount(response: Response, signal: AbortSignal): Promise<string> {
-  const reader = response.body?.getReader();
-  if (!reader) throw new CanvasConnectionError("CANVAS_INVALID_RESPONSE");
-  let length = 0;
-  const chunks: Uint8Array[] = [];
-  try {
-    while (true) {
-      checkSignal(signal);
-      const result = await reader.read();
-      if (result.done) break;
-      const value: unknown = result.value;
-      if (!(value instanceof Uint8Array)) {
-        throw new CanvasConnectionError("CANVAS_INVALID_RESPONSE");
-      }
-      length += value.length;
-      if (length > MAX_ACCOUNT_BYTES) {
-        await reader.cancel();
-        throw new CanvasConnectionError("CANVAS_INVALID_RESPONSE");
-      }
-      chunks.push(value);
-    }
-    const payload: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-    const parsed = accountSchema.safeParse(payload);
-    if (!parsed.success) throw new CanvasConnectionError("CANVAS_INVALID_RESPONSE");
-    return parsed.data.id;
-  } catch (error) {
-    if (error instanceof CanvasConnectionError) throw error;
-    throw new CanvasConnectionError("CANVAS_INVALID_RESPONSE");
-  } finally {
-    reader.releaseLock();
-  }
+export interface CanvasOperationOptions {
+  signal?: AbortSignal;
+  maxRequests?: number;
 }
 
 export function createCanvasConnection(options: CanvasConnectionOptions): CanvasConnection {
@@ -108,29 +54,49 @@ export function createCanvasConnection(options: CanvasConnectionOptions): Canvas
     throw new Error("Invalid configured Canvas user ID.");
   }
   const fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis);
+  if (
+    options.deadlineMs !== undefined &&
+    (!Number.isInteger(options.deadlineMs) || options.deadlineMs < 1 || options.deadlineMs > 10_000)
+  )
+    throw new Error("Invalid Canvas deadline.");
+  const request = createCanvasRequester(fetchImpl);
   const generationKey = randomBytes(32);
   let generation: string | undefined;
+  let generationId = "";
   let pending: Promise<void> = Promise.resolve();
+  let admitted = 0;
 
-  async function withVerifiedCredential<T>(
-    operation: (token: string, signal: AbortSignal) => Promise<T>,
-    callerSignal?: AbortSignal,
+  async function run<T>(
+    operation: (token: string, session: CanvasSession) => Promise<T>,
+    operationOptions: CanvasOperationOptions = {},
   ): Promise<T> {
+    const { signal: callerSignal, maxRequests = 20 } = operationOptions;
+    if (!Number.isInteger(maxRequests) || maxRequests < 1 || maxRequests > 100)
+      throw new Error("Invalid Canvas request budget.");
     const signal = callerSignal
-      ? AbortSignal.any([callerSignal, AbortSignal.timeout(10_000)])
-      : AbortSignal.timeout(10_000);
+      ? AbortSignal.any([callerSignal, AbortSignal.timeout(options.deadlineMs ?? 10_000)])
+      : AbortSignal.timeout(options.deadlineMs ?? 10_000);
+    if (admitted >= 64) throw new CanvasConnectionError("CANVAS_BUDGET_EXHAUSTED");
+    admitted++;
     const previous = pending;
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    pending = previous.then(() => gate);
+    pending = previous
+      .then(() => gate)
+      .then(() => {
+        admitted--;
+      });
     try {
-      await waitForTurn(previous, signal);
+      await abortable(previous, signal);
       checkSignal(signal);
       let token: string;
       try {
-        token = await options.loadCredential(signal);
+        token = await abortable(
+          Promise.resolve().then(() => options.loadCredential(signal)),
+          signal,
+        );
       } catch (error) {
         checkSignal(signal);
         if (error instanceof CanvasConnectionError) throw error;
@@ -142,27 +108,28 @@ export function createCanvasConnection(options: CanvasConnectionOptions): Canvas
       if (current !== generation) {
         options.onCredentialChange?.();
         generation = current;
+        generationId = randomBytes(24).toString("base64url");
       }
-      const response = await fetchImpl(ACCOUNT_URL, {
-        method: "GET",
-        redirect: "error",
-        headers: {
-          accept: "application/json+canvas-string-ids",
-          authorization: `Bearer ${token}`,
-        },
-        signal,
-      });
-      checkSignal(signal);
-      if (!response.ok) await response.body?.cancel();
-      if (response.status === 401 || response.status === 403) {
-        throw new CanvasConnectionError("CANVAS_CREDENTIAL_REJECTED");
+      const budget: CanvasBudget = { signal, remaining: maxRequests };
+      const session: CanvasSession = {
+        generation: generationId,
+        budget,
+        request: (url) => request(url, token, budget),
+      };
+      let response: Response;
+      try {
+        response = await session.request(new URL(ACCOUNT_URL));
+      } catch (error) {
+        if (error instanceof CanvasConnectionError && error.code === "CANVAS_RESOURCE_UNAVAILABLE")
+          throw new CanvasConnectionError("CANVAS_CREDENTIAL_REJECTED");
+        throw error;
       }
-      if (!response.ok) throw new CanvasConnectionError("CANVAS_UNAVAILABLE");
-      if ((await readAccount(response, signal)) !== options.userId) {
+      const parsed = accountSchema.safeParse(await readJson(response, budget, 65_536));
+      if (!parsed.success) throw new CanvasConnectionError("CANVAS_INVALID_RESPONSE");
+      if (parsed.data.id !== options.userId)
         throw new CanvasConnectionError("CANVAS_ACCOUNT_MISMATCH");
-      }
       checkSignal(signal);
-      const result = await operation(token, signal);
+      const result = await abortable(operation(token, session), signal);
       checkSignal(signal);
       return result;
     } catch (error) {
@@ -174,9 +141,24 @@ export function createCanvasConnection(options: CanvasConnectionOptions): Canvas
     }
   }
 
+  const withVerifiedCredential: CanvasConnection["withVerifiedCredential"] = (operation, signal) =>
+    run(
+      (token, session) => operation(token, session.budget.signal),
+      signal === undefined ? {} : { signal },
+    );
   return {
+    withSession: (operation, settings) => run((_token, session) => operation(session), settings),
     withVerifiedCredential,
     status: (signal) =>
       withVerifiedCredential(() => Promise.resolve({ connection: "connected" }), signal),
   };
 }
+
+export { createCanvasTransport } from "./transport.js";
+export type { CanvasRead } from "./endpoints.js";
+export type {
+  CanvasReadOptions,
+  CanvasSourceResult,
+  CanvasTransport,
+  CanvasResult,
+} from "./transport.js";
