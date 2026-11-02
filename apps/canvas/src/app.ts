@@ -1,0 +1,183 @@
+import { hasServiceCapability } from "@unimatrix/auth";
+import {
+  AuthError,
+  createServiceCallerVerifier,
+  type ServiceCallerVerifier,
+} from "@unimatrix/auth/server";
+import { defineTool } from "@unimatrix/mcp";
+import { registerMcpRoutes } from "@unimatrix/mcp/fastify";
+import {
+  buildSafeLoggerOptions,
+  createErrorEnvelope,
+  setupRequestObservability,
+  type SafeLoggerOptions,
+} from "@unimatrix/service-http";
+import {
+  canvasSyntheticCoursesContract,
+  canvasSyntheticCoursesSchema,
+  canvasSyntheticEchoInputSchema,
+  canvasSyntheticEchoSchema,
+  canvasSyntheticStatusContract,
+  canvasSyntheticStatusSchema,
+} from "@unimatrix/shared";
+import Fastify, { LogController, type FastifyInstance, type FastifyRequest } from "fastify";
+import { z } from "zod";
+
+import type { CanvasConfig } from "./config.js";
+import { echoSynthetic, getSyntheticStatus, listSyntheticCourses } from "./synthetic.js";
+
+export interface BuildCanvasAppOptions {
+  verifier?: ServiceCallerVerifier;
+  logger?: false | SafeLoggerOptions;
+}
+
+export const CANVAS_CAPABILITIES = ["canvas:read", "canvas:status", "synthetic:echo"] as const;
+
+const annotations = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: false,
+};
+
+export function buildApp(
+  config: CanvasConfig,
+  options: BuildCanvasAppOptions = {},
+): FastifyInstance {
+  const verifier =
+    options.verifier ??
+    createServiceCallerVerifier({
+      ...config,
+      capabilities: CANVAS_CAPABILITIES,
+    });
+  const app = Fastify({
+    bodyLimit: 65_536,
+    forceCloseConnections: true,
+    trustProxy: false,
+    logController: new LogController({ disableRequestLogging: true }),
+    logger:
+      options.logger === false
+        ? false
+        : buildSafeLoggerOptions(options.logger ?? { level: "info" }),
+  });
+  setupRequestObservability(app);
+  app.addHook("onSend", (_request, reply, payload, done) => {
+    reply.header("Cache-Control", "no-store");
+    done(null, payload);
+  });
+  app.setErrorHandler((error: Error & { statusCode?: number }, request, reply) => {
+    const statusCode =
+      error instanceof AuthError
+        ? error.statusCode
+        : error.statusCode === 400 || error.statusCode === 413
+          ? error.statusCode
+          : 500;
+    const code =
+      error instanceof AuthError
+        ? error.code
+        : statusCode === 500
+          ? "INTERNAL_ERROR"
+          : "INVALID_REQUEST";
+    const message =
+      error instanceof AuthError
+        ? error.message
+        : statusCode === 500
+          ? "Request failed."
+          : "Invalid request.";
+    if (statusCode === 401) reply.header("WWW-Authenticate", "Bearer");
+    void reply
+      .code(statusCode)
+      .send(createErrorEnvelope({ requestId: String(request.id), code, message, statusCode }));
+  });
+  app.setNotFoundHandler((request, reply) => {
+    void reply.code(404).send(
+      createErrorEnvelope({
+        requestId: String(request.id),
+        code: "NOT_FOUND",
+        message: "Route not found.",
+        statusCode: 404,
+      }),
+    );
+  });
+
+  async function authenticate(request: FastifyRequest, required: string): Promise<void> {
+    const match = /^Bearer ([A-Za-z0-9\-._~+/]+=*)$/iu.exec(request.headers.authorization ?? "");
+    if (!match?.[1]) throw new AuthError({ kind: "unauthorized" });
+    const principal = await verifier.verifyApiKeyCaller(match[1], [required]);
+    if (principal.credentialKind !== "api_key" || principal.resource !== config.resource) {
+      throw new AuthError({ kind: "unauthorized" });
+    }
+    if (principal.userId !== config.ownerUserId || !hasServiceCapability(principal, required)) {
+      throw new AuthError({ kind: "forbidden" });
+    }
+  }
+
+  app.get("/health", () => ({ status: "ok" }));
+  app.route({
+    method: canvasSyntheticStatusContract.method,
+    url: canvasSyntheticStatusContract.path,
+    preHandler: (request) => authenticate(request, "canvas:status"),
+    handler: () => getSyntheticStatus(),
+  });
+  app.route({
+    method: canvasSyntheticCoursesContract.method,
+    url: canvasSyntheticCoursesContract.path,
+    preHandler: (request) => authenticate(request, "canvas:read"),
+    handler: () => listSyntheticCourses(),
+  });
+  registerMcpRoutes(app, {
+    name: "canvas-synthetic-proof",
+    version: "0.1.0",
+    resource: config.resource,
+    authorizationServers: [config.issuer],
+    requiredCapabilities: ["canvas:read"],
+    allowedHosts: config.allowedHosts,
+    allowedOrigins: config.allowedOrigins,
+    verifyOAuthCaller: (token, capabilities) => verifier.verifyOAuthCaller(token, capabilities),
+    maxRequestBytes: 65_536,
+    tools: [
+      defineTool({
+        name: "canvas_status",
+        description:
+          "Read synthetic connection status for caller verification. Contains no school data.",
+        capabilities: ["canvas:status"],
+        inputSchema: z.strictObject({}),
+        outputSchema: canvasSyntheticStatusSchema,
+        annotations,
+        execute: (_input, context) => {
+          context.signal.throwIfAborted();
+          const data = getSyntheticStatus();
+          return Promise.resolve({ data, text: JSON.stringify(data) });
+        },
+      }),
+      defineTool({
+        name: "canvas_list_courses",
+        description:
+          "List fixed synthetic courses for caller verification. Contains no school data.",
+        capabilities: ["canvas:read"],
+        inputSchema: z.strictObject({}),
+        outputSchema: canvasSyntheticCoursesSchema,
+        annotations,
+        execute: (_input, context) => {
+          context.signal.throwIfAborted();
+          const data = listSyntheticCourses();
+          return Promise.resolve({ data, text: JSON.stringify(data) });
+        },
+      }),
+      defineTool({
+        name: "synthetic_echo",
+        description: "Echo a bounded message independently of Canvas workflows.",
+        capabilities: ["synthetic:echo"],
+        inputSchema: canvasSyntheticEchoInputSchema,
+        outputSchema: canvasSyntheticEchoSchema,
+        annotations,
+        execute: (input, context) => {
+          context.signal.throwIfAborted();
+          const data = echoSynthetic(input);
+          return Promise.resolve({ data, text: data.message });
+        },
+      }),
+    ],
+  });
+  return app;
+}

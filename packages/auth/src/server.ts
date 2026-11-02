@@ -259,14 +259,18 @@ const serviceCredentialSchema = z.object({
   expiration: z.number().nullable(),
 });
 
-const oauthCredentialSchema = serviceCredentialSchema.extend({ clientId: z.string().min(1) });
+const oauthCredentialSchema = serviceCredentialSchema.extend({
+  // The dedicated OAuth verification endpoint can omit type; an explicit conflicting type fails.
+  type: z.literal("oauth_token").default("oauth_token"),
+  clientId: z.string().min(1),
+});
 const apiKeyCredentialSchema = serviceCredentialSchema.extend({
   claims: z.object({ resource: z.string() }),
 });
 
 /**
  * Separate from session guards. OAuth needs a signed resource audience and an
- * online revocation check; opaque OAuth tokens cannot establish that audience
+ * online provider verification; opaque OAuth tokens cannot establish that audience
  * through the installed SDK. API keys must carry a backend-issued resource claim.
  */
 export function createServiceCallerVerifier(
@@ -352,9 +356,17 @@ export function createServiceCallerVerifier(
       ) {
         throw new AuthError({ kind: "unauthorized" });
       }
-      const credential = oauthCredentialSchema.parse(
+      const providerCredential = oauthCredentialSchema.parse(
         await client.idPOAuthAccessToken.verify(token),
       );
+      const credential = {
+        ...providerCredential,
+        // Normalize seconds only when they exactly match the already-verified JWT expiry.
+        expiration:
+          providerCredential.expiration === claims.exp
+            ? claims.exp * 1000
+            : providerCredential.expiration,
+      };
       if (
         credential.subject !== claims.sub ||
         credential.id !== claims.jti ||
