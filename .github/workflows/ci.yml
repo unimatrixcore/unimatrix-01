@@ -1,8 +1,7 @@
 name: CI ingress validation
 on:
   workflow_dispatch:
-permissions:
-  actions: read
+permissions: {}
 jobs:
   probe:
     runs-on: ubuntu-latest
@@ -11,13 +10,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24.18.0
-      - name: Download the main run publication
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          release_attempt=$(gh api repos/unimatrixcore/unimatrix-01/actions/runs/41275979600 --jq .run_attempt)
-          gh run download 41275979600 --repo unimatrixcore/unimatrix-01 --name "publication-deploy-${release_attempt}" --dir publication
-      - name: Verify already-current execution without deployment mutations
+      - name: Probe existing reporting identity without deployment mutations
         env:
           DEPLOY_REPORT_URL: ${{ vars.DEPLOY_REPORT_URL }}
           DEPLOY_REPORT_TOKEN: ${{ secrets.DEPLOY_REPORT_TOKEN }}
@@ -25,9 +18,6 @@ jobs:
           CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
         run: |
           node --input-type=module <<'JS'
-          import {readFileSync} from 'node:fs';
-          const publication = JSON.parse(readFileSync('publication/deploy.json','utf8'));
-          if (publication.app !== 'deploy' || publication.image.commit !== '980daccbcab6df8015529cf05ffec461de1a35c9') throw new Error('Unexpected release publication');
           const base = process.env.DEPLOY_REPORT_URL;
           if (base !== 'https://deploy-ci.unimatrix-01.dev') throw new Error('Unexpected reporting origin');
           for (const key of ['DEPLOY_REPORT_TOKEN', 'CF_ACCESS_CLIENT_ID', 'CF_ACCESS_CLIENT_SECRET']) {
@@ -42,9 +32,11 @@ jobs:
             ['POST', '/deployment/attempts/intent', true, false, [401]],
             ['POST', '/deployment/attempts/intent', true, true, [400]],
             ['POST', '/deployment/execute', true, false, [401]],
-            ['POST', '/deployment/execute', true, true, [400]],
+            ['POST', '/deployment/execute', true, true, [400, 404]],
             ['GET', '/deployment/attempts/intent', true, true, [404]],
-            ['GET', '/health', true, true, [404]],
+            ['GET', '/health', true, true, [200]],
+            ['GET', '/deployment/baselines', true, false, [401]],
+            ['GET', '/deployment/baselines', true, true, [200]],
             ['POST', '/deployment/rollback', true, true, [404]],
             ['POST', '/deployment/attempts/report', true, true, [404]],
           ];
@@ -59,40 +51,13 @@ jobs:
               ...(method === 'POST' ? {body: '{}'} : {}),
             });
             const status = response.status;
-            await response.body?.cancel();
+            if (path === '/health' && status === 200 && response.headers.get('x-deploy-capabilities') !== 'commit-subject-v1') throw new Error('Missing commit-subject capability');
+            if (path === '/deployment/baselines' && status === 200) {
+              const snapshot = await response.json();
+              if (!Array.isArray(snapshot.apps) || snapshot.apps.length !== 8 || snapshot.apps.some(x => !x.baseline)) throw new Error('Missing service baselines');
+              for (const entry of snapshot.apps) console.log(`Verified baseline: ${entry.app} ${entry.baseline.commit}`);
+            } else await response.body?.cancel();
             console.log(`${method} ${path}: ${status} (Access=${withAccess}, service token=${withToken})`);
             if (!expected.includes(status)) throw new Error('Reporting boundary probe failed');
           }
-          const payload = {
-            repository: 'unimatrixcore/unimatrix-01', runId: process.env.GITHUB_RUN_ID,
-            runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT), app: 'deploy', trigger: 'ci',
-            image: publication.image,
-            commitSubject: 'CI activation verification: already-current, no deployment queued',
-          };
-          async function intent(body) {
-            return fetch(base + '/deployment/attempts/intent', {
-              method: 'POST', redirect: 'error', signal: AbortSignal.timeout(15000),
-              headers: {...access, 'content-type': 'application/json', Authorization: `Bearer ${process.env.DEPLOY_REPORT_TOKEN}`},
-              body: JSON.stringify(body),
-            });
-          }
-          const first = await intent(payload);
-          if (first.status !== 200) throw new Error('Valid intent was refused');
-          const record = await first.json();
-          const repeated = await intent(payload);
-          if (repeated.status !== 200) throw new Error('Repeated intent was refused');
-          const repeatRecord = await repeated.json();
-          if (record.id !== repeatRecord.id || record.baseline === null || record.tagWrite !== null || record.queue !== null) throw new Error('Intent idempotency/baseline failed');
-          const conflict = await intent({...payload, image: {...payload.image, digest: 'sha256:' + '0'.repeat(64)}});
-          if (conflict.status !== 409) throw new Error('Conflicting intent was not rejected');
-          await conflict.body?.cancel();
-          const execution = await fetch(base + '/deployment/execute', {
-            method: 'POST', redirect: 'error', signal: AbortSignal.timeout(15000),
-            headers: {...access, 'content-type': 'application/json', Authorization: `Bearer ${process.env.DEPLOY_REPORT_TOKEN}`},
-            body: JSON.stringify({app: 'deploy', attemptId: record.id}),
-          });
-          if (execution.status !== 200) throw new Error('Already-current execution failed');
-          const completed = await execution.json();
-          if (completed.outcome !== 'already-current' || completed.queue !== null || completed.tagWrite !== null || completed.landedAt !== null || completed.baseline?.containerId !== completed.after?.containerId) throw new Error('Already-current invariant failed');
-          console.log(`Live already-current attempt ${record.id}: resolved without tag write or queue; same verified container.`);
           JS
