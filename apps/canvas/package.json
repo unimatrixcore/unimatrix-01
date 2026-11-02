@@ -14,6 +14,7 @@
     "typecheck": "node ../../infra/scripts/run-local-workload.mjs -- tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@fastify/rate-limit": "^11.2.0",
     "@unimatrix/auth": "workspace:*",
     "@unimatrix/mcp": "workspace:*",
     "@unimatrix/service-http": "workspace:*",

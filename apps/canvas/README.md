@@ -22,6 +22,11 @@ Required boot settings:
 `HOST` defaults to loopback and `PORT` to 3020. TLS termination must preserve an allowlisted
 raw Host. Forwarded headers are not trusted. Clients without Origin are supported.
 
+HTTP and MCP share an in-memory limit of 60 requests per peer IP per minute, enforced before
+authentication and body parsing. Behind a proxy, its traffic shares that budget because
+forwarded IPs are not trusted. Liveness is exempt. Exhaustion returns a safe `RATE_LIMITED`
+429 response with `Retry-After` and request correlation.
+
 `GET /health` is anonymous liveness. Protected-resource metadata is anonymous. Detailed
 status is protected. HTTP contracts and response schemas live in `@unimatrix/shared`.
 The tool definitions in `src/app.ts` own capability requirements and annotations.

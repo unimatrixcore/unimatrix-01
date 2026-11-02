@@ -313,6 +313,9 @@ importers:
 
   apps/canvas:
     dependencies:
+      '@fastify/rate-limit':
+        specifier: ^11.2.0
+        version: 11.2.0
       '@unimatrix/auth':
         specifier: workspace:*
         version: link:../../packages/auth

@@ -151,7 +151,7 @@ async function fixture(t: { after: (cleanup: () => Promise<void>) => void }) {
         : {},
     );
   }
-  return { send, mcp, records, calls, failures };
+  return { app, send, mcp, records, calls, failures };
 }
 
 function decoded(response: Response): unknown {
@@ -170,6 +170,58 @@ function result(response: Response): Record<string, unknown> {
   assert.ok(body.result, response.text);
   return body.result;
 }
+
+void test("HTTP and MCP share a peer budget before verification without trusting forwarded IPs", async (t) => {
+  const { app, send, mcp, calls } = await fixture(t);
+  assert.equal((await send("/health")).status, 200);
+  for (let index = 0; index < 60; index++) {
+    const response =
+      index % 2 === 0
+        ? await send("/api/v1/courses", "api-full")
+        : await mcp("tools/list", {}, "oauth-full");
+    assert.equal(response.status, 200);
+  }
+  assert.equal(calls.length, 60);
+  for (const path of ["/api/v1/status", "/api/v1/courses"]) {
+    const denied = await send(path, "api-full", undefined, {
+      "x-forwarded-for": "192.0.2.99",
+    });
+    assert.equal(denied.status, 429);
+    assert.match(denied.text, /RATE_LIMITED/);
+    assert.ok(Number(denied.headers["retry-after"]) > 0);
+    assert.ok(denied.headers["x-request-id"]);
+    assert.equal(denied.headers["cache-control"], "no-store");
+    assert.ok(!denied.text.includes("api-full"));
+  }
+  assert.equal((await mcp("tools/list", {}, "oauth-full")).status, 429);
+  assert.equal(calls.length, 60);
+  const anotherPeer = await app.inject({
+    method: "GET",
+    url: "/api/v1/courses",
+    remoteAddress: "192.0.2.2",
+    headers: { host: "canvas.example", authorization: "Bearer api-full" },
+  });
+  assert.equal(anotherPeer.statusCode, 200);
+  assert.equal(calls.length, 61);
+  assert.equal((await send("/health")).status, 200);
+});
+
+void test("failed callers spend the budget and exhaustion precedes body parsing", async (t) => {
+  const { send, mcp, calls } = await fixture(t);
+  for (let index = 0; index < 60; index++) {
+    const response =
+      index % 2 === 0
+        ? await send("/api/v1/courses", "invalid")
+        : await mcp("tools/list", {}, "invalid");
+    assert.equal(response.status, 401);
+  }
+  assert.equal(calls.length, 60);
+  const oversized = await send("/mcp", "oauth-full", "private-marker".repeat(6000));
+  assert.equal(oversized.status, 429);
+  assert.ok(!oversized.text.includes("private-marker"));
+  assert.equal((await send("/api/v1/status")).status, 429);
+  assert.equal(calls.length, 60);
+});
 
 void test("anonymous liveness and fixed discovery expose no detailed status", async (t) => {
   const { send, mcp, calls } = await fixture(t);

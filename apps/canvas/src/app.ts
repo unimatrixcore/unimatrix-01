@@ -1,3 +1,4 @@
+import fastifyRateLimit from "@fastify/rate-limit";
 import { hasServiceCapability } from "@unimatrix/auth";
 import {
   AuthError,
@@ -61,6 +62,16 @@ export function buildApp(
         : buildSafeLoggerOptions(options.logger ?? { level: "info" }),
   });
   setupRequestObservability(app);
+  app.register(fastifyRateLimit, { max: 60, timeWindow: "1 minute" });
+  app.addHook("onRequest", async (request, reply) => {
+    if (
+      request.routeOptions.url === "/health" &&
+      (request.method === "GET" || request.method === "HEAD")
+    )
+      return;
+    // Resolve after plugin boot; the root hook runs before MCP's route authentication.
+    await app.rateLimit().call(app, request, reply);
+  });
   app.addHook("onSend", (_request, reply, payload, done) => {
     reply.header("Cache-Control", "no-store");
     done(null, payload);
@@ -69,21 +80,25 @@ export function buildApp(
     const statusCode =
       error instanceof AuthError
         ? error.statusCode
-        : error.statusCode === 400 || error.statusCode === 413
+        : error.statusCode === 400 || error.statusCode === 413 || error.statusCode === 429
           ? error.statusCode
           : 500;
     const code =
       error instanceof AuthError
         ? error.code
-        : statusCode === 500
-          ? "INTERNAL_ERROR"
-          : "INVALID_REQUEST";
+        : statusCode === 429
+          ? "RATE_LIMITED"
+          : statusCode === 500
+            ? "INTERNAL_ERROR"
+            : "INVALID_REQUEST";
     const message =
       error instanceof AuthError
         ? error.message
-        : statusCode === 500
-          ? "Request failed."
-          : "Invalid request.";
+        : statusCode === 429
+          ? "Too many requests."
+          : statusCode === 500
+            ? "Request failed."
+            : "Invalid request.";
     if (statusCode === 401) reply.header("WWW-Authenticate", "Bearer");
     void reply
       .code(statusCode)
@@ -112,7 +127,7 @@ export function buildApp(
     }
   }
 
-  app.get("/health", () => ({ status: "ok" }));
+  app.get("/health", { config: { rateLimit: false } }, () => ({ status: "ok" }));
   app.route({
     method: canvasSyntheticStatusContract.method,
     url: canvasSyntheticStatusContract.path,
