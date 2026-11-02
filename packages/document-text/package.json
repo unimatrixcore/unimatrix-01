@@ -1,0 +1,38 @@
+{
+  "name": "@unimatrix/document-text",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Bounded supplied HTML conversion into untrusted reading context.",
+  "license": "MIT",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "node ../../infra/scripts/run-local-workload.mjs -- tsc -p tsconfig.build.json",
+    "lint": "node ../../infra/scripts/run-local-workload.mjs -- eslint .",
+    "test": "node ../../infra/scripts/run-local-workload.mjs -- vitest run",
+    "typecheck": "node ../../infra/scripts/run-local-workload.mjs -- tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "@unimatrix/config-eslint": "workspace:*",
+    "@unimatrix/config-typescript": "workspace:*",
+    "@unimatrix/config-vitest": "workspace:*",
+    "@vitest/coverage-v8": "^5.0.1",
+    "eslint": "^10.8.1",
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.1",
+    "@types/turndown": "^5.0.6"
+  },
+  "dependencies": {
+    "turndown": "^7.2.2",
+    "zod": "^4.3.6"
+  }
+}
