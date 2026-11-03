@@ -23,7 +23,7 @@ function fixture(t) {
     "turbo.json": readFileSync(join(repoRoot, "turbo.json"), "utf8"),
     "pnpm-workspace.yaml": "packages:\n  - apps/*\n  - packages/*\n",
     "pnpm-lock.yaml":
-      "lockfileVersion: '9.0'\nimporters:\n  .: {}\n  apps/app:\n    devDependencies:\n      '@test/config':\n        specifier: workspace:*\n        version: link:../../packages/config\n  packages/config: {}\n  packages/tv: {}\n",
+      "lockfileVersion: '9.0'\nimporters:\n  .: {}\n  apps/app:\n    devDependencies:\n      '@test/config':\n        specifier: workspace:*\n        version: link:../../packages/config\n  packages/config: {}\n",
     ".node-version": "24.18.0\n",
     ".npmrc": "engine-strict=true\n",
     ".gitignore": ".env*\n.turbo\n",
@@ -40,10 +40,6 @@ function fixture(t) {
     "apps/app/index.ts": "export const value = 1;\n",
     "packages/config/package.json": JSON.stringify({ name: "@test/config" }),
     "packages/config/index.mjs": "export default { strict: true };\n",
-    "packages/tv/package.json": JSON.stringify({
-      name: "@unimatrix/tv",
-      scripts: { build: "echo tv", test: "echo test" },
-    }),
   };
   for (const [name, contents] of Object.entries(files)) {
     mkdirSync(dirname(join(root, name)), { recursive: true });
@@ -141,15 +137,10 @@ test("root toolchain pins invalidate every static task", (t) => {
   }
 });
 
-test("tests and the TV runtime build remain uncached", (t) => {
+test("tests remain uncached", (t) => {
   const root = fixture(t);
   const run = dryRun(root);
   const tests = run.tasks.filter((item) => item.task === "test");
   assert.ok(tests.length > 0);
   for (const task of tests) assert.equal(task.resolvedTaskDefinition.cache, false, task.taskId);
-  const tvBuild = run.tasks.find((item) => item.taskId === "@unimatrix/tv#build");
-  assert.ok(tvBuild);
-  assert.equal(tvBuild.resolvedTaskDefinition.cache, false);
-  assert.deepEqual(tvBuild.resolvedTaskDefinition.dependsOn, ["^build"]);
-  assert.deepEqual(tvBuild.resolvedTaskDefinition.outputs, ["dist/**"]);
 });

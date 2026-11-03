@@ -33,7 +33,6 @@ function fixture(t) {
     "apps/web": { name: "@unimatrix/web", dependencies: { "@unimatrix/ui": "workspace:*" } },
     "apps/cflop": { name: "@unimatrix/cflop", dependencies: { "@unimatrix/cube": "workspace:*" } },
     "apps/status": { name: "@unimatrix/status", dependencies: { "@unimatrix/ui": "workspace:*" } },
-    "packages/unimatrix-tv": { name: "@unimatrix/tv" },
     lab: { name: "@unimatrix/lab", dependencies: { "@unimatrix/ui": "workspace:*" } },
   };
   for (const [path, manifest] of Object.entries(manifests)) {
@@ -61,7 +60,6 @@ test("guidance-only changes select no package work or setup", (t) => {
   assert.equal(result.full, false);
   assert.deepEqual(result.packages, []);
   assert.equal(result.browser, false);
-  assert.equal(result.dotnet, false);
   assert.deepEqual(result.lighthouse, []);
 });
 
@@ -69,7 +67,6 @@ test("backend-only changes do not install browsers or run Lighthouse", (t) => {
   const result = fixture(t).plan("apps/api/src/app.ts");
   assert.deepEqual(paths(result), ["apps/api"]);
   assert.equal(result.browser, false);
-  assert.equal(result.dotnet, false);
 });
 
 test("app-local changes and home copy stay confined to their app", (t) => {
@@ -120,7 +117,6 @@ test("unknown, toolchain, lockfile and executable guidance paths request full ch
     const result = plan(path);
     assert.equal(result.full, true, path);
     assert.equal(result.packages.length, workspaces.length, path);
-    assert.equal(result.dotnet, true);
   }
 });
 

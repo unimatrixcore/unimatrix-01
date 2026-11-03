@@ -37,7 +37,7 @@ this file holds the mechanics, each of which was learned the hard way.
   select everything. Keep required check names reporting on every PR; workflow
   path filters can leave required checks pending forever. Browser setup and
   Lighthouse follow the same plan, but image checks remain unconditional.
-- Turbo caches static tasks; tests and the host-SDK-dependent TV build run fresh.
+- Turbo caches static tasks; tests run fresh.
   Only successful main runs save the bounded cache, and PRs only restore it.
   `pnpm check:ci` proves selection failures, required coverage artifacts, and
   invalidation when shared configuration sources change.

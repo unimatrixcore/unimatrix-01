@@ -116,7 +116,6 @@ export function createCIPlan({ workspaces, changedPaths, fullReason }) {
     packages,
     browser: packages.some(({ path }) => smokeApps.has(path)),
     lighthouse: packages.map(({ path }) => path).filter((path) => lighthouseApps.has(path)),
-    dotnet: packages.some(({ path }) => path === "packages/unimatrix-tv"),
   };
 }
 
@@ -187,7 +186,6 @@ export function readCIPlan(repoRoot, path) {
     throw new Error("CI plan omits workspace consumers");
   if (
     plan.browser !== derived.browser ||
-    plan.dotnet !== derived.dotnet ||
     JSON.stringify(plan.lighthouse) !== JSON.stringify(derived.lighthouse)
   ) {
     throw new Error("CI plan setup flags do not match selected workspaces");
@@ -270,7 +268,6 @@ export function main(argv = process.argv.slice(2), env = process.env) {
     browser: plan.browser,
     lighthouse_web: plan.lighthouse.includes("apps/web"),
     lighthouse_cflop: plan.lighthouse.includes("apps/cflop"),
-    dotnet: plan.dotnet,
   };
   if (env.GITHUB_OUTPUT)
     appendFileSync(

@@ -3,8 +3,7 @@
 ## Local verification
 
 On 2026-11-01, `pnpm verify` passed under Node 24.18.0 and pnpm 10.30.3.
-The TV tests used the existing isolated ASP.NET 10 runtime through
-`UTV_DOTNET_RUNTIME`; the worktree's SQLite native dependency was rebuilt for Node 24.
+The worktree's SQLite native dependency was rebuilt for Node 24.
 
 The Canvas socket/config suite passed all 13 tests. It exercises HTTP/MCP result parity
 through both supported MCP protocol paths, credential separation, capability denial,
