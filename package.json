@@ -31,7 +31,7 @@
     "check:doc-script-refs": "bash ./infra/scripts/check-doc-script-refs.sh",
     "check:deploy-config": "node ./infra/scripts/validate-deploy-config.mjs && node ./infra/scripts/generate-deploy-config.mjs --check",
     "check:runner-labels": "node ./infra/scripts/check-runner-labels.mjs",
-    "check:ci": "node ./infra/scripts/run-local-workload.mjs -- node --test --test-concurrency=1 ./infra/scripts/ci-*.test.mjs ./infra/scripts/check-coverage-drift.test.mjs ./infra/scripts/trim-turbo-cache.test.mjs ./infra/scripts/run-local-workload.test.mjs ./infra/scripts/workload-wiring.test.mjs",
+    "check:ci": "node ./infra/scripts/run-local-workload.mjs -- node --test --test-concurrency=1 ./infra/scripts/ci-*.test.mjs ./infra/scripts/deploy-*.test.mjs ./infra/scripts/check-coverage-drift.test.mjs ./infra/scripts/trim-turbo-cache.test.mjs ./infra/scripts/run-local-workload.test.mjs ./infra/scripts/workload-wiring.test.mjs",
     "check:coverage-drift": "node ./infra/scripts/check-coverage-drift.mjs",
     "check:todo-citations": "bash ./infra/scripts/check-todo-citations.sh",
     "check:scratch-untracked": "node ./infra/scripts/check-scratch-not-tracked.mjs",

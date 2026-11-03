@@ -4,7 +4,8 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 
-import { createCIPlan, discoverWorkspaces, workspaceFromManifest } from "./ci-plan.mjs";
+import { discoverWorkspaces, workspaceFromManifest } from "./ci-plan.mjs";
+import { createDeploymentComparison, deploymentWorkspace } from "./deploy-inputs.mjs";
 
 const sha = /^[a-f0-9]{40}$/u;
 const appName = /^[a-z][a-z0-9-]{0,63}$/u;
@@ -98,9 +99,10 @@ function historicalWorkspaces(root, commit) {
   const names = new Set();
   if (!paths.length) throw new Error("Historical workspace inventory unavailable.");
   return paths.map((path) => {
-    const workspace = workspaceFromManifest(
-      path.slice(0, -13),
-      JSON.parse(git(root, ["show", `${commit}:${path}`])),
+    const manifest = JSON.parse(git(root, ["show", `${commit}:${path}`]));
+    const workspace = deploymentWorkspace(
+      workspaceFromManifest(path.slice(0, -13), manifest),
+      manifest,
     );
     if (names.has(workspace.name)) throw new Error("Duplicate historical workspace.");
     names.add(workspace.name);
@@ -108,16 +110,14 @@ function historicalWorkspaces(root, commit) {
   });
 }
 
-function guidanceOnly(path) {
-  return (
-    /(?:^|\/)(?:README|AGENTS)\.md$/u.test(path) ||
-    ((path.startsWith("docs/") || path.startsWith(".agents/")) && path.endsWith(".md"))
-  );
-}
-
 export function createDeploymentPlan({ root, env, baselines = new Map(), forceAll = false }) {
   const identity = deploymentIdentity(env);
-  const workspaces = discoverWorkspaces(root);
+  const workspaces = discoverWorkspaces(root).map((workspace) =>
+    deploymentWorkspace(
+      workspace,
+      JSON.parse(readFileSync(resolve(root, workspace.path, "package.json"), "utf8")),
+    ),
+  );
   const comparisons = new Map();
   const apps = discoverDeployApps(root).map((app) => {
     const workspace = workspaces.find((entry) => entry.path === `apps/${app}`);
@@ -141,14 +141,17 @@ export function createDeploymentPlan({ root, env, baselines = new Map(), forceAl
             "--",
           ])
             .split("\0")
-            .filter(Boolean)
-            .filter((path) => !guidanceOnly(path));
+            .filter(Boolean);
           const graph = [...workspaces, ...historicalWorkspaces(root, baseline.commit)];
-          const changedPaths = changed.map((path) => {
-            const compose = /^infra\/docker\/([a-z][a-z0-9-]*)-compose\.yaml$/u.exec(path);
-            return compose ? `apps/${compose[1]}/deploy.config.ts` : path;
-          });
-          comparisons.set(baseline.commit, createCIPlan({ workspaces: graph, changedPaths }));
+          comparisons.set(
+            baseline.commit,
+            createDeploymentComparison({
+              workspaces: graph,
+              changedPaths: changed,
+              before: (path) => git(root, ["show", `${baseline.commit}:${path}`]),
+              after: (path) => git(root, ["show", `${identity.commit}:${path}`]),
+            }),
+          );
         } catch {
           comparisons.set(baseline.commit, null);
         }

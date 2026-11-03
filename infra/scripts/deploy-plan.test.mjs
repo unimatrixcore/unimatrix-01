@@ -19,11 +19,20 @@ function fixture(t) {
   mkdirSync(join(root, "infra/docker"), { recursive: true });
   for (const [path, manifest] of Object.entries({
     "apps/api": { name: "@unimatrix/api" },
-    "apps/web": { name: "@unimatrix/web", dependencies: { "@unimatrix/ui": "workspace:*" } },
+    "apps/web": {
+      name: "@unimatrix/web",
+      dependencies: { "@unimatrix/ui": "workspace:*" },
+      devDependencies: {
+        "@unimatrix/config-eslint": "workspace:*",
+        "@unimatrix/config-typescript": "workspace:*",
+      },
+    },
     "apps/admin": { name: "@unimatrix/admin", dependencies: { "@unimatrix/ui": "workspace:*" } },
     "packages/ui": { name: "@unimatrix/ui", dependencies: { "@unimatrix/helpers": "workspace:*" } },
     "packages/helpers": { name: "@unimatrix/helpers" },
     "packages/unused": { name: "@unimatrix/unused" },
+    "packages/config-eslint": { name: "@unimatrix/config-eslint" },
+    "packages/config-typescript": { name: "@unimatrix/config-typescript" },
   })) {
     mkdirSync(join(root, path), { recursive: true });
     write(`${path}/package.json`, JSON.stringify(manifest));
@@ -128,6 +137,114 @@ test("Dockerfile and server configuration changes select their service", (t) => 
   const f = fixture(t);
   assert.deepEqual(selected(f.change("apps/web/nginx.conf")), ["web"]);
   assert.deepEqual(selected(f.change("apps/api/Dockerfile")), ["api", "web"]);
+});
+
+test("validation configuration does not release apps but build configuration does", (t) => {
+  const f = fixture(t);
+  assert.deepEqual(selected(f.change("packages/config-eslint/index.ts")), []);
+  assert.deepEqual(selected(f.change("apps/web/eslint.config.mjs")), []);
+  assert.deepEqual(selected(f.change("apps/web/vitest.config.ts")), []);
+  assert.deepEqual(selected(f.change("packages/config-typescript/index.ts")), ["web"]);
+});
+
+test("validation-only manifest edits retain images; build dependencies still release", (t) => {
+  const f = fixture(t);
+  const manifest = JSON.parse(readFileSync(join(f.root, "apps/web/package.json"), "utf8"));
+  manifest.devDependencies.eslint = "^10.0.0";
+  manifest.scripts = { test: "vitest run" };
+  assert.deepEqual(selected(f.change("apps/web/package.json", JSON.stringify(manifest))), []);
+  manifest.devDependencies.vite = "^8.0.0";
+  assert.deepEqual(selected(f.change("apps/web/package.json", JSON.stringify(manifest))), ["web"]);
+});
+
+test("validation packages declared as runtime dependencies retain their source edges", (t) => {
+  const f = fixture(t);
+  const manifest = JSON.parse(readFileSync(join(f.root, "apps/web/package.json"), "utf8"));
+  manifest.dependencies["@unimatrix/config-eslint"] = "workspace:*";
+  delete manifest.devDependencies["@unimatrix/config-eslint"];
+  f.change("apps/web/package.json", JSON.stringify(manifest));
+  for (const [app, baseline] of f.baselines)
+    f.baselines.set(app, { ...baseline, commit: f.env.IMAGE_TAG });
+  assert.deepEqual(selected(f.change("packages/config-eslint/index.ts")), ["web"]);
+});
+
+test("new unused package, its lock entries and ESLint boundary do not release existing apps", (t) => {
+  const f = fixture(t);
+  const lock = (extra = "") => `lockfileVersion: '9.0'
+importers:
+  apps/admin: {}
+  apps/api: {}
+  apps/web:
+    dependencies:
+      '@unimatrix/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+    devDependencies:
+      '@unimatrix/config-eslint':
+        specifier: workspace:*
+        version: link:../../packages/config-eslint
+  packages/ui: {}
+${extra}packages: {}
+snapshots: {}
+`;
+  f.write("pnpm-lock.yaml", lock());
+  const base = f.commit();
+  for (const [app, baseline] of f.baselines) f.baselines.set(app, { ...baseline, commit: base });
+  f.write("pnpm-lock.yaml", lock("  packages/unused: {}\n"));
+  f.write("packages/unused/index.ts", "new package\n");
+  assert.deepEqual(selected(f.change("packages/config-eslint/index.ts")), []);
+  mkdirSync(join(f.root, "apps/new"));
+  f.write("apps/new/package.json", JSON.stringify({ name: "@unimatrix/new" }));
+  f.write("apps/new/Dockerfile", "FROM scratch\n");
+  f.write("infra/docker/new-compose.yaml", "services: {}\n");
+  assert.deepEqual(selected(f.change("pnpm-lock.yaml", lock("  apps/new: {}\n"))), ["new"]);
+});
+
+test("release orchestration and validation changes do not change service images", (t) => {
+  const f = fixture(t);
+  mkdirSync(join(f.root, ".github/workflows"), { recursive: true });
+  mkdirSync(join(f.root, "infra/scripts"), { recursive: true });
+  assert.deepEqual(selected(f.change(".github/workflows/ci.yml")), []);
+  assert.deepEqual(selected(f.change("infra/scripts/deploy-plan.mjs")), []);
+  assert.deepEqual(selected(f.change("infra/scripts/run-local-workload.mjs")), [
+    "admin",
+    "api",
+    "web",
+  ]);
+});
+
+test("lock-only integrity updates and uncertain resolutions select only their consumers", (t) => {
+  const f = fixture(t);
+  const lock = `lockfileVersion: '9.0'
+importers:
+  apps/admin: {}
+  apps/api: {}
+  apps/web:
+    devDependencies:
+      vite:
+        specifier: ^1.0.0
+        version: 1.0.0
+packages:
+  vite@1.0.0:
+    resolution: {integrity: sha512-before}
+snapshots:
+  vite@1.0.0: {}
+`;
+  f.write("pnpm-lock.yaml", lock);
+  const base = f.commit();
+  for (const [app, baseline] of f.baselines) f.baselines.set(app, { ...baseline, commit: base });
+  const updated = lock.replace("sha512-before", "sha512-after");
+  assert.deepEqual(selected(f.change("pnpm-lock.yaml", updated)), ["web"]);
+  f.baselines.set("web", { ...f.baselines.get("web"), commit: f.env.IMAGE_TAG });
+  const uncertain = updated.replace(
+    "  apps/api: {}",
+    `  apps/api:
+    dependencies:
+      unknown:
+        specifier: file:unknown.tgz
+        version: file:unknown.tgz`,
+  );
+  assert.deepEqual(selected(f.change("pnpm-lock.yaml", uncertain)), ["api"]);
 });
 
 test("per-service baselines catch canceled merges, partial releases and rollbacks", (t) => {
