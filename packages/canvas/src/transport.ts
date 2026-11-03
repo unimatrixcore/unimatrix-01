@@ -82,7 +82,15 @@ function safeNext(response: Response, initial: URL): string | undefined {
     )
       throw new CanvasConnectionError("CANVAS_UNSAFE_PAGINATION");
     for (const key of url.searchParams.keys()) {
-      if (/token|as_user_id|user_id|student_id/iu.test(key))
+      if (
+        /token|as_user_id|student_id/iu.test(key) ||
+        (/user_id/iu.test(key) &&
+          !(
+            key === "user_id" &&
+            initial.searchParams.get(key) === "self" &&
+            url.searchParams.get(key) === "self"
+          ))
+      )
         throw new CanvasConnectionError("CANVAS_UNSAFE_PAGINATION");
     }
     // Opaque page tokens may change, but selectors and filters cannot widen the original read.
@@ -95,7 +103,7 @@ function safeNext(response: Response, initial: URL): string | undefined {
         throw new CanvasConnectionError("CANVAS_UNSAFE_PAGINATION");
     }
     const knownFilters =
-      /^(?:include|exclude|context_codes|course_ids|enrollment_type|enrollment_state|type|start_date|end_date|all_events|scope|filter|state|search_term)(?:\[\])?$/u;
+      /^(?:include|exclude|context_codes|course_ids|enrollment_type|enrollment_state|type|start_date|end_date|all_events|scope|filter|state|search_term|override_assignment_dates|grading_period_id)(?:\[\])?$/u;
     for (const key of url.searchParams.keys())
       if (knownFilters.test(key) && !initial.searchParams.has(key))
         throw new CanvasConnectionError("CANVAS_UNSAFE_PAGINATION");

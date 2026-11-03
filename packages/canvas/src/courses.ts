@@ -49,6 +49,7 @@ export interface CanvasCourseInput {
 export interface CanvasCourseOptions {
   userId: string;
   timeZone?: string;
+  transport?: CanvasTransport;
 }
 export interface CanvasCourseWorkflows {
   list(input: CanvasCourseListInput, context: CanvasCourseContext): Promise<CanvasCourseListResult>;
@@ -116,7 +117,7 @@ export function createCanvasCourseWorkflows(
   id.parse(options.userId);
   const fallbackTimeZone = options.timeZone ?? "America/Phoenix";
   if (!validTimeZone(fallbackTimeZone)) throw new Error("Invalid Canvas fallback timezone.");
-  const transport = createCanvasTransport(connection);
+  const transport = options.transport ?? createCanvasTransport(connection);
   const cursors = new Map<string, Cursor>();
 
   async function memberships(

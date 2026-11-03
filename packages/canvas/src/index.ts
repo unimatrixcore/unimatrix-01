@@ -175,3 +175,16 @@ export type {
   CanvasCourseOptions,
   CanvasCourseWorkflows,
 } from "./courses.js";
+
+export { createCanvasAssignmentWorkflows } from "./assignments.js";
+export type {
+  CanvasAssignmentInput,
+  CanvasAssignmentListInput,
+  CanvasGradesInput,
+  CanvasAssignment,
+  CanvasAssignmentListResult,
+  CanvasAssignmentResult,
+  CanvasSubmissionResult,
+  CanvasGradesResult,
+  CanvasAssignmentWorkflows,
+} from "./assignments.js";

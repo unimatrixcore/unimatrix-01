@@ -950,6 +950,9 @@ importers:
 
   packages/canvas:
     dependencies:
+      '@unimatrix/document-text':
+        specifier: workspace:*
+        version: link:../document-text
       zod:
         specifier: ^4.3.6
         version: 4.4.3

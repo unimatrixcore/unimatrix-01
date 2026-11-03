@@ -45,7 +45,7 @@ const ALLOWED_PACKAGE_IMPORTS = {
   ],
   "apps/api": ["auth", "db", "deploy-client", "deploy-config", "secrets", "service-http", "shared"],
   "apps/canvas": ["api-client", "auth", "canvas", "mcp", "secrets", "service-http", "shared"],
-  "packages/canvas": [],
+  "packages/canvas": ["document-text"],
   // Never `db`: this service's SQLite file lives on its own volume, not
   // packages/db's (single-writer, already owned by the API container) — see
   // apps/secrets/AGENTS.md.

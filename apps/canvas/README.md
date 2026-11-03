@@ -1,4 +1,4 @@
-# Canvas student courses
+# Canvas student coursework
 
 The protected status and course operations read the Admin-managed integration credential
 and verify the configured Canvas account. HTTP and MCP invoke the same in-process
@@ -12,6 +12,25 @@ Use the static contracts in `@unimatrix/shared` with the generic API client's
 MCP exposes `canvas_list_courses` and `canvas_get_course` with the same arguments and
 structured results. `canvas_status` and `canvas_connection_status` both verify account
 access, as do `/api/v1/status` and `/api/v1/connection`.
+
+Assignment, submission and grade contracts live in `packages/shared/src/contracts/canvas-assignments.ts`.
+Their HTTP routes and MCP tools accept a verified `courseId`; detail and submission reads also
+require `assignmentId`. Assignment dates come from Canvas with personal overrides applied.
+The service preserves nullable availability dates, restrictions, rubric associations and
+requested-include availability. An omitted include does not establish that no association exists.
+
+Instructions are converted to bounded, untrusted Markdown. Pass the returned document continuation's
+`documentId` and `offset` as `instructionDocumentId` and `instructionOffset` to the assignment
+detail operation. Changed instructions invalidate the document continuation. Assignment lists
+use the same opaque cursor pattern as courses.
+
+Submissions preserve Canvas's attempt, workflow state, timestamps and missing/late/excused flags.
+Offline and external-tool work can lack an online submission; the service does not infer missing
+work. Scores and grades are returned only with a posting timestamp and no explicit hidden flag.
+Explicit ungraded nulls remain null; absent posting information is unknown. Course grades preserve
+Canvas's visible current/final scores and grades, including zero, null and omitted fields, and
+never include unposted totals. `gradingPeriodId` selects a specific period; omission requests the
+whole course. Incomplete grade enrollment pagination fails instead of presenting a complete result.
 
 Course queries default to active enrollments. Set `concluded: true` to include completed
 enrollments and courses. Lists accept `limit` (1–100), `cursor`, and `fresh`; pass returned

@@ -9,7 +9,7 @@ await test("endpoint reads keep large identifiers and fix origin and own-account
   const submission = buildEndpoint({ endpoint: "submission", courseId: huge, assignmentId: huge });
   assert.equal(
     submission.url.href,
-    `https://learn.maricopa.edu/api/v1/courses/${huge}/assignments/${huge}/submissions/self`,
+    `https://learn.maricopa.edu/api/v1/courses/${huge}/assignments/${huge}/submissions/self?include%5B%5D=visibility`,
   );
   assert.equal(submission.list, false);
   assert.equal(buildEndpoint({ endpoint: "self" }).url.pathname, "/api/v1/users/self");
@@ -107,4 +107,43 @@ await test("all enumerated read families build validated bounded endpoints", () 
     assert.equal(result.schema.safeParse("invalid").success, false);
     if (result.list) assert.equal(result.url.searchParams.get("per_page"), "100");
   }
+});
+
+await test("assignment includes request applied override dates and grades remain own-account scoped", () => {
+  const assignments = buildEndpoint({ endpoint: "assignments", courseId: "1" });
+  assert.equal(assignments.url.searchParams.get("override_assignment_dates"), "true");
+  assert.deepEqual(assignments.url.searchParams.getAll("include[]"), [
+    "submission",
+    "assignment_visibility",
+    "overrides",
+    "all_dates",
+  ]);
+  const grades = buildEndpoint({
+    endpoint: "courseEnrollments",
+    courseId: "1",
+    gradingPeriodId: huge,
+    concluded: true,
+  });
+  assert.equal(grades.url.pathname, "/api/v1/courses/1/enrollments");
+  assert.equal(grades.url.searchParams.get("user_id"), "self");
+  assert.equal(grades.url.searchParams.get("grading_period_id"), huge);
+  assert.deepEqual(grades.url.searchParams.getAll("type[]"), ["StudentEnrollment"]);
+  assert.deepEqual(grades.url.searchParams.getAll("state[]"), ["active", "completed"]);
+  assert.throws(() =>
+    buildEndpoint({ endpoint: "courseEnrollments", courseId: "1", userId: "2" } as CanvasRead),
+  );
+});
+
+await test("invalid dates cannot serve as posting evidence or assignment deadlines", () => {
+  const submission = buildEndpoint({ endpoint: "submission", courseId: "1", assignmentId: "2" });
+  const row = { assignment_id: "2", user_id: "3", workflow_state: "graded", score: 0 };
+  for (const posted_at of ["", "not-a-date", "2026-11-01"]) {
+    assert.equal(submission.schema.safeParse({ ...row, posted_at }).success, false);
+  }
+  const assignment = buildEndpoint({ endpoint: "assignment", courseId: "1", assignmentId: "2" });
+  assert.equal(
+    assignment.schema.safeParse({ id: "2", course_id: "1", name: "Fixture", due_at: "tomorrow" })
+      .success,
+    false,
+  );
 });
