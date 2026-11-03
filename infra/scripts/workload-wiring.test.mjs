@@ -7,6 +7,13 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const manifest = (directory) => JSON.parse(readFileSync(join(directory, "package.json"), "utf8"));
 
+test("pnpm selects the pinned Node runtime before install hooks and commands", () => {
+  const pin = readFileSync(join(root, ".node-version"), "utf8").trim();
+  const workspace = readFileSync(join(root, "pnpm-workspace.yaml"), "utf8");
+  assert.equal(/^useNodeVersion:\s*(\S+)\s*$/mu.exec(workspace)?.[1], pin);
+  assert.match(workspace, /^sideEffectsCache:\s*false\s*$/mu);
+});
+
 test("root and workspace heavy scripts use the shared workload guard", () => {
   const directories = [root, join(root, "lab")];
   for (const parent of ["apps", "packages"])

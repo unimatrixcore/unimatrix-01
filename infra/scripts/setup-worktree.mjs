@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { bootstrapLocalEnvFiles, printBootstrapLocalEnvFiles } from "./setup-local.mjs";
@@ -48,12 +49,13 @@ function parseOptions(argv = process.argv.slice(2)) {
   return options;
 }
 
-function runPnpmCommand(args, label) {
+function runPnpmCommand(args, label, env = process.env) {
   return new Promise((resolve, reject) => {
     console.log(`Running ${label}`);
 
     const child = spawn(PNPM_COMMAND, args, {
       cwd: REPO_ROOT,
+      env,
       stdio: "inherit",
     });
 
@@ -84,7 +86,7 @@ function runPnpmCommand(args, label) {
 function printSetupWarnings() {
   if (Object.hasOwn(process.env, "DATABASE_URL")) {
     console.warn(
-      "Warning: DATABASE_URL is set in the current shell, so this worktree may not use packages/db/local/unimatrix.sqlite.",
+      "DATABASE_URL is set in the current shell; setup migrations use this checkout's default database. Manual pnpm db:migrate keeps the override.",
     );
   }
 
@@ -105,7 +107,10 @@ async function main() {
   const linkResults = linkGitignoredWorktreeDirs();
   printLinkGitignoredWorktreeDirs(linkResults);
 
-  await runPnpmCommand(["db:migrate"], "pnpm db:migrate");
+  await runPnpmCommand(["db:migrate"], "pnpm db:migrate for this checkout's default database", {
+    ...process.env,
+    DATABASE_URL: resolve(REPO_ROOT, "packages/db/local/unimatrix.sqlite"),
+  });
 
   if (options.installPlaywright) {
     await runPnpmCommand(
