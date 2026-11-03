@@ -12,3 +12,4 @@ export * from "./deployment-baselines.js";
 
 export * from "./deployment-declarations.js";
 export * from "./canvas-connection.js";
+export * from "./canvas-courses.js";

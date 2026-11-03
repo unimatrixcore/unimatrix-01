@@ -29,6 +29,7 @@ void test("requires explicit owner, resource, allowlists and Clerk configuration
 
 void test("rejects malformed owner and resource configuration without echoing input", () => {
   const cases = [
+    ["CANVAS_TIME_ZONE", "+01:00"],
     ["CANVAS_USER_ID", "1.5"],
     ["CANVAS_USER_ID", "9007199254740993123bad"],
     ["SECRETS_BASE_URL", "http://secrets:3001/"],
@@ -61,6 +62,15 @@ void test("validates listening options and preserves the canonical external reso
   assert.equal(config.port, 3020);
   assert.equal(config.resource, "https://canvas.example/mcp");
   assert.equal(config.ownerUserId, syntheticEnv.CANVAS_OWNER_USER_ID);
+  assert.equal(config.timeZone, "America/Phoenix");
+  assert.equal(
+    loadCanvasConfig({ ...syntheticEnv, CANVAS_TIME_ZONE: "America/New_York" }).timeZone,
+    "America/New_York",
+  );
+  assert.throws(
+    () => loadCanvasConfig({ ...syntheticEnv, CANVAS_TIME_ZONE: "invalid-zone" }),
+    /CANVAS_TIME_ZONE/,
+  );
   for (const PORT of ["0", "65536", "3.5", "", " ", "3020garbage"]) {
     assert.throws(() => loadCanvasConfig({ ...syntheticEnv, PORT }), /PORT/);
   }

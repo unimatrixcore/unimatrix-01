@@ -341,6 +341,9 @@ importers:
         specifier: ^4.3.6
         version: 4.4.3
     devDependencies:
+      '@unimatrix/api-client':
+        specifier: workspace:*
+        version: link:../../packages/api-client
       '@types/node':
         specifier: ^24.13.3
         version: 24.13.3

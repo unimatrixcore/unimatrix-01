@@ -2,10 +2,17 @@ import assert from "node:assert/strict";
 import { request, type IncomingHttpHeaders } from "node:http";
 import test from "node:test";
 import { rootCertificates } from "node:tls";
+import { createApiClient } from "@unimatrix/api-client";
 import type { ServicePrincipal } from "@unimatrix/auth";
 import { SecretValue, SecretsClientError } from "@unimatrix/secrets/client";
 import { AuthError, type ServiceCallerVerifier } from "@unimatrix/auth/server";
-import { canvasSyntheticCoursesSchema, canvasSyntheticStatusSchema } from "@unimatrix/shared";
+import {
+  canvasCoursesSchema,
+  canvasConnectionStatusSchema,
+  canvasCourseResponseSchema,
+  canvasCoursesContract,
+  canvasCourseContract,
+} from "@unimatrix/shared";
 
 import { buildApp } from "../src/app.js";
 import { loadCanvasConfig } from "../src/config.js";
@@ -79,7 +86,28 @@ async function fixture(t: { after: (cleanup: () => Promise<void>) => void }) {
     failure: null as Error | null,
     reads: [] as string[],
   };
-  const upstream = { id: config.canvasUserId, status: 200, calls: 0 };
+  const upstream = {
+    id: config.canvasUserId,
+    status: 200,
+    calls: 0,
+    empty: false,
+    courseStatus: 200,
+    enrollmentStatus: 200,
+    paths: [] as string[],
+  };
+  const course = {
+    id: "41",
+    name: "Synthetic Astrobiology",
+    course_code: "AST-101",
+    time_zone: "America/Phoenix",
+    workflow_state: "available",
+  };
+  const concludedCourse = {
+    ...course,
+    id: "42",
+    name: "Synthetic concluded course",
+    workflow_state: "completed",
+  };
   const app = buildApp(config, {
     verifier,
     logger: false,
@@ -92,17 +120,47 @@ async function fixture(t: { after: (cleanup: () => Promise<void>) => void }) {
     },
     canvasFetch: (url, init) => {
       upstream.calls++;
-      assert.equal(
-        url instanceof Request ? url.url : url.toString(),
-        "https://learn.maricopa.edu/api/v1/users/self",
-      );
+      const address = new URL(url instanceof Request ? url.url : url.toString());
+      upstream.paths.push(address.pathname);
+      assert.equal(address.origin, "https://learn.maricopa.edu");
       assert.equal(init?.redirect, "error");
       assert.equal(new Headers(init?.headers).get("authorization"), `Bearer ${store.value}`);
-      return Promise.resolve(
-        new globalThis.Response(JSON.stringify({ id: upstream.id }), {
-          status: upstream.status,
-        }),
-      );
+      let body: unknown;
+      let status = upstream.status;
+      if (address.pathname === "/api/v1/users/self") body = { id: upstream.id };
+      else if (address.pathname === "/api/v1/users/self/enrollments") {
+        status = upstream.enrollmentStatus;
+        body = upstream.empty
+          ? []
+          : [
+              {
+                id: "81",
+                course_id: "41",
+                user_id: upstream.id,
+                type: "StudentEnrollment",
+                enrollment_state: "active",
+              },
+              {
+                id: "82",
+                course_id: "42",
+                user_id: upstream.id,
+                type: "StudentEnrollment",
+                enrollment_state: "completed",
+              },
+            ];
+      } else if (address.pathname === "/api/v1/courses") {
+        body = upstream.empty
+          ? []
+          : [
+              address.searchParams.get("enrollment_state") === "completed"
+                ? concludedCourse
+                : course,
+            ];
+      } else if (/^\/api\/v1\/courses\/(41|42)$/u.test(address.pathname)) {
+        status = upstream.courseStatus;
+        body = address.pathname.endsWith("42") ? concludedCourse : course;
+      } else throw new Error(`Unexpected upstream path: ${address.pathname}`);
+      return Promise.resolve(new globalThis.Response(JSON.stringify(body), { status }));
     },
   });
   t.after(() => app.close());
@@ -187,7 +245,7 @@ async function fixture(t: { after: (cleanup: () => Promise<void>) => void }) {
         : {},
     );
   }
-  return { app, send, mcp, records, calls, failures, store, upstream };
+  return { app, send, mcp, records, calls, failures, store, upstream, course };
 }
 
 function decoded(response: Response): unknown {
@@ -281,17 +339,34 @@ void test("anonymous liveness and fixed discovery expose no detailed status", as
 });
 
 for (const modern of [false, true]) {
-  void test(`HTTP and MCP return equivalent synthetic facts (modern protocol: ${modern})`, async (t) => {
+  void test(`HTTP and MCP return equivalent verified facts (modern protocol: ${modern})`, async (t) => {
     const { send, mcp } = await fixture(t);
     for (const [path, name, schema] of [
-      ["/api/v1/status", "canvas_status", canvasSyntheticStatusSchema],
-      ["/api/v1/courses", "canvas_list_courses", canvasSyntheticCoursesSchema],
+      ["/api/v1/status", "canvas_status", canvasConnectionStatusSchema],
+      ["/api/v1/courses", "canvas_list_courses", canvasCoursesSchema],
     ] as const) {
       const http = await send(path, "api-full");
       assert.equal(http.status, 200);
       const facts = schema.parse(decoded(http));
       const response = await mcp("tools/call", { name, arguments: {} }, "oauth-full", modern);
-      assert.deepEqual(result(response).structuredContent, facts);
+      const toolFacts = schema.parse(result(response).structuredContent);
+      if ("courses" in facts && "courses" in toolFacts) {
+        assert.deepEqual(toolFacts.courses, facts.courses);
+        assert.deepEqual(
+          toolFacts.sources.map(({ coverage, source, sourceLinks, warnings }) => ({
+            coverage,
+            source,
+            sourceLinks,
+            warnings,
+          })),
+          facts.sources.map(({ coverage, source, sourceLinks, warnings }) => ({
+            coverage,
+            source,
+            sourceLinks,
+            warnings,
+          })),
+        );
+      } else assert.deepEqual(toolFacts, facts);
       assert.equal(response.headers["mcp-session-id"], undefined);
     }
     const echo = result(
@@ -410,7 +485,7 @@ void test("capabilities filter MCP discovery and deny unavailable tools", async 
   const catalog = result(await mcp("tools/list", {}, "oauth-read"));
   assert.deepEqual(
     (catalog.tools as Array<{ name: string }>).map(({ name }) => name),
-    ["canvas_list_courses"],
+    ["canvas_list_courses", "canvas_get_course"],
   );
   const denied = await mcp("tools/call", { name: "canvas_status", arguments: {} }, "oauth-read");
   assert.ok(!denied.text.includes('"connection":"synthetic"'));
@@ -492,4 +567,186 @@ void test("store failures and upstream rejection remain distinct from caller aut
     assert.match(rejected.text, /CANVAS_CREDENTIAL_REJECTED/);
   }
   assert.deepEqual(decoded(await send("/health")), { status: "ok" });
+});
+
+void test("course detail facts and coverage agree through HTTP and MCP", async (t) => {
+  const { send, mcp } = await fixture(t);
+  for (const [courseId, concluded] of [
+    ["41", false],
+    ["42", true],
+  ] as const) {
+    const http = await send(
+      `/api/v1/course?courseId=${courseId}&concluded=${concluded}`,
+      "api-full",
+    );
+    assert.equal(http.status, 200, http.text);
+    const facts = canvasCourseResponseSchema.parse(decoded(http));
+    const tool = canvasCourseResponseSchema.parse(
+      result(
+        await mcp(
+          "tools/call",
+          { name: "canvas_get_course", arguments: { courseId, concluded } },
+          "oauth-full",
+        ),
+      ).structuredContent,
+    );
+    assert.deepEqual(tool.course, facts.course);
+    assert.equal(facts.course.enrollmentState, concluded ? "completed" : "active");
+    assert.equal(facts.course.effectiveTimeZone, "America/Phoenix");
+    assert.deepEqual(
+      tool.sources.map(({ coverage }) => coverage),
+      facts.sources.map(({ coverage }) => coverage),
+    );
+  }
+});
+
+void test("unverified and concluded course identifiers fail closed through both interfaces", async (t) => {
+  const { send, mcp, upstream } = await fixture(t);
+  for (const courseId of ["999", "42"]) {
+    const http = await send(`/api/v1/course?courseId=${courseId}`, "api-full");
+    assert.ok(http.status && http.status >= 400, http.text);
+    const code = (decoded(http) as { error: { code: string } }).error.code;
+    const tool = result(
+      await mcp("tools/call", { name: "canvas_get_course", arguments: { courseId } }, "oauth-full"),
+    );
+    assert.equal(tool.isError, true);
+    assert.ok(JSON.stringify(tool).includes(code));
+    assert.ok(!upstream.paths.includes(`/api/v1/courses/${courseId}`));
+  }
+});
+
+void test("empty verified enrollments return an explicitly complete empty list", async (t) => {
+  const { send, mcp, upstream } = await fixture(t);
+  upstream.empty = true;
+  const http = await send("/api/v1/courses", "api-full");
+  assert.equal(http.status, 200, http.text);
+  const facts = canvasCoursesSchema.parse(decoded(http));
+  assert.deepEqual(facts.courses, []);
+  assert.ok(facts.sources.every(({ coverage }) => coverage === "complete"));
+  const tool = canvasCoursesSchema.parse(
+    result(await mcp("tools/call", { name: "canvas_list_courses", arguments: {} }, "oauth-full"))
+      .structuredContent,
+  );
+  assert.deepEqual(tool.courses, []);
+  assert.deepEqual(
+    tool.sources.map(({ coverage }) => coverage),
+    facts.sources.map(({ coverage }) => coverage),
+  );
+});
+
+void test("bounded shared queries reject invalid HTTP and MCP selectors", async (t) => {
+  const { send, mcp, upstream } = await fixture(t);
+  for (const [path, name, args] of [
+    ["/api/v1/courses?concluded=no", "canvas_list_courses", { concluded: "no" }],
+    ["/api/v1/courses?limit=101", "canvas_list_courses", { limit: 101 }],
+    ["/api/v1/courses?cursor=bad", "canvas_list_courses", { cursor: "bad" }],
+    ["/api/v1/courses?caller=other", "canvas_list_courses", { caller: "other" }],
+    ["/api/v1/course?courseId=0", "canvas_get_course", { courseId: "0" }],
+    [
+      "/api/v1/course?courseId=41&userId=other",
+      "canvas_get_course",
+      { courseId: "41", userId: "other" },
+    ],
+  ] as const) {
+    assert.equal((await send(path, "api-full")).status, 400);
+    assert.equal(
+      result(await mcp("tools/call", { name, arguments: args }, "oauth-full")).isError,
+      true,
+    );
+  }
+  assert.equal(upstream.calls, 0);
+});
+
+void test("generic API-client requests consume the shared course contracts", async (t) => {
+  const { app } = await fixture(t);
+  const client = createApiClient({
+    baseUrl: "http://canvas.example",
+    getAuthToken: () => "api-full",
+    fetch: async (input, init) => {
+      const response = await app.inject({
+        method: "GET",
+        url: new URL(input).pathname + new URL(input).search,
+        headers: { ...init?.headers, host: "canvas.example" },
+      });
+      return {
+        ok: response.statusCode >= 200 && response.statusCode < 300,
+        status: response.statusCode,
+        json: () => Promise.resolve<unknown>(response.json()),
+        text: () => Promise.resolve(response.body),
+      };
+    },
+  });
+  const list = await client.request(canvasCoursesContract, {
+    query: { concluded: true, limit: 1 },
+  });
+  assert.equal(list.courses.length, 1);
+  const detail = await client.request(canvasCourseContract, { query: { courseId: "41" } });
+  assert.equal(detail.course.id, "41");
+});
+
+void test("oversized course facts fail identically before the MCP host output limit", async (t) => {
+  const { send, mcp, course } = await fixture(t);
+  course.name = "private-course-text".repeat(2500);
+  for (const [path, name, args] of [
+    ["/api/v1/course?courseId=41", "canvas_get_course", { courseId: "41" }],
+    ["/api/v1/courses", "canvas_list_courses", {}],
+  ] as const) {
+    const http = await send(path, "api-full");
+    assert.equal(http.status, 503);
+    assert.match(http.text, /CANVAS_BUDGET_EXHAUSTED/);
+    const tool = result(await mcp("tools/call", { name, arguments: args }, "oauth-full"));
+    assert.equal(tool.isError, true);
+    assert.match(JSON.stringify(tool), /CANVAS_BUDGET_EXHAUSTED/);
+    assert.ok(!http.text.includes("private-course-text"));
+    assert.ok(!JSON.stringify(tool).includes("private-course-text"));
+  }
+});
+
+void test("HTTP continuation resumes through MCP with the same verified owner and filters", async (t) => {
+  const { send, mcp } = await fixture(t);
+  const http = await send("/api/v1/courses?concluded=true&limit=1", "api-full");
+  assert.equal(http.status, 200, http.text);
+  let page = canvasCoursesSchema.parse(decoded(http));
+  const ids = page.courses.map(({ id }) => id);
+  assert.ok(page.continuation);
+  assert.ok(page.sources.some(({ coverage }) => coverage === "partial"));
+  for (let index = 0; page.continuation && index < 4; index++) {
+    page = canvasCoursesSchema.parse(
+      result(
+        await mcp(
+          "tools/call",
+          {
+            name: "canvas_list_courses",
+            arguments: { concluded: true, limit: 1, cursor: page.continuation },
+          },
+          "oauth-full",
+        ),
+      ).structuredContent,
+    );
+    ids.push(...page.courses.map(({ id }) => id));
+  }
+  assert.equal(page.continuation, undefined);
+  assert.deepEqual(ids, ["41", "42"]);
+  assert.ok(page.sources.every(({ coverage }) => coverage === "complete"));
+});
+
+void test("inaccessible memberships and course resources preserve HTTP and MCP error parity", async (t) => {
+  const { send, mcp, upstream } = await fixture(t);
+  for (const failure of ["enrollmentStatus", "courseStatus"] as const) {
+    upstream[failure] = 403;
+    const http = await send("/api/v1/course?courseId=41&fresh=true", "api-full");
+    assert.equal(http.status, 502, http.text);
+    const code = (decoded(http) as { error: { code: string } }).error.code;
+    assert.equal(code, "CANVAS_RESOURCE_UNAVAILABLE");
+    const tool = result(
+      await mcp(
+        "tools/call",
+        { name: "canvas_get_course", arguments: { courseId: "41", fresh: true } },
+        "oauth-full",
+      ),
+    );
+    assert.equal(tool.isError, true);
+    assert.ok(JSON.stringify(tool).includes(code));
+    upstream[failure] = 200;
+  }
 });

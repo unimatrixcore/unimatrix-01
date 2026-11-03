@@ -7,9 +7,11 @@ fixed to `https://learn.maricopa.edu`. Endpoint selectors and wire schemas live 
 `src/endpoints.ts`; callers supply selectors, never URLs or arbitrary query parameters.
 
 `read(selector, { caller })` and `aggregate(selectors, { caller })` return source envelopes.
-The adapters must supply `caller` from verified authentication, never request input. This
-package provides transport; student membership authorization and coursework interpretation
-belong in the consuming workflows. Course IDs alone do not establish membership.
+The adapters must supply `caller` from verified authentication, never request input.
+`createCanvasCourseWorkflows(connection, { userId, timeZone })` verifies fresh own student
+enrollments before listing or reading course metadata. Course IDs alone do not establish
+membership. The workflow uses one verified session and request budget across membership
+and course reads, and rejects incomplete enrollment coverage before accessing courses.
 
 Course lists request active student enrollments by default. `concluded: true` combines separate
 active and completed enrollment reads, deduplicated by course ID. Both selections share page
