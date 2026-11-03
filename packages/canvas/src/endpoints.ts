@@ -401,7 +401,6 @@ export function buildEndpoint(input: CanvasRead): CanvasEndpoint {
     case "modules":
       path = `/courses/${read.courseId}/modules`;
       schema = canvasModuleWireSchema;
-      query.append("include[]", "items");
       break;
     case "module":
       path = `/courses/${read.courseId}/modules/${read.moduleId}`;

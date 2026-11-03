@@ -42,6 +42,9 @@ function fixture(handler: (url: URL) => Response) {
     revoke: () => {
       member = false;
     },
+    restore: () => {
+      member = true;
+    },
     rotate: () => {
       token = "rotated-token";
     },
@@ -224,9 +227,16 @@ await test("modules preserve prerequisites and explicit item traversal falls bac
     assert.equal(third.continuation, undefined);
     assert.ok(f.requests.some((url) => url.pathname.endsWith("/modules/2/items")));
     assert.ok(
+      f.requests.every(
+        (url) =>
+          !url.pathname.endsWith("/modules") ||
+          !url.searchParams.getAll("include[]").includes("items"),
+      ),
+    );
+    assert.ok(
       f.requests.some(
         (url) =>
-          url.pathname.endsWith("/modules") &&
+          url.pathname.endsWith("/modules/2") &&
           url.searchParams.getAll("include[]").includes("items"),
       ),
     );
@@ -305,10 +315,11 @@ await test("reading cursors bind caller, filters, credential generation and fres
     f.reading.pages({ courseId: "1", limit: 1, cursor: first.continuation }, context),
     code("CANVAS_COURSE_FORBIDDEN"),
   );
+  f.restore();
   f.rotate();
   await assert.rejects(
     f.reading.pages({ courseId: "1", limit: 1, cursor: first.continuation }, context),
-    (error) => error instanceof CanvasConnectionError,
+    code("CANVAS_INVALID_CURSOR"),
   );
 });
 
