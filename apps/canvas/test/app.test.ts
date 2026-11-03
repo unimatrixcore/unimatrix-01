@@ -7,6 +7,14 @@ import type { ServicePrincipal } from "@unimatrix/auth";
 import { SecretValue, SecretsClientError } from "@unimatrix/secrets/client";
 import { AuthError, type ServiceCallerVerifier } from "@unimatrix/auth/server";
 import {
+  canvasAssignmentsSchema,
+  canvasAssignmentResponseSchema,
+  canvasSubmissionResponseSchema,
+  canvasGradesResponseSchema,
+  canvasAssignmentsContract,
+  canvasAssignmentContract,
+  canvasSubmissionContract,
+  canvasGradesContract,
   canvasCoursesSchema,
   canvasConnectionStatusSchema,
   canvasCourseResponseSchema,
@@ -92,6 +100,9 @@ async function fixture(t: { after: (cleanup: () => Promise<void>) => void }) {
     calls: 0,
     empty: false,
     courseStatus: 200,
+    assignmentStatus: 200,
+    submissionStatus: 200,
+    gradesStatus: 200,
     enrollmentStatus: 200,
     paths: [] as string[],
   };
@@ -107,6 +118,48 @@ async function fixture(t: { after: (cleanup: () => Promise<void>) => void }) {
     id: "42",
     name: "Synthetic concluded course",
     workflow_state: "completed",
+  };
+  const assignment = {
+    id: "91",
+    course_id: "41",
+    name: "Synthetic field study",
+    rubric: [
+      {
+        id: "criterion",
+        points: 10,
+        description: "Synthetic criterion",
+        ratings: [{ arbitrary: "private-association-extra" }],
+      },
+    ],
+    rubric_settings: {
+      id: "6",
+      title: "Synthetic rubric",
+      points_possible: "10",
+      arbitrary: "private-association-extra",
+    },
+    overrides: [{ id: "7", due_at: null, arbitrary: "private-association-extra" }],
+    all_dates: [{ base: true, due_at: null, arbitrary: "private-association-extra" }],
+    due_at: "2026-11-06T07:00:00Z",
+    lock_at: null,
+    unlock_at: null,
+    description:
+      '<p>Read <a href="/courses/41">course context</a>.</p><script>private-script</script>',
+    submission_types: ["external_tool"],
+    points_possible: 10,
+  };
+  const submission = {
+    assignment_id: "91",
+    user_id: config.canvasUserId,
+    workflow_state: "unsubmitted",
+    attempt: 0,
+    submitted_at: null,
+    missing: false,
+    late: false,
+    excused: false,
+    grade_matches_current_submission: false,
+    posted_at: "2026-11-01T00:00:00Z" as string | null,
+    grade: "0",
+    score: 0,
   };
   const app = buildApp(config, {
     verifier,
@@ -159,6 +212,32 @@ async function fixture(t: { after: (cleanup: () => Promise<void>) => void }) {
       } else if (/^\/api\/v1\/courses\/(41|42)$/u.test(address.pathname)) {
         status = upstream.courseStatus;
         body = address.pathname.endsWith("42") ? concludedCourse : course;
+      } else if (address.pathname === "/api/v1/courses/41/assignments") {
+        status = upstream.assignmentStatus;
+        body = [assignment, { ...assignment, id: "92" }];
+      } else if (address.pathname === "/api/v1/courses/41/assignments/91") {
+        status = upstream.assignmentStatus;
+        body = assignment;
+      } else if (address.pathname === "/api/v1/courses/41/assignments/91/submissions/self") {
+        status = upstream.submissionStatus;
+        body = submission;
+      } else if (address.pathname === "/api/v1/courses/41/enrollments") {
+        status = upstream.gradesStatus;
+        body = [
+          {
+            id: "81",
+            course_id: "41",
+            user_id: config.canvasUserId,
+            type: "StudentEnrollment",
+            enrollment_state: "active",
+            grades: {
+              current_score: 0,
+              current_grade: null,
+              final_score: null,
+              unposted_current_score: 99,
+            },
+          },
+        ];
       } else throw new Error(`Unexpected upstream path: ${address.pathname}`);
       return Promise.resolve(new globalThis.Response(JSON.stringify(body), { status }));
     },
@@ -245,7 +324,19 @@ async function fixture(t: { after: (cleanup: () => Promise<void>) => void }) {
         : {},
     );
   }
-  return { app, send, mcp, records, calls, failures, store, upstream, course };
+  return {
+    app,
+    send,
+    mcp,
+    records,
+    calls,
+    failures,
+    store,
+    upstream,
+    course,
+    assignment,
+    submission,
+  };
 }
 
 function decoded(response: Response): unknown {
@@ -485,7 +576,14 @@ void test("capabilities filter MCP discovery and deny unavailable tools", async 
   const catalog = result(await mcp("tools/list", {}, "oauth-read"));
   assert.deepEqual(
     (catalog.tools as Array<{ name: string }>).map(({ name }) => name),
-    ["canvas_list_courses", "canvas_get_course"],
+    [
+      "canvas_list_courses",
+      "canvas_get_course",
+      "canvas_list_assignments",
+      "canvas_get_assignment",
+      "canvas_get_submission",
+      "canvas_get_grades",
+    ],
   );
   const denied = await mcp("tools/call", { name: "canvas_status", arguments: {} }, "oauth-read");
   assert.ok(!denied.text.includes('"connection":"synthetic"'));
@@ -750,3 +848,271 @@ void test("inaccessible memberships and course resources preserve HTTP and MCP e
     upstream[failure] = 200;
   }
 });
+
+void test("assignment, own submission and visible grade facts agree through HTTP and MCP", async (t) => {
+  const { send, mcp } = await fixture(t);
+  for (const modern of [false, true]) {
+    for (const [path, name, schema, args] of [
+      ["assignments", "canvas_list_assignments", canvasAssignmentsSchema, { courseId: "41" }],
+      [
+        "assignment",
+        "canvas_get_assignment",
+        canvasAssignmentResponseSchema,
+        { courseId: "41", assignmentId: "91" },
+      ],
+      [
+        "submission",
+        "canvas_get_submission",
+        canvasSubmissionResponseSchema,
+        { courseId: "41", assignmentId: "91" },
+      ],
+      [
+        "grades",
+        "canvas_get_grades",
+        canvasGradesResponseSchema,
+        { courseId: "41", gradingPeriodId: "8" },
+      ],
+    ] as const) {
+      const http = await send(
+        `/api/v1/${path}?${new URLSearchParams(args).toString()}`,
+        "api-full",
+      );
+      assert.equal(http.status, 200, http.text);
+      const facts = schema.parse(decoded(http));
+      const tool = schema.parse(
+        result(await mcp("tools/call", { name, arguments: args }, "oauth-full", modern))
+          .structuredContent,
+      );
+      const withoutTimes = (value: unknown) =>
+        JSON.parse(JSON.stringify(value), (key, item: unknown) =>
+          ["retrievedAt", "cacheAgeMs"].includes(key) ? undefined : item,
+        ) as unknown;
+      assert.deepEqual(withoutTimes(tool), withoutTimes(facts));
+      assert.ok(!JSON.stringify(facts).includes("private-script"));
+      assert.ok(!JSON.stringify(facts).includes("unposted_current_score"));
+    }
+  }
+});
+
+void test("assignment cursors cross interfaces and instruction continuation remains explicit", async (t) => {
+  const { send, mcp, assignment } = await fixture(t);
+  const first = canvasAssignmentsSchema.parse(
+    decoded(await send("/api/v1/assignments?courseId=41&limit=1", "api-full")),
+  );
+  assert.ok(first.continuation);
+  const last = canvasAssignmentsSchema.parse(
+    result(
+      await mcp(
+        "tools/call",
+        {
+          name: "canvas_list_assignments",
+          arguments: { courseId: "41", limit: 1, cursor: first.continuation },
+        },
+        "oauth-full",
+      ),
+    ).structuredContent,
+  );
+  assert.deepEqual(
+    [...first.assignments, ...last.assignments].map((row) => row.id),
+    ["91", "92"],
+  );
+  assert.equal(last.continuation, undefined);
+  assignment.description = `<p>${"synthetic instructions ".repeat(300)}</p>`;
+  const detail = canvasAssignmentResponseSchema.parse(
+    decoded(await send("/api/v1/assignment?courseId=41&assignmentId=91&fresh=true", "api-full")),
+  );
+  const continuation = detail.assignment.instructions?.continuation;
+  assert.ok(continuation);
+  const next = canvasAssignmentResponseSchema.parse(
+    result(
+      await mcp(
+        "tools/call",
+        {
+          name: "canvas_get_assignment",
+          arguments: {
+            courseId: "41",
+            assignmentId: "91",
+            instructionDocumentId: continuation.documentId,
+            instructionOffset: continuation.offset,
+          },
+        },
+        "oauth-full",
+      ),
+    ).structuredContent,
+  );
+  assert.equal(next.assignment.instructions?.offset, continuation.offset);
+});
+
+void test("hidden scores and external-tool ambiguity survive adapters without invented completion", async (t) => {
+  const { send, mcp, submission } = await fixture(t);
+  submission.posted_at = null;
+  for (const facts of [
+    canvasSubmissionResponseSchema.parse(
+      decoded(await send("/api/v1/submission?courseId=41&assignmentId=91", "api-full")),
+    ),
+    canvasSubmissionResponseSchema.parse(
+      result(
+        await mcp(
+          "tools/call",
+          { name: "canvas_get_submission", arguments: { courseId: "41", assignmentId: "91" } },
+          "oauth-full",
+        ),
+      ).structuredContent,
+    ),
+  ]) {
+    assert.equal(facts.submission.gradeVisibility, "hidden");
+    assert.equal(facts.submission.workflowState, "unsubmitted");
+    assert.equal(facts.submission.missing, false);
+    assert.ok(!("score" in facts.submission));
+    assert.ok(!("grade" in facts.submission));
+  }
+});
+
+void test("coursework failures, enrollment denial and invalid selectors have interface parity", async (t) => {
+  const { send, mcp, upstream } = await fixture(t);
+  for (const [path, name, failure] of [
+    ["assignments", "canvas_list_assignments", "assignmentStatus"],
+    ["assignment", "canvas_get_assignment", "assignmentStatus"],
+    ["submission", "canvas_get_submission", "submissionStatus"],
+    ["grades", "canvas_get_grades", "gradesStatus"],
+  ] as const) {
+    const args =
+      path === "assignment" || path === "submission"
+        ? { courseId: "41", assignmentId: "91" }
+        : { courseId: "41" };
+    upstream[failure] = 403;
+    const http = await send(
+      `/api/v1/${path}?${new URLSearchParams(args).toString()}&fresh=true`,
+      "api-full",
+    );
+    assert.equal(http.status, 502, http.text);
+    const tool = result(
+      await mcp("tools/call", { name, arguments: { ...args, fresh: true } }, "oauth-full"),
+    );
+    assert.equal(tool.isError, true);
+    assert.match(JSON.stringify(tool), /CANVAS_RESOURCE_UNAVAILABLE/);
+    upstream[failure] = 200;
+    assert.equal((await send(`/api/v1/${path}`, "api-full")).status, 400);
+    assert.equal((await send(`/api/v1/${path}`)).status, 401);
+    assert.equal(
+      (
+        await send(
+          `/api/v1/${path}?${new URLSearchParams({ ...args, courseId: "999" }).toString()}`,
+          "api-full",
+        )
+      ).status,
+      403,
+    );
+  }
+  for (const [path, args] of [
+    ["assignments", { courseId: "41", userId: "other" }],
+    ["assignment", { courseId: "41", assignmentId: "91", instructionOffset: "10" }],
+    ["grades", { courseId: "41", gradingPeriodId: "0" }],
+  ] as const)
+    assert.equal(
+      (await send(`/api/v1/${path}?${new URLSearchParams(args).toString()}`, "api-full")).status,
+      400,
+    );
+});
+
+void test("generic API client consumes coursework contracts", async (t) => {
+  const { app } = await fixture(t);
+  const client = createApiClient({
+    baseUrl: "http://canvas.example",
+    getAuthToken: () => "api-full",
+    fetch: async (input, init) => {
+      const response = await app.inject({
+        method: "GET",
+        url: new URL(input).pathname + new URL(input).search,
+        headers: { ...init?.headers, host: "canvas.example" },
+      });
+      return {
+        ok: response.statusCode === 200,
+        status: response.statusCode,
+        json: () => Promise.resolve<unknown>(response.json()),
+        text: () => Promise.resolve(response.body),
+      };
+    },
+  });
+  assert.equal(
+    (await client.request(canvasAssignmentsContract, { query: { courseId: "41" } })).assignments
+      .length,
+    2,
+  );
+  assert.equal(
+    (
+      await client.request(canvasAssignmentContract, {
+        query: { courseId: "41", assignmentId: "91" },
+      })
+    ).assignment.id,
+    "91",
+  );
+  assert.equal(
+    (
+      await client.request(canvasSubmissionContract, {
+        query: { courseId: "41", assignmentId: "91" },
+      })
+    ).submission.score,
+    0,
+  );
+  const grades = await client.request(canvasGradesContract, {
+    query: { courseId: "41", gradingPeriodId: "8" },
+  });
+  assert.equal(grades.grades[0]?.grades?.currentScore, 0);
+  assert.equal(grades.grades[0]?.grades?.currentGrade, null);
+  assert.ok(!("finalGrade" in grades.grades[0].grades));
+  assert.equal(grades.grades[0]?.gradingPeriodId, "8");
+});
+
+for (const failure of ["association", "instructions"] as const) {
+  void test(`oversized ${failure} does not block assignment lists through either interface`, async (t) => {
+    const { send, mcp, assignment } = await fixture(t);
+    if (failure === "association") {
+      const criterion = assignment.rubric[0];
+      assert.ok(criterion);
+      criterion.description = "x".repeat(24_000);
+    } else assignment.description = "x".repeat(270_000);
+    const http = await send("/api/v1/assignments?courseId=41&limit=1", "api-full");
+    assert.equal(http.status, 200, http.text);
+    const first = canvasAssignmentsSchema.parse(decoded(http));
+    assert.equal(first.assignments[0]?.id, "91");
+    assert.ok(
+      first.assignments[0]?.omittedFields.includes(
+        failure === "association" ? "rubric" : "instructions",
+      ),
+    );
+    assert.ok(first.assignments[0]?.warnings.length);
+    assert.equal(first.assignments[0]?.dueAt, assignment.due_at);
+    assert.ok(first.continuation);
+    assert.ok(!http.text.includes("private-association-extra"));
+    assert.ok(Buffer.byteLength(http.text) <= 16 * 1024);
+    const next = canvasAssignmentsSchema.parse(
+      result(
+        await mcp(
+          "tools/call",
+          {
+            name: "canvas_list_assignments",
+            arguments: { courseId: "41", limit: 1, cursor: first.continuation },
+          },
+          "oauth-full",
+        ),
+      ).structuredContent,
+    );
+    assert.equal(next.assignments[0]?.id, "92");
+    assert.equal(next.continuation, undefined);
+    assert.equal(next.sources.at(-1)?.coverage, "complete");
+    const tool = canvasAssignmentsSchema.parse(
+      result(
+        await mcp(
+          "tools/call",
+          {
+            name: "canvas_list_assignments",
+            arguments: { courseId: "41", limit: 1 },
+          },
+          "oauth-full",
+        ),
+      ).structuredContent,
+    );
+    assert.deepEqual(tool.assignments, first.assignments);
+  });
+}

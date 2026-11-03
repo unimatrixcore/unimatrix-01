@@ -21,6 +21,7 @@
     "typecheck": "node ../../infra/scripts/run-local-workload.mjs -- tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@unimatrix/document-text": "workspace:*",
     "zod": "^4.3.6"
   },
   "devDependencies": {

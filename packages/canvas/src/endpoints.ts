@@ -25,6 +25,12 @@ const readSchema = z.discriminatedUnion("endpoint", [
   z.strictObject({ endpoint: z.literal("assignment"), ...assignment }),
   z.strictObject({ endpoint: z.literal("submission"), ...assignment }),
   z.strictObject({ endpoint: z.literal("enrollments"), concluded: z.boolean().optional() }),
+  z.strictObject({
+    endpoint: z.literal("courseEnrollments"),
+    ...course,
+    concluded: z.boolean().optional(),
+    gradingPeriodId: id.optional(),
+  }),
   z.strictObject({ endpoint: z.literal("planner"), ...window, courseIds: courseIds.optional() }),
   z.strictObject({
     endpoint: z.literal("calendar"),
@@ -63,13 +69,19 @@ export interface CanvasEndpoint {
 const text = z.string();
 const optionalId = id.nullable().optional();
 const nullableText = text.nullable().optional();
-const submissionSchema = z.looseObject({
+const nullableTimestamp = z.iso.datetime({ offset: true }).nullable().optional();
+export const canvasSubmissionWireSchema = z.looseObject({
   id: id.optional(),
   assignment_id: id,
   user_id: id,
   attempt: z.number().int().nonnegative().nullable().optional(),
   workflow_state: text,
-  submitted_at: nullableText,
+  submitted_at: nullableTimestamp,
+  submission_type: nullableText,
+  posted_at: nullableTimestamp,
+  graded_at: nullableTimestamp,
+  cached_due_date: nullableTimestamp,
+  hidden: z.boolean().optional(),
   grade: nullableText,
   score: z.number().nullable().optional(),
   missing: z.boolean().optional(),
@@ -77,18 +89,76 @@ const submissionSchema = z.looseObject({
   excused: z.boolean().nullable().optional(),
   grade_matches_current_submission: z.boolean().optional(),
 });
-const assignmentSchema = z.looseObject({
+export const canvasAssignmentWireSchema = z.looseObject({
   id,
   course_id: id,
   name: text,
   description: nullableText,
-  due_at: nullableText,
-  lock_at: nullableText,
-  unlock_at: nullableText,
+  due_at: nullableTimestamp,
+  lock_at: nullableTimestamp,
+  unlock_at: nullableTimestamp,
   submission_types: z.array(text).optional(),
   points_possible: z.number().nullable().optional(),
   html_url: text.optional(),
-  submission: submissionSchema.optional(),
+  submission: canvasSubmissionWireSchema.nullable().optional(),
+  published: z.boolean().optional(),
+  locked_for_user: z.boolean().optional(),
+  lock_explanation: nullableText,
+  only_visible_to_overrides: z.boolean().optional(),
+  has_overrides: z.boolean().optional(),
+  assignment_visibility: z.array(id).nullable().optional(),
+  overrides: z
+    .array(
+      z.object({
+        id,
+        assignment_id: id.optional(),
+        student_ids: z.array(id).optional(),
+        course_section_id: optionalId,
+        group_id: optionalId,
+        title: text.optional(),
+        due_at: nullableTimestamp,
+        lock_at: nullableTimestamp,
+        unlock_at: nullableTimestamp,
+      }),
+    )
+    .nullable()
+    .optional(),
+  all_dates: z
+    .array(
+      z.object({
+        id: id.optional(),
+        base: z.boolean().optional(),
+        title: text.optional(),
+        due_at: nullableTimestamp,
+        lock_at: nullableTimestamp,
+        unlock_at: nullableTimestamp,
+      }),
+    )
+    .nullable()
+    .optional(),
+  rubric: z
+    .array(
+      z.object({
+        id: text,
+        points: z.number().optional(),
+        description: text.optional(),
+        long_description: nullableText,
+      }),
+    )
+    .nullable()
+    .optional(),
+  rubric_settings: z
+    .object({
+      id: id.optional(),
+      title: text.optional(),
+      points_possible: z.union([z.number(), z.string().regex(/^-?\d+(?:\.\d+)?$/u)]).optional(),
+    })
+    .nullable()
+    .optional(),
+  use_rubric_for_grading: z.boolean().optional(),
+  grading_type: text.optional(),
+  omit_from_final_grade: z.boolean().optional(),
+  hide_in_gradebook: z.boolean().optional(),
 });
 export const canvasEnrollmentWireSchema = z.looseObject({
   id: id.optional(),
@@ -96,6 +166,16 @@ export const canvasEnrollmentWireSchema = z.looseObject({
   user_id: id,
   type: text,
   enrollment_state: text.optional(),
+  course_section_id: id.optional(),
+  grades: z
+    .looseObject({
+      current_grade: nullableText,
+      final_grade: nullableText,
+      current_score: z.number().nullable().optional(),
+      final_score: z.number().nullable().optional(),
+    })
+    .nullable()
+    .optional(),
 });
 export const canvasCourseWireSchema = z.looseObject({
   id,
@@ -150,7 +230,7 @@ const calendarSchema = z.looseObject({
   title: text,
   start_at: nullableText,
   end_at: nullableText,
-  assignment: assignmentSchema.optional(),
+  assignment: canvasAssignmentWireSchema.optional(),
 });
 const announcementSchema = z.looseObject({
   id,
@@ -215,16 +295,23 @@ export function buildEndpoint(input: CanvasRead): CanvasEndpoint {
       break;
     case "assignments":
       path = `/courses/${read.courseId}/assignments`;
-      schema = assignmentSchema;
+      schema = canvasAssignmentWireSchema;
+      query.set("override_assignment_dates", "true");
+      for (const include of ["submission", "assignment_visibility", "overrides", "all_dates"])
+        query.append("include[]", include);
       break;
     case "assignment":
       path = `/courses/${read.courseId}/assignments/${read.assignmentId}`;
-      schema = assignmentSchema;
+      schema = canvasAssignmentWireSchema;
+      query.set("override_assignment_dates", "true");
+      for (const include of ["submission", "assignment_visibility", "overrides"])
+        query.append("include[]", include);
       list = false;
       break;
     case "submission":
       path = `/courses/${read.courseId}/assignments/${read.assignmentId}/submissions/self`;
-      schema = submissionSchema;
+      schema = canvasSubmissionWireSchema;
+      query.append("include[]", "visibility");
       list = false;
       break;
     case "enrollments":
@@ -233,6 +320,15 @@ export function buildEndpoint(input: CanvasRead): CanvasEndpoint {
       query.append("type[]", "StudentEnrollment");
       query.append("state[]", "active");
       if (read.concluded) query.append("state[]", "completed");
+      break;
+    case "courseEnrollments":
+      path = `/courses/${read.courseId}/enrollments`;
+      schema = canvasEnrollmentWireSchema;
+      query.set("user_id", "self");
+      query.append("type[]", "StudentEnrollment");
+      query.append("state[]", "active");
+      if (read.concluded) query.append("state[]", "completed");
+      if (read.gradingPeriodId) query.set("grading_period_id", read.gradingPeriodId);
       break;
     case "planner":
       path = "/planner/items";
@@ -251,7 +347,7 @@ export function buildEndpoint(input: CanvasRead): CanvasEndpoint {
       break;
     case "missingSubmissions":
       path = "/users/self/missing_submissions";
-      schema = assignmentSchema;
+      schema = canvasAssignmentWireSchema;
       addCourses(read.courseIds, "course_ids[]");
       break;
     case "announcements":
