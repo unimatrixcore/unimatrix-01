@@ -24,7 +24,7 @@ const readSchema = z.discriminatedUnion("endpoint", [
   z.strictObject({ endpoint: z.literal("assignments"), ...course }),
   z.strictObject({ endpoint: z.literal("assignment"), ...assignment }),
   z.strictObject({ endpoint: z.literal("submission"), ...assignment }),
-  z.strictObject({ endpoint: z.literal("enrollments") }),
+  z.strictObject({ endpoint: z.literal("enrollments"), concluded: z.boolean().optional() }),
   z.strictObject({ endpoint: z.literal("planner"), ...window, courseIds: courseIds.optional() }),
   z.strictObject({
     endpoint: z.literal("calendar"),
@@ -90,20 +90,24 @@ const assignmentSchema = z.looseObject({
   html_url: text.optional(),
   submission: submissionSchema.optional(),
 });
-const enrollmentSchema = z.looseObject({
+export const canvasEnrollmentWireSchema = z.looseObject({
   id: id.optional(),
   course_id: id,
   user_id: id,
   type: text,
   enrollment_state: text.optional(),
 });
-const courseSchema = z.looseObject({
+export const canvasCourseWireSchema = z.looseObject({
   id,
   name: text.optional(),
   course_code: text.optional(),
-  time_zone: text.optional(),
+  time_zone: text.nullable().optional(),
+  workflow_state: text.optional(),
   syllabus_body: nullableText,
-  enrollments: z.array(enrollmentSchema.omit({ course_id: true, user_id: true })).optional(),
+  enrollments: z
+    .array(canvasEnrollmentWireSchema.omit({ course_id: true, user_id: true }))
+    .nullable()
+    .optional(),
 });
 const pageSchema = z.looseObject({
   page_id: id,
@@ -200,14 +204,13 @@ export function buildEndpoint(input: CanvasRead): CanvasEndpoint {
       break;
     case "courses":
       path = "/courses";
-      schema = courseSchema;
+      schema = canvasCourseWireSchema;
       query.set("enrollment_type", "student");
       query.set("enrollment_state", "active");
       break;
     case "course":
       path = `/courses/${read.courseId}`;
-      schema = courseSchema;
-      query.append("include[]", "syllabus_body");
+      schema = canvasCourseWireSchema;
       list = false;
       break;
     case "assignments":
@@ -226,8 +229,10 @@ export function buildEndpoint(input: CanvasRead): CanvasEndpoint {
       break;
     case "enrollments":
       path = "/users/self/enrollments";
-      schema = enrollmentSchema;
+      schema = canvasEnrollmentWireSchema;
       query.append("type[]", "StudentEnrollment");
+      query.append("state[]", "active");
+      if (read.concluded) query.append("state[]", "completed");
       break;
     case "planner":
       path = "/planner/items";

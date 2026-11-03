@@ -162,3 +162,16 @@ export type {
   CanvasTransport,
   CanvasResult,
 } from "./transport.js";
+
+export { createCanvasCourseWorkflows } from "./courses.js";
+export type {
+  CanvasCourse,
+  CanvasCourseSource,
+  CanvasCourseListResult,
+  CanvasCourseResult,
+  CanvasCourseContext,
+  CanvasCourseListInput,
+  CanvasCourseInput,
+  CanvasCourseOptions,
+  CanvasCourseWorkflows,
+} from "./courses.js";

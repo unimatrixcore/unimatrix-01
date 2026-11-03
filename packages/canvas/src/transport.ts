@@ -26,6 +26,10 @@ export interface CanvasResult {
 export interface CanvasTransport {
   read(read: CanvasRead, options: CanvasReadOptions): Promise<CanvasResult>;
   aggregate(reads: readonly CanvasRead[], options: CanvasReadOptions): Promise<CanvasResult>;
+  withSession<T>(
+    operation: (transport: CanvasTransport, session: CanvasSession) => Promise<T>,
+    options?: CanvasOperationOptions,
+  ): Promise<T>;
   invalidate(): void;
 }
 interface Progress {
@@ -130,6 +134,7 @@ export function createCanvasTransport(connection: CanvasConnection): CanvasTrans
     reads: readonly CanvasRead[],
     options: CanvasReadOptions,
     operation: "read" | "aggregate",
+    existingSession?: CanvasSession,
   ): Promise<CanvasResult> {
     if (!options.caller || options.caller.length > 256 || reads.length < 1 || reads.length > 20)
       throw new Error("Invalid Canvas operation.");
@@ -151,7 +156,7 @@ export function createCanvasTransport(connection: CanvasConnection): CanvasTrans
       ...(options.signal === undefined ? {} : { signal: options.signal }),
       ...(options.maxRequests === undefined ? {} : { maxRequests: options.maxRequests }),
     };
-    return connection.withSession(async (session: CanvasSession) => {
+    const execute = async (session: CanvasSession) => {
       if (generation !== session.generation) {
         invalidate();
         generation = session.generation;
@@ -286,11 +291,19 @@ export function createCanvasTransport(connection: CanvasConnection): CanvasTrans
         });
       }
       return result;
-    }, settings);
+    };
+    return existingSession ? execute(existingSession) : connection.withSession(execute, settings);
   }
-  return {
-    aggregate: (reads, options) => aggregate(reads, options, "aggregate"),
-    read: (read, options) => aggregate([read], options, "read"),
-    invalidate,
-  };
+  function scoped(session?: CanvasSession): CanvasTransport {
+    return {
+      aggregate: (reads, options) => aggregate(reads, options, "aggregate", session),
+      read: (read, options) => aggregate([read], options, "read", session),
+      withSession: (operation, options) =>
+        session
+          ? operation(scoped(session), session)
+          : connection.withSession((active) => operation(scoped(active), active), options),
+      invalidate,
+    };
+  }
+  return scoped();
 }

@@ -6,6 +6,7 @@ export interface CanvasConfig {
   port: number;
   ownerUserId: string;
   canvasUserId: string;
+  timeZone: string;
   secretsBaseUrl: string;
   secretsReadToken: string;
   secretsCertificatePem: string;
@@ -79,6 +80,14 @@ export function loadCanvasConfig(env: NodeJS.ProcessEnv = process.env): CanvasCo
     throw new Error("Invalid PORT.");
   }
   const host = env.HOST === undefined ? "127.0.0.1" : required(env, "HOST");
+  const timeZone =
+    env.CANVAS_TIME_ZONE === undefined ? "America/Phoenix" : required(env, "CANVAS_TIME_ZONE");
+  try {
+    if (/^[+-]/u.test(timeZone)) throw new Error();
+    new Intl.DateTimeFormat("en", { timeZone });
+  } catch {
+    throw new Error("Invalid CANVAS_TIME_ZONE.");
+  }
   if (
     isIP(host) === 0 &&
     !/^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)*[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/u.test(
@@ -92,6 +101,7 @@ export function loadCanvasConfig(env: NodeJS.ProcessEnv = process.env): CanvasCo
     port,
     ownerUserId,
     canvasUserId,
+    timeZone,
     secretsBaseUrl: secretsBaseUrl.href,
     secretsReadToken: required(env, "SECRETS_CANVAS_READ_TOKEN"),
     secretsCertificatePem,

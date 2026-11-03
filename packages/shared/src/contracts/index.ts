@@ -1,7 +1,6 @@
 export * from "./admin-deployment.js";
 export * from "./admin-secrets.js";
 export * from "./api-contract.js";
-export * from "./canvas-synthetic.js";
 export * from "./content.js";
 export * from "./deployment.js";
 export * from "./health.js";
@@ -13,3 +12,4 @@ export * from "./public-status.js";
 export * from "./deployment-attempts.js";
 export * from "./deployment-baselines.js";
 export * from "./canvas-connection.js";
+export * from "./canvas-courses.js";

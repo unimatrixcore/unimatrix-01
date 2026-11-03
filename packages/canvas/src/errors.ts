@@ -8,8 +8,9 @@ const errors = {
   CANVAS_INVALID_RESPONSE: [502, "Canvas returned an invalid response."],
   CANVAS_REQUEST_FAILED: [502, "Canvas request failed."],
   CANVAS_UNSAFE_PAGINATION: [502, "Canvas returned unsafe pagination."],
+  CANVAS_COURSE_FORBIDDEN: [403, "Canvas course is outside verified student enrollments."],
   CANVAS_RESOURCE_UNAVAILABLE: [502, "Canvas resource is inaccessible."],
-  CANVAS_BUDGET_EXHAUSTED: [503, "Canvas request budget was exhausted."],
+  CANVAS_BUDGET_EXHAUSTED: [503, "Canvas operation budget was exhausted."],
   CANVAS_INVALID_CURSOR: [409, "Canvas continuation is invalid or expired."],
   REQUEST_CANCELLED: [503, "Canvas operation was cancelled."],
 } as const;
@@ -18,7 +19,7 @@ export type CanvasConnectionErrorCode = keyof typeof errors;
 
 export class CanvasConnectionError extends Error {
   readonly code: CanvasConnectionErrorCode;
-  readonly statusCode: 409 | 502 | 503;
+  readonly statusCode: 403 | 409 | 502 | 503;
 
   constructor(code: CanvasConnectionErrorCode) {
     super(errors[code][1]);

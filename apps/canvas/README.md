@@ -1,10 +1,32 @@
-# Canvas connection and synthetic caller proof
+# Canvas student courses
 
-The protected `GET /api/v1/connection` and `canvas_connection_status` tool read the
-Admin-managed integration credential and verify the configured Canvas account. The courses
-and original status operations still return fixed synthetic data for caller verification.
-Both interfaces call the same in-process connection. `connection: "synthetic"` describes
-the caller-proof fixture.
+The protected status and course operations read the Admin-managed integration credential
+and verify the configured Canvas account. HTTP and MCP invoke the same in-process
+workflows. Course access requires current, verified student enrollment; a course ID alone
+does not grant access.
+
+Use the static contracts in `@unimatrix/shared` with the generic API client's
+`request(canvasCoursesContract, { query: {} })` or
+`request(canvasCourseContract, { query: { courseId } })`. HTTP uses
+`GET /api/v1/courses` and `GET /api/v1/course`; identifiers stay in query parameters.
+MCP exposes `canvas_list_courses` and `canvas_get_course` with the same arguments and
+structured results. `canvas_status` and `canvas_connection_status` both verify account
+access, as do `/api/v1/status` and `/api/v1/connection`.
+
+Course queries default to active enrollments. Set `concluded: true` to include completed
+enrollments and courses. Lists accept `limit` (1–100), `cursor`, and `fresh`; pass returned
+`continuation` as `cursor` with the same filters and limit. Keep earlier chunks. A cursor
+is single-use, expires after five minutes, and is bound to the caller and credential
+generation. Do not combine `fresh` and `cursor`. Results are limited to 16 KiB across both
+interfaces; lists may continue before reaching `limit`. A single course that exceeds the
+result budget fails with `CANVAS_BUDGET_EXHAUSTED` instead of returning truncated facts.
+
+Results retain source coverage, timestamps, cache age, warnings and source links. An empty
+list establishes empty enrollments only when coverage is complete. Membership is reread
+even when course metadata comes from cache or continuation. An inaccessible or incomplete
+membership read fails closed. Course metadata preserves the upstream timezone and reports
+the effective timezone and its source; `CANVAS_TIME_ZONE` supplies the fallback and defaults
+to `America/Phoenix`.
 
 Build dependencies with `pnpm exec turbo run --concurrency=1 build --filter=@unimatrix/canvas-app...`,
 then run `pnpm --filter @unimatrix/canvas-app start` with environment supplied by the operator.
@@ -70,7 +92,8 @@ and account verification, including on content-cache hits. Operations share seri
 and a ten-second deadline, including queue time.
 
 `/health` reports process liveness independently. Caller authentication failures remain
-401/403. Connection errors use safe codes: `CREDENTIAL_DENIED`, `CREDENTIAL_MISSING` and
+401/403. A course outside verified student memberships returns `CANVAS_COURSE_FORBIDDEN`
+(403). Connection errors use safe codes: `CREDENTIAL_DENIED`, `CREDENTIAL_MISSING` and
 `CREDENTIAL_UNAVAILABLE` (503), `CANVAS_ACCOUNT_MISMATCH` (409), and upstream rejection,
 unavailability or malformed-response errors (502). MCP tool errors carry the same codes.
 A store 404 can mean either absence or an out-of-scope name. Neither response bodies nor

@@ -26,6 +26,16 @@ const SHIPPED_SOURCE = ["src/**/*.{ts,tsx,mts,cts}"];
 const ALL_SOURCE = ["**/*.{ts,tsx,mts,cts}"];
 
 const WORKSPACE_RESTRICTIONS = {
+  "apps/canvas": {
+    files: SHIPPED_SOURCE,
+    patterns: [
+      {
+        group: ["@unimatrix/api-client", "@unimatrix/api-client/*"],
+        message:
+          "Canvas adapters call domain workflows in process. The generic API client is a test-only consumer of the public HTTP contracts.",
+      },
+    ],
+  },
   "apps/cflop": {
     files: ALL_SOURCE,
     patterns: [
