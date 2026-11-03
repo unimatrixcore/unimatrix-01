@@ -197,3 +197,18 @@ export type {
   CanvasAgendaItem,
   CanvasAgendaEvidence,
 } from "./agenda.js";
+
+export { createCanvasReadingWorkflows } from "./reading.js";
+export type {
+  CanvasReadingListInput,
+  CanvasSyllabusInput,
+  CanvasPageInput,
+  CanvasModuleItemsInput,
+  CanvasFileInput,
+  CanvasAnnouncementsInput,
+  CanvasReadingPage,
+  CanvasReadingModule,
+  CanvasReadingModuleItem,
+  CanvasReadingFile,
+  CanvasReadingWorkflows,
+} from "./reading.js";

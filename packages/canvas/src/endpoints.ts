@@ -21,6 +21,7 @@ const readSchema = z.discriminatedUnion("endpoint", [
   z.strictObject({ endpoint: z.literal("self") }),
   z.strictObject({ endpoint: z.literal("courses"), concluded: z.boolean().optional() }),
   z.strictObject({ endpoint: z.literal("course"), ...course }),
+  z.strictObject({ endpoint: z.literal("syllabus"), ...course }),
   z.strictObject({ endpoint: z.literal("assignments"), ...course }),
   z.strictObject({ endpoint: z.literal("assignment"), ...assignment }),
   z.strictObject({ endpoint: z.literal("submission"), ...assignment }),
@@ -41,6 +42,7 @@ const readSchema = z.discriminatedUnion("endpoint", [
   z.strictObject({ endpoint: z.literal("missingSubmissions"), courseIds: courseIds.optional() }),
   z.strictObject({ endpoint: z.literal("announcements"), ...window, courseIds }),
   z.strictObject({ endpoint: z.literal("modules"), ...course }),
+  z.strictObject({ endpoint: z.literal("module"), ...course, moduleId: id }),
   z.strictObject({ endpoint: z.literal("moduleItems"), ...course, moduleId: id }),
   z.strictObject({ endpoint: z.literal("pages"), ...course }),
   z.strictObject({
@@ -189,33 +191,57 @@ export const canvasCourseWireSchema = z.looseObject({
     .nullable()
     .optional(),
 });
-const pageSchema = z.looseObject({
+export const canvasPageWireSchema = z.looseObject({
   page_id: id,
   url: text,
   title: text,
   body: nullableText,
   html_url: text.optional(),
+  front_page: z.boolean().optional(),
+  locked_for_user: z.boolean().optional(),
+  lock_explanation: nullableText,
 });
-const fileSchema = z.looseObject({
+export const canvasFileWireSchema = z.looseObject({
   id,
   display_name: text,
   filename: text.optional(),
+  "content-type": text.optional(),
+  lock_at: nullableTimestamp,
+  unlock_at: nullableTimestamp,
   size: z.number().nonnegative().optional(),
   locked: z.boolean().optional(),
   locked_for_user: z.boolean().optional(),
+  hidden: z.boolean().optional(),
+  hidden_for_user: z.boolean().optional(),
+  lock_explanation: nullableText,
 });
-const moduleItemSchema = z.looseObject({
+export const canvasModuleItemWireSchema = z.looseObject({
   id,
   module_id: id,
   title: text,
   type: text,
   content_id: optionalId,
   page_url: text.optional(),
+  position: z.number().int().nonnegative().optional(),
+  locked_for_user: z.boolean().optional(),
+  completion_requirement: z
+    .object({
+      type: text,
+      min_score: z.number().optional(),
+      completed: z.boolean().optional(),
+    })
+    .nullable()
+    .optional(),
 });
-const moduleSchema = z.looseObject({
+export const canvasModuleWireSchema = z.looseObject({
   id,
   name: text,
-  items: z.array(moduleItemSchema).optional(),
+  items: z.array(canvasModuleItemWireSchema).max(1000).optional(),
+  items_count: z.number().int().nonnegative().optional(),
+  position: z.number().int().nonnegative().optional(),
+  require_sequential_progress: z.boolean().optional(),
+  state: text.optional(),
+  unlock_at: nullableTimestamp,
   prerequisite_module_ids: z.array(id).optional(),
 });
 export const canvasPlannerWireSchema = z.looseObject({
@@ -239,11 +265,13 @@ export const canvasCalendarWireSchema = z.looseObject({
   context_code: text.optional(),
   assignment: canvasAssignmentWireSchema.optional(),
 });
-const announcementSchema = z.looseObject({
+export const canvasAnnouncementWireSchema = z.looseObject({
   id,
   title: text,
   message: nullableText,
   context_code: text.optional(),
+  posted_at: nullableTimestamp,
+  locked_for_user: z.boolean().optional(),
 });
 
 function losslessIds(value: unknown, context: z.RefinementCtx, depth = 0): void {
@@ -298,6 +326,12 @@ export function buildEndpoint(input: CanvasRead): CanvasEndpoint {
     case "course":
       path = `/courses/${read.courseId}`;
       schema = canvasCourseWireSchema;
+      list = false;
+      break;
+    case "syllabus":
+      path = `/courses/${read.courseId}`;
+      schema = canvasCourseWireSchema;
+      query.append("include[]", "syllabus_body");
       list = false;
       break;
     case "assignments":
@@ -359,35 +393,41 @@ export function buildEndpoint(input: CanvasRead): CanvasEndpoint {
       break;
     case "announcements":
       path = "/announcements";
-      schema = announcementSchema;
+      schema = canvasAnnouncementWireSchema;
       query.set("start_date", read.startDate);
       query.set("end_date", read.endDate);
       addCourses(read.courseIds);
       break;
     case "modules":
       path = `/courses/${read.courseId}/modules`;
-      schema = moduleSchema;
+      schema = canvasModuleWireSchema;
+      break;
+    case "module":
+      path = `/courses/${read.courseId}/modules/${read.moduleId}`;
+      schema = canvasModuleWireSchema;
+      query.append("include[]", "items");
+      list = false;
       break;
     case "moduleItems":
       path = `/courses/${read.courseId}/modules/${read.moduleId}/items`;
-      schema = moduleItemSchema;
+      schema = canvasModuleItemWireSchema;
       break;
     case "pages":
       path = `/courses/${read.courseId}/pages`;
-      schema = pageSchema;
+      schema = canvasPageWireSchema;
       break;
     case "page":
       path = `/courses/${read.courseId}/${read.selector.kind === "frontPage" ? "front_page" : `pages/${read.selector.kind === "id" ? `page_id:${read.selector.pageId}` : read.selector.slug}`}`;
-      schema = pageSchema;
+      schema = canvasPageWireSchema;
       list = false;
       break;
     case "files":
       path = `/courses/${read.courseId}/files`;
-      schema = fileSchema;
+      schema = canvasFileWireSchema;
       break;
     case "file":
       path = `/courses/${read.courseId}/files/${read.fileId}`;
-      schema = fileSchema;
+      schema = canvasFileWireSchema;
       list = false;
       break;
   }

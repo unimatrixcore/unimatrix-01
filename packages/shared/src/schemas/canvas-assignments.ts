@@ -26,7 +26,7 @@ export const canvasGradesQuerySchema = canvasCourseQuerySchema.extend({
   gradingPeriodId: id.optional(),
 });
 
-const documentSchema = z.strictObject({
+export const canvasDocumentSchema = z.strictObject({
   format: z.literal("markdown"),
   trust: z.literal("untrusted"),
   text: z.string(),
@@ -98,7 +98,7 @@ export const canvasAssignmentSchema = z.strictObject({
   gradingType: z.string().optional(),
   omitFromFinalGrade: z.boolean().optional(),
   hideInGradebook: z.boolean().optional(),
-  instructions: documentSchema.nullable(),
+  instructions: canvasDocumentSchema.nullable(),
   instructionsAvailability: z.enum(["included", "absent", "unavailable"]),
   omittedFields: z.array(z.string()).max(32),
   warnings: z.array(z.string()).max(32),

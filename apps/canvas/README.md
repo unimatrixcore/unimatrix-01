@@ -61,6 +61,29 @@ not obligations in arbitrary course text or external applications. Source covera
 remain relevant even when some items are available. Agenda tests use synthetic upstream responses;
 school endpoint permissions and real-account deadlines require the separate live acceptance task.
 
+Reading contracts live in `packages/shared/src/contracts/canvas-reading.ts`; HTTP and MCP
+share syllabus, announcements, page discovery/detail, module discovery/items and file
+metadata workflows. These operations require `canvas:read` and verify student membership.
+Announcement reads require `start`, `end` and `courseIds`; HTTP encodes `courseIds` as a
+JSON array. Lists return source coverage and opaque continuation with the same filters.
+
+Page detail requires `selector: "front_page"`, `selector: "id"` with `pageId`, or
+`selector: "slug"` with `pageSlug`. A numeric slug remains a slug. Syllabus, page and
+announcement text passes through `@unimatrix/document-text` as bounded untrusted Markdown.
+Pass a document continuation's `documentId` and `offset` back to the same operation;
+announcement continuation also requires its `announcementId`. Keep earlier text chunks.
+Conversion limits and inaccessible content produce explicit availability and warnings;
+missing text does not establish an empty readable document. An individual metadata record
+that cannot fit the response budget fails with `CANVAS_BUDGET_EXHAUSTED`; metadata fields
+are not silently shortened.
+
+Module metadata preserves prerequisites and progress. Read a module's items separately;
+missing or incomplete embedded items fall back to paginated item reads. Locks and
+completion requirements remain visible. File operations expose metadata and stable Canvas
+UI links, excluding signed download URLs and file contents. Reading coverage uses synthetic
+fixtures and local socket tests; actual school endpoint permissions and materials require
+the separate live acceptance task.
+
 Course queries default to active enrollments. Set `concluded: true` to include completed
 enrollments and courses. Lists accept `limit` (1–100), `cursor`, and `fresh`; pass returned
 `continuation` as `cursor` with the same filters and limit. Keep earlier chunks. A cursor
