@@ -28,12 +28,11 @@ describe("Canvas agenda contracts", () => {
     expect(canvasAgendaContract.path).toBe("/api/v1/agenda");
   });
 
-  it("requires bounded explicit windows, valid zones and opaque continuation", () => {
+  it("requires explicit date selectors, valid zones and opaque continuation", () => {
     for (const input of [
       {},
       { start: window.start },
-      { ...window, end: window.start },
-      { ...window, end: "2027-01-01" },
+      { ...window, end: "invalid" },
       { ...window, timeZone: "Mars/Olympus" },
       { ...window, courseIds: [1] },
       { ...window, courseIds: [] },
@@ -49,6 +48,17 @@ describe("Canvas agenda contracts", () => {
       canvasAgendaQuerySchema.safeParse({
         start: "2026-03-08T00:00:00-05:00",
         end: "2026-03-09T00:00:00-04:00",
+      }).success,
+    ).toBe(true);
+    expect(
+      canvasAgendaQuerySchema.safeParse({ start: "2026-11-03T01:00:00Z", end: "2026-11-03" })
+        .success,
+    ).toBe(true);
+    expect(
+      canvasAgendaQuerySchema.safeParse({
+        start: "2026-10-01",
+        end: "2027-01-02T04:00:00Z",
+        timeZone: "America/New_York",
       }).success,
     ).toBe(true);
   });

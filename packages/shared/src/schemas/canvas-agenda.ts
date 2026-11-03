@@ -47,10 +47,6 @@ export const canvasAgendaQuerySchema = canvasCoursesQuerySchema
       .pipe(z.array(id).min(1).max(100))
       .optional(),
   })
-  .refine((value) => {
-    const duration = Date.parse(value.end) - Date.parse(value.start);
-    return duration > 0 && duration <= 93 * 86_400_000;
-  })
   .refine((value) => !(value.cursor && value.fresh));
 
 export const canvasAgendaEvidenceSchema = z.strictObject({

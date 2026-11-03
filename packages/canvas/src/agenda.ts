@@ -196,8 +196,8 @@ export function createCanvasAgendaWorkflows(
       const zone = query.timeZone ?? fallback;
       const start = boundary(query.start, zone);
       const end = boundary(query.end, zone);
-      if (!(start < end) || Date.parse(query.end) - Date.parse(query.start) > 93 * 86_400_000)
-        throw new CanvasConnectionError("CANVAS_INVALID_RESPONSE");
+      if (!(start < end) || end - start > 93 * 86_400_000)
+        throw new CanvasConnectionError("CANVAS_INVALID_REQUEST");
       if (query.cursor && query.fresh) throw new CanvasConnectionError("CANVAS_INVALID_CURSOR");
       const filters = query.courseIds ? [...new Set(query.courseIds)].sort() : undefined;
       const key = JSON.stringify([
@@ -364,9 +364,9 @@ export function createCanvasAgendaWorkflows(
                     item.dueAt ??= row.assignment?.due_at ?? row.start_at ?? null;
                   item.endAt ??= row.end_at ?? null;
                   item.allDay = row.all_day ?? false;
-                  item.allDayDate =
-                    row.all_day_date ??
-                    (item.allDay && row.start_at ? localDate(row.start_at, zone) : null);
+                  item.allDayDate = item.allDay
+                    ? (row.all_day_date ?? (row.start_at ? localDate(row.start_at, zone) : null))
+                    : null;
                   item.evidence.push({
                     source: "calendar",
                     id: row.id,

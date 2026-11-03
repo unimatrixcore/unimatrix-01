@@ -41,8 +41,8 @@ whole course. Incomplete grade enrollment pagination fails instead of presenting
 
 `GET /api/v1/agenda` and `canvas_get_agenda` share `canvasAgendaContract`. Supply explicit
 `start` and `end` dates or offset timestamps, with an exclusive end and a maximum window of
-93 days. Date-only boundaries use `timeZone`, falling back to `CANVAS_TIME_ZONE`; the result
-reports `effectiveTimeZone` and `timeZoneSource`. Original timestamps and all-day dates remain
+93 × 24 hours after timezone resolution. Date-only boundaries use `timeZone`, falling back to
+`CANVAS_TIME_ZONE`; the result reports `effectiveTimeZone` and `timeZoneSource`. Original timestamps and all-day dates remain
 separate. Optional `courseIds` selects active student courses. The generic API client serializes
 that array as JSON in the HTTP query; MCP accepts the array directly.
 

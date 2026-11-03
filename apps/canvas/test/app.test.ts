@@ -1296,6 +1296,40 @@ void test("agenda source failures retain partial coverage through HTTP and MCP",
   assert.deepEqual(tool.items, facts.items);
 });
 
+void test("agenda validates resolved windows with coded request errors over HTTP and MCP", async (t) => {
+  const { send, mcp, upstream } = await fixture(t);
+  for (const args of [
+    { start: "2026-11-03", end: "2026-11-03T01:00:00Z", timeZone: "America/Phoenix" },
+    { start: "2026-10-01", end: "2027-01-02", timeZone: "America/New_York" },
+    { start: "2026-01-01", end: "2027-01-01", timeZone: "America/Phoenix" },
+  ]) {
+    const http = await send(`/api/v1/agenda?${new URLSearchParams(args).toString()}`, "api-full");
+    assert.equal(http.status, 400, http.text);
+    assert.match(http.text, /CANVAS_INVALID_REQUEST/);
+    for (const modern of [false, true]) {
+      const error = result(
+        await mcp(
+          "tools/call",
+          { name: "canvas_get_agenda", arguments: args },
+          "oauth-full",
+          modern,
+        ),
+      );
+      assert.equal(error.isError, true);
+      assert.match(JSON.stringify(error.content), /CANVAS_INVALID_REQUEST/);
+    }
+  }
+  assert.equal(upstream.calls, 0);
+  const valid = {
+    start: "2026-11-03T01:00:00Z",
+    end: "2026-11-03",
+    timeZone: "America/Phoenix",
+    courseIds: JSON.stringify(["41"]),
+  };
+  const http = await send(`/api/v1/agenda?${new URLSearchParams(valid).toString()}`, "api-full");
+  assert.equal(http.status, 200, http.text);
+});
+
 void test("generic API client consumes the agenda contract", async (t) => {
   const { app } = await fixture(t);
   const client = createApiClient({

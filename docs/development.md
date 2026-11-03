@@ -75,7 +75,8 @@ single repo-owned bootstrap command.
 - Runs `pnpm install --frozen-lockfile`
 - Copies missing `apps/api/.env` and `apps/web/.env` files from their example
   files
-- Runs `pnpm db:migrate`
+- Runs `pnpm db:migrate` against this checkout's default SQLite file, even when
+  the shell supplies `DATABASE_URL`; manual migrations still honor the override
 - Warns when `DATABASE_URL` is already set or when multiple worktrees may need
   different local ports
 - Accepts `--with-playwright` to install Chromium for `@unimatrix/web` smoke
@@ -193,8 +194,9 @@ When it is set, the current code accepts absolute paths, repo-relative paths,
 
 ## Unsupported host runtimes
 
-Use the checked-in wrapper when the host does not already have compatible
-local Node and pnpm versions active.
+pnpm selects the exact Node runtime from `useNodeVersion` in `pnpm-workspace.yaml`
+for installs, scripts and exec commands. Use the checked-in wrapper when the
+host's pnpm version does not match `packageManager`.
 
 ```bash
 ./infra/scripts/pnpm-with-pinned-node.sh install --frozen-lockfile
@@ -203,6 +205,8 @@ local Node and pnpm versions active.
 ./infra/scripts/pnpm-with-pinned-node.sh verify
 ```
 
-When the host already matches the pins in `.node-version` and `packageManager`,
-the wrapper takes a fast path and reuses them. Otherwise it bootstraps both
-through `npm exec`.
+The wrapper reuses matching pnpm or bootstraps only the pinned pnpm through
+`npm exec`. pnpm selects Node in both paths. `pnpm check:ci` checks that
+`useNodeVersion` matches `.node-version`. Keep `sideEffectsCache: false`: pnpm 10
+keys native build cache entries by its launcher Node, which can differ from the
+runtime selected for dependency builds.

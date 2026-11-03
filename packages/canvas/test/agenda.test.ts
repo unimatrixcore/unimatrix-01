@@ -230,11 +230,38 @@ await test("timed events ignore all-day date metadata and retain overlapping int
     end: "2026-11-03T18:00:00Z",
   });
   assert.equal(items.length, 3);
+  const timed = items.find((item) => item.title === "Timed");
+  assert.equal(timed?.allDayDate, null);
+  assert.equal(timed?.evidence[0]?.date, "2026-11-03T15:00:00Z");
   assert.equal(result.nothingDue, false);
   assert.deepEqual(
     items.map((item) => item.title),
     ["Overlapping", "Remember field notebook", "Timed"],
   );
+});
+await test("zone-resolved windows reject invalid ordering and elapsed budgets before upstream access", async () => {
+  const f = fixture();
+  for (const window of [
+    { start: "2026-11-03", end: "2026-11-03T01:00:00Z", timeZone: "America/Phoenix" },
+    { start: "2026-10-01", end: "2027-01-02", timeZone: "America/New_York" },
+    { start: "2026-01-01", end: "2027-01-01", timeZone: "America/Phoenix" },
+  ]) {
+    await assert.rejects(
+      f.workflows.get(window, context),
+      (error) =>
+        error instanceof CanvasConnectionError &&
+        error.code === "CANVAS_INVALID_REQUEST" &&
+        error.statusCode === 400,
+    );
+  }
+  assert.equal(f.urls.length, 0);
+  const valid = await collect(f, {
+    ...query,
+    start: "2026-10-01",
+    end: "2027-01-02T04:00:00Z",
+    timeZone: "America/New_York",
+  });
+  assert.equal(valid.result.coverage, "complete");
 });
 await test("calendar contexts are explicit and batched at ten while personal events remain separate", async () => {
   const f = fixture((url) =>
