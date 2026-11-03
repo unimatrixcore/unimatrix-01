@@ -188,3 +188,12 @@ export type {
   CanvasGradesResult,
   CanvasAssignmentWorkflows,
 } from "./assignments.js";
+
+export { createCanvasAgendaWorkflows } from "./agenda.js";
+export type {
+  CanvasAgendaInput,
+  CanvasAgendaResult,
+  CanvasAgendaWorkflows,
+  CanvasAgendaItem,
+  CanvasAgendaEvidence,
+} from "./agenda.js";

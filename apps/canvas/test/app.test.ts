@@ -7,6 +7,8 @@ import type { ServicePrincipal } from "@unimatrix/auth";
 import { SecretValue, SecretsClientError } from "@unimatrix/secrets/client";
 import { AuthError, type ServiceCallerVerifier } from "@unimatrix/auth/server";
 import {
+  canvasAgendaSchema,
+  canvasAgendaContract,
   canvasAssignmentsSchema,
   canvasAssignmentResponseSchema,
   canvasSubmissionResponseSchema,
@@ -104,6 +106,9 @@ async function fixture(t: { after: (cleanup: () => Promise<void>) => void }) {
     submissionStatus: 200,
     gradesStatus: 200,
     enrollmentStatus: 200,
+    plannerStatus: 200,
+    calendarStatus: 200,
+    missingStatus: 200,
     paths: [] as string[],
   };
   const course = {
@@ -212,6 +217,46 @@ async function fixture(t: { after: (cleanup: () => Promise<void>) => void }) {
       } else if (/^\/api\/v1\/courses\/(41|42)$/u.test(address.pathname)) {
         status = upstream.courseStatus;
         body = address.pathname.endsWith("42") ? concludedCourse : course;
+      } else if (address.pathname === "/api/v1/planner/items") {
+        status = upstream.plannerStatus;
+        body = [
+          {
+            plannable_id: "91",
+            plannable_type: "assignment",
+            course_id: "41",
+            plannable_date: assignment.due_at,
+            plannable: { id: "91", title: assignment.name },
+            planner_override: { marked_complete: true, dismissed: true },
+          },
+        ];
+      } else if (address.pathname === "/api/v1/calendar_events") {
+        status = upstream.calendarStatus;
+        body =
+          address.searchParams.get("type") === "assignment"
+            ? [
+                {
+                  id: "assignment_91",
+                  title: assignment.name,
+                  start_at: assignment.due_at,
+                  end_at: assignment.due_at,
+                  context_code: "course_41",
+                  assignment,
+                },
+              ]
+            : [
+                {
+                  id: "event_8",
+                  title: "Synthetic observation day",
+                  context_code: "course_41",
+                  start_at: "2026-11-05T07:00:00Z",
+                  end_at: "2026-11-06T07:00:00Z",
+                  all_day: true,
+                  all_day_date: "2026-11-05",
+                },
+              ];
+      } else if (address.pathname === "/api/v1/users/self/missing_submissions") {
+        status = upstream.missingStatus;
+        body = [assignment];
       } else if (address.pathname === "/api/v1/courses/41/assignments") {
         status = upstream.assignmentStatus;
         body = [assignment, { ...assignment, id: "92" }];
@@ -583,6 +628,7 @@ void test("capabilities filter MCP discovery and deny unavailable tools", async 
       "canvas_get_assignment",
       "canvas_get_submission",
       "canvas_get_grades",
+      "canvas_get_agenda",
     ],
   );
   const denied = await mcp("tools/call", { name: "canvas_status", arguments: {} }, "oauth-read");
@@ -1116,3 +1162,162 @@ for (const failure of ["association", "instructions"] as const) {
     assert.deepEqual(tool.assignments, first.assignments);
   });
 }
+
+const agendaWindow = { start: "2026-11-01", end: "2026-11-08" };
+
+void test("agenda facts and source coverage agree over HTTP and both MCP protocols", async (t) => {
+  const { send, mcp } = await fixture(t);
+  const http = await send(
+    `/api/v1/agenda?${new URLSearchParams({ ...agendaWindow, courseIds: JSON.stringify(["41"]) }).toString()}`,
+    "api-full",
+  );
+  assert.equal(http.status, 200, http.text);
+  const facts = canvasAgendaSchema.parse(decoded(http));
+  assert.equal(facts.effectiveTimeZone, config.timeZone);
+  assert.equal(facts.items.filter(({ kind }) => kind === "assignment").length, 1);
+  assert.ok(facts.items.some(({ kind }) => kind === "event"));
+  const assignment = facts.items.find(({ kind }) => kind === "assignment");
+  assert.ok(assignment);
+  assert.equal(assignment.assignmentId, "91");
+  assert.equal(assignment.submission?.workflowState, "unsubmitted");
+  assert.ok(assignment.evidence.some(({ completed }) => completed === true));
+  for (const modern of [false, true]) {
+    const tool = canvasAgendaSchema.parse(
+      result(
+        await mcp(
+          "tools/call",
+          {
+            name: "canvas_get_agenda",
+            arguments: { ...agendaWindow, courseIds: ["41"] },
+          },
+          "oauth-full",
+          modern,
+        ),
+      ).structuredContent,
+    );
+    const stable = (value: unknown) =>
+      JSON.parse(JSON.stringify(value), (key, item: unknown) =>
+        ["retrievedAt", "cacheAgeMs"].includes(key) ? undefined : item,
+      ) as unknown;
+    assert.deepEqual(stable(tool), stable(facts));
+  }
+});
+
+void test("agenda HTTP continuation resumes over MCP without repeating assignments", async (t) => {
+  const { send, mcp } = await fixture(t);
+  let page = canvasAgendaSchema.parse(
+    decoded(
+      await send(
+        `/api/v1/agenda?${new URLSearchParams({ ...agendaWindow, limit: "1" }).toString()}`,
+        "api-full",
+      ),
+    ),
+  );
+  const keys = page.items.map(({ key }) => key);
+  assert.ok(page.continuation);
+  for (let index = 0; page.continuation && index < 12; index++) {
+    page = canvasAgendaSchema.parse(
+      result(
+        await mcp(
+          "tools/call",
+          {
+            name: "canvas_get_agenda",
+            arguments: { ...agendaWindow, limit: 1, cursor: page.continuation },
+          },
+          "oauth-full",
+        ),
+      ).structuredContent,
+    );
+    keys.push(...page.items.map(({ key }) => key));
+  }
+  assert.equal(page.continuation, undefined);
+  assert.equal(new Set(keys).size, keys.length);
+  assert.equal(keys.length, 2);
+  assert.equal(page.coverage, "complete");
+});
+
+void test("agenda selectors and credentials are checked before upstream access", async (t) => {
+  const { send, mcp, upstream } = await fixture(t);
+  assert.equal((await send("/api/v1/agenda")).status, 401);
+  assert.equal((await send("/api/v1/agenda", "oauth-full")).status, 401);
+  for (const args of [
+    {},
+    { ...agendaWindow, timeZone: "Invalid/Zone" },
+    { ...agendaWindow, end: "2026-10-01" },
+    { ...agendaWindow, cursor: "bad" },
+    { ...agendaWindow, caller: "other" },
+  ]) {
+    assert.equal(
+      (await send(`/api/v1/agenda?${new URLSearchParams(args).toString()}`, "api-full")).status,
+      400,
+    );
+    assert.equal(
+      result(
+        await mcp(
+          "tools/call",
+          {
+            name: "canvas_get_agenda",
+            arguments: args,
+          },
+          "oauth-full",
+        ),
+      ).isError,
+      true,
+    );
+  }
+  assert.equal(upstream.calls, 0);
+});
+
+void test("agenda source failures retain partial coverage through HTTP and MCP", async (t) => {
+  const { send, mcp, upstream } = await fixture(t);
+  upstream.plannerStatus = 403;
+  const http = await send(
+    `/api/v1/agenda?${new URLSearchParams({ ...agendaWindow, courseIds: JSON.stringify(["41"]) }).toString()}`,
+    "api-full",
+  );
+  assert.equal(http.status, 200, http.text);
+  const facts = canvasAgendaSchema.parse(decoded(http));
+  assert.equal(facts.coverage, "partial");
+  assert.notEqual(facts.nothingDue, true);
+  assert.ok(facts.sources.some(({ coverage }) => coverage === "unavailable"));
+  const tool = canvasAgendaSchema.parse(
+    result(
+      await mcp(
+        "tools/call",
+        {
+          name: "canvas_get_agenda",
+          arguments: { ...agendaWindow, courseIds: ["41"] },
+        },
+        "oauth-full",
+      ),
+    ).structuredContent,
+  );
+  assert.equal(tool.coverage, facts.coverage);
+  assert.deepEqual(tool.items, facts.items);
+});
+
+void test("generic API client consumes the agenda contract", async (t) => {
+  const { app } = await fixture(t);
+  const client = createApiClient({
+    baseUrl: "http://canvas.example",
+    getAuthToken: () => "api-full",
+    fetch: async (input, init) => {
+      const response = await app.inject({
+        method: "GET",
+        url: new URL(input).pathname + new URL(input).search,
+        headers: { ...init?.headers, host: "canvas.example" },
+      });
+      return {
+        ok: response.statusCode === 200,
+        status: response.statusCode,
+        json: () => Promise.resolve<unknown>(response.json()),
+        text: () => Promise.resolve(response.body),
+      };
+    },
+  });
+  const facts = await client.request(canvasAgendaContract, {
+    query: { ...agendaWindow, courseIds: ["41"] },
+  });
+  assert.ok(facts.items.length);
+  assert.equal(facts.effectiveTimeZone, config.timeZone);
+});

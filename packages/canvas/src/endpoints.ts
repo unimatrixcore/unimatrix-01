@@ -218,18 +218,25 @@ const moduleSchema = z.looseObject({
   items: z.array(moduleItemSchema).optional(),
   prerequisite_module_ids: z.array(id).optional(),
 });
-const plannerSchema = z.looseObject({
+export const canvasPlannerWireSchema = z.looseObject({
   plannable_id: id,
   plannable_type: text,
   course_id: optionalId,
-  plannable_date: text,
-  plannable: z.looseObject({ id }).optional(),
+  plannable_date: date,
+  plannable: z.looseObject({ id, title: text.optional(), assignment_id: optionalId }).optional(),
+  planner_override: z
+    .object({ marked_complete: z.boolean().optional(), dismissed: z.boolean().optional() })
+    .nullable()
+    .optional(),
 });
-const calendarSchema = z.looseObject({
+export const canvasCalendarWireSchema = z.looseObject({
   id: z.string().min(1),
   title: text,
-  start_at: nullableText,
-  end_at: nullableText,
+  start_at: date.nullable().optional(),
+  end_at: date.nullable().optional(),
+  all_day: z.boolean().optional(),
+  all_day_date: z.iso.date().nullable().optional(),
+  context_code: text.optional(),
   assignment: canvasAssignmentWireSchema.optional(),
 });
 const announcementSchema = z.looseObject({
@@ -332,18 +339,18 @@ export function buildEndpoint(input: CanvasRead): CanvasEndpoint {
       break;
     case "planner":
       path = "/planner/items";
-      schema = plannerSchema;
+      schema = canvasPlannerWireSchema;
       query.set("start_date", read.startDate);
       query.set("end_date", read.endDate);
       addCourses(read.courseIds);
       break;
     case "calendar":
       path = "/calendar_events";
-      schema = calendarSchema;
+      schema = canvasCalendarWireSchema;
       query.set("start_date", read.startDate);
       query.set("end_date", read.endDate);
       query.set("type", read.type ?? "event");
-      addCourses(read.courseIds);
+      addCourses(read.courseIds?.slice(0, 10));
       break;
     case "missingSubmissions":
       path = "/users/self/missing_submissions";
@@ -390,6 +397,15 @@ export function buildEndpoint(input: CanvasRead): CanvasEndpoint {
   const url = new URL(`/api/v1${path}`, CANVAS_ORIGIN);
   url.search = query.toString();
   const urls = [url];
+  if (read.endpoint === "calendar" && read.courseIds) {
+    for (let offset = 10; offset < read.courseIds.length; offset += 10) {
+      const batch = new URL(url);
+      batch.searchParams.delete("context_codes[]");
+      for (const courseId of read.courseIds.slice(offset, offset + 10))
+        batch.searchParams.append("context_codes[]", `course_${courseId}`);
+      urls.push(batch);
+    }
+  }
   if (read.endpoint === "courses" && read.concluded) {
     const completed = new URL(url);
     completed.searchParams.set("enrollment_state", "completed");
