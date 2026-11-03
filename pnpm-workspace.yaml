@@ -1,3 +1,8 @@
+# Keep pnpm's install hooks, scripts and exec commands on the same native ABI.
+useNodeVersion: 24.18.0
+# pnpm 10 keys this cache by its launcher Node, even when hooks use useNodeVersion.
+sideEffectsCache: false
+
 packages:
   - apps/*
   - packages/*

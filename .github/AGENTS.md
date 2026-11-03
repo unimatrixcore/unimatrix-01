@@ -20,7 +20,10 @@ this file holds the mechanics, each of which was learned the hard way.
   errored with "Dependabot does not support your Node version" — no npm PR was ever opened, for the
   repo's entire life, while the github-actions ecosystem worked fine because it needs no Node. It is
   now `>=22`, an open-ended floor, so a future Dependabot Node bump cannot re-break it. The real pin
-  for humans and CI is `.node-version` plus CI's `node-version-file`, not `engines`.
+  for CI is `.node-version` plus CI's `node-version-file`, not `engines`. Local pnpm commands
+  select that runtime through `useNodeVersion` in `pnpm-workspace.yaml`; `check:ci` checks that
+  the two pins agree. Keep `sideEffectsCache: false`: pnpm 10 keys native build cache entries by
+  its launcher Node, so a Node 26 launcher can reuse a Node 26 binary despite running hooks on 24.
 - `minimumReleaseAge` needs pnpm >= 10.16 and Dependabot ships exactly **10.16.0** — no margin. If
   they ever ship older, that setting silently becomes a no-op.
 - **Check `/network/updates` (Insights → Dependency graph → Dependabot) after touching anything

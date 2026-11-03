@@ -39,6 +39,28 @@ Canvas's visible current/final scores and grades, including zero, null and omitt
 never include unposted totals. `gradingPeriodId` selects a specific period; omission requests the
 whole course. Incomplete grade enrollment pagination fails instead of presenting a complete result.
 
+`GET /api/v1/agenda` and `canvas_get_agenda` share `canvasAgendaContract`. Supply explicit
+`start` and `end` dates or offset timestamps, with an exclusive end and a maximum window of
+93 × 24 hours after timezone resolution. Date-only boundaries use `timeZone`, falling back to
+`CANVAS_TIME_ZONE`; the result reports `effectiveTimeZone` and `timeZoneSource`. Original timestamps and all-day dates remain
+separate. Optional `courseIds` selects active student courses. The generic API client serializes
+that array as JSON in the HTTP query; MCP accepts the array directly.
+
+The agenda combines planner items, calendar events, calendar assignments and missing submissions.
+Assignment references merge by course and assignment ID; evidence retains source dates and planner
+completion/dismissal separately from hydrated submission state. Personal notes and independent
+events retain their own identities. Missing-submission records remain in the agenda even when
+their deadline precedes the window or has no date. A past deadline alone does not establish
+missing work, and offline or external-tool submissions may have unknown overdue state.
+
+Follow `continuation` with the same query and limit, retaining earlier chunks. Discovery and
+hydration may return an empty partial chunk while gathering evidence before emitting deduplicated
+items. `coverage: partial` and `nothingDue: null` prevent an empty chunk, failed source or unfinished
+pagination from establishing that nothing is due. Complete coverage concerns these Canvas feeds,
+not obligations in arbitrary course text or external applications. Source coverage and warnings
+remain relevant even when some items are available. Agenda tests use synthetic upstream responses;
+school endpoint permissions and real-account deadlines require the separate live acceptance task.
+
 Course queries default to active enrollments. Set `concluded: true` to include completed
 enrollments and courses. Lists accept `limit` (1–100), `cursor`, and `fresh`; pass returned
 `continuation` as `cursor` with the same filters and limit. Keep earlier chunks. A cursor
