@@ -122,7 +122,10 @@ await test("pages distinguish numeric slug, explicit ID and front-page selection
   assert.equal(list.pages[0]?.availability, "not_requested");
   assert.equal(list.pages[0]?.document, null);
   const detail = await f.reading.page({ courseId: "1", selector: "slug", pageSlug: "7" }, context);
-  assert.ok(detail.page.document?.text.includes("https://learn.maricopa.edu/courses/1"));
+  assert.equal(
+    detail.page.document?.text,
+    "# Reading\n\n[Course](https://learn.maricopa.edu/courses/1)unsafe",
+  );
   assert.ok(!detail.page.document?.text.includes("secret-script"));
   assert.ok(!detail.page.document?.text.includes("javascript:"));
 });
