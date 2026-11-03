@@ -123,6 +123,22 @@ async function fixture(t: { after: (cleanup: () => Promise<void>) => void }) {
     id: "91",
     course_id: "41",
     name: "Synthetic field study",
+    rubric: [
+      {
+        id: "criterion",
+        points: 10,
+        description: "Synthetic criterion",
+        ratings: [{ arbitrary: "private-association-extra" }],
+      },
+    ],
+    rubric_settings: {
+      id: "6",
+      title: "Synthetic rubric",
+      points_possible: "10",
+      arbitrary: "private-association-extra",
+    },
+    overrides: [{ id: "7", due_at: null, arbitrary: "private-association-extra" }],
+    all_dates: [{ base: true, due_at: null, arbitrary: "private-association-extra" }],
     due_at: "2026-11-06T07:00:00Z",
     lock_at: null,
     unlock_at: null,
@@ -1047,3 +1063,56 @@ void test("generic API client consumes coursework contracts", async (t) => {
   assert.ok(!("finalGrade" in grades.grades[0].grades));
   assert.equal(grades.grades[0]?.gradingPeriodId, "8");
 });
+
+for (const failure of ["association", "instructions"] as const) {
+  void test(`oversized ${failure} does not block assignment lists through either interface`, async (t) => {
+    const { send, mcp, assignment } = await fixture(t);
+    if (failure === "association") {
+      const criterion = assignment.rubric[0];
+      assert.ok(criterion);
+      criterion.description = "x".repeat(24_000);
+    } else assignment.description = "x".repeat(270_000);
+    const http = await send("/api/v1/assignments?courseId=41&limit=1", "api-full");
+    assert.equal(http.status, 200, http.text);
+    const first = canvasAssignmentsSchema.parse(decoded(http));
+    assert.equal(first.assignments[0]?.id, "91");
+    assert.ok(
+      first.assignments[0]?.omittedFields.includes(
+        failure === "association" ? "rubric" : "instructions",
+      ),
+    );
+    assert.ok(first.assignments[0]?.warnings.length);
+    assert.equal(first.assignments[0]?.dueAt, assignment.due_at);
+    assert.ok(first.continuation);
+    assert.ok(!http.text.includes("private-association-extra"));
+    assert.ok(Buffer.byteLength(http.text) <= 16 * 1024);
+    const next = canvasAssignmentsSchema.parse(
+      result(
+        await mcp(
+          "tools/call",
+          {
+            name: "canvas_list_assignments",
+            arguments: { courseId: "41", limit: 1, cursor: first.continuation },
+          },
+          "oauth-full",
+        ),
+      ).structuredContent,
+    );
+    assert.equal(next.assignments[0]?.id, "92");
+    assert.equal(next.continuation, undefined);
+    assert.equal(next.sources.at(-1)?.coverage, "complete");
+    const tool = canvasAssignmentsSchema.parse(
+      result(
+        await mcp(
+          "tools/call",
+          {
+            name: "canvas_list_assignments",
+            arguments: { courseId: "41", limit: 1 },
+          },
+          "oauth-full",
+        ),
+      ).structuredContent,
+    );
+    assert.deepEqual(tool.assignments, first.assignments);
+  });
+}

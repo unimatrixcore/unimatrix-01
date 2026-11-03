@@ -23,6 +23,13 @@ Instructions are converted to bounded, untrusted Markdown. Pass the returned doc
 `documentId` and `offset` as `instructionDocumentId` and `instructionOffset` to the assignment
 detail operation. Changed instructions invalidate the document continuation. Assignment lists
 use the same opaque cursor pattern as courses.
+List items report `omittedFields` and `warnings` when instructions cannot be converted or an
+item must be reduced to fit the result budget. Missing instructions in that case are
+`unavailable`; the original include flags still describe what Canvas returned. Source coverage
+describes upstream retrieval, so complete coverage does not cancel per-item omissions.
+Large association payloads cannot block later assignments. Detail reads retain the full declared
+association fields and fail explicitly if they exceed the result budget. Association response
+schemas select the fields the service exposes; undeclared Canvas fields are discarded.
 
 Submissions preserve Canvas's attempt, workflow state, timestamps and missing/late/excused flags.
 Offline and external-tool work can lack an online submission; the service does not infer missing

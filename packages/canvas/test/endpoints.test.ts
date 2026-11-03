@@ -147,3 +147,30 @@ await test("invalid dates cannot serve as posting evidence or assignment deadlin
     false,
   );
 });
+
+await test("association wire projections discard undeclared nested fields", () => {
+  const endpoint = buildEndpoint({ endpoint: "assignment", courseId: "1", assignmentId: "2" });
+  const result = endpoint.schema.parse({
+    id: "2",
+    course_id: "1",
+    name: "Synthetic assignment",
+    rubric: [{ id: "criterion", points: 5, ratings: [{ arbitrary: "private-extra" }] }],
+    rubric_settings: {
+      id: "3",
+      title: "Synthetic rubric",
+      points_possible: "5",
+      arbitrary: "private-extra",
+    },
+    overrides: [{ id: "4", student_ids: ["5"], due_at: null, arbitrary: "private-extra" }],
+    all_dates: [{ base: true, due_at: null, arbitrary: "private-extra" }],
+  });
+  assert.deepEqual(result, {
+    id: "2",
+    course_id: "1",
+    name: "Synthetic assignment",
+    rubric: [{ id: "criterion", points: 5 }],
+    rubric_settings: { id: "3", title: "Synthetic rubric", points_possible: "5" },
+    overrides: [{ id: "4", student_ids: ["5"], due_at: null }],
+    all_dates: [{ base: true, due_at: null }],
+  });
+});

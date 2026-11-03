@@ -358,3 +358,119 @@ await test("visible grade pagination rejects widened user selectors without requ
   );
   assert.equal(pages, 1);
 });
+
+for (const [label, oversized] of [
+  ["large declared rubric", { rubric: [{ id: "criterion", description: "r".repeat(24000) }] }],
+  ["15 KiB assignment name", { name: "n".repeat(15 * 1024) }],
+  ["converter input limit", { description: `<p>${"x".repeat(270000)}</p>` }],
+  ["converter complexity limit", { description: "<p>x</p>".repeat(5000) }],
+] as const) {
+  await test(`list progression survives ${label} without losing the following assignment`, async () => {
+    const f = fixture((url) =>
+      url.pathname === "/api/v1/courses/1/assignments"
+        ? Response.json([
+            { ...assignment, due_at: "2026-11-12T04:30:00Z", lock_at: null, ...oversized },
+            { ...assignment, id: "8" },
+          ])
+        : undefined,
+    );
+    const first = await f.workflows.list({ courseId: "1", limit: 1 }, context);
+    const compact = first.assignments[0];
+    assert.equal(compact?.id, "7");
+    assert.equal(compact.dueAt, "2026-11-12T04:30:00Z");
+    assert.equal(compact.lockAt, null);
+    assert.ok(Buffer.byteLength(JSON.stringify(compact)) <= 8 * 1024);
+    assert.ok(compact.warnings.length > 0);
+    if (label === "large declared rubric") {
+      assert.deepEqual(compact.omittedFields, ["rubric"]);
+      assert.equal(compact.includes.rubric, "included");
+      assert.ok(!("rubric" in compact));
+    } else if (label === "15 KiB assignment name") {
+      assert.deepEqual(compact.omittedFields, ["name"]);
+      assert.equal(compact.name, "");
+    } else {
+      assert.deepEqual(compact.omittedFields, ["instructions"]);
+      assert.equal(compact.instructionsAvailability, "unavailable");
+      assert.equal(compact.instructions, null);
+      assert.match(compact.warnings[0] ?? "", /^DOCUMENT_TEXT_/u);
+    }
+    assert.ok(first.continuation);
+    const last = await f.workflows.list(
+      { courseId: "1", limit: 1, cursor: first.continuation },
+      context,
+    );
+    assert.deepEqual(
+      last.assignments.map((row) => row.id),
+      ["8"],
+    );
+    assert.equal(last.continuation, undefined);
+  });
+}
+
+await test("declared associations fitting the result budget retain their full metadata", async () => {
+  const description = "r".repeat(10000);
+  const f = fixture((url) =>
+    url.pathname === "/api/v1/courses/1/assignments"
+      ? Response.json([{ ...assignment, rubric: [{ id: "criterion", description }] }])
+      : undefined,
+  );
+  const result = await f.workflows.list({ courseId: "1" }, context);
+  assert.equal(result.assignments[0]?.rubric?.[0]?.description, description);
+  assert.deepEqual(result.assignments[0]?.omittedFields, []);
+  assert.deepEqual(result.assignments[0]?.warnings, []);
+});
+
+await test("unknown nested association fields do not escape through list or detail", async () => {
+  const row = {
+    ...assignment,
+    rubric: [
+      { id: "criterion", description: "Declared rubric", private_passthrough: "x".repeat(24000) },
+    ],
+    rubric_settings: {
+      id: "9",
+      title: "Declared rubric settings",
+      private_passthrough: "private-value",
+    },
+    overrides: [{ id: "10", due_at: null, private_passthrough: "private-value" }],
+    all_dates: [{ base: true, due_at: null, private_passthrough: "private-value" }],
+  };
+  const f = fixture((url) =>
+    url.pathname === "/api/v1/courses/1/assignments"
+      ? Response.json([row])
+      : url.pathname === "/api/v1/courses/1/assignments/7"
+        ? Response.json(row)
+        : undefined,
+  );
+  const list = await f.workflows.list({ courseId: "1" }, context);
+  const detail = await f.workflows.get({ courseId: "1", assignmentId: "7" }, context);
+  for (const item of [list.assignments[0], detail.assignment]) {
+    assert.ok(item);
+    assert.ok(!JSON.stringify(item).includes("private_passthrough"));
+    assert.equal(item.rubric?.[0]?.description, "Declared rubric");
+    assert.equal(item.rubricSettings?.title, "Declared rubric settings");
+    assert.deepEqual(item.omittedFields, []);
+  }
+});
+
+await test("converter failure remains explicit in detail and does not mask invalid document continuation", async () => {
+  const f = fixture();
+  f.state.assignment.description = `<p>${"x".repeat(270000)}</p>`;
+  await assert.rejects(
+    f.workflows.get({ courseId: "1", assignmentId: "7" }, context),
+    code("CANVAS_BUDGET_EXHAUSTED"),
+  );
+  f.state.assignment.description = "<p>Short document</p>";
+  await assert.rejects(
+    f.workflows.get(
+      {
+        courseId: "1",
+        assignmentId: "7",
+        fresh: true,
+        instructionDocumentId: "a".repeat(64),
+        instructionOffset: 1,
+      },
+      context,
+    ),
+    code("CANVAS_INVALID_CURSOR"),
+  );
+});

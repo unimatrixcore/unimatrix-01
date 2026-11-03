@@ -45,7 +45,34 @@ const documentSchema = z.strictObject({
     })
     .nullable(),
 });
-const association = z.record(z.string(), z.unknown());
+const nullableText = z.string().nullable().optional();
+const dates = { due_at: nullableText, lock_at: nullableText, unlock_at: nullableText };
+export const canvasRubricCriterionSchema = z.strictObject({
+  id: z.string(),
+  points: z.number().optional(),
+  description: z.string().optional(),
+  long_description: nullableText,
+});
+export const canvasRubricSettingsSchema = z.strictObject({
+  id: id.optional(),
+  title: z.string().optional(),
+  points_possible: z.union([z.number(), z.string().regex(/^-?\d+(?:\.\d+)?$/u)]).optional(),
+});
+export const canvasAssignmentOverrideSchema = z.strictObject({
+  id,
+  assignment_id: id.optional(),
+  student_ids: z.array(id).optional(),
+  course_section_id: id.nullable().optional(),
+  group_id: id.nullable().optional(),
+  title: z.string().optional(),
+  ...dates,
+});
+export const canvasAssignmentDateSchema = z.strictObject({
+  id: id.optional(),
+  base: z.boolean().optional(),
+  title: z.string().optional(),
+  ...dates,
+});
 const included = z.enum(["included", "absent"]);
 export const canvasAssignmentSchema = z.strictObject({
   id,
@@ -63,16 +90,18 @@ export const canvasAssignmentSchema = z.strictObject({
   onlyVisibleToOverrides: z.boolean().optional(),
   hasOverrides: z.boolean().optional(),
   assignmentVisibility: z.array(id).nullable().optional(),
-  allDates: z.array(association).nullable().optional(),
-  rubric: z.array(association).nullable().optional(),
-  rubricSettings: association.nullable().optional(),
-  overrides: z.array(association).nullable().optional(),
+  allDates: z.array(canvasAssignmentDateSchema).nullable().optional(),
+  rubric: z.array(canvasRubricCriterionSchema).nullable().optional(),
+  rubricSettings: canvasRubricSettingsSchema.nullable().optional(),
+  overrides: z.array(canvasAssignmentOverrideSchema).nullable().optional(),
   useRubricForGrading: z.boolean().optional(),
   gradingType: z.string().optional(),
   omitFromFinalGrade: z.boolean().optional(),
   hideInGradebook: z.boolean().optional(),
   instructions: documentSchema.nullable(),
-  instructionsAvailability: included,
+  instructionsAvailability: z.enum(["included", "absent", "unavailable"]),
+  omittedFields: z.array(z.string()).max(32),
+  warnings: z.array(z.string()).max(32),
   includes: z.strictObject({
     visibility: included,
     submission: included,

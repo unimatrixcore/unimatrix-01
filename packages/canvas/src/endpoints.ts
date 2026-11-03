@@ -109,7 +109,7 @@ export const canvasAssignmentWireSchema = z.looseObject({
   assignment_visibility: z.array(id).nullable().optional(),
   overrides: z
     .array(
-      z.looseObject({
+      z.object({
         id,
         assignment_id: id.optional(),
         student_ids: z.array(id).optional(),
@@ -125,7 +125,7 @@ export const canvasAssignmentWireSchema = z.looseObject({
     .optional(),
   all_dates: z
     .array(
-      z.looseObject({
+      z.object({
         id: id.optional(),
         base: z.boolean().optional(),
         title: text.optional(),
@@ -138,7 +138,7 @@ export const canvasAssignmentWireSchema = z.looseObject({
     .optional(),
   rubric: z
     .array(
-      z.looseObject({
+      z.object({
         id: text,
         points: z.number().optional(),
         description: text.optional(),
@@ -148,7 +148,7 @@ export const canvasAssignmentWireSchema = z.looseObject({
     .nullable()
     .optional(),
   rubric_settings: z
-    .looseObject({
+    .object({
       id: id.optional(),
       title: text.optional(),
       points_possible: z.union([z.number(), z.string().regex(/^-?\d+(?:\.\d+)?$/u)]).optional(),

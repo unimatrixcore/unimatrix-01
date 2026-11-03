@@ -95,11 +95,20 @@ function bounded<T>(result: T): T {
     throw new CanvasConnectionError("CANVAS_BUDGET_EXHAUSTED");
   return result;
 }
-function normalize(value: unknown, courseId: string, continuation?: DocumentTextContinuation) {
+function normalize(
+  value: unknown,
+  courseId: string,
+  continuation?: DocumentTextContinuation,
+  list = false,
+) {
   const row = canvasAssignmentWireSchema.parse(value);
   if (row.course_id !== courseId) throw new CanvasConnectionError("CANVAS_INVALID_RESPONSE");
   const htmlUrl = `${CANVAS_ORIGIN}/courses/${courseId}/assignments/${row.id}`;
   let instructions = null;
+  let instructionsAvailability: "included" | "absent" | "unavailable" =
+    row.description === undefined ? "absent" : "included";
+  const omittedFields: string[] = [];
+  const warnings: string[] = [];
   try {
     if (row.description !== undefined && row.description !== null)
       instructions = convertHtmlDocument({
@@ -110,11 +119,14 @@ function normalize(value: unknown, courseId: string, continuation?: DocumentText
       });
     else if (continuation) throw new CanvasConnectionError("CANVAS_INVALID_CURSOR");
   } catch (error) {
-    if (error instanceof DocumentTextError)
+    if (!(error instanceof DocumentTextError)) throw error;
+    if (!list || error.code === "invalid_continuation")
       throw new CanvasConnectionError(
         error.code === "invalid_continuation" ? "CANVAS_INVALID_CURSOR" : "CANVAS_BUDGET_EXHAUSTED",
       );
-    throw error;
+    instructionsAvailability = "unavailable";
+    omittedFields.push("instructions");
+    warnings.push(`DOCUMENT_TEXT_${error.code.toUpperCase()}`);
   }
   return {
     id: row.id,
@@ -149,8 +161,9 @@ function normalize(value: unknown, courseId: string, continuation?: DocumentText
       : { omitFromFinalGrade: row.omit_from_final_grade }),
     ...(row.hide_in_gradebook === undefined ? {} : { hideInGradebook: row.hide_in_gradebook }),
     instructions,
-    instructionsAvailability:
-      row.description === undefined ? ("absent" as const) : ("included" as const),
+    instructionsAvailability,
+    omittedFields,
+    warnings,
     includes: {
       visibility:
         row.assignment_visibility === undefined ? ("absent" as const) : ("included" as const),
@@ -161,6 +174,57 @@ function normalize(value: unknown, courseId: string, continuation?: DocumentText
   };
 }
 export type CanvasAssignment = ReturnType<typeof normalize>;
+function compactAssignment(assignment: CanvasAssignment): CanvasAssignment {
+  const compact = {
+    ...assignment,
+    omittedFields: [...assignment.omittedFields],
+    warnings: [...assignment.warnings],
+  };
+  const optionalFields = [
+    "submissionTypes",
+    "pointsPossible",
+    "published",
+    "lockedForUser",
+    "lockExplanation",
+    "onlyVisibleToOverrides",
+    "hasOverrides",
+    "rubric",
+    "rubricSettings",
+    "overrides",
+    "assignmentVisibility",
+    "allDates",
+    "useRubricForGrading",
+    "gradingType",
+    "omitFromFinalGrade",
+    "hideInGradebook",
+  ] as const;
+  const candidates = [...optionalFields, "instructions", "name"] as const;
+  const largestFirst = [...candidates]
+    .filter((field) => compact[field] !== undefined && compact[field] !== null)
+    .sort(
+      (left, right) =>
+        Buffer.byteLength(JSON.stringify(compact[right])) -
+        Buffer.byteLength(JSON.stringify(compact[left])),
+    );
+  for (const field of largestFirst) {
+    if (Buffer.byteLength(JSON.stringify(compact)) <= 8 * 1024) break;
+    if (field === "name") compact.name = "";
+    else if (field === "instructions") {
+      compact.instructions = null;
+      compact.instructionsAvailability = "unavailable";
+    } else delete compact[field];
+    compact.omittedFields.push(field);
+  }
+  if (compact.omittedFields.length > assignment.omittedFields.length)
+    compact.warnings.push("CANVAS_ASSIGNMENT_FIELDS_OMITTED");
+  return compact;
+}
+function normalizeList(value: unknown, courseId: string): CanvasAssignment {
+  const assignment = normalize(value, courseId, undefined, true);
+  return assignment.instructionsAvailability === "unavailable"
+    ? compactAssignment(assignment)
+    : assignment;
+}
 export interface CanvasAssignmentListResult {
   assignments: CanvasAssignment[];
   sources: CanvasCourseSource[];
@@ -299,7 +363,7 @@ export function createCanvasAssignmentWorkflows(
               },
             );
             const raw = source(response);
-            pending = pending.concat(raw.data.map((value) => normalize(value, query.courseId)));
+            pending = pending.concat(raw.data.map((value) => normalizeList(value, query.courseId)));
             next = response.continuation;
             origin = metadata(raw);
           }
@@ -322,7 +386,8 @@ export function createCanvasAssignmentWorkflows(
             assignments.push(assignment);
             if (Buffer.byteLength(JSON.stringify(result)) > 15 * 1024) {
               assignments.pop();
-              break;
+              if (assignments.length) break;
+              assignments.push(compactAssignment(assignment));
             }
           }
           if (pending.length && !assignments.length)

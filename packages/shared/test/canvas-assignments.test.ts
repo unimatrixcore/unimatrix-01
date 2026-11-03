@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  canvasRubricCriterionSchema,
+  canvasRubricSettingsSchema,
+  canvasAssignmentOverrideSchema,
+  canvasAssignmentDateSchema,
   canvasAssignmentsQuerySchema,
   canvasAssignmentQuerySchema,
   canvasGradesQuerySchema,
@@ -61,5 +65,29 @@ describe("Canvas coursework contracts", () => {
     expect(
       parse({ workflowState: "graded", gradeVisibility: "hidden", excused: true }).excused,
     ).toBe(true);
+  });
+});
+
+describe("Canvas association response boundaries", () => {
+  it("accepts selected association fields and rejects arbitrary nested payloads", () => {
+    for (const [schema, valid] of [
+      [
+        canvasRubricCriterionSchema,
+        { id: "criterion", points: 10, description: "Synthetic criterion" },
+      ],
+      [canvasRubricSettingsSchema, { id: "3", points_possible: "10" }],
+      [canvasAssignmentOverrideSchema, { id: "4", student_ids: ["5"], due_at: null }],
+      [canvasAssignmentDateSchema, { base: true, due_at: null }],
+    ] as const) {
+      expect(schema.safeParse(valid).success).toBe(true);
+      expect(schema.safeParse({ ...valid, arbitrary: { nested: "payload" } }).success).toBe(false);
+    }
+    expect(
+      canvasRubricCriterionSchema.safeParse({ id: "criterion", ratings: [{ arbitrary: true }] })
+        .success,
+    ).toBe(false);
+    expect(canvasAssignmentOverrideSchema.safeParse({ id: "4", student_ids: [5] }).success).toBe(
+      false,
+    );
   });
 });
