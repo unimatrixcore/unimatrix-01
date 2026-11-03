@@ -15,3 +15,4 @@ export * from "./canvas-connection.js";
 export * from "./canvas-courses.js";
 export * from "./canvas-assignments.js";
 export * from "./canvas-agenda.js";
+export * from "./canvas-reading.js";

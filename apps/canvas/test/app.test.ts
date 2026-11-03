@@ -7,6 +7,14 @@ import type { ServicePrincipal } from "@unimatrix/auth";
 import { SecretValue, SecretsClientError } from "@unimatrix/secrets/client";
 import { AuthError, type ServiceCallerVerifier } from "@unimatrix/auth/server";
 import {
+  canvasSyllabusResponseSchema,
+  canvasAnnouncementsSchema,
+  canvasPagesSchema,
+  canvasPageResponseSchema,
+  canvasModulesSchema,
+  canvasModuleItemsSchema,
+  canvasFilesSchema,
+  canvasFileResponseSchema,
   canvasAgendaSchema,
   canvasAgendaContract,
   canvasAssignmentsSchema,
@@ -101,6 +109,8 @@ async function fixture(t: { after: (cleanup: () => Promise<void>) => void }) {
     status: 200,
     calls: 0,
     empty: false,
+    pageLocked: false,
+    readingBody: "<p>Accessible reading</p>",
     courseStatus: 200,
     assignmentStatus: 200,
     submissionStatus: 200,
@@ -114,6 +124,7 @@ async function fixture(t: { after: (cleanup: () => Promise<void>) => void }) {
   const course = {
     id: "41",
     name: "Synthetic Astrobiology",
+    syllabus_body: "<p>Synthetic syllabus</p><script>private-script</script>",
     course_code: "AST-101",
     time_zone: "America/Phoenix",
     workflow_state: "available",
@@ -217,6 +228,76 @@ async function fixture(t: { after: (cleanup: () => Promise<void>) => void }) {
       } else if (/^\/api\/v1\/courses\/(41|42)$/u.test(address.pathname)) {
         status = upstream.courseStatus;
         body = address.pathname.endsWith("42") ? concludedCourse : course;
+      } else if (address.pathname === "/api/v1/announcements") {
+        body = [
+          {
+            id: "51",
+            title: "Observation notice",
+            message: "<p>Read carefully</p>",
+            context_code: "course_41",
+            posted_at: "2026-11-02T00:00:00Z",
+          },
+        ];
+      } else if (address.pathname === "/api/v1/courses/41/pages") {
+        body = [{ page_id: "61", url: "123", title: "Numeric slug" }];
+      } else if (
+        [
+          "/api/v1/courses/41/pages/123",
+          "/api/v1/courses/41/pages/page_id:61",
+          "/api/v1/courses/41/front_page",
+        ].includes(address.pathname)
+      ) {
+        body = {
+          page_id: "61",
+          url: "123",
+          title: "Numeric slug",
+          front_page: address.pathname.endsWith("/front_page"),
+          body: upstream.readingBody,
+          locked_for_user: upstream.pageLocked,
+        };
+      } else if (address.pathname === "/api/v1/courses/41/modules") {
+        body = [
+          {
+            id: "71",
+            name: "Observation module",
+            items_count: 1,
+            prerequisite_module_ids: ["70"],
+            state: "started",
+          },
+        ];
+      } else if (address.pathname === "/api/v1/courses/41/modules/71") {
+        body = {
+          id: "71",
+          name: "Observation module",
+          items_count: 1,
+          prerequisite_module_ids: ["70"],
+          state: "started",
+        };
+      } else if (address.pathname === "/api/v1/courses/41/modules/71/items") {
+        body = [
+          {
+            id: "72",
+            module_id: "71",
+            title: "Numeric slug",
+            type: "Page",
+            page_url: "123",
+            completion_requirement: { type: "must_view", completed: false },
+          },
+        ];
+      } else if (
+        ["/api/v1/courses/41/files", "/api/v1/courses/41/files/81"].includes(address.pathname)
+      ) {
+        const file = {
+          id: "81",
+          display_name: "Observation guide.pdf",
+          filename: "guide.pdf",
+          size: 1024,
+          "content-type": "application/pdf",
+          locked: true,
+          locked_for_user: true,
+          url: "https://download.example/private-signed-marker",
+        };
+        body = address.pathname.endsWith("/81") ? file : [file];
       } else if (address.pathname === "/api/v1/planner/items") {
         status = upstream.plannerStatus;
         body = [
@@ -629,6 +710,14 @@ void test("capabilities filter MCP discovery and deny unavailable tools", async 
       "canvas_get_submission",
       "canvas_get_grades",
       "canvas_get_agenda",
+      "canvas_get_syllabus",
+      "canvas_list_announcements",
+      "canvas_list_pages",
+      "canvas_get_page",
+      "canvas_list_modules",
+      "canvas_list_module_items",
+      "canvas_list_files",
+      "canvas_get_file",
     ],
   );
   const denied = await mcp("tools/call", { name: "canvas_status", arguments: {} }, "oauth-read");
@@ -1354,4 +1443,147 @@ void test("generic API client consumes the agenda contract", async (t) => {
   });
   assert.ok(facts.items.length);
   assert.equal(facts.effectiveTimeZone, config.timeZone);
+});
+
+void test("reading workflows agree over HTTP and both MCP protocols", async (t) => {
+  const { send, mcp, upstream } = await fixture(t);
+  const cases = [
+    ["syllabus", "canvas_get_syllabus", { courseId: "41" }, canvasSyllabusResponseSchema],
+    [
+      "announcements",
+      "canvas_list_announcements",
+      { courseIds: ["41"], start: "2026-11-01", end: "2026-11-08" },
+      canvasAnnouncementsSchema,
+    ],
+    ["pages", "canvas_list_pages", { courseId: "41" }, canvasPagesSchema],
+    [
+      "page",
+      "canvas_get_page",
+      { courseId: "41", selector: "slug", pageSlug: "123" },
+      canvasPageResponseSchema,
+    ],
+    [
+      "page",
+      "canvas_get_page",
+      { courseId: "41", selector: "id", pageId: "61" },
+      canvasPageResponseSchema,
+    ],
+    [
+      "page",
+      "canvas_get_page",
+      { courseId: "41", selector: "front_page" },
+      canvasPageResponseSchema,
+    ],
+    ["modules", "canvas_list_modules", { courseId: "41" }, canvasModulesSchema],
+    [
+      "module-items",
+      "canvas_list_module_items",
+      { courseId: "41", moduleId: "71" },
+      canvasModuleItemsSchema,
+    ],
+    ["files", "canvas_list_files", { courseId: "41" }, canvasFilesSchema],
+    ["file", "canvas_get_file", { courseId: "41", fileId: "81" }, canvasFileResponseSchema],
+  ] as const;
+  const stable = (value: unknown) =>
+    JSON.parse(JSON.stringify(value), (key, item: unknown) =>
+      ["retrievedAt", "cacheAgeMs"].includes(key) ? undefined : item,
+    ) as unknown;
+  for (const [path, name, args, schema] of cases) {
+    const params = new URLSearchParams(
+      Object.fromEntries(
+        Object.entries(args).map(([key, value]) => [
+          key,
+          typeof value === "string" ? value : JSON.stringify(value),
+        ]),
+      ),
+    );
+    const http = await send(`/api/v1/${path}?${params.toString()}`, "api-full");
+    assert.equal(http.status, 200, http.text);
+    const facts = schema.parse(decoded(http));
+    assert.ok(!http.text.includes("private-script"));
+    assert.ok(!http.text.includes("private-signed-marker"));
+    for (const modern of [false, true]) {
+      const tool = schema.parse(
+        result(await mcp("tools/call", { name, arguments: args }, "oauth-full", modern))
+          .structuredContent,
+      );
+      assert.deepEqual(stable(tool), stable(facts));
+    }
+  }
+  assert.ok(upstream.paths.includes("/api/v1/courses/41/pages/123"));
+  assert.ok(upstream.paths.includes("/api/v1/courses/41/pages/page_id:61"));
+  assert.ok(upstream.paths.includes("/api/v1/courses/41/front_page"));
+  assert.ok(upstream.paths.includes("/api/v1/courses/41/modules/71/items"));
+});
+
+void test("reading selectors and caller access fail before Canvas requests", async (t) => {
+  const { send, mcp, upstream } = await fixture(t);
+  for (const path of [
+    "syllabus",
+    "announcements",
+    "pages",
+    "page",
+    "modules",
+    "module-items",
+    "files",
+    "file",
+  ]) {
+    assert.equal((await send(`/api/v1/${path}`)).status, 401);
+    assert.equal((await send(`/api/v1/${path}`, "oauth-full")).status, 401);
+  }
+  for (const args of [
+    { courseId: "41", selector: "id", pageSlug: "123" },
+    { courseId: "41", selector: "slug", pageId: "61" },
+    { courseId: "41", selector: "front_page", pageSlug: "123" },
+    { courseId: "41", selector: "slug", pageSlug: "../files" },
+  ]) {
+    assert.equal(
+      (await send(`/api/v1/page?${new URLSearchParams(args).toString()}`, "api-full")).status,
+      400,
+    );
+    assert.equal(
+      result(await mcp("tools/call", { name: "canvas_get_page", arguments: args }, "oauth-full"))
+        .isError,
+      true,
+    );
+  }
+  assert.equal(upstream.calls, 0);
+});
+
+void test("page document continuation crosses interfaces and locked text stays unavailable", async (t) => {
+  const { send, mcp, upstream } = await fixture(t);
+  upstream.readingBody = `<p>${"Observation context ".repeat(1800)}</p><script>private-script</script>`;
+  const args = { courseId: "41", selector: "slug", pageSlug: "123" };
+  const first = canvasPageResponseSchema.parse(
+    decoded(await send(`/api/v1/page?${new URLSearchParams(args).toString()}`, "api-full")),
+  );
+  assert.ok(first.page.document?.truncated);
+  const continuation = first.page.document.continuation;
+  assert.ok(continuation);
+  const next = canvasPageResponseSchema.parse(
+    result(
+      await mcp(
+        "tools/call",
+        {
+          name: "canvas_get_page",
+          arguments: { ...args, documentId: continuation.documentId, offset: continuation.offset },
+        },
+        "oauth-full",
+      ),
+    ).structuredContent,
+  );
+  assert.equal(next.page.document?.offset, continuation.offset);
+  assert.ok(!JSON.stringify(next).includes("private-script"));
+  upstream.pageLocked = true;
+  const locked = canvasPageResponseSchema.parse(
+    decoded(
+      await send(
+        `/api/v1/page?${new URLSearchParams({ ...args, fresh: "true" }).toString()}`,
+        "api-full",
+      ),
+    ),
+  );
+  assert.equal(locked.page.lockedForUser, true);
+  assert.equal(locked.page.availability, "unavailable");
+  assert.equal(locked.page.document, null);
 });
