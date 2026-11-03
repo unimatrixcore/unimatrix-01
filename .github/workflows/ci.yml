@@ -68,7 +68,7 @@ jobs:
           node ./infra/scripts/check-required-image-checks.mjs
 
       - name: Deployment reporting
-        run: node --test ./infra/scripts/deploy-ci.test.mjs ./infra/scripts/deploy-plan.test.mjs
+        run: node --test ./infra/scripts/deploy-*.test.mjs
 
       - name: Stale comments
         run: node ./infra/scripts/check-stale-comments.mjs
