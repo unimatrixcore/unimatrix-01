@@ -249,6 +249,7 @@
 @media (prefers-reduced-motion: reduce) {
   .um-game-feedback,
   .um-game-burst,
+  .um-game-input-group.invalid label,
   .um-game-combo,
   .um-game-input.combo-warning,
   .um-game-ghost .suggestion-part,
