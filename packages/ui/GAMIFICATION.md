@@ -43,6 +43,10 @@ feedback kind, optional glyph and multiplier; call `clear` on a context change a
 when removing the host. The controller bounds queued and visible effects, escapes glyph text,
 and respects reduced motion while retaining an accessible completion receipt.
 
+Apply `um-game-theme` to a game surface for bright mint rewards, cyan combos, amber top-tier
+feedback, and coral penalties. The palette is scoped to that surface; the surrounding shell
+and grid retain their theme colors.
+
 Shared styles use `um-game-input-group`, `um-game-input`, `um-game-combo`, `um-game-ghost`,
 `um-game-crop`, and `um-game-highscore` on existing layout elements. The input group takes
 `combo-x1`, `combo-x2`, `combo-x3`, or `combo-x5`; `warning` on the badge and `combo-warning`

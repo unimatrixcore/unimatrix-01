@@ -1,3 +1,19 @@
+/* Game surfaces keep vivid feedback without brightening the surrounding tool shell. */
+.um-game-theme {
+  --primary: oklch(0.8 0.14 171);
+  --primary-foreground: oklch(0.2 0.02 221);
+  --chart-2: oklch(0.84 0.14 82);
+  --chart-3: oklch(0.82 0.1 220);
+  --destructive: oklch(0.75 0.17 28);
+  --muted-foreground: oklch(0.76 0.015 245);
+  --ring: oklch(0.8 0.14 171 / 50%);
+  --warning: var(--chart-2);
+  --game-combo-base: var(--muted-foreground);
+  --game-combo-2: var(--primary);
+  --game-combo-3: var(--chart-3);
+  --game-combo-5: var(--chart-2);
+}
+
 .um-game-effects-host {
   position: absolute;
   inset: 0;
