@@ -81,8 +81,6 @@
 .um-game-feedback[data-motion="reduced"] {
   animation: none;
   text-shadow: none;
-  left: 50% !important;
-  top: -30px !important;
   transform: translateX(-50%);
 }
 .um-game-burst {

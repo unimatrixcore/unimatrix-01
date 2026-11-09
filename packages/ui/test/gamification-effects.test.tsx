@@ -19,6 +19,7 @@ function host(): HTMLDivElement {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
   document.body.replaceChildren();
 });
 
@@ -43,6 +44,38 @@ describe("gamification feedback", () => {
     expect(node.querySelectorAll(".um-game-feedback")).toHaveLength(0);
     controller.dispose();
   });
+
+  it.each([false, true])(
+    "separates active popup origins even with identical random draws (reduced=%s)",
+    (reducedMotion) => {
+      vi.useFakeTimers();
+      vi.spyOn(Math, "random").mockReturnValue(0.5);
+      const node = host();
+      const controller = createGamificationEffects(node, {
+        maxVisible: 3,
+        maxQueued: 16,
+        staggerMs: 1,
+        lifetimeMs: 100,
+        reducedMotion,
+      });
+      for (let index = 0; index < 12; index++) controller.emit({ points: 100, kind: "quick" });
+      for (let index = 0; index < 12; index++) {
+        vi.advanceTimersByTime(1);
+        const items = Array.from(node.querySelectorAll<HTMLElement>(".um-game-feedback"));
+        expect(items.length).toBeLessThanOrEqual(3);
+        expect(new Set(items.map((item) => `${item.style.left}:${item.style.top}`)).size).toBe(
+          items.length,
+        );
+        expect(new Set(items.map((item) => item.dataset.spawnSlot)).size).toBe(items.length);
+      }
+      vi.advanceTimersByTime(101);
+      expect(node.querySelectorAll(".um-game-feedback")).toHaveLength(0);
+      controller.clear();
+      controller.emit({ points: 100, kind: "quick" });
+      expect(node.querySelectorAll(".um-game-feedback")).toHaveLength(1);
+      controller.dispose();
+    },
+  );
 
   it("clear cancels pending bursts; disposal cannot resurrect a context", () => {
     vi.useFakeTimers();
