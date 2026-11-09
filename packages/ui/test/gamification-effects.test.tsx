@@ -141,7 +141,7 @@ describe("gamification feedback", () => {
 
   it("offers declarative feedback with escaped content and an accessible label", () => {
     render(<ScoreFeedback points={5} kind="typing" glyph="<" reducedMotion />);
-    expect(screen.getByLabelText("< +5")).toHaveAttribute("data-motion", "reduced");
-    expect(screen.getByLabelText("< +5")).toHaveTextContent("<+5");
+    expect(screen.getByRole("img", { name: "< +5" })).toHaveAttribute("data-motion", "reduced");
+    expect(screen.getByRole("img", { name: "< +5" })).toHaveTextContent("<+5");
   });
 });

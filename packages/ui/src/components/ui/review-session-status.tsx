@@ -1,19 +1,8 @@
 import { GamificationStatus } from "./gamification-status.js";
+import type { GamificationStatusIds, GamificationStatusProps } from "./gamification-status.js";
 
-export interface ReviewSessionStatusIds {
-  score?: string;
-  timer?: string;
-  streak?: string;
-}
-
-export interface ReviewSessionStatusProps {
-  points: number;
-  streak: number;
-  elapsedMs: number;
-  clockState: "reading" | "editing" | "paused" | "loading";
-  ids?: ReviewSessionStatusIds;
-  className?: string;
-}
+export type ReviewSessionStatusIds = GamificationStatusIds;
+export type ReviewSessionStatusProps = Omit<GamificationStatusProps, "ariaLabel" | "labels">;
 
 export function ReviewSessionStatus(props: ReviewSessionStatusProps) {
   return <GamificationStatus {...props} ariaLabel="Review session" />;

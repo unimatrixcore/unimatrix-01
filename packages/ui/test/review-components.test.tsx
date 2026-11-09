@@ -182,7 +182,7 @@ describe("ReviewSessionStatus", () => {
     document.getElementById("score-display")!.textContent = "12 points";
     document.getElementById("timer-display")!.textContent = "Editing · clock paused";
     document.getElementById("combo-multiplier")!.textContent = "4 streak";
-    expect(screen.getByLabelText("Review session").textContent).toBe(
+    expect(screen.getByRole("group", { name: "Review session" }).textContent).toBe(
       "12 points4 streakEditing · clock paused",
     );
   });
@@ -226,7 +226,7 @@ it("supports generic session labels independently of review naming", async () =>
       labels={{ points: "credits", streak: "completed", reading: "Studying" }}
     />,
   );
-  expect(screen.getByLabelText("Practice progress")).toHaveTextContent("4 credits");
-  expect(screen.getByLabelText("Practice progress")).toHaveTextContent("2 completed");
+  expect(screen.getByRole("group", { name: "Practice progress" })).toHaveTextContent("4 credits");
+  expect(screen.getByRole("group", { name: "Practice progress" })).toHaveTextContent("2 completed");
   expect(screen.getByText("Studying")).toBeInTheDocument();
 });

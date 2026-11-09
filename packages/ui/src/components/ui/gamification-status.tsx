@@ -1,21 +1,31 @@
 import { cn } from "../../lib/utils.js";
 
+export type GamificationClockState = "reading" | "editing" | "paused" | "loading";
+
+export interface GamificationStatusIds {
+  score?: string;
+  timer?: string;
+  streak?: string;
+}
+
+export interface GamificationStatusLabels {
+  points?: string;
+  streak?: string;
+  reading?: string;
+  editing?: string;
+  paused?: string;
+  loading?: string;
+}
+
 export interface GamificationStatusProps {
   points: number;
   streak: number;
   elapsedMs: number;
-  clockState: "reading" | "editing" | "paused" | "loading";
-  ids?: { score?: string; timer?: string; streak?: string };
+  clockState: GamificationClockState;
+  ids?: GamificationStatusIds;
   className?: string;
   ariaLabel?: string;
-  labels?: {
-    points?: string;
-    streak?: string;
-    reading?: string;
-    editing?: string;
-    paused?: string;
-    loading?: string;
-  };
+  labels?: GamificationStatusLabels;
 }
 
 function displayNumber(value: number): number {
@@ -44,6 +54,7 @@ export function GamificationStatus({
   }[clockState];
   return (
     <div
+      role="group"
       aria-label={ariaLabel}
       className={cn(
         "flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground",

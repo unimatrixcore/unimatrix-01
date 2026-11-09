@@ -27,6 +27,9 @@ export { ReviewSuggestion } from "./components/ui/review-suggestion.js";
 export type {
   ReviewSuggestionProps,
   ReviewSuggestionIds,
+  ReviewSuggestionState,
+  ReviewSuggestionActionLabels,
+  ReviewSuggestionShortcutLabels,
 } from "./components/ui/review-suggestion.js";
 export { ReviewSessionStatus } from "./components/ui/review-session-status.js";
 export type {
@@ -36,7 +39,12 @@ export type {
 
 export * from "./lib/gamification.js";
 export { GamificationStatus } from "./components/ui/gamification-status.js";
-export type { GamificationStatusProps } from "./components/ui/gamification-status.js";
+export type {
+  GamificationStatusProps,
+  GamificationClockState,
+  GamificationStatusIds,
+  GamificationStatusLabels,
+} from "./components/ui/gamification-status.js";
 
 export * from "./lib/gamification-effects.js";
 export { GamificationEffectsLayer, ScoreFeedback } from "./components/ui/gamification-effects.js";

@@ -12,18 +12,29 @@ export interface ReviewSuggestionIds {
   retry?: string;
 }
 
+export type ReviewSuggestionState = "loading" | "ready" | "error" | "empty";
+export interface ReviewSuggestionActionLabels {
+  use?: string;
+  accept?: string;
+  retry?: string;
+}
+export interface ReviewSuggestionShortcutLabels {
+  use?: string;
+  accept?: string;
+}
+
 export interface ReviewSuggestionProps {
   rawText: string | null;
   suggestedText: string | null;
-  state: "loading" | "ready" | "error" | "empty";
+  state: ReviewSuggestionState;
   statusText: string;
   onUse?: () => void;
   onAccept?: () => void;
   onRetry?: () => void;
   canAccept?: boolean;
   busy?: boolean;
-  actionLabels?: { use?: string; accept?: string; retry?: string };
-  shortcutLabels?: { use?: string; accept?: string };
+  actionLabels?: ReviewSuggestionActionLabels;
+  shortcutLabels?: ReviewSuggestionShortcutLabels;
   className?: string;
   ids?: ReviewSuggestionIds;
 }

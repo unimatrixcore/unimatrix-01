@@ -118,10 +118,10 @@
 .um-game-input-group.combo-x5 .um-game-input {
   box-shadow: 0 0 35px color-mix(in oklab, var(--chart-2) 30%, transparent);
 }
-.um-game-combo.jiggle {
+.um-game-input-group .um-game-combo.jiggle {
   animation: um-game-jiggle 200ms linear infinite;
 }
-.um-game-combo.warning {
+.um-game-input-group .um-game-combo.warning {
   animation:
     um-game-jiggle 200ms linear infinite,
     um-game-strobe 400ms ease-in-out infinite;

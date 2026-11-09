@@ -25,6 +25,7 @@ export function ScoreFeedback({
 }: ScoreFeedbackProps) {
   return (
     <span
+      role="img"
       className={cn("um-game-feedback", className)}
       data-kind={feedback.kind ?? "score"}
       data-motion={reducedMotion ? "reduced" : "full"}
@@ -43,6 +44,7 @@ export function ScoreFeedback({
 
 export interface GamificationEffectsLayerProps extends Omit<ComponentProps<"div">, "ref"> {
   ref?: Ref<GamificationEffects>;
+  /** Read once on mount; remount the layer to replace controller options. */
   options?: GamificationEffectsOptions;
 }
 
@@ -55,7 +57,6 @@ export function GamificationEffectsLayer({
   const host = useRef<HTMLDivElement>(null);
   const controller = useRef<GamificationEffects | null>(null);
   const optionsRef = useRef(options);
-  optionsRef.current = options;
   useLayoutEffect(() => {
     if (!host.current) return;
     const effects = createGamificationEffects(host.current, optionsRef.current);
