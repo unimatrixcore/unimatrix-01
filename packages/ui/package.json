@@ -26,6 +26,10 @@
     "./scroll-area": {
       "types": "./dist/components/ui/scroll-area.d.ts",
       "default": "./dist/components/ui/scroll-area.js"
+    },
+    "./gamification": {
+      "types": "./dist/lib/gamification.d.ts",
+      "default": "./dist/lib/gamification.js"
     }
   },
   "scripts": {

@@ -22,3 +22,29 @@ export { ToggleGroup, ToggleGroupItem } from "./components/ui/toggle-group.js";
 export { PublicMarkdown } from "./components/public-markdown.js";
 export { useIsMobile } from "./hooks/use-mobile.js";
 export { cn } from "./lib/utils.js";
+
+export { ReviewSuggestion } from "./components/ui/review-suggestion.js";
+export type {
+  ReviewSuggestionProps,
+  ReviewSuggestionIds,
+} from "./components/ui/review-suggestion.js";
+export { ReviewSessionStatus } from "./components/ui/review-session-status.js";
+export type {
+  ReviewSessionStatusProps,
+  ReviewSessionStatusIds,
+} from "./components/ui/review-session-status.js";
+
+export * from "./lib/gamification.js";
+export { GamificationStatus } from "./components/ui/gamification-status.js";
+export type { GamificationStatusProps } from "./components/ui/gamification-status.js";
+
+export * from "./lib/gamification-effects.js";
+export { GamificationEffectsLayer, ScoreFeedback } from "./components/ui/gamification-effects.js";
+export type {
+  GamificationEffectsLayerProps,
+  ScoreFeedbackProps,
+} from "./components/ui/gamification-effects.js";
+export { Input } from "./components/ui/input.js";
+
+export { createTextTransition } from "./lib/text-transition.js";
+export type { TextTransition, TextTransitionOptions } from "./lib/text-transition.js";
