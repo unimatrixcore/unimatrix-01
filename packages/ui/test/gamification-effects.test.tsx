@@ -77,6 +77,28 @@ describe("gamification feedback", () => {
     },
   );
 
+  it("spreads consecutive rewards across a wider area instead of adjacent slots", () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, "random").mockReturnValue(0.5);
+    const node = host();
+    const controller = createGamificationEffects(node, { staggerMs: 1 });
+    let previous: { x: number; y: number } | null = null;
+    for (let index = 0; index < 12; index++) {
+      controller.emit({ points: 100, kind: "quick" });
+      vi.advanceTimersByTime(1);
+      const item = node.querySelector<HTMLElement>(".um-game-feedback:last-child")!;
+      const position = { x: parseFloat(item.style.left), y: parseFloat(item.style.top) };
+      expect(position.x).toBeGreaterThanOrEqual(18);
+      expect(position.x).toBeLessThanOrEqual(82);
+      if (previous)
+        expect(
+          Math.abs(position.x - previous.x) >= 20 || Math.abs(position.y - previous.y) >= 20,
+        ).toBe(true);
+      previous = position;
+    }
+    controller.dispose();
+  });
+
   it("clear cancels pending bursts; disposal cannot resurrect a context", () => {
     vi.useFakeTimers();
     const node = host();

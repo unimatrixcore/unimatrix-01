@@ -120,9 +120,11 @@ export function createGamificationEffects(
   const timers = new Set<ReturnType<typeof setTimeout>>();
   let disposed = false;
   let draining = false;
-  const spawnSlotCount = maxVisible + 1;
+  const spawnSlotCount = maxVisible * 2 + 1;
   const spawnColumns = Math.ceil(Math.sqrt(spawnSlotCount));
+  const spawnRows = Math.ceil(spawnSlotCount / spawnColumns);
   let nextSpawnSlot = Math.floor(spawnColumns / 2);
+  let previousSpawnSlot: number | null = null;
   const reduced = (): boolean =>
     typeof options.reducedMotion === "function"
       ? options.reducedMotion()
@@ -151,16 +153,35 @@ export function createGamificationEffects(
     const occupied = new Set(
       Array.from(layer.children, (child) => child.getAttribute("data-spawn-slot")),
     );
-    while (occupied.has(String(nextSpawnSlot)))
-      nextSpawnSlot = (nextSpawnSlot + 1) % spawnSlotCount;
-    const slot = nextSpawnSlot;
+    let slot = nextSpawnSlot;
+    let bestDistance = -1;
+    for (let offset = 0; offset < spawnSlotCount; offset++) {
+      const candidate = (nextSpawnSlot + offset) % spawnSlotCount;
+      if (occupied.has(String(candidate))) continue;
+      const dx =
+        previousSpawnSlot === null
+          ? 0
+          : ((candidate % spawnColumns) - (previousSpawnSlot % spawnColumns)) /
+            Math.max(1, spawnColumns - 1);
+      const dy =
+        previousSpawnSlot === null
+          ? 0
+          : (Math.floor(candidate / spawnColumns) - Math.floor(previousSpawnSlot / spawnColumns)) /
+            Math.max(1, spawnRows - 1);
+      const distance = dx * dx + dy * dy;
+      if (distance > bestDistance) {
+        slot = candidate;
+        bestDistance = distance;
+      }
+    }
+    previousSpawnSlot = slot;
     nextSpawnSlot = (slot + 1) % spawnSlotCount;
     item.dataset.spawnSlot = String(slot);
     const column = slot % spawnColumns;
     const row = Math.floor(slot / spawnColumns);
-    const spacing = Math.min(8, 40 / Math.max(1, spawnColumns - 1));
-    item.style.left = `${50 + (column - (spawnColumns - 1) / 2) * spacing + Math.random() * 2 - 1}%`;
-    item.style.top = `${-(reduced() ? 30 : 8) - row * 9 + Math.random() * 2 - 1}px`;
+    const spacing = 60 / Math.max(1, spawnColumns - 1);
+    item.style.left = `${50 + (column - (spawnColumns - 1) / 2) * spacing + Math.random() * 4 - 2}%`;
+    item.style.top = `${-(reduced() ? 30 : 8) - (row * 54) / Math.max(1, spawnRows - 1) + Math.random() * 4 - 2}px`;
     item.style.setProperty("--um-game-rotation", `${Math.random() * 24 - 12}deg`);
     item.style.setProperty("--um-game-lifetime", `${lifetime}ms`);
     const symbol = document.createElement("span");
@@ -199,6 +220,7 @@ export function createGamificationEffects(
     timers.clear();
     draining = false;
     nextSpawnSlot = Math.floor(spawnColumns / 2);
+    previousSpawnSlot = null;
     layer.replaceChildren();
     layer.classList.remove("um-game-burst");
     receipt.textContent = "";
