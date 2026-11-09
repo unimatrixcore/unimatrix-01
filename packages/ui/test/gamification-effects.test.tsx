@@ -3,6 +3,8 @@ import { act, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createGamificationEffects,
+  createModelIcon,
+  ModelIcon,
   GamificationEffectsLayer,
   getGamificationFeedbackColor,
   ScoreFeedback,
@@ -88,6 +90,7 @@ describe("gamification feedback", () => {
       "tab",
       "quick",
       "auto",
+      "model_accept",
       "correction",
       "name_bonus",
       "delete",
@@ -110,6 +113,55 @@ describe("gamification feedback", () => {
     const { container } = render(<ScoreFeedback points={100} kind="auto" />);
     expect(container.querySelector<HTMLElement>("[data-kind=auto]")?.style.color).toBe(
       getGamificationFeedbackColor(100, "auto"),
+    );
+  });
+
+  it("renders model acceptance as the shared robot in native feedback and keeps auto/quick separate", () => {
+    vi.useFakeTimers();
+    const node = host();
+    const controller = createGamificationEffects(node, { staggerMs: 1, reducedMotion: true });
+    controller.emit({ points: 100, kind: "model_accept", multiplier: 5 });
+    controller.emit({ points: 100, kind: "auto", multiplier: 5 });
+    controller.emit({ points: 100, kind: "quick", multiplier: 5 });
+    const accepted = node.querySelector<HTMLElement>("[data-kind=model_accept]")!;
+    expect(accepted.style.color).toBe(getGamificationFeedbackColor(100, "model_accept"));
+    expect(accepted).toHaveAttribute("data-motion", "reduced");
+    const robot = accepted.querySelector("svg")!;
+    expect(robot.isEqualNode(createModelIcon(document))).toBe(true);
+    expect(robot).toHaveAttribute("aria-hidden", "true");
+    expect(robot).toHaveAttribute("viewBox", "0 0 24 24");
+    expect(robot.querySelectorAll("path")).toHaveLength(2);
+    expect(robot.querySelector("rect")).toHaveAttribute("rx", "2");
+    expect(node.querySelector('[role="status"]')).toHaveTextContent("Model accepted +100");
+    expect(node.querySelector(".um-game-effects")).not.toHaveClass("um-game-burst");
+    vi.advanceTimersByTime(2);
+    expect(node.querySelector("[data-kind=auto] .um-game-feedback-symbol")).toHaveTextContent("◷");
+    expect(node.querySelector("[data-kind=quick] .um-game-feedback-symbol")).toHaveTextContent("ϟ");
+    expect(node.querySelector("[data-kind=auto] svg")).toBeNull();
+    expect(node.querySelector("[data-kind=quick] svg")).toBeNull();
+    controller.dispose();
+  });
+
+  it("uses one robot definition for React, native model labels and accepted-score feedback", () => {
+    const { container } = render(<ModelIcon className="model-output-icon" />);
+    expect(
+      container.querySelector("svg")!.isEqualNode(createModelIcon(document, "model-output-icon")),
+    ).toBe(true);
+    render(
+      <ScoreFeedback points={100} kind="model_accept" glyph="<img onerror=bad>" reducedMotion />,
+    );
+    const accepted = screen.getByRole("img", { name: "Model accepted +100" });
+    expect(accepted).toHaveAttribute("data-kind", "model_accept");
+    expect(accepted).toHaveAttribute("data-motion", "reduced");
+    expect(accepted).toHaveTextContent("+100");
+    expect(accepted.querySelector("svg")!.isEqualNode(createModelIcon(document))).toBe(true);
+    expect(accepted.querySelector("img")).toBeNull();
+    expect(accepted.style.color).toBe(getGamificationFeedbackColor(100, "model_accept"));
+    expect(getGamificationFeedbackColor(100, "model_accept")).not.toBe(
+      getGamificationFeedbackColor(100, "auto"),
+    );
+    expect(getGamificationFeedbackColor(100, "model_accept")).not.toBe(
+      getGamificationFeedbackColor(100, "quick"),
     );
   });
 

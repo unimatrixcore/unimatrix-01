@@ -4,6 +4,7 @@ import {
   createGamificationEffects,
   formatGamificationPoints,
   gamificationFeedbackSymbol,
+  gamificationFeedbackLabel,
   getGamificationFeedbackColor,
 } from "../../lib/gamification-effects.js";
 import type {
@@ -12,6 +13,7 @@ import type {
   GamificationFeedback,
 } from "../../lib/gamification-effects.js";
 import { cn } from "../../lib/utils.js";
+import { ModelIcon } from "./model-icon.js";
 
 export interface ScoreFeedbackProps extends GamificationFeedback {
   className?: string;
@@ -30,10 +32,10 @@ export function ScoreFeedback({
       data-kind={feedback.kind ?? "score"}
       data-motion={reducedMotion ? "reduced" : "full"}
       style={{ color: getGamificationFeedbackColor(feedback.points, feedback.kind) }}
-      aria-label={`${gamificationFeedbackSymbol(feedback)} ${formatGamificationPoints(feedback.points)}`.trim()}
+      aria-label={gamificationFeedbackLabel(feedback)}
     >
       <span className="um-game-feedback-symbol" aria-hidden="true">
-        {gamificationFeedbackSymbol(feedback)}
+        {feedback.kind === "model_accept" ? <ModelIcon /> : gamificationFeedbackSymbol(feedback)}
       </span>
       <span className="um-game-feedback-points" aria-hidden="true">
         {formatGamificationPoints(feedback.points)}

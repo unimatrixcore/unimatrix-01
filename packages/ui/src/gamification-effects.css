@@ -4,6 +4,7 @@
   --um-game-feedback-tab: oklch(0.8 0.14 171);
   --um-game-feedback-quick: oklch(0.82 0.1 220);
   --um-game-feedback-auto: oklch(0.78 0.13 255);
+  --um-game-feedback-model-accept: oklch(0.84 0.15 135);
   --um-game-feedback-correction: oklch(0.8 0.12 300);
   --um-game-feedback-name: oklch(0.84 0.14 82);
   --um-game-feedback-delete: oklch(0.78 0.13 38);

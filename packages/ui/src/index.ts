@@ -41,3 +41,7 @@ export type {
 
 export { createTextTransition } from "./lib/text-transition.js";
 export type { TextTransition, TextTransitionOptions } from "./lib/text-transition.js";
+
+export { ModelIcon } from "./components/ui/model-icon.js";
+export type { ModelIconProps } from "./components/ui/model-icon.js";
+export { createModelIcon } from "./lib/model-icon.js";

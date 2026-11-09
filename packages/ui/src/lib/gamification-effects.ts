@@ -1,9 +1,12 @@
+import { createModelIcon } from "./model-icon.js";
+
 export type GamificationFeedbackKind =
   | "typing"
   | "tab"
   | "discard"
   | "quick"
   | "auto"
+  | "model_accept"
   | "correction"
   | "delete"
   | "name_bonus"
@@ -36,6 +39,7 @@ const symbols: Record<GamificationFeedbackKind, string> = {
   discard: "⌫",
   quick: "ϟ",
   auto: "◷",
+  model_accept: "",
   correction: "✎",
   delete: "⌫",
   name_bonus: "★",
@@ -47,6 +51,7 @@ const feedbackColors: Record<GamificationFeedbackKind, string> = {
   tab: "var(--um-game-feedback-tab, var(--primary))",
   quick: "var(--um-game-feedback-quick, var(--chart-3))",
   auto: "var(--um-game-feedback-auto, var(--primary))",
+  model_accept: "var(--um-game-feedback-model-accept, var(--chart-3))",
   correction: "var(--um-game-feedback-correction, var(--destructive))",
   name_bonus: "var(--um-game-feedback-name, var(--chart-2))",
   delete: "var(--um-game-feedback-delete, var(--destructive))",
@@ -80,6 +85,10 @@ export function gamificationFeedbackSymbol(feedback: GamificationFeedback): stri
     : feedback.kind
       ? symbols[feedback.kind]
       : "";
+}
+
+export function gamificationFeedbackLabel(feedback: GamificationFeedback): string {
+  return `${feedback.kind === "model_accept" ? "Model accepted" : gamificationFeedbackSymbol(feedback)} ${formatGamificationPoints(feedback.points)}`.trim();
 }
 
 function bounded(value: number | undefined, fallback: number, maximum: number): number {
@@ -125,9 +134,7 @@ export function createGamificationEffects(
     timers.add(timer);
   };
   const draw = (feedback: GamificationFeedback): void => {
-    if (feedback.kind !== "typing")
-      receipt.textContent =
-        `${gamificationFeedbackSymbol(feedback)} ${formatGamificationPoints(feedback.points)}`.trim();
+    if (feedback.kind !== "typing") receipt.textContent = gamificationFeedbackLabel(feedback);
     if (reduced() && feedback.kind === "typing") return;
     const item = document.createElement("div");
     item.className = "um-game-feedback";
@@ -142,7 +149,8 @@ export function createGamificationEffects(
     item.style.setProperty("--um-game-lifetime", `${lifetime}ms`);
     const symbol = document.createElement("span");
     symbol.className = "um-game-feedback-symbol";
-    symbol.textContent = gamificationFeedbackSymbol(feedback);
+    if (feedback.kind === "model_accept") symbol.appendChild(createModelIcon(document));
+    else symbol.textContent = gamificationFeedbackSymbol(feedback);
     const value = document.createElement("span");
     value.className = "um-game-feedback-points";
     value.textContent = formatGamificationPoints(feedback.points);

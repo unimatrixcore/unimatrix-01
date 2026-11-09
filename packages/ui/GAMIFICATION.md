@@ -43,6 +43,10 @@ feedback kind, optional glyph and multiplier; call `clear` on a context change a
 when removing the host. The controller bounds queued and visible effects, escapes glyph text,
 and respects reduced motion while retaining an accessible completion receipt.
 
+Emit `model_accept` for accepting a model suggestion. Its robot and color identify the action
+independently of points or combo size. `ModelIcon` and `createModelIcon(document, className?)`
+from `@unimatrix/ui/public` render the same vector in React and native DOM labels.
+
 Apply `um-game-theme` to a game surface for bright mint rewards, cyan combos, amber top-tier
 feedback, and coral penalties. The palette is scoped to that surface; the surrounding shell
 and grid retain their theme colors. Pass a feedback `kind` to keep its color stable as points
