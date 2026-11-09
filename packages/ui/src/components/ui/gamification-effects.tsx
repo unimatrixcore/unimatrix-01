@@ -28,7 +28,7 @@ export function ScoreFeedback({
       className={cn("um-game-feedback", className)}
       data-kind={feedback.kind ?? "score"}
       data-motion={reducedMotion ? "reduced" : "full"}
-      style={{ color: getGamificationFeedbackColor(feedback.points) }}
+      style={{ color: getGamificationFeedbackColor(feedback.points, feedback.kind) }}
       aria-label={`${gamificationFeedbackSymbol(feedback)} ${formatGamificationPoints(feedback.points)}`.trim()}
     >
       <span className="um-game-feedback-symbol" aria-hidden="true">

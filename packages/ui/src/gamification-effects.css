@@ -1,10 +1,23 @@
+/* Feedback identities stay stable as score values and combo multipliers change. */
+:root {
+  --um-game-feedback-typing: oklch(0.91 0.035 210);
+  --um-game-feedback-tab: oklch(0.8 0.14 171);
+  --um-game-feedback-quick: oklch(0.82 0.1 220);
+  --um-game-feedback-auto: oklch(0.78 0.13 255);
+  --um-game-feedback-correction: oklch(0.8 0.12 300);
+  --um-game-feedback-name: oklch(0.84 0.14 82);
+  --um-game-feedback-delete: oklch(0.78 0.13 38);
+  --um-game-feedback-discard: oklch(0.75 0.04 245);
+  --um-game-feedback-penalty: oklch(0.72 0.19 25);
+}
+
 /* Game surfaces keep vivid feedback without brightening the surrounding tool shell. */
 .um-game-theme {
-  --primary: oklch(0.8 0.14 171);
+  --primary: var(--um-game-feedback-tab);
   --primary-foreground: oklch(0.2 0.02 221);
-  --chart-2: oklch(0.84 0.14 82);
-  --chart-3: oklch(0.82 0.1 220);
-  --destructive: oklch(0.75 0.17 28);
+  --chart-2: var(--um-game-feedback-name);
+  --chart-3: var(--um-game-feedback-quick);
+  --destructive: var(--um-game-feedback-penalty);
   --muted-foreground: oklch(0.76 0.015 245);
   --ring: oklch(0.8 0.14 171 / 50%);
   --warning: var(--chart-2);

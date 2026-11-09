@@ -45,7 +45,9 @@ and respects reduced motion while retaining an accessible completion receipt.
 
 Apply `um-game-theme` to a game surface for bright mint rewards, cyan combos, amber top-tier
 feedback, and coral penalties. The palette is scoped to that surface; the surrounding shell
-and grid retain their theme colors.
+and grid retain their theme colors. Pass a feedback `kind` to keep its color stable as points
+and combo multipliers change. Both feedback renderers use the same per-kind color helper;
+untyped score feedback retains the point-value color scale.
 
 Shared styles use `um-game-input-group`, `um-game-input`, `um-game-combo`, `um-game-ghost`,
 `um-game-crop`, and `um-game-highscore` on existing layout elements. The input group takes

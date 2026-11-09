@@ -42,7 +42,23 @@ const symbols: Record<GamificationFeedbackKind, string> = {
   penalty: "!",
 };
 
-export function getGamificationFeedbackColor(points: number | string): string {
+const feedbackColors: Record<GamificationFeedbackKind, string> = {
+  typing: "var(--um-game-feedback-typing, var(--foreground))",
+  tab: "var(--um-game-feedback-tab, var(--primary))",
+  quick: "var(--um-game-feedback-quick, var(--chart-3))",
+  auto: "var(--um-game-feedback-auto, var(--primary))",
+  correction: "var(--um-game-feedback-correction, var(--destructive))",
+  name_bonus: "var(--um-game-feedback-name, var(--chart-2))",
+  delete: "var(--um-game-feedback-delete, var(--destructive))",
+  discard: "var(--um-game-feedback-discard, var(--muted-foreground))",
+  penalty: "var(--um-game-feedback-penalty, var(--destructive))",
+};
+
+export function getGamificationFeedbackColor(
+  points: number | string,
+  kind?: GamificationFeedbackKind,
+): string {
+  if (kind) return feedbackColors[kind];
   const number = typeof points === "number" ? points : Number(points.match(/-?\d+/)?.[0] ?? 0);
   if (number < 0) return "var(--destructive)";
   if (number <= 10) return "var(--muted-foreground)";
@@ -119,7 +135,7 @@ export function createGamificationEffects(
     item.dataset.motion = reduced() ? "reduced" : "full";
     item.dataset.magnitude =
       typeof feedback.points === "number" && Math.abs(feedback.points) <= 10 ? "small" : "large";
-    item.style.color = getGamificationFeedbackColor(feedback.points);
+    item.style.color = getGamificationFeedbackColor(feedback.points, feedback.kind);
     item.style.left = `${25 + Math.random() * 50}%`;
     item.style.top = `${Math.random() * 10}%`;
     item.style.setProperty("--um-game-rotation", `${Math.random() * 24 - 12}deg`);

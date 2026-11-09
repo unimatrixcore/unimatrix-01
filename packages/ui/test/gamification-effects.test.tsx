@@ -82,6 +82,37 @@ describe("gamification feedback", () => {
     controller.dispose();
   });
 
+  it("keeps feedback kinds distinct when points and multipliers coincide", () => {
+    const kinds = [
+      "typing",
+      "tab",
+      "quick",
+      "auto",
+      "correction",
+      "name_bonus",
+      "delete",
+      "discard",
+      "penalty",
+    ] as const;
+    const colors = kinds.map((kind) => getGamificationFeedbackColor(100, kind));
+    expect(new Set(colors).size).toBe(kinds.length);
+    for (const kind of kinds) {
+      expect(getGamificationFeedbackColor(5, kind)).toBe(getGamificationFeedbackColor(500, kind));
+    }
+    vi.useFakeTimers();
+    const node = host();
+    const controller = createGamificationEffects(node, { staggerMs: 1 });
+    controller.emit({ points: 100, kind: "auto" });
+    expect(node.querySelector<HTMLElement>("[data-kind=auto]")?.style.color).toBe(
+      getGamificationFeedbackColor(100, "auto"),
+    );
+    controller.dispose();
+    const { container } = render(<ScoreFeedback points={100} kind="auto" />);
+    expect(container.querySelector<HTMLElement>("[data-kind=auto]")?.style.color).toBe(
+      getGamificationFeedbackColor(100, "auto"),
+    );
+  });
+
   it("uses shared theme tokens and rejects non-finite scores", () => {
     vi.useFakeTimers();
     expect(getGamificationFeedbackColor(-5)).toBe("var(--destructive)");
