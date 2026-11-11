@@ -1,0 +1,268 @@
+/* Feedback identities stay stable as score values and combo multipliers change. */
+:root {
+  --um-game-feedback-typing: oklch(0.91 0.035 210);
+  --um-game-feedback-tab: oklch(0.8 0.14 171);
+  --um-game-feedback-quick: oklch(0.82 0.1 220);
+  --um-game-feedback-auto: oklch(0.78 0.13 255);
+  --um-game-feedback-model-accept: oklch(0.84 0.15 135);
+  --um-game-feedback-correction: oklch(0.8 0.12 300);
+  --um-game-feedback-name: oklch(0.84 0.14 82);
+  --um-game-feedback-delete: oklch(0.78 0.13 38);
+  --um-game-feedback-discard: oklch(0.75 0.04 245);
+  --um-game-feedback-penalty: oklch(0.72 0.19 25);
+}
+
+/* Game surfaces keep vivid feedback without brightening the surrounding tool shell. */
+.um-game-theme {
+  --primary: var(--um-game-feedback-tab);
+  --primary-foreground: oklch(0.2 0.02 221);
+  --chart-2: var(--um-game-feedback-name);
+  --chart-3: var(--um-game-feedback-quick);
+  --destructive: var(--um-game-feedback-penalty);
+  --muted-foreground: oklch(0.76 0.015 245);
+  --ring: oklch(0.8 0.14 171 / 50%);
+  --warning: var(--chart-2);
+  --game-combo-base: var(--muted-foreground);
+  --game-combo-2: var(--primary);
+  --game-combo-3: var(--chart-3);
+  --game-combo-5: var(--chart-2);
+}
+
+.um-game-effects-host {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.um-game-effects {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 30;
+}
+.um-game-receipt {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+.um-game-feedback {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-weight: 900;
+  font-size: 20px;
+  text-shadow: 0 0 12px currentColor;
+  pointer-events: none;
+  animation: um-game-float var(--um-game-lifetime, 1200ms) ease-out forwards;
+}
+.um-game-feedback[data-magnitude="small"] {
+  font-size: 14px;
+}
+.um-game-feedback-symbol {
+  font-size: 1.4em;
+  line-height: 1;
+}
+.um-game-feedback[data-kind="typing"] .um-game-feedback-symbol {
+  font-size: 2.2em;
+}
+.um-game-feedback-points {
+  font-size: 1.3em;
+  letter-spacing: -0.5px;
+}
+.um-game-feedback[data-motion="reduced"] {
+  animation: none;
+  text-shadow: none;
+  transform: translateX(-50%);
+}
+.um-game-burst {
+  animation: um-game-shake 400ms cubic-bezier(0.36, 0.07, 0.19, 0.97);
+}
+.um-game-input-group.combo-x1 .um-game-combo {
+  opacity: 1;
+  border-color: var(--muted-foreground);
+  box-shadow: 0 0 12px color-mix(in oklab, var(--muted-foreground) 60%, transparent);
+}
+.um-game-input-group.invalid label {
+  animation: um-game-shake 400ms;
+}
+.um-game-input-group.combo-x2 .um-game-combo {
+  border-color: var(--primary);
+  transform: translateY(-50%) rotate(5deg) scale(1.05);
+}
+.um-game-input-group.combo-x2 .um-game-input {
+  box-shadow: 0 0 20px color-mix(in oklab, var(--primary) 24%, transparent);
+}
+.um-game-input-group.combo-x3 .um-game-combo {
+  border-color: var(--chart-3);
+  box-shadow: 0 0 25px color-mix(in oklab, var(--chart-3) 50%, transparent);
+  transform: translateY(-50%) rotate(-5deg) scale(1.1);
+}
+.um-game-input-group.combo-x3 .um-game-input {
+  box-shadow: 0 0 25px color-mix(in oklab, var(--chart-3) 24%, transparent);
+}
+.um-game-input-group.combo-x5 .um-game-combo {
+  border-color: var(--chart-2);
+  box-shadow: 0 0 30px color-mix(in oklab, var(--chart-2) 60%, transparent);
+  animation: um-game-pulse-badge 1s infinite;
+}
+.um-game-input-group.combo-x5 .um-game-input {
+  box-shadow: 0 0 35px color-mix(in oklab, var(--chart-2) 30%, transparent);
+}
+.um-game-input-group .um-game-combo.jiggle {
+  animation: um-game-jiggle 200ms linear infinite;
+}
+.um-game-input-group .um-game-combo.warning {
+  animation:
+    um-game-jiggle 200ms linear infinite,
+    um-game-strobe 400ms ease-in-out infinite;
+}
+.um-game-input.combo-warning {
+  animation: um-game-border-strobe 400ms ease-in-out infinite;
+}
+.um-game-ghost .suggestion-part {
+  animation: um-game-suggestion-in 180ms ease-out;
+}
+.um-game-crop.swapping img {
+  animation: um-game-image-swap 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.um-game-highscore {
+  animation: um-game-highscore-pop 500ms cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+@keyframes um-game-float {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 0) scale(0.6) rotate(var(--um-game-rotation, 0deg));
+  }
+  15% {
+    opacity: 1;
+    transform: translate(-50%, -20px) scale(1.2) rotate(var(--um-game-rotation, 0deg));
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -110px) scale(0.8) rotate(var(--um-game-rotation, 0deg));
+  }
+}
+@keyframes um-game-shake {
+  10%,
+  90% {
+    transform: translateX(-1px);
+  }
+  20%,
+  80% {
+    transform: translateX(2px);
+  }
+  30%,
+  50%,
+  70% {
+    transform: translateX(-4px);
+  }
+  40%,
+  60% {
+    transform: translateX(4px);
+  }
+}
+@keyframes um-game-pulse-badge {
+  0%,
+  100% {
+    transform: translateY(-50%) rotate(10deg) scale(1.2);
+  }
+  50% {
+    transform: translateY(-50%) rotate(10deg) scale(1.3);
+  }
+}
+@keyframes um-game-jiggle {
+  0%,
+  100% {
+    transform: translateY(-50%) rotate(5deg) scale(1.05);
+  }
+  25% {
+    transform: translateY(-52%) rotate(-2deg) scale(1.12);
+  }
+  50% {
+    transform: translateY(-50%) rotate(12deg) scale(1.05);
+  }
+  75% {
+    transform: translateY(-48%) rotate(0) scale(1.12);
+  }
+}
+@keyframes um-game-strobe {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 12px currentColor);
+  }
+  50% {
+    filter: drop-shadow(0 0 2px currentColor);
+  }
+}
+@keyframes um-game-border-strobe {
+  0%,
+  100% {
+    box-shadow: 0 0 20px var(--combo-color, var(--primary));
+  }
+  50% {
+    box-shadow: none;
+  }
+}
+@keyframes um-game-suggestion-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 0.6;
+    transform: translateY(0);
+  }
+}
+@keyframes um-game-image-swap {
+  0% {
+    opacity: 0;
+    transform: scale(0.9) translateY(10px);
+    filter: blur(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: blur(0);
+  }
+}
+@keyframes um-game-highscore-pop {
+  from {
+    opacity: 0;
+    transform: scale(0) rotate(0);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) rotate(8deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .um-game-feedback,
+  .um-game-burst,
+  .um-game-input-group.invalid label,
+  .um-game-combo,
+  .um-game-input.combo-warning,
+  .um-game-ghost .suggestion-part,
+  .um-game-crop.swapping img,
+  .um-game-highscore {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+.um-text-transition[data-text-transition="pending"] {
+  opacity: 0;
+  pointer-events: none;
+  user-select: none;
+}
+.um-text-transition[data-text-transition="entering"] {
+  will-change: opacity, transform;
+}

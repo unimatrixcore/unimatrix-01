@@ -83,6 +83,14 @@ describe("public UI package usage", () => {
       'export { PublicMarkdown } from "./components/public-markdown.js";',
       'export { useIsMobile } from "./hooks/use-mobile.js";',
       'export { cn } from "./lib/utils.js";',
+      'export { ReviewSuggestion } from "./components/ui/review-suggestion.js";',
+      'export { ReviewSessionStatus } from "./components/ui/review-session-status.js";',
+      'export { GamificationStatus } from "./components/ui/gamification-status.js";',
+      'export { GamificationEffectsLayer, ScoreFeedback } from "./components/ui/gamification-effects.js";',
+      'export { Input } from "./components/ui/input.js";',
+      'export { createTextTransition } from "./lib/text-transition.js";',
+      'export { ModelIcon } from "./components/ui/model-icon.js";',
+      'export { createModelIcon } from "./lib/model-icon.js";',
     ];
 
     expect(rootSource).toMatch(/components\/ui\/index/u);

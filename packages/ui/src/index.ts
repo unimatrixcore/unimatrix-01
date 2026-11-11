@@ -8,3 +8,40 @@ export type { StatusTone } from "./lib/status-tone.js";
 
 export { ActionTooltip } from "./components/ui/action-tooltip.js";
 export type { ActionTooltipProps } from "./components/ui/action-tooltip.js";
+
+export { ReviewSuggestion } from "./components/ui/review-suggestion.js";
+export type {
+  ReviewSuggestionProps,
+  ReviewSuggestionIds,
+  ReviewSuggestionState,
+  ReviewSuggestionActionLabels,
+  ReviewSuggestionShortcutLabels,
+} from "./components/ui/review-suggestion.js";
+export { ReviewSessionStatus } from "./components/ui/review-session-status.js";
+export type {
+  ReviewSessionStatusProps,
+  ReviewSessionStatusIds,
+} from "./components/ui/review-session-status.js";
+
+export * from "./lib/gamification.js";
+export { GamificationStatus } from "./components/ui/gamification-status.js";
+export type {
+  GamificationStatusProps,
+  GamificationClockState,
+  GamificationStatusIds,
+  GamificationStatusLabels,
+} from "./components/ui/gamification-status.js";
+
+export * from "./lib/gamification-effects.js";
+export { GamificationEffectsLayer, ScoreFeedback } from "./components/ui/gamification-effects.js";
+export type {
+  GamificationEffectsLayerProps,
+  ScoreFeedbackProps,
+} from "./components/ui/gamification-effects.js";
+
+export { createTextTransition } from "./lib/text-transition.js";
+export type { TextTransition, TextTransitionOptions } from "./lib/text-transition.js";
+
+export { ModelIcon } from "./components/ui/model-icon.js";
+export type { ModelIconProps } from "./components/ui/model-icon.js";
+export { createModelIcon } from "./lib/model-icon.js";
