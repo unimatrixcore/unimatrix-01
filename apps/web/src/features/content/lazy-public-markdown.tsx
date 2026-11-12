@@ -2,7 +2,7 @@ import type { ReactElement, ReactNode } from "react";
 import { Component, Suspense, lazy } from "react";
 
 const PublicMarkdown = lazy(async () => {
-  const module = await import("@unimatrix/ui/public");
+  const module = await import("@unimatrix/ui/markdown");
 
   return { default: module.PublicMarkdown };
 });

@@ -16,6 +16,7 @@
       "@unimatrix/e2e-helpers": ["../../packages/e2e-helpers/src/index.ts"],
       "@unimatrix/content": ["../../packages/content/src/index.ts"],
       "@unimatrix/shared": ["../../packages/shared/src/index.ts"],
+      "@unimatrix/ui/markdown": ["../../packages/ui/src/components/public-markdown.tsx"],
       "@unimatrix/ui/public": ["../../packages/ui/src/public.ts"],
       "@unimatrix/ui": ["../../packages/ui/src/index.ts"]
     },

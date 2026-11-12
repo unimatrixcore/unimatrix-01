@@ -143,3 +143,23 @@ test("blog page render", async ({ page }) => {
   await scanAccessibility(page, "/blog/placeholder-post");
   expectNoPageErrors(pageErrors);
 });
+
+test("loads the markdown renderer only when a content detail needs it", async ({ page }) => {
+  const scripts: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/assets/public-markdown-")) scripts.push(request.url());
+  });
+  await stubContentApi(page);
+  await gotoRoute(page, "/");
+  await expect(
+    page.getByRole("heading", { name: "Projects I need and no one wants." }),
+  ).toBeVisible();
+  expect(scripts).toHaveLength(0);
+  await gotoRoute(page, "/blog/placeholder-post");
+  await expect(
+    page.getByText("This is a placeholder blog post while I figure out what belongs here.", {
+      exact: false,
+    }),
+  ).toBeVisible();
+  expect(scripts).toHaveLength(1);
+});

@@ -38,6 +38,10 @@
     "./popover": {
       "types": "./dist/components/ui/popover.d.ts",
       "default": "./dist/components/ui/popover.js"
+    },
+    "./markdown": {
+      "types": "./dist/components/public-markdown.d.ts",
+      "default": "./dist/components/public-markdown.js"
     }
   },
   "scripts": {

@@ -4,7 +4,7 @@ import { afterEach } from "vitest";
 
 // Testing Library's default 1000ms `asyncUtilTimeout` is independent of Vitest's
 // 5000ms `testTimeout`, and it is what `findBy*` races. Suites that await a lazy
-// chunk (`LazyPublicMarkdown` pulls the whole `@unimatrix/ui/public` graph) blow
+// chunk can blow
 // past 1000ms whenever `pnpm verify` runs builds, lint, and typecheck alongside
 // the tests, so align the async-util budget with the test timeout.
 configure({ asyncUtilTimeout: 5000 });
