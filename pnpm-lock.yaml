@@ -530,7 +530,7 @@ importers:
         specifier: ^1.170.29
         version: 1.170.29(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@tauri-apps/api':
-        specifier: ^2.0.0
+        specifier: ^2.10.1
         version: 2.12.4
       '@unimatrix/chrome':
         specifier: workspace:^
@@ -621,7 +621,7 @@ importers:
         specifier: ^1.170.29
         version: 1.170.29(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@tauri-apps/api':
-        specifier: ^2.0.0
+        specifier: ^2.10.1
         version: 2.12.4
       '@unimatrix/chrome':
         specifier: workspace:^

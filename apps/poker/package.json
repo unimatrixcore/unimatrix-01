@@ -23,7 +23,7 @@
   "dependencies": {
     "@remixicon/react": "^4.9.0",
     "@tanstack/react-router": "^1.170.29",
-    "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/api": "^2.10.1",
     "@unimatrix/chrome": "workspace:^",
     "@unimatrix/poker": "workspace:*",
     "@unimatrix/shared": "workspace:*",

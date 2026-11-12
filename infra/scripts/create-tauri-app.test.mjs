@@ -3,7 +3,80 @@ import { mkdtemp, mkdir, writeFile, readFile, rm, access } from "node:fs/promise
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { createTauriApp } from "./create-tauri-app.mjs";
+
+const execFileAsync = promisify(execFile);
+const repository = path.resolve(import.meta.dirname, "../..");
+
+test("generated Cargo workspace coexists with the repository workspace", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "tauri-cargo-workspace-"));
+  try {
+    await writeFile(
+      path.join(root, "Cargo.toml"),
+      await readFile(path.join(repository, "Cargo.toml")),
+    );
+    for (const [directory, target] of [
+      ["packages/desktop-runtime", "lib.rs"],
+      ["packages/poker-native", "lib.rs"],
+      ["apps/poker/src-tauri", "main.rs"],
+      ["apps/poker-assistant/src-tauri", "main.rs"],
+    ]) {
+      await mkdir(path.join(root, directory, "src"), { recursive: true });
+      await writeFile(
+        path.join(root, directory, "Cargo.toml"),
+        await readFile(path.join(repository, directory, "Cargo.toml")),
+      );
+      await writeFile(path.join(root, directory, "src", target), "");
+    }
+    const app = await createTauriApp({ root, name: "counter", identifier: "dev.test.counter" });
+    const manifest = path.join(app, "src-tauri", "Cargo.toml");
+    const { stdout } = await execFileAsync("cargo", [
+      "metadata",
+      "--offline",
+      "--no-deps",
+      "--format-version",
+      "1",
+      "--manifest-path",
+      manifest,
+    ]);
+    const metadata = JSON.parse(stdout);
+    assert.equal(metadata.workspace_root, path.join(app, "src-tauri"));
+    assert.equal(metadata.workspace_members.length, 1);
+    assert.ok(
+      metadata.packages[0].dependencies.some(
+        (dependency) => dependency.name === "unimatrix-desktop",
+      ),
+    );
+    const rootMetadata = JSON.parse(
+      (
+        await execFileAsync("cargo", [
+          "metadata",
+          "--offline",
+          "--no-deps",
+          "--format-version",
+          "1",
+          "--manifest-path",
+          path.join(root, "Cargo.toml"),
+        ])
+      ).stdout,
+    );
+    const memberNames = rootMetadata.packages
+      .filter((entry) => rootMetadata.workspace_members.includes(entry.id))
+      .map((entry) => entry.name);
+    for (const name of [
+      "unimatrix-desktop",
+      "poker-native",
+      "unimatrix-poker",
+      "unimatrix-poker-assistant",
+    ]) {
+      assert.ok(memberNames.includes(name));
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("generates isolated local IPC app and refuses overwrite and traversal", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "tauri-generator-"));

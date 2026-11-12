@@ -17,6 +17,12 @@ Poker Lab retains the poker-chip logo, the OCR Data and Gameplay rail sections, 
 
 The native boundary is `lab_request`, with request and response schemas in `@unimatrix/shared`. Dataset identity travels with each scoped request. Media responses use the local `pokerlab` protocol. The separate Poker Assistant uses the shared native crate.
 
+The Poker adapters retain their existing Tauri argument shapes: Lab sends `request`,
+the launcher sends `operation` and `selection`, and Assistant commands have their
+own arguments. `@unimatrix/tauri`'s command client wraps arguments in `input`, so
+using it requires changing both sides of these IPC contracts. The adapters validate
+their responses with `@unimatrix/shared` and keep browser fixtures isolated.
+
 The current model suggestions use the frozen general and name-specialist ONNX models. The retained inference and training tooling is under `tools/poker`; the legacy assistant's RTen models are not a substitute for those models. Inference remains an isolated Python worker until equivalent preprocessing, decoding, frozen-artifact validation and CUDA placement are demonstrated in Rust. Portable application services run in the shared Rust crate.
 
 Development commands:
