@@ -1,0 +1,10 @@
+{
+  "name": "@unimatrix/desktop-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "lint": "node ../../infra/scripts/run-local-workload.mjs -- cargo fmt --all --check",
+    "typecheck": "node ../../infra/scripts/run-local-workload.mjs -- cargo check --locked -p unimatrix-desktop",
+    "test": "node ../../infra/scripts/run-local-workload.mjs -- cargo test --locked -p unimatrix-desktop"
+  }
+}

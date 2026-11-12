@@ -1,0 +1,56 @@
+use std::path::PathBuf;
+use tauri::Manager;
+use unimatrix_desktop::{open_database, require_native_wayland, AppDirectories};
+
+const IDENTIFIER: &str = "__IDENTIFIER__";
+const MIGRATIONS: &[&str] = &["CREATE TABLE counter (id INTEGER PRIMARY KEY CHECK (id = 1), value INTEGER NOT NULL CHECK (value >= 0)); INSERT INTO counter VALUES (1, 0);"];
+
+struct Database(PathBuf);
+
+async fn counter_operation(path: PathBuf, value: Option<i64>) -> Result<i64, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let connection = open_database(&path, MIGRATIONS).map_err(|error| error.to_string())?;
+        if let Some(value) = value {
+            if !(0..=9_007_199_254_740_991).contains(&value) {
+                return Err("Counter is outside the safe integer range".into());
+            }
+            connection
+                .execute("UPDATE counter SET value = ?1 WHERE id = 1", [value])
+                .map_err(|error| error.to_string())?;
+        }
+        connection
+            .query_row("SELECT value FROM counter WHERE id = 1", [], |row| {
+                row.get(0)
+            })
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+async fn read_counter(input: (), database: tauri::State<'_, Database>) -> Result<i64, String> {
+    let _ = input;
+    counter_operation(database.0.clone(), None).await
+}
+
+#[tauri::command]
+async fn save_counter(input: i64, database: tauri::State<'_, Database>) -> Result<i64, String> {
+    counter_operation(database.0.clone(), Some(input)).await
+}
+
+fn main() {
+    require_native_wayland().expect("Native Wayland startup failed");
+    #[cfg(target_os = "linux")]
+    glib::set_prgname(Some(IDENTIFIER));
+    tauri::Builder::default()
+        .setup(|app| {
+            let directories = AppDirectories::discover(IDENTIFIER)?;
+            directories.create()?;
+            app.manage(Database(directories.database_path("app.sqlite")?));
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![read_counter, save_counter])
+        .run(tauri::generate_context!())
+        .expect("Desktop application failed");
+}

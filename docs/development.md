@@ -210,3 +210,8 @@ The wrapper reuses matching pnpm or bootstraps only the pinned pnpm through
 `useNodeVersion` matches `.node-version`. Keep `sideEffectsCache: false`: pnpm 10
 keys native build cache entries by its launcher Node, which can differ from the
 runtime selected for dependency builds.
+
+## Desktop applications
+
+Use [the Tauri workflow](./tauri.md) to generate and validate a native Wayland
+application with shared UI, typed Rust commands, and XDG-backed SQLite storage.

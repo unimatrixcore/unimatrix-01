@@ -1,0 +1,7 @@
+{
+  "identifier": "main",
+  "description": "Local main window; no filesystem, shell, SQL or remote capabilities.",
+  "local": true,
+  "windows": ["main"],
+  "permissions": []
+}

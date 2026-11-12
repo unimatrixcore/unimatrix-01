@@ -1,0 +1,11 @@
+[package]
+name = "unimatrix-desktop"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+rusqlite = { version = "0.38.0", features = ["bundled"] }
+
+[dev-dependencies]
+tempfile = "3.26.0"
