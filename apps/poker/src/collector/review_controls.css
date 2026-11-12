@@ -9,9 +9,9 @@
 .card-checkbox.review-native-checkbox { display:none; }
 #ai-review-button-progress { align-self:center;color:var(--muted-foreground);font-size:11px; }
 #magnifier { display:none !important; }
-.crop-zoom-preview { position:fixed;z-index:5000;pointer-events:none;border:1px solid var(--primary);box-sizing:content-box; }
+.crop-zoom-preview { position:fixed;z-index:5000;pointer-events:none;border:1px solid var(--primary);box-sizing:border-box;overflow:hidden;background:var(--background); }
 .crop-zoom-preview[hidden] { display:none; }
-.crop-zoom-preview img { display:block;width:100%;height:100%;object-fit:fill;image-rendering:pixelated; }
+.crop-zoom-preview img { position:absolute;display:block;max-width:none;max-height:none;padding:0;border:0;object-fit:fill;image-rendering:pixelated; }
 .workspace-topbar .stepper { overflow-x:auto;scrollbar-width:thin; }
 .workspace-topbar .stepper .step-btn { flex-shrink:0; }
 .review-icon-action:has(> button.hidden) { display:none; }

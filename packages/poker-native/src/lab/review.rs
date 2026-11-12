@@ -70,6 +70,11 @@ pub fn ensure_conn(conn: &Connection) -> LabResult<()> {
 CREATE TABLE IF NOT EXISTS model_predictions(id TEXT PRIMARY KEY,sample_key TEXT NOT NULL,region_id TEXT NOT NULL,pixel_sha256 TEXT NOT NULL,dataset_id TEXT NOT NULL,created_at INTEGER NOT NULL,payload TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS label_review_events(id INTEGER PRIMARY KEY AUTOINCREMENT,sample_key TEXT NOT NULL,filename TEXT,prediction_id TEXT,prior_label TEXT NOT NULL,label TEXT NOT NULL,action TEXT NOT NULL,pixel_sha256 TEXT NOT NULL,dataset_id TEXT NOT NULL,created_at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS review_events_sample ON label_review_events(sample_key);
+CREATE TABLE IF NOT EXISTS review_mapping_revision(id INTEGER PRIMARY KEY CHECK(id=1),revision INTEGER NOT NULL);
+INSERT OR IGNORE INTO review_mapping_revision VALUES(1,0);
+CREATE TRIGGER IF NOT EXISTS review_mapping_insert AFTER INSERT ON review_samples WHEN NEW.filename IS NOT NULL BEGIN UPDATE review_mapping_revision SET revision=revision+1 WHERE id=1; END;
+CREATE TRIGGER IF NOT EXISTS review_mapping_delete AFTER DELETE ON review_samples WHEN OLD.filename IS NOT NULL BEGIN UPDATE review_mapping_revision SET revision=revision+1 WHERE id=1; END;
+CREATE TRIGGER IF NOT EXISTS review_mapping_update AFTER UPDATE OF filename,sample_key ON review_samples WHEN OLD.filename IS NOT NEW.filename OR OLD.sample_key IS NOT NEW.sample_key BEGIN UPDATE review_mapping_revision SET revision=revision+1 WHERE id=1; END;
 CREATE TRIGGER IF NOT EXISTS review_events_no_update BEFORE UPDATE ON label_review_events BEGIN SELECT RAISE(ABORT,'Review history is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS review_events_no_delete BEFORE DELETE ON label_review_events BEGIN SELECT RAISE(ABORT,'Review history is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS predictions_no_update BEFORE UPDATE ON model_predictions BEGIN SELECT RAISE(ABORT,'Predictions are immutable'); END;
@@ -461,6 +466,121 @@ pub fn history(
     let predictions:Vec<Value>=conn.prepare(&format!("SELECT * FROM model_predictions WHERE sample_key IN ({selectors}) ORDER BY created_at DESC,rowid DESC"))?.query_map(rusqlite::params_from_iter(&keys),row_json)?.map(|row|{let mut row=row?;let mut payload:Value=serde_json::from_str(row["payload"].as_str().unwrap_or("{}"))?;row.as_object_mut().expect("row object").remove("payload");if let Some(fields)=payload.as_object_mut(){fields.extend(row.as_object().expect("row object").clone());}Ok(payload)}).collect::<LabResult<_>>()?;
     Ok(json!({"events":events,"predictions":predictions}))
 }
+pub fn history_page(
+    ctx: &DatasetContext,
+    key: Option<&str>,
+    filename: Option<&str>,
+    cursor: Option<&str>,
+    limit: usize,
+) -> LabResult<Value> {
+    ensure(ctx)?;
+    if key.is_some_and(|s| s.len() > 512) {
+        return Err(bad("Invalid sample key"));
+    }
+    if let Some(filename) = filename {
+        super::datasets::safe_filename(filename)?;
+    }
+    let mut conn = ctx.connection()?;
+    ctx.ensure_active()?;
+    let tx = conn.transaction()?;
+    let mapping_revision: i64 = tx.query_row(
+        "SELECT revision FROM review_mapping_revision WHERE id=1",
+        [],
+        |r| r.get(0),
+    )?;
+    let (events, predictions, offset) = if let Some(raw) = cursor {
+        let value: Value = serde_json::from_str(raw).map_err(|_| bad("Invalid history cursor"))?;
+        if filename.is_some() && value["mapping_revision"].as_i64() != Some(mapping_revision) {
+            return Err(conflict("History sample mapping changed; reload the list"));
+        }
+        (
+            value["events"]
+                .as_i64()
+                .filter(|v| *v >= 0)
+                .ok_or_else(|| bad("Invalid history cursor"))?,
+            value["predictions"]
+                .as_i64()
+                .filter(|v| *v >= 0)
+                .ok_or_else(|| bad("Invalid history cursor"))?,
+            value["offset"]
+                .as_i64()
+                .filter(|v| *v >= 0)
+                .ok_or_else(|| bad("Invalid history cursor"))?,
+        )
+    } else {
+        (
+            tx.query_row(
+                "SELECT COALESCE(MAX(rowid),0) FROM label_review_events",
+                [],
+                |r| r.get(0),
+            )?,
+            tx.query_row(
+                "SELECT COALESCE(MAX(rowid),0) FROM model_predictions",
+                [],
+                |r| r.get(0),
+            )?,
+            0,
+        )
+    };
+    let next = offset
+        .checked_add(limit as i64)
+        .ok_or_else(|| bad("Invalid history cursor"))?;
+    let predicate="(?1 IS NOT NULL AND sample_key=?1) OR (?2 IS NOT NULL AND (sample_key=?2 OR sample_key IN (SELECT sample_key FROM review_samples WHERE filename=?2)))";
+    let union=format!("SELECT 'event' kind,rowid rid,created_at FROM label_review_events WHERE rowid<=?3 AND ({predicate}) UNION ALL SELECT 'prediction' kind,rowid rid,created_at FROM model_predictions WHERE rowid<=?4 AND ({predicate})");
+    let total: i64 = tx.query_row(
+        &format!("SELECT COUNT(*) FROM ({union})"),
+        params![key, filename, events, predictions],
+        |r| r.get(0),
+    )?;
+    let selected: Vec<(String, i64)> = {
+        let mut q=tx.prepare(&format!("SELECT kind,rid FROM ({union}) ORDER BY created_at DESC,kind DESC,rid DESC LIMIT ?5 OFFSET ?6"))?;
+        let rows = q
+            .query_map(
+                params![
+                    key,
+                    filename,
+                    events,
+                    predictions,
+                    (limit + 1) as i64,
+                    offset
+                ],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )?
+            .collect::<rusqlite::Result<_>>()?;
+        rows
+    };
+    let more = selected.len() > limit;
+    let mut items = Vec::new();
+    for (kind, id) in selected.into_iter().take(limit) {
+        let table = if kind == "event" {
+            "label_review_events"
+        } else {
+            "model_predictions"
+        };
+        let mut payload = tx.query_row(
+            &format!("SELECT * FROM {table} WHERE rowid=?"),
+            [id],
+            row_json,
+        )?;
+        if kind == "prediction" {
+            let fields = payload.as_object_mut().expect("row object");
+            let raw = fields
+                .remove("payload")
+                .and_then(|v| v.as_str().map(str::to_owned))
+                .unwrap_or_default();
+            let mut parsed: Value = serde_json::from_str(&raw)?;
+            if let Some(object) = parsed.as_object_mut() {
+                object.extend(fields.clone());
+            }
+            payload = parsed;
+        }
+        items.push(json!({"kind":kind,"payload":payload}));
+    }
+    Ok(
+        json!({"items":items,"total":total,"next_cursor":if more {Some(json!({"events":events,"predictions":predictions,"offset":next,"mapping_revision":mapping_revision}).to_string())} else {None},"meta":{}}),
+    )
+}
+
 pub fn commit(
     ctx: &DatasetContext,
     entries: &[(Value, Vec<u8>, String)],

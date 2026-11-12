@@ -40,6 +40,35 @@ export function installLabFixture() {
       request.body && typeof request.body === "object"
         ? (request.body as Record<string, unknown>)
         : {};
+    if (
+      request.method === "GET" &&
+      request.query.background_page === "1" &&
+      request.path === "/api/label_history" &&
+      (("filename" in request.query && !request.query.filename) ||
+        ("sample_key" in request.query && !request.query.sample_key))
+    )
+      return { status: 400, headers: {}, body: { error: "Empty history selector" } };
+    if (request.method === "GET" && request.query.background_page === "1") {
+      const cursor = Number(request.query.cursor || 0);
+      const limit = Math.max(1, Number(request.query.limit || 250));
+      const items =
+        request.path === "/api/datasets"
+          ? datasets.filter((item) => request.query.include_archived === "1" || !item.archived)
+          : [];
+      const end = Math.min(items.length, cursor + limit);
+      return success({
+        items: items.slice(cursor, end),
+        nextCursor: end < items.length ? String(end) : null,
+        hasMore: end < items.length,
+        total: items.length,
+        meta:
+          request.path === "/api/datasets"
+            ? { default_dataset_id: "fixture" }
+            : request.path === "/api/queue" || request.path === "/api/queue/review/items"
+              ? { summary: emptySummary }
+              : {},
+      });
+    }
     if (request.path === "/api/datasets") {
       if (request.method === "POST") {
         const dataset = {
@@ -73,11 +102,21 @@ export function installLabFixture() {
           queue_summary: emptySummary,
         },
         collection_page: { items: [], next_cursor: null, summary: emptySummary },
-        db: [],
+        ...(request.query.background_lists === "1" ? {} : { db: [], history: [] }),
         sources: [{ name: "TEST-1", label: "TEST-1", kind: "monitor", width: 1920, height: 1080 }],
         monitors: [{ name: "TEST-1", width: 1920, height: 1080 }],
         settings: { last_monitor: "TEST-1" },
-        history: [],
+      });
+    if (
+      request.query.background_page === "1" &&
+      (request.path === "/api/queue" || request.path === "/api/queue/review/items")
+    )
+      return success({
+        items: [],
+        nextCursor: null,
+        hasMore: false,
+        total: 0,
+        meta: { summary: emptySummary },
       });
     if (request.path === "/api/queue")
       return success({ items: [], next_cursor: null, summary: emptySummary });
@@ -114,4 +153,30 @@ export function installLabFixture() {
       body: { error: `Unhandled test endpoint: ${request.path}` },
     };
   };
+  let fixtureInvoker = window.__POKER_LAB_TEST_INVOKE__;
+  Object.defineProperty(window, "__POKER_LAB_TEST_INVOKE__", {
+    configurable: true,
+    get: () => fixtureInvoker,
+    set: (next: typeof fixtureInvoker) => {
+      fixtureInvoker = async (request) => {
+        const response = await next(request);
+        if (
+          request.query.background_page !== "1" ||
+          !response ||
+          typeof response !== "object" ||
+          !("body" in response)
+        )
+          return response;
+        const body = response.body;
+        if (!body || typeof body !== "object" || "items" in body) return response;
+        const legacy = body as Record<string, unknown>;
+        const rows = legacy.sessions ?? legacy.hands ?? legacy.frames;
+        if (!Array.isArray(rows)) return response;
+        return {
+          ...response,
+          body: { items: rows, nextCursor: null, hasMore: false, total: rows.length, meta: legacy },
+        };
+      };
+    },
+  });
 }

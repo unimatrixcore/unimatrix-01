@@ -39,6 +39,31 @@ impl GameplayService {
         let inner = native::Gameplay::with_config_root(repo, &environment, config);
         Ok(Self { inner })
     }
+    pub fn list_page(
+        &self,
+        kind: &str,
+        session: Option<&str>,
+        hand: Option<&str>,
+        order: &str,
+        archived: bool,
+        cursor: Option<&str>,
+        limit: usize,
+    ) -> LabResult<serde_json::Value> {
+        self.inner
+            .list_page(kind, session, hand, order, archived, cursor, limit)
+            .map_err(|error| {
+                let (status, message) = error
+                    .split_once(':')
+                    .and_then(|(code, message)| {
+                        code.parse::<u16>()
+                            .ok()
+                            .map(|status| (status, message.to_string()))
+                    })
+                    .unwrap_or((500, error.clone()));
+                LabError { status, message }
+            })
+    }
+
     pub fn shutdown(&self) {
         self.inner.shutdown();
     }

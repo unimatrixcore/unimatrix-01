@@ -70,6 +70,7 @@ async function applyAiReviewJob(state,job) {
   paintAiReview();
   if (signature && signature !== state.refreshSignature && (job.checked > 0 || previous?.id === job.id)) {
     if (!aiReviewVisible(state)) {state.refreshDeferred=true;return;}
+    if(Number(job.corrected)>Number(previous?.corrected || 0) && window.CollectorBackgroundLists) await window.CollectorBackgroundLists.invalidate("/api/label_history",state.datasetId);
     const refreshed = typeof refreshAiReviewedRows === 'function' ? await refreshAiReviewedRows(job) : true;
     if (!aiReviewMatches(state)) return;
     state.refreshDeferred = refreshed === false;
@@ -180,7 +181,8 @@ function paintAiReview() {
       if(gridDetails.open && aiReviewVisible(state) && state.gridUrl!==url) {aiReviewElement('ai-review-grid').src=url;state.gridUrl=url;}
     } else {aiReviewElement('ai-review-grid').removeAttribute('src');state.gridUrl=null;}
     const list=aiReviewElement('ai-review-changes'),fragment=document.createDocumentFragment();
-    for(const item of (job.recent || job.changes || []).filter(item=>item.state!=='unchanged').slice(-12).reverse()) {
+    const recent=(job.recent || job.changes || []).filter(item=>item.state!=='unchanged').slice(-12).reverse();
+    const renderChange=item=>{
       const row=document.createElement('li');row.dataset.state=item.state || '';
       const region=document.createElement('span');region.className='ai-change-region';region.textContent=item.region_id || item.id || '';region.title=region.textContent;
       const labels=document.createElement('span');labels.className='ai-change-labels';
@@ -192,9 +194,10 @@ function paintAiReview() {
       } else labels.textContent=item.prior_label===''?'∅':item.prior_label ?? item.label ?? '';
       const outcome=document.createElement('span');outcome.className='ai-change-state';outcome.textContent=item.state==='conflict'?'Changed elsewhere':item.state==='corrected'?'Corrected':'Needs a look';
       if(item.reason) outcome.title=item.reason;
-      row.append(region,labels,outcome);fragment.appendChild(row);
-    }
-    list.replaceChildren(fragment);
+      row.append(region,labels,outcome);return row;
+    };
+    if(window.CollectorBackgroundLists) window.CollectorBackgroundLists.snapshot(list,{items:recent.map((item,index)=>({id:String(index),item})),key:row=>row.id,card:row=>renderChange(row.item),height:200,rowHeight:42,minColumnWidth:1000});
+    else {for(const item of recent) fragment.appendChild(renderChange(item));list.replaceChildren(fragment);}
   }
   const commit=aiReviewElement('btn-add-db');
   if(commit) commit.disabled=isAiReviewBusy() || !!(typeof queueCommitBusy!=='undefined' && queueCommitBusy) || !!(typeof reviewSaving!=='undefined' && reviewSaving) || !!(typeof fullSessionReview!=='undefined' && fullSessionReview?.mutation);

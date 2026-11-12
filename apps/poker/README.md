@@ -15,7 +15,21 @@ directories; the path contract alone does not establish live-data acceptance.
 
 Poker Lab retains the poker-chip logo, the OCR Data and Gameplay rail sections, and the Collection / Labeling / Review / Database workflow. Proven behavior modules remain in JavaScript while the Vite entry, shared UI integration and native boundary use TypeScript. The UI imports this monorepo's actual shared components and styles.
 
-The native boundary is `lab_request`, with request and response schemas in `@unimatrix/shared`. Dataset identity travels with each scoped request. Media responses use the local `pokerlab` protocol. The separate Poker Assistant uses the shared native crate.
+The native boundary uses `lab_request` for operations and `lab_list_page` for
+catalog reads, with request and response schemas in `@unimatrix/shared`. Dataset
+identity travels with each scoped request. Media responses use the local
+`pokerlab` protocol. The separate Poker Assistant uses the shared native crate.
+
+List cursors belong to their dataset, resource, filters and sort order. A 409
+means the catalog changed and the query must restart from its first page.
+Gameplay hands and frames retain the first page's capture ceiling until explicit
+refresh, so recording cannot move the history being browsed. IPC pages accept at
+most 500 rows; queue, review and AI result reads retain their smaller native caps.
+The dataset registry is a JSON catalog read in memory before its bounded IPC
+page is selected; database-backed catalogs apply SQL limits before collecting
+rows. The local-window-only memory command uses the shared desktop runtime.
+OS memory telemetry is supported on Linux; the shared list policy supplies its
+fallback when the operating system helper is unavailable.
 
 The Poker adapters retain their existing Tauri argument shapes: Lab sends `request`,
 the launcher sends `operation` and `selection`, and Assistant commands have their

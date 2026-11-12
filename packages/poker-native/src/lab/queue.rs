@@ -442,14 +442,9 @@ pub fn stream_stats_conn(conn: &Connection, ctx: &DatasetContext, id: &str) -> L
     }
     let ceiling = run["ceiling"].as_i64().unwrap_or(0);
     let mut result=conn.query_row("SELECT COUNT(*) total,COALESCE(SUM(reviewed=1 AND discarded=0),0) reviewed,COALESCE(SUM(discarded=1),0) discarded,COALESCE(SUM(reviewed=0 AND discarded=0),0) pending FROM queue_items WHERE active=1 AND queue_id<=?",[ceiling],review::row_json)?;
-    let times:Vec<Value>=rows(conn,"SELECT json_extract(payload,'$.labelTime') AS value FROM queue_items WHERE active=1 AND queue_id<=? AND reviewed=1 AND discarded=0 AND json_valid(payload)",vec![ceiling.into()])?;
-    let times: Vec<f64> = times
-        .iter()
-        .filter_map(|v| v["value"].as_f64())
-        .filter(|n| n.is_finite() && *n >= 0.0)
-        .collect();
-    result["items"] = json!(times.len());
-    result["time"] = json!(times.iter().sum::<f64>());
+    let (count, time): (i64, f64) = conn.query_row("SELECT COUNT(*),COALESCE(SUM(value),0.0) FROM (SELECT CASE WHEN json_valid(payload) THEN json_extract(payload,'$.labelTime') END AS value FROM queue_items WHERE active=1 AND queue_id<=? AND reviewed=1 AND discarded=0) WHERE typeof(value) IN ('integer','real') AND value>=0 AND value<=1.7976931348623157e308", [ceiling], |row| Ok((row.get(0)?, row.get(1)?)))?;
+    result["items"] = json!(count);
+    result["time"] = json!(time);
     result["complete"] = json!(result["pending"] == 0);
     Ok(result)
 }

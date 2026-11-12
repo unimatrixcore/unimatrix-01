@@ -98,6 +98,53 @@ export function enhanceCardCheckboxes(container: ParentNode) {
   }
 }
 
+function objectOffset(position: string, free: number) {
+  if (position === "left" || position === "top") return 0;
+  if (position === "right" || position === "bottom") return free;
+  if (position === "center") return free / 2;
+  const terms = position
+    .replace(/calc\(|\)/g, "")
+    .replace(/\s+/g, "")
+    .match(/[+-]?(?:\d*\.)?\d+(?:%|px)/g);
+  if (!terms) return free / 2;
+  return terms.reduce(
+    (offset, term) => offset + Number.parseFloat(term) * (term.endsWith("%") ? free / 100 : 1),
+    0,
+  );
+}
+
+function renderedImageBounds(source: HTMLImageElement) {
+  const bounds = source.getBoundingClientRect();
+  const style = getComputedStyle(source);
+  const px = (value: string) => Number.parseFloat(value) || 0;
+  const left = bounds.left + px(style.borderLeftWidth) + px(style.paddingLeft);
+  const top = bounds.top + px(style.borderTopWidth) + px(style.paddingTop);
+  const width =
+    bounds.width - (left - bounds.left) - px(style.borderRightWidth) - px(style.paddingRight);
+  const height =
+    bounds.height - (top - bounds.top) - px(style.borderBottomWidth) - px(style.paddingBottom);
+  const contain = Math.min(width / source.naturalWidth, height / source.naturalHeight);
+  let scale = 1;
+  if (style.objectFit === "contain") scale = contain;
+  if (style.objectFit === "cover")
+    scale = Math.max(width / source.naturalWidth, height / source.naturalHeight);
+  if (style.objectFit === "scale-down") scale = Math.min(1, contain);
+  const fill = !style.objectFit || style.objectFit === "fill";
+  const imageWidth = fill ? width : source.naturalWidth * scale;
+  const imageHeight = fill ? height : source.naturalHeight * scale;
+  const [x = "50%", y = "50%"] = style.objectPosition.match(/calc\([^)]+\)|[^\s]+/g) || [];
+  return {
+    left: left + objectOffset(x, width - imageWidth),
+    top: top + objectOffset(y, height - imageHeight),
+    width: imageWidth,
+    height: imageHeight,
+    clipLeft: left,
+    clipTop: top,
+    clipRight: left + width,
+    clipBottom: top + height,
+  };
+}
+
 export function installCropPreview() {
   const preview = document.createElement("div");
   preview.className = "crop-zoom-preview";
@@ -109,21 +156,26 @@ export function installCropPreview() {
   let pointer: MouseEvent | null = null;
   let shift = false;
   const update = () => {
-    const card =
-      pointer && document.elementFromPoint(pointer.clientX, pointer.clientY)?.closest(".card");
-    const source = card?.querySelector<HTMLImageElement>("img");
+    const target = pointer && document.elementFromPoint(pointer.clientX, pointer.clientY);
+    const source = target instanceof HTMLImageElement && target.closest(".card") ? target : null;
     if (!shift || !pointer || !source || !source.naturalWidth || !source.naturalHeight) {
       preview.hidden = true;
       return;
     }
-    const bounds = source.getBoundingClientRect();
-    const ratio = source.naturalWidth / source.naturalHeight;
-    const availableWidth = Math.max(1, innerWidth - 16),
-      availableHeight = Math.max(1, innerHeight - 16);
-    const contentWidth = Math.min(bounds.width - 20, (bounds.height - 20) * ratio);
-    const desired = Math.max(80, contentWidth * 2);
-    const width = Math.min(desired, availableWidth, availableHeight * ratio);
-    const height = width / ratio;
+    const bounds = renderedImageBounds(source);
+    if (
+      bounds.width <= 0 ||
+      bounds.height <= 0 ||
+      pointer.clientX < Math.max(bounds.left, bounds.clipLeft) ||
+      pointer.clientX >= Math.min(bounds.left + bounds.width, bounds.clipRight) ||
+      pointer.clientY < Math.max(bounds.top, bounds.clipTop) ||
+      pointer.clientY >= Math.min(bounds.top + bounds.height, bounds.clipBottom)
+    ) {
+      preview.hidden = true;
+      return;
+    }
+    const width = Math.min(260, Math.max(1, innerWidth - 16));
+    const height = Math.min(160, Math.max(1, innerHeight - 16));
     let url: URL;
     try {
       url = new URL(source.getAttribute("data-full-res") || source.src, location.href);
@@ -142,6 +194,10 @@ export function installCropPreview() {
       return;
     }
     image.src = url.href;
+    image.style.width = `${bounds.width * 2}px`;
+    image.style.height = `${bounds.height * 2}px`;
+    image.style.left = `${(width - 2) / 2 - (pointer.clientX - bounds.left) * 2}px`;
+    image.style.top = `${(height - 2) / 2 - (pointer.clientY - bounds.top) * 2}px`;
     preview.style.width = `${width}px`;
     preview.style.height = `${height}px`;
     preview.style.left = `${Math.max(8, Math.min(pointer.clientX - width / 2, innerWidth - width - 8))}px`;
@@ -165,6 +221,20 @@ export function installCropPreview() {
       update();
     }
   });
+  document.addEventListener("mouseleave", () => {
+    pointer = null;
+    update();
+  });
+  window.addEventListener("resize", () => {
+    preview.hidden = true;
+  });
+  window.addEventListener(
+    "scroll",
+    () => {
+      preview.hidden = true;
+    },
+    true,
+  );
   window.addEventListener("blur", () => {
     shift = false;
     update();

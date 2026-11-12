@@ -5,6 +5,12 @@ import { defineConfig } from "vite";
 
 export const pokerAliases = [
   {
+    find: /^@unimatrix\/instant-list$/,
+    replacement: fileURLToPath(
+      new URL("../../packages/instant-list/src/index.ts", import.meta.url),
+    ),
+  },
+  {
     find: /^@unimatrix\/ui\/native-select$/,
     replacement: fileURLToPath(
       new URL("../../packages/ui/src/components/ui/native-select.tsx", import.meta.url),
@@ -60,7 +66,32 @@ export default defineConfig({
       },
     },
   },
-  server: { host: "127.0.0.1", port: 5180, strictPort: true },
+  server: {
+    host: "127.0.0.1",
+    port: 5180,
+    strictPort: true,
+    watch: {
+      ignored: [
+        "**/coverage/**",
+        "**/test-results/**",
+        "**/.test-browser-dist/**",
+        "**/.orchestration/**",
+        "**/dist/**",
+        "**/build/**",
+        "**/target/**",
+        "**/playwright-report/**",
+      ],
+    },
+  },
   preview: { host: "127.0.0.1", port: 4180, strictPort: true },
-  resolve: { alias: pokerAliases, dedupe: ["@tanstack/react-router", "react", "react-dom"] },
+  resolve: {
+    alias: pokerAliases,
+    dedupe: [
+      "@tanstack/react-router",
+      "@tanstack/react-query",
+      "@tanstack/react-virtual",
+      "react",
+      "react-dom",
+    ],
+  },
 });

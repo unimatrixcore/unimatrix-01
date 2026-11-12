@@ -1,4 +1,12 @@
-import { useLayoutEffect, useRef } from "react";
+import { LabQueryProvider, labListOptions, labQueryClient } from "../lib/background-lists";
+import { backgroundListQueryOptions, usePrefetchList } from "@unimatrix/instant-list";
+import { pokerLabListItemSchema, pokerGameplaySessionSchema } from "@unimatrix/shared";
+import {
+  clearLabPageHandoff,
+  handoffGeneration,
+  storeLabPageHandoff,
+} from "../lib/lab-page-handoff";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import {
@@ -55,6 +63,98 @@ function GameplayIcon({ className }: { className?: string | undefined }) {
   );
 }
 
+function RailPrefetch({ host, gameplay }: { host: HTMLElement; gameplay: boolean }) {
+  const [datasetId, setDatasetId] = useState(
+    () => localStorage.getItem("ocr:active-dataset") || "",
+  );
+  const currentDataset = useRef(datasetId);
+  const queue = labListOptions<ReturnType<typeof pokerLabListItemSchema.parse>>({
+    path: "/api/queue",
+    datasetId,
+    query: { order: "newest" },
+    getItemId: (item) => item.id,
+    parseItem: (item) => pokerLabListItemSchema.parse(item),
+    pageSize: 100,
+    enabled: !!datasetId,
+  });
+  const games = labListOptions<ReturnType<typeof pokerGameplaySessionSchema.parse>>({
+    path: "/api/gameplay",
+    query: { archived: "0" },
+    getItemId: (item) => item.id,
+    parseItem: (item) => pokerGameplaySessionSchema.parse(item),
+    pageSize: 100,
+  });
+  const queueIntent = usePrefetchList(queue),
+    gamesIntent = usePrefetchList(games);
+  useEffect(() => {
+    const update = () => {
+      const next = localStorage.getItem("ocr:active-dataset") || "";
+      if (next !== currentDataset.current) clearLabPageHandoff();
+      currentDataset.current = next;
+      setDatasetId(next);
+    };
+    window.addEventListener("poker-dataset-change", update);
+    return () => {
+      window.removeEventListener("poker-dataset-change", update);
+    };
+  }, []);
+  useEffect(() => {
+    const prefetch = (event: Event) => {
+      const link = event.target instanceof Element ? event.target.closest("a") : null;
+      if (!link) return;
+      const path = new URL(link.href, window.location.href).pathname;
+      if (path === "/gameplay" && !gameplay) {
+        const generation = handoffGeneration();
+        gamesIntent.onMouseEnter();
+        void labQueryClient
+          .fetchInfiniteQuery({ ...backgroundListQueryOptions(games), pages: 1 })
+          .then((data) => {
+            const page = data.pages[0];
+            if (page)
+              storeLabPageHandoff(
+                {
+                  path: "/api/gameplay",
+                  datasetId: null,
+                  query: { archived: "0" },
+                  storedAt: Date.now(),
+                  page: { ...page, hasMore: page.nextCursor !== null },
+                },
+                generation,
+              );
+          })
+          .catch(() => {});
+      } else if (path === "/collection" && gameplay && datasetId) {
+        const generation = handoffGeneration();
+        queueIntent.onMouseEnter();
+        void labQueryClient
+          .fetchInfiniteQuery({ ...backgroundListQueryOptions(queue), pages: 1 })
+          .then((data) => {
+            const page = data.pages[0];
+            if (page)
+              storeLabPageHandoff(
+                {
+                  path: "/api/queue",
+                  datasetId,
+                  query: { order: "newest" },
+                  storedAt: Date.now(),
+                  page: { ...page, hasMore: page.nextCursor !== null },
+                },
+                generation,
+              );
+          })
+          .catch(() => {});
+      }
+    };
+    host.addEventListener("mouseover", prefetch);
+    host.addEventListener("focusin", prefetch);
+    return () => {
+      host.removeEventListener("mouseover", prefetch);
+      host.removeEventListener("focusin", prefetch);
+    };
+  }, [host, gameplay, datasetId, queueIntent.onMouseEnter, gamesIntent.onMouseEnter]);
+  return null;
+}
+
 export function mountToolShell() {
   const host = document.getElementById("tool-shell");
   const workspace = document.getElementById("section-ocr-data");
@@ -93,23 +193,26 @@ export function mountToolShell() {
   });
   flushSync(() => {
     createRoot(host).render(
-      <RouterContextProvider router={router}>
-        <ToolShell
-          className="collector-shell"
-          homeLabel="Poker Lab"
-          logoSrc="/static/ui/poker-chip.svg"
-          accountControl={({ collapsed }) => <BranchSelector collapsed={collapsed} />}
-          sections={[
-            { label: "OCR Data", to: "/collection", active: !gameplay, icon: OcrIcon },
-            { label: "Gameplay", to: "/gameplay", active: gameplay, icon: GameplayIcon },
-          ]}
-          showFooter={false}
-          scroll="section"
-          width="wide"
-        >
-          {gameplay ? <Gameplay /> : <NativeWorkspace element={workspace} />}
-        </ToolShell>
-      </RouterContextProvider>,
+      <LabQueryProvider>
+        <RailPrefetch host={host} gameplay={gameplay} />
+        <RouterContextProvider router={router}>
+          <ToolShell
+            className="collector-shell"
+            homeLabel="Poker Lab"
+            logoSrc="/static/ui/poker-chip.svg"
+            accountControl={({ collapsed }) => <BranchSelector collapsed={collapsed} />}
+            sections={[
+              { label: "OCR Data", to: "/collection", active: !gameplay, icon: OcrIcon },
+              { label: "Gameplay", to: "/gameplay", active: gameplay, icon: GameplayIcon },
+            ]}
+            showFooter={false}
+            scroll="section"
+            width="wide"
+          >
+            {gameplay ? <Gameplay /> : <NativeWorkspace element={workspace} />}
+          </ToolShell>
+        </RouterContextProvider>
+      </LabQueryProvider>,
     );
   });
 }

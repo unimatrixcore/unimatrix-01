@@ -107,6 +107,20 @@ impl Gameplay {
 
     /// Cancel model IO promptly and finish any short evidence commit before the
     /// old source backend is considered stopped. No model mutex is acquired.
+    pub fn list_page(
+        &self,
+        kind: &str,
+        session: Option<&str>,
+        hand: Option<&str>,
+        order: &str,
+        archived: bool,
+        cursor: Option<&str>,
+        limit: usize,
+    ) -> Result<Value> {
+        self.store()?
+            .list_page(kind, session, hand, order, archived, cursor, limit)
+    }
+
     pub fn shutdown(&self) {
         self.cancelled.store(true, Ordering::SeqCst);
         drop(

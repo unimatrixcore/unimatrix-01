@@ -11,7 +11,8 @@
       "@unimatrix/poker/client": ["../../packages/poker/src/client.ts"],
       "@unimatrix/poker": ["../../packages/poker/src/index.ts"],
       "@unimatrix/ui/native-select": ["../../packages/ui/src/components/ui/native-select.tsx"],
-      "@unimatrix/ui/popover": ["../../packages/ui/src/components/ui/popover.tsx"]
+      "@unimatrix/ui/popover": ["../../packages/ui/src/components/ui/popover.tsx"],
+      "@unimatrix/instant-list": ["../../packages/instant-list/src/index.ts"]
     },
     "types": ["vite/client", "node"]
   },

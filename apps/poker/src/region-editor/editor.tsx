@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { InstantVirtualList } from "@unimatrix/instant-list";
 import { Button, Input } from "@unimatrix/ui";
 import type { PokerRegions, PokerRegionEditorSave } from "@unimatrix/shared";
 import { loadEditorConfig, saveEditorConfig } from "./api.js";
@@ -31,6 +32,7 @@ interface Drag {
   pan: Point;
   panning: boolean;
 }
+// Definitions and saved rectangles form one bounded, ordered domain snapshot; paging would split edits.
 const definitions = editorRegions();
 const initialView: EditorView = { scale: 1, offX: 0, offY: 0, zoom: 1, panX: 0, panY: 0 };
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -54,7 +56,6 @@ export function RegionEditor() {
     canvas = useRef<HTMLCanvasElement>(null),
     video = useRef<HTMLVideoElement>(null),
     filePicker = useRef<HTMLInputElement>(null);
-  const rowRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const queue = useRef<Promise<void>>(Promise.resolve());
   const currentDefined = useRef(defined),
     dimensions = useRef<Dimensions>({ width: 1920, height: 1080 });
@@ -91,9 +92,6 @@ export function RegionEditor() {
       });
     };
   }, []);
-  useEffect(() => {
-    rowRefs.current[active]?.scrollIntoView({ block: "nearest" });
-  }, [active]);
   useEffect(() => {
     const element = wrap.current;
     if (!element) return;
@@ -355,23 +353,28 @@ export function RegionEditor() {
           <span id="tc">{definitions.length}</span>
         </h2>
         <div id="region-list">
-          {definitions.map((region, index) => (
-            <Button
-              ref={(element) => {
-                rowRefs.current[index] = element;
-              }}
-              key={region.key}
-              className={`ri${active === index ? " active" : ""}${defined[region.key] ? " done" : ""}`}
-              variant="ghost"
-              style={{ borderLeftColor: regionColors[region.cat] }}
-              onClick={() => {
-                setActive(index);
-              }}
-              aria-pressed={active === index}
-            >
-              {region.label}
-            </Button>
-          ))}
+          <InstantVirtualList
+            items={definitions}
+            getItemId={(region) => region.key}
+            {...(selected ? { scrollToItemId: selected.key } : {})}
+            rowHeight={22}
+            height="100%"
+            ariaLabel="Region definitions"
+            renderItem={(region, index) => (
+              <Button
+                key={region.key}
+                className={`ri${active === index ? " active" : ""}${defined[region.key] ? " done" : ""}`}
+                variant="ghost"
+                style={{ borderLeftColor: regionColors[region.cat] }}
+                onClick={() => {
+                  setActive(index);
+                }}
+                aria-pressed={active === index}
+              >
+                {region.label}
+              </Button>
+            )}
+          />
         </div>
         <div id="sf">
           <Button id="bc" onClick={clearSelected}>

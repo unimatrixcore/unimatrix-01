@@ -11,8 +11,6 @@ import {
   Layers,
   Radio,
   ArrowLeft,
-  ChevronLeft,
-  ChevronRight,
 } from "lucide-react";
 import { RecordingPanel, RecordingSource } from "./recording_panel";
 import { CaptureEmptyState } from "./capture_empty_state";
@@ -20,7 +18,20 @@ import { WorkspaceTopbar } from "./workspace_topbar";
 import { RecordingTools } from "./recording_tools";
 import { GameplayPreview } from "./gameplay_preview";
 import type { GameplayPreviewFrame } from "./gameplay_preview";
-import { CaptureList, CaptureListCard } from "./capture_list";
+import { CaptureListCard } from "./capture_list";
+import {
+  InstantVirtualGrid,
+  InstantVirtualList,
+  useBackgroundList,
+  usePrefetchList,
+} from "@unimatrix/instant-list";
+import { Popover, PopoverContent, PopoverTrigger } from "@unimatrix/ui/popover";
+import {
+  pokerGameplaySessionSchema,
+  pokerGameplayHandSchema,
+  pokerGameplayFrameSummarySchema,
+} from "@unimatrix/shared";
+import { labListOptions, readLabListMeta } from "../lib/background-lists";
 import "./gameplay.css";
 
 type Session = {
@@ -43,7 +54,12 @@ type Frame = GameplayPreviewFrame & {
 };
 type Source = { name: string; label?: string; kind?: string };
 type View = "recording" | "games" | "frames";
-const PAGE_SIZE = 12;
+const handId = (item: Hand) => (item.hand_id === null ? "null" : `hand:${item.hand_id}`);
+const frameId = (item: Frame) => item.id;
+const parseHand = (value: unknown): Hand => pokerGameplayHandSchema.parse(value);
+const parseFrame = (value: unknown): Frame => pokerGameplayFrameSummarySchema.parse(value) as Frame;
+const parseSession = (value: unknown): Session => pokerGameplaySessionSchema.parse(value);
+const sessionKey = (item: Session) => item.id;
 const PREVIEW_INTERVAL_MS = 2000;
 const time = (value: string) =>
   new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -72,7 +88,9 @@ async function api<T>(path: string, data?: object): Promise<T> {
 }
 
 export function Gameplay() {
-  const [sessions, setSessions] = useState<Session[]>([]);
+  const [catalogRevision, setCatalogRevision] = useState(0);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [handPickerOpen, setHandPickerOpen] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
   const [sessionId, setSessionId] = useState("");
   const [view, setView] = useState<View>("recording");
@@ -80,12 +98,8 @@ export function Gameplay() {
   const [source, setSource] = useState("");
   const [name, setName] = useState("");
   const [interval, setIntervalMs] = useState(1000);
-  const [hands, setHands] = useState<Hand[]>([]);
+
   const [hand, setHand] = useState<string | undefined>();
-  const [frames, setFrames] = useState<Frame[]>([]);
-  const [total, setTotal] = useState(0);
-  const [offset, setOffset] = useState(0);
-  const [gameOffset, setGameOffset] = useState(0);
   const [latestFrame, setLatestFrame] = useState<Frame | null>(null);
   const [reviewFrame, setReviewFrame] = useState<Frame | null>(null);
   const [details, setDetails] = useState<Frame | null>(null);
@@ -95,6 +109,7 @@ export function Gameplay() {
   const [skipReason, setSkipReason] = useState("");
   const [revision, setRevision] = useState(0);
   const [pageVisible, setPageVisible] = useState(!document.hidden);
+  const initialSelection = useRef(false);
   const running = useRef(false);
   const inflight = useRef(false);
   const stopRequested = useRef(false);
@@ -106,11 +121,49 @@ export function Gameplay() {
   const acceptedEpoch = useRef(0);
   const actions = useRef({ capture: () => {}, toggle: () => {}, stop: () => {} });
   const visible = view === "recording" ? latestFrame : view === "frames" ? reviewFrame : null;
-  const games = hands
-    .filter((item) => item.hand_id !== null && item.hand_id !== "")
-    .slice()
-    .reverse();
-  const gamePage = games.slice(gameOffset, gameOffset + PAGE_SIZE);
+  const sessionOptions = labListOptions({
+    path: "/api/gameplay",
+    query: { archived: "0" },
+    getItemId: sessionKey,
+    parseItem: parseSession,
+  });
+  sessionOptions.queryKey = [...sessionOptions.queryKey, catalogRevision];
+  const sessionList = useBackgroundList(sessionOptions);
+  const sessionPrefetch = usePrefetchList(sessionOptions);
+  const archivedOptions = labListOptions({
+    path: "/api/gameplay",
+    query: { archived: "1" },
+    getItemId: sessionKey,
+    parseItem: parseSession,
+  });
+  archivedOptions.queryKey = [...archivedOptions.queryKey, catalogRevision];
+  const archivedPrefetch = usePrefetchList(archivedOptions);
+  const gameOptions = labListOptions({
+    path: `/api/gameplay/sessions/${sessionId}`,
+    getItemId: handId,
+    parseItem: parseHand,
+    enabled: !!sessionId,
+  });
+  gameOptions.queryKey = [...gameOptions.queryKey, revision];
+  const frameOptions = labListOptions({
+    path: `/api/gameplay/sessions/${sessionId}/frames`,
+    query: { order: "desc", ...(hand === undefined ? {} : { hand_id: hand }) },
+    getItemId: frameId,
+    parseItem: parseFrame,
+    enabled: !!sessionId,
+  });
+  frameOptions.queryKey = [...frameOptions.queryKey, revision];
+  const gameList = useBackgroundList({ ...gameOptions, enabled: !!sessionId });
+  const frameList = useBackgroundList({
+    ...frameOptions,
+    enabled: !!sessionId && view === "frames",
+  });
+  const gamePrefetch = usePrefetchList(gameOptions);
+  const framePrefetch = usePrefetchList(frameOptions);
+  const games = gameList.items.filter((item) => item.hand_id);
+  const hands = gameList.items;
+  const frames = frameList.items;
+  const total = readLabListMeta(frameList.data?.pages ?? [])?.total ?? frames.length;
 
   function pause() {
     running.current = false;
@@ -133,7 +186,7 @@ export function Gameplay() {
       document.removeEventListener("visibilitychange", visibility);
     };
   }, []);
-  function selectSession(id: string, selected = sessions.find((item) => item.id === id)) {
+  function selectSession(id: string, selected = sessionList.items.find((item) => item.id === id)) {
     pause();
     stopRequested.current = false;
     ++acceptedEpoch.current;
@@ -144,12 +197,7 @@ export function Gameplay() {
     setLatestFrame(null);
     setReviewFrame(null);
     setDetails(null);
-    setFrames([]);
-    setTotal(0);
-    setHands([]);
     setHand(undefined);
-    setOffset(0);
-    setGameOffset(0);
     setError("");
     setSkipReason("");
     if (selected) {
@@ -172,16 +220,6 @@ export function Gameplay() {
   useEffect(() => {
     alive.current = true;
     void refreshSources();
-    api<{ sessions: Session[] }>("")
-      .then((result) => {
-        if (!alive.current) return;
-        setSessions(result.sessions);
-        const first = result.sessions[0];
-        if (!currentSession.current && first) selectSession(first.id, first);
-      })
-      .catch((error) => {
-        if (alive.current) setError(errorMessage(error));
-      });
     const leave = () => {
       running.current = false;
       stopRequested.current = true;
@@ -201,6 +239,14 @@ export function Gameplay() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!initialSelection.current && sessionList.isSuccess) {
+      initialSelection.current = true;
+      if (!currentSession.current && sessionList.items[0])
+        selectSession(sessionList.items[0].id, sessionList.items[0]);
+    }
+  }, [sessionList.items, sessionId]);
+
   // Load a saved session once. A completed capture already contains its new
   // session summary; recording must not refetch history on every frame.
   useEffect(() => {
@@ -208,14 +254,10 @@ export function Gameplay() {
     let cancelled = false;
     const epoch = acceptedEpoch.current;
     Promise.all([
-      api<{ session: Session; hands: Hand[] }>(`/sessions/${sessionId}`),
       api<{ frames: Frame[] }>(`/sessions/${sessionId}/frames?order=desc&limit=1&offset=0`),
     ])
-      .then(([metadata, page]) => {
+      .then(([page]) => {
         if (cancelled || epoch !== acceptedEpoch.current) return;
-        setSession(metadata.session);
-        currentSession.current = metadata.session;
-        setHands(metadata.hands);
         if (page.frames[0]) {
           latest.current = page.frames[0];
           setLatestFrame(page.frames[0]);
@@ -228,52 +270,6 @@ export function Gameplay() {
       cancelled = true;
     };
   }, [sessionId]);
-
-  // The Frames view is a stable, explicitly refreshed page, independent of the
-  // recording feed. New captures never move the user's selected hand or page.
-  useEffect(() => {
-    if (view !== "frames" || !sessionId) return;
-    let cancelled = false;
-    const query = new URLSearchParams({
-      offset: String(offset),
-      limit: String(PAGE_SIZE),
-      order: "desc",
-    });
-    if (hand !== undefined) query.set("hand_id", hand);
-    api<{ frames: Frame[]; total: number }>(`/sessions/${sessionId}/frames?${query}`)
-      .then((result) => {
-        if (!cancelled) {
-          setFrames(result.frames);
-          setTotal(result.total);
-        }
-      })
-      .catch((error) => {
-        if (!cancelled) setError(errorMessage(error));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [view, sessionId, hand, offset, revision]);
-
-  // Games use the existing hand summaries; no screenshot/details per game.
-  useEffect(() => {
-    if (!sessionId || !revision) return;
-    let cancelled = false;
-    const epoch = acceptedEpoch.current;
-    api<{ session: Session; hands: Hand[] }>(`/sessions/${sessionId}`)
-      .then((result) => {
-        if (cancelled || epoch !== acceptedEpoch.current) return;
-        setHands(result.hands);
-        setSession(result.session);
-        currentSession.current = result.session;
-      })
-      .catch((error) => {
-        if (!cancelled) setError(errorMessage(error));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [sessionId, revision]);
 
   // Only the displayed frame needs region readings. Metadata pages and captures
   // stay small; a late response can never annotate a different screenshot.
@@ -324,7 +320,7 @@ export function Gameplay() {
         if (alive.current) {
           setSession(current);
           setSessionId(current.id);
-          setSessions((old) => [current!, ...old.filter((item) => item.id !== current!.id)]);
+          setCatalogRevision((value) => value + 1);
         }
       }
       const result = await api<{
@@ -352,26 +348,6 @@ export function Gameplay() {
       const saved = result.session || { ...current, frame_count: current.frame_count + 1 };
       currentSession.current = saved;
       setSession(saved);
-      setSessions((old) => [saved, ...old.filter((item) => item.id !== saved.id)]);
-      const captured = result.frame;
-      setHands((old) => {
-        const known = old.find((item) => item.hand_id === captured.hand_id);
-        return known
-          ? old.map((item) =>
-              item === known
-                ? { ...item, frame_count: item.frame_count + 1, last_at: captured.captured_at }
-                : item,
-            )
-          : [
-              ...old,
-              {
-                hand_id: captured.hand_id,
-                frame_count: 1,
-                first_at: captured.captured_at,
-                last_at: captured.captured_at,
-              },
-            ];
-      });
     } catch (error) {
       if (alive.current && !stopRequested.current) {
         pause();
@@ -455,10 +431,10 @@ export function Gameplay() {
       const result = await api<{ session: Session }>(`/sessions/${id}/${action}`, data);
       if (!alive.current) return;
       if (action === "archive") {
-        setSessions((old) => old.filter((item) => item.id !== id));
+        setCatalogRevision((value) => value + 1);
         selectSession("");
       } else {
-        setSessions((old) => [result.session, ...old.filter((item) => item.id !== id)]);
+        setCatalogRevision((value) => value + 1);
         if (action === "restore") selectSession(id, result.session);
         else {
           setSession(result.session);
@@ -507,6 +483,7 @@ export function Gameplay() {
               <Radio size={16} />
             </ToggleGroupItem>
             <ToggleGroupItem
+              {...gamePrefetch}
               value="games"
               className="dataset-icon"
               aria-label="Games view"
@@ -515,6 +492,7 @@ export function Gameplay() {
               <Layers size={16} />
             </ToggleGroupItem>
             <ToggleGroupItem
+              {...framePrefetch}
               value="frames"
               className="dataset-icon"
               aria-label="Frames view"
@@ -526,43 +504,126 @@ export function Gameplay() {
         }
         actions={
           <>
-            <NativeSelect
-              size="sm"
-              aria-label="Recording session"
-              title="Recording session"
-              value={sessionId}
-              disabled={busy || recording}
-              onChange={(event) => {
-                selectSession(event.target.value);
-              }}
-            >
-              <option value="">New recording</option>
-              {sessions.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name} · {item.frame_count} {item.frame_count === 1 ? "frame" : "frames"}
-                </option>
-              ))}
-            </NativeSelect>
-            {view === "frames" && (
-              <>
-                <NativeSelect
+            <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
                   size="sm"
-                  aria-label="Recorded hand"
-                  title="Recorded hand"
-                  value={hand ?? "all"}
-                  onChange={(event) => {
-                    setHand(event.target.value === "all" ? undefined : event.target.value);
-                    setOffset(0);
-                    setReviewFrame(null);
+                  aria-label="Recording session"
+                  disabled={busy || recording}
+                  {...sessionPrefetch}
+                >
+                  {session?.name || "New recording"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="recording-settings-popover" align="end">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    selectSession("");
+                    setPickerOpen(false);
                   }}
                 >
-                  <option value="all">All frames</option>
-                  {hands.map((item) => (
-                    <option key={item.hand_id ?? "unassigned"} value={item.hand_id || ""}>
-                      Hand #{item.hand_id} · {item.frame_count}
-                    </option>
-                  ))}
-                </NativeSelect>
+                  New recording
+                </Button>
+                <InstantVirtualList
+                  ariaLabel="Recording sessions"
+                  items={sessionList.items}
+                  getItemId={sessionKey}
+                  rowHeight={40}
+                  height={240}
+                  isFetching={sessionList.isFetching}
+                  error={sessionList.error}
+                  hasNextPage={sessionList.hasNextPage}
+                  onEndReached={sessionList.onEndReached}
+                  onRetry={() => {
+                    void sessionList.refetch();
+                  }}
+                  renderItem={(item) => (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        selectSession(item.id, item);
+                        setPickerOpen(false);
+                      }}
+                    >
+                      {item.name} · {item.frame_count} frames
+                    </Button>
+                  )}
+                />
+              </PopoverContent>
+            </Popover>
+            {view === "frames" && (
+              <>
+                <Popover open={handPickerOpen} onOpenChange={setHandPickerOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      aria-label="Recorded hand"
+                      {...gamePrefetch}
+                    >
+                      {hand === undefined
+                        ? "All frames"
+                        : hand === ""
+                          ? "Unassigned"
+                          : `Hand #${hand}`}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="recording-settings-popover" align="end">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setHand(undefined);
+                        setReviewFrame(null);
+                        setHandPickerOpen(false);
+                      }}
+                    >
+                      All frames
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setHand("");
+                        setReviewFrame(null);
+                        setHandPickerOpen(false);
+                      }}
+                    >
+                      Unassigned
+                    </Button>
+                    <InstantVirtualList
+                      ariaLabel="Recorded hands"
+                      items={hands}
+                      getItemId={handId}
+                      rowHeight={40}
+                      height={200}
+                      isFetching={gameList.isFetching}
+                      error={gameList.error}
+                      hasNextPage={gameList.hasNextPage}
+                      onEndReached={gameList.onEndReached}
+                      onRetry={() => {
+                        void gameList.refetch();
+                      }}
+                      renderItem={(item) => (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setHand(item.hand_id ?? "");
+                            setReviewFrame(null);
+                            setHandPickerOpen(false);
+                          }}
+                        >
+                          Hand #{item.hand_id} · {item.frame_count}
+                        </Button>
+                      )}
+                    />
+                  </PopoverContent>
+                </Popover>
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -600,9 +661,8 @@ export function Gameplay() {
               onRename={(name) => manageRecording(sessionId, "rename", { name })}
               onArchive={() => manageRecording(sessionId, "archive")}
               onRestore={(id) => manageRecording(id, "restore")}
-              loadArchived={async () =>
-                (await api<{ sessions: Session[] }>("?archived=1")).sessions
-              }
+              archivedOptions={archivedOptions}
+              archivedPrefetch={archivedPrefetch}
             />
           </>
         }
@@ -637,16 +697,28 @@ export function Gameplay() {
             <h2>Games</h2>
             <Badge variant="outline">{games.length} saved</Badge>
           </div>
-          {!games.length ? (
+          {!games.length && !gameList.isFetching && !gameList.error ? (
             <CaptureEmptyState
               title="No saved games"
               description="Recorded games appear here, grouped by game ID. Switch to Recording to capture a poker table."
             />
           ) : (
-            <CaptureList label="Recorded games">
-              {gamePage.map((item) => (
+            <InstantVirtualGrid
+              ariaLabel="Recorded games"
+              items={games}
+              getItemId={handId}
+              rowHeight={110}
+              minColumnWidth={220}
+              height="min(65vh, 650px)"
+              isFetching={gameList.isFetching}
+              error={gameList.error}
+              hasNextPage={gameList.hasNextPage}
+              onEndReached={gameList.onEndReached}
+              onRetry={() => {
+                void gameList.refetch();
+              }}
+              renderItem={(item) => (
                 <CaptureListCard
-                  key={item.hand_id}
                   className="gameplay-game-card"
                   label={`Game #${item.hand_id}`}
                   id={`${item.frame_count} ${item.frame_count === 1 ? "frame" : "frames"}`}
@@ -654,44 +726,12 @@ export function Gameplay() {
                   openLabel={`Open game ${item.hand_id}`}
                   onOpen={() => {
                     setHand(item.hand_id!);
-                    setOffset(0);
                     setReviewFrame(null);
                     setView("frames");
                   }}
                 />
-              ))}
-            </CaptureList>
-          )}
-          {games.length > PAGE_SIZE && (
-            <div className="gameplay-pagination">
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Previous game page"
-                title="Previous page"
-                disabled={!gameOffset}
-                onClick={() => {
-                  setGameOffset((value) => Math.max(0, value - PAGE_SIZE));
-                }}
-              >
-                <ChevronLeft size={16} />
-              </Button>
-              <span>
-                {gameOffset + 1}–{Math.min(games.length, gameOffset + PAGE_SIZE)} of {games.length}
-              </span>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Next game page"
-                title="Next page"
-                disabled={gameOffset + PAGE_SIZE >= games.length}
-                onClick={() => {
-                  setGameOffset((value) => value + PAGE_SIZE);
-                }}
-              >
-                <ChevronRight size={16} />
-              </Button>
-            </div>
+              )}
+            />
           )}
         </section>
       ) : reviewFrame && shown ? (
@@ -715,16 +755,28 @@ export function Gameplay() {
             <h2>Frames</h2>
             <Badge variant="outline">{total} saved</Badge>
           </div>
-          {!frames.length ? (
+          {!frames.length && !frameList.isFetching && !frameList.error ? (
             <CaptureEmptyState
               title="No saved frames"
               description="Valid captures appear here. Switch to Recording to capture a poker table."
             />
           ) : (
-            <CaptureList label="Recorded frames">
-              {frames.map((item) => (
+            <InstantVirtualGrid
+              ariaLabel="Recorded frames"
+              items={frames}
+              getItemId={frameId}
+              rowHeight={200}
+              minColumnWidth={220}
+              height="min(65vh, 650px)"
+              isFetching={frameList.isFetching}
+              error={frameList.error}
+              hasNextPage={frameList.hasNextPage}
+              onEndReached={frameList.onEndReached}
+              onRetry={() => {
+                void frameList.refetch();
+              }}
+              renderItem={(item) => (
                 <CaptureListCard
-                  key={item.id}
                   className="gameplay-frame-card"
                   imageSrc={item.thumbnail_url || item.preview_url || item.image_url}
                   alt={`Game #${item.hand_id} captured at ${time(item.captured_at)}`}
@@ -735,41 +787,8 @@ export function Gameplay() {
                     setReviewFrame(item);
                   }}
                 />
-              ))}
-            </CaptureList>
-          )}
-          {total > PAGE_SIZE && (
-            <div className="gameplay-pagination">
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Previous frame page"
-                title="Previous page"
-                disabled={!offset}
-                onClick={() => {
-                  setOffset((value) => Math.max(0, value - PAGE_SIZE));
-                  setReviewFrame(null);
-                }}
-              >
-                <ChevronLeft size={16} />
-              </Button>
-              <span>
-                {offset + 1}–{Math.min(total, offset + PAGE_SIZE)} of {total}
-              </span>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Next frame page"
-                title="Next page"
-                disabled={offset + PAGE_SIZE >= total}
-                onClick={() => {
-                  setOffset((value) => value + PAGE_SIZE);
-                  setReviewFrame(null);
-                }}
-              >
-                <ChevronRight size={16} />
-              </Button>
-            </div>
+              )}
+            />
           )}
         </section>
       )}

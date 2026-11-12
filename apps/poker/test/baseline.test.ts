@@ -6,9 +6,7 @@ import baseline from "../migration-baseline.json";
 
 describe("Poker Lab migration fidelity", () => {
   it("retains the original controller, scoring, completion, watch and CSS bytes", () => {
-    for (const artifact of baseline.preserved.filter(
-      (value) => value.mode === "preserved" || value.source === "static/js/app.js",
-    )) {
+    for (const artifact of baseline.preserved) {
       const bytes = readFileSync(resolve(import.meta.dirname, "..", artifact.target));
       expect(createHash("sha256").update(bytes).digest("hex"), artifact.target).toBe(
         artifact.mode === "preserved" ? artifact.sha256 : artifact.targetSha256,

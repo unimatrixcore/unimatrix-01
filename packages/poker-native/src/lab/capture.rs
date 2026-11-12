@@ -525,6 +525,301 @@ fn db_entries(ctx: &DatasetContext) -> LabResult<Value> {
     let entries:Vec<Value>=conn.prepare("SELECT filename,COALESCE(label,'') label,COALESCE(region_id,'') id FROM images ORDER BY timestamp DESC,id DESC")?.query_map([],review::row_json)?.collect::<rusqlite::Result<_>>()?;
     Ok(json!(entries))
 }
+fn register_list_casefold(conn: &rusqlite::Connection) -> LabResult<()> {
+    conn.create_scalar_function(
+        "poker_list_lower",
+        1,
+        rusqlite::functions::FunctionFlags::SQLITE_DETERMINISTIC,
+        |ctx| Ok(ctx.get::<String>(0)?.to_lowercase()),
+    )?;
+    Ok(())
+}
+pub fn db_entries_page(
+    ctx: &DatasetContext,
+    cursor: Option<&str>,
+    limit: usize,
+    search: &str,
+    keys_only: Option<&str>,
+) -> LabResult<Value> {
+    if !matches!(keys_only, None | Some("0") | Some("1")) {
+        return Err(bad("Invalid keys_only"));
+    }
+    let mut conn = ctx.connection()?;
+    ctx.ensure_active()?;
+    register_list_casefold(&conn)?;
+    conn.execute_batch("CREATE TABLE IF NOT EXISTS list_image_revision (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL); INSERT OR IGNORE INTO list_image_revision VALUES(1,0); CREATE TRIGGER IF NOT EXISTS list_image_insert AFTER INSERT ON images BEGIN UPDATE list_image_revision SET revision=revision+1 WHERE id=1; END; CREATE TRIGGER IF NOT EXISTS list_image_update AFTER UPDATE ON images BEGIN UPDATE list_image_revision SET revision=revision+1 WHERE id=1; END; CREATE TRIGGER IF NOT EXISTS list_image_delete AFTER DELETE ON images BEGIN UPDATE list_image_revision SET revision=revision+1 WHERE id=1; END;")?;
+    let tx = conn.transaction()?;
+    let revision: i64 = tx.query_row(
+        "SELECT revision FROM list_image_revision WHERE id=1",
+        [],
+        |r| r.get(0),
+    )?;
+    let offset = if let Some(cursor) = cursor {
+        let (generation, offset) = cursor
+            .split_once(':')
+            .ok_or_else(|| bad("Invalid database cursor"))?;
+        let generation = generation
+            .parse::<i64>()
+            .map_err(|_| bad("Invalid database cursor"))?;
+        let offset = offset
+            .parse::<i64>()
+            .map_err(|_| bad("Invalid database cursor"))?;
+        if generation != revision {
+            return Err(conflict("Database changed; reload the list"));
+        }
+        if offset < 0 {
+            return Err(bad("Invalid database cursor"));
+        }
+        offset
+    } else {
+        0
+    };
+    let next_offset = offset
+        .checked_add(limit as i64)
+        .ok_or_else(|| bad("Invalid database cursor"))?;
+    let search = search.trim();
+    let predicate = "(instr(poker_list_lower(COALESCE(label,'')),poker_list_lower(?1))>0 OR instr(poker_list_lower(COALESCE(region_id,'')),poker_list_lower(?1))>0)";
+    let total: i64 = tx.query_row(
+        &format!("SELECT COUNT(*) FROM images WHERE {predicate}"),
+        [search],
+        |row| row.get(0),
+    )?;
+    let columns = if keys_only == Some("1") {
+        "filename"
+    } else {
+        "filename,COALESCE(label,'') label,COALESCE(region_id,'') id"
+    };
+    let sql = format!("SELECT {columns} FROM images WHERE {predicate} ORDER BY (COALESCE(label,'')='') ASC,timestamp DESC,images.id DESC LIMIT ?2 OFFSET ?3");
+    let mut values: Vec<Value> = tx
+        .prepare(&sql)?
+        .query_map(
+            params![search, (limit + 1) as i64, offset],
+            review::row_json,
+        )?
+        .collect::<rusqlite::Result<_>>()?;
+    let more = values.len() > limit;
+    values.truncate(limit);
+    Ok(
+        json!({"items":values,"total":total,"next_cursor":if more { Some(format!("{revision}:{next_offset}")) } else { None }}),
+    )
+}
+fn javascript_number(value: f64) -> String {
+    if value == 0.0 {
+        return "0".into();
+    }
+    let negative = value.is_sign_negative();
+    let raw = value.abs().to_string();
+    let (whole, fraction) = raw.split_once('.').unwrap_or((&raw, ""));
+    let digits = format!("{whole}{fraction}");
+    let leading = digits.bytes().take_while(|b| *b == b'0').count();
+    let exponent = whole.len() as i32 - leading as i32 - 1;
+    let significant = digits[leading..].trim_end_matches('0');
+    let sign = if negative { "-" } else { "" };
+    if !(-6..21).contains(&exponent) {
+        let mut chars = significant.chars();
+        let first = chars.next().unwrap_or('0');
+        let tail: String = chars.collect();
+        let mantissa = if tail.is_empty() {
+            first.to_string()
+        } else {
+            format!("{first}.{tail}")
+        };
+        return format!(
+            "{sign}{mantissa}e{}{exponent}",
+            if exponent >= 0 { "+" } else { "" }
+        );
+    }
+    format!("{sign}{raw}")
+}
+
+fn javascript_string(value: Option<&Value>) -> String {
+    match value {
+        None => "undefined".into(),
+        Some(Value::Null) => "null".into(),
+        Some(Value::Bool(v)) => v.to_string(),
+        Some(Value::Number(v)) => javascript_number(v.as_f64().unwrap_or(0.0)),
+        Some(Value::String(v)) => v.clone(),
+        Some(Value::Array(values)) => values
+            .iter()
+            .map(|v| {
+                if v.is_null() {
+                    String::new()
+                } else {
+                    javascript_string(Some(v))
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(","),
+        Some(Value::Object(_)) => "[object Object]".into(),
+    }
+}
+
+fn register_history_signature(conn: &rusqlite::Connection) -> LabResult<()> {
+    use rusqlite::functions::FunctionFlags;
+    conn.create_scalar_function(
+        "history_signature",
+        1,
+        FunctionFlags::SQLITE_DETERMINISTIC,
+        |ctx| {
+            let raw: String = ctx.get(0)?;
+            let value: Value = serde_json::from_str(&raw)
+                .map_err(|error| rusqlite::Error::UserFunctionError(Box::new(error)))?;
+            Ok(format!(
+                "{}-{}-{}",
+                javascript_string(value.get("items")),
+                javascript_string(value.get("rpm")),
+                javascript_string(value.get("score"))
+            ))
+        },
+    )?;
+    conn.create_scalar_function(
+        "history_score",
+        1,
+        FunctionFlags::SQLITE_DETERMINISTIC,
+        |ctx| {
+            let raw: String = ctx.get(0)?;
+            let value: Value = serde_json::from_str(&raw)
+                .map_err(|error| rusqlite::Error::UserFunctionError(Box::new(error)))?;
+            let score = match value.get("score") {
+                Some(Value::Number(n)) => n.as_f64(),
+                Some(Value::Bool(b)) => Some(if *b { 1.0 } else { 0.0 }),
+                Some(Value::Null) => Some(0.0),
+                Some(Value::String(s)) => javascript_numeric_text(s),
+                Some(Value::Array(_)) => {
+                    javascript_numeric_text(&javascript_string(value.get("score")))
+                }
+                _ => None,
+            };
+            Ok(score.filter(|n| !n.is_nan()))
+        },
+    )?;
+    Ok(())
+}
+
+fn javascript_numeric_text(value: &str) -> Option<f64> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Some(0.0);
+    }
+    for (prefix, radix) in [
+        ("0x", 16),
+        ("0X", 16),
+        ("0b", 2),
+        ("0B", 2),
+        ("0o", 8),
+        ("0O", 8),
+    ] {
+        if let Some(digits) = value.strip_prefix(prefix) {
+            return u64::from_str_radix(digits, radix).ok().map(|n| n as f64);
+        }
+    }
+    value.parse::<f64>().ok()
+}
+
+pub fn auxiliary_page(
+    ctx: &DatasetContext,
+    kind: &str,
+    cursor: Option<&str>,
+    limit: usize,
+    search: &str,
+) -> LabResult<Value> {
+    if kind == "names" {
+        let _ = db_entries_page(ctx, None, 1, "", None)?;
+    }
+    let mut conn = ctx.connection()?;
+    ctx.ensure_active()?;
+    if kind == "history" && search == "score" {
+        register_history_signature(&conn)?;
+    }
+    let tx = conn.transaction()?;
+    let revision: i64 = if kind == "names" {
+        tx.query_row(
+            "SELECT revision FROM list_image_revision WHERE id=1",
+            [],
+            |r| r.get(0),
+        )?
+    } else {
+        tx.query_row("SELECT COALESCE(MAX(id),0) FROM session_history", [], |r| {
+            r.get(0)
+        })?
+    };
+    let (ceiling, offset) = if let Some(raw) = cursor {
+        let (rev, off) = raw
+            .split_once(':')
+            .ok_or_else(|| bad("Invalid page cursor"))?;
+        let rev: i64 = rev.parse().map_err(|_| bad("Invalid page cursor"))?;
+        let off: i64 = off.parse().map_err(|_| bad("Invalid page cursor"))?;
+        if off < 0 {
+            return Err(bad("Invalid page cursor"));
+        }
+        if kind == "names" && rev != revision {
+            return Err(conflict("Names changed; reload the list"));
+        }
+        (rev, off)
+    } else {
+        (revision, 0)
+    };
+    let next_offset = offset
+        .checked_add(limit as i64)
+        .ok_or_else(|| bad("Invalid page cursor"))?;
+    let (mut items, total): (Vec<Value>, i64) = if kind == "names" {
+        let where_sql = "region_id LIKE '%.name' AND COALESCE(label,'')!='' AND instr(poker_list_lower(label),poker_list_lower(?1))>0";
+        let total = tx.query_row(
+            &format!("SELECT COUNT(DISTINCT label) FROM images WHERE {where_sql}"),
+            [search],
+            |r| r.get(0),
+        )?;
+        let mut q=tx.prepare(&format!("SELECT DISTINCT label AS name FROM images WHERE {where_sql} ORDER BY label COLLATE NOCASE,label LIMIT ?2 OFFSET ?3"))?;
+        let rows = q
+            .query_map(
+                params![search, (limit + 1) as i64, offset],
+                review::row_json,
+            )?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        (rows, total)
+    } else if search == "score" {
+        let ranked = "SELECT data,timestamp,id,history_score(data) AS score,ROW_NUMBER() OVER (PARTITION BY history_signature(data) ORDER BY timestamp DESC,id DESC) AS duplicate_rank FROM session_history WHERE id<=?1 AND json_valid(data) AND history_score(data)>0";
+        let total = tx.query_row(
+            &format!("SELECT COUNT(*) FROM ({ranked}) WHERE duplicate_rank=1"),
+            [ceiling],
+            |r| r.get(0),
+        )?;
+        let mut q = tx.prepare(&format!("SELECT data FROM ({ranked}) WHERE duplicate_rank=1 ORDER BY score DESC,timestamp DESC,id DESC LIMIT ?2 OFFSET ?3"))?;
+        let raw = q
+            .query_map(params![ceiling, (limit + 1) as i64, offset], |r| {
+                r.get::<_, String>(0)
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let rows = raw
+            .iter()
+            .map(|s| serde_json::from_str(s))
+            .collect::<Result<Vec<Value>, _>>()?;
+        (rows, total)
+    } else {
+        let total = tx.query_row(
+            "SELECT COUNT(*) FROM session_history WHERE id<=?1",
+            [ceiling],
+            |r| r.get(0),
+        )?;
+        let mut q=tx.prepare("SELECT data FROM session_history WHERE id<=?1 ORDER BY timestamp DESC,id DESC LIMIT ?2 OFFSET ?3")?;
+        let raw = q
+            .query_map(params![ceiling, (limit + 1) as i64, offset], |r| {
+                r.get::<_, String>(0)
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let rows = raw
+            .iter()
+            .map(|s| serde_json::from_str(s))
+            .collect::<Result<Vec<Value>, _>>()?;
+        (rows, total)
+    };
+    let more = items.len() > limit;
+    items.truncate(limit);
+    Ok(
+        json!({"items":items,"total":total,"next_cursor":if more {Some(format!("{ceiling}:{next_offset}"))} else {None},"meta":{}}),
+    )
+}
+
 fn settings(ctx: &DatasetContext, default: Value) -> LabResult<Value> {
     let conn = ctx.connection()?;
     let raw: Option<String> = conn
@@ -725,7 +1020,8 @@ pub fn handle(
 ) -> Option<LabResult<LabResponse>> {
     match (request.method.as_str(), request.path.as_str()) {
         ("GET", "/api/initial_data") => Some((|| {
-            let paged = request.query("queue_mode") == Some("paged");
+            let background = request.query("background_lists") == Some("1");
+            let paged = background || request.query("queue_mode") == Some("paged");
             let session = if paged {
                 queue::session(ctx)?
             } else {
@@ -744,7 +1040,7 @@ pub fn handle(
                 .collect();
             let default = json!({"last_monitor":monitors.first().and_then(|m|m["name"].as_str()).unwrap_or("")});
             Ok(LabResponse::ok(
-                json!({"session":session,"collection_page":if paged{queue::page(ctx,None,60,"newest")?}else{Value::Null},"db":db_entries(ctx)?,"monitors":monitors,"sources":sources,"settings":settings(ctx,default)?,"history":history(ctx)?,"warnings":warnings}),
+                json!({"session":session,"collection_page":if paged{queue::page(ctx,None,60,"newest")?}else{Value::Null},"db":if background { json!([]) } else { db_entries(ctx)? },"monitors":monitors,"sources":sources,"settings":settings(ctx,default)?,"history":if background { json!([]) } else { history(ctx)? },"warnings":warnings}),
             ))
         })()),
         ("GET", "/api/monitors") => Some((|| {

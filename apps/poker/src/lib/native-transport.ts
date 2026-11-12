@@ -1,3 +1,5 @@
+import { clearLabPageHandoff } from "./lab-page-handoff";
+import { labQueryClient } from "./background-lists";
 import { convertFileSrc, invoke, isTauri } from "@tauri-apps/api/core";
 import {
   pokerLabRequestSchema,
@@ -49,7 +51,32 @@ export function createLabFetch(
       headers: Object.fromEntries(headers),
       body: parsedBody,
     });
+    if (
+      request.method !== "GET" &&
+      /^\/api\/(?:gameplay|queue|capture|watch|review_label|db_|add_to_db|clear_session|sync)/.test(
+        request.path,
+      )
+    ) {
+      clearLabPageHandoff();
+      labQueryClient.removeQueries({
+        type: "inactive",
+        predicate: (query) =>
+          query.queryKey[0] === "lab-list" &&
+          (query.queryKey[1] === "/api/queue" || query.queryKey[1] === "/api/gameplay"),
+      });
+    }
     const response = pokerLabResponseSchema.parse(await invoker(request));
+    if (
+      response.status >= 200 &&
+      response.status < 300 &&
+      request.method !== "GET" &&
+      ["/api/review_label", "/api/model_suggestion"].includes(request.path) &&
+      request.headers["x-dataset-id"]
+    ) {
+      void labQueryClient.resetQueries({
+        queryKey: ["lab-list", "/api/label_history", request.headers["x-dataset-id"]],
+      });
+    }
     if (signal?.aborted) throw new DOMException("The request was aborted.", "AbortError");
     return labResponse(response);
   };

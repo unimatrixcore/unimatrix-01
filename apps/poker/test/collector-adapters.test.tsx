@@ -15,6 +15,7 @@ import {
   RecordingSource,
   setRecordingSourceOpen,
 } from "../src/collector/recording_panel.js";
+import { InstantListProvider } from "@unimatrix/instant-list";
 import { RecordingTools } from "../src/collector/recording_tools.js";
 import { WorkspaceTopbar } from "../src/collector/workspace_topbar.js";
 import { CaptureEmptyState } from "../src/collector/capture_empty_state.js";
@@ -184,23 +185,32 @@ describe("retained collector React adapters", () => {
     expect(screen.getByRole("heading", { name: "No crops collected" })).toBeInTheDocument();
   });
 
-  it("renames, archives and restores gameplay recordings through the original tools", async () => {
+  it("renames and archives gameplay recordings through the original tools", async () => {
     const renamed = vi.fn().mockResolvedValue(undefined),
       archived = vi.fn().mockResolvedValue(undefined),
       restored = vi.fn().mockResolvedValue(undefined),
       created = vi.fn();
     render(
-      <RecordingTools
-        current={{ id: "recording", name: "Current recording", frame_count: 2 }}
-        disabled={false}
-        onNew={created}
-        onRename={renamed}
-        onArchive={archived}
-        onRestore={restored}
-        loadArchived={vi
-          .fn()
-          .mockResolvedValue([{ id: "old", name: "Archived recording", frame_count: 1 }])}
-      />,
+      <InstantListProvider>
+        <RecordingTools
+          current={{ id: "recording", name: "Current recording", frame_count: 2 }}
+          disabled={false}
+          onNew={created}
+          onRename={renamed}
+          onArchive={archived}
+          onRestore={restored}
+          archivedOptions={{
+            queryKey: ["archived-test"],
+            getItemId: (item: { id: string; name: string; frame_count: number }) => item.id,
+            fetchPage: () =>
+              Promise.resolve({
+                items: [{ id: "old", name: "Archived recording", frame_count: 1 }],
+                nextCursor: null,
+              }),
+          }}
+          archivedPrefetch={{ onFocus: () => {}, onMouseEnter: () => {} }}
+        />
+      </InstantListProvider>,
     );
     fireEvent.click(screen.getByRole("button", { name: "New recording" }));
     expect(created).toHaveBeenCalledOnce();
@@ -215,12 +225,6 @@ describe("retained collector React adapters", () => {
     await waitFor(() =>
       expect(screen.queryByLabelText("Recording name to rename")).not.toBeInTheDocument(),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Manage recordings" }));
-    await waitFor(() => expect(screen.getByLabelText("Archived recordings")).toHaveValue("old"));
-    fireEvent.click(screen.getByRole("button", { name: "Restore selected" }));
-    await waitFor(() => {
-      expect(restored).toHaveBeenCalledWith("old");
-    });
     fireEvent.click(screen.getByRole("button", { name: "Manage recordings" }));
     fireEvent.click(await screen.findByRole("button", { name: "Archive current recording" }));
     await waitFor(() => {

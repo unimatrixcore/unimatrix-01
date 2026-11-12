@@ -87,6 +87,7 @@ function resetFullSessionReview(clearCheckpoint=false) {
   if(clearCheckpoint) {
     try { sessionStorage.removeItem(FULL_REVIEW_CHECKPOINT_KEY); } catch (_) {}
   }
+  if(window.CollectorBackgroundLists && sessionReviewListEl) { window.CollectorBackgroundLists.clear(sessionReviewListEl);sessionReviewListEl.classList.remove("instant-list-host"); }
   fullSessionReviewGeneration++;
   fullSessionReview?.controller?.abort();
   if (fullSessionReview?.timer) clearTimeout(fullSessionReview.timer);
@@ -119,7 +120,8 @@ function renderFullSessionReview() {
     resetFullSessionReview();
     const state = fullSessionReview = {epoch:datasetEpoch,datasetId:activeDatasetId,runId:reviewBatch?.batch_id,
       search:query.search,filter:query.filter,pages:[],cursors:[null],total:0,selected:new Map(),cards:new Map(),editing:null,drafts:new Map(),loading:false,error:'',ready:false,mutation:false};
-    if(saved) {state.cursors=saved.cursors;void restoreFullReviewWindow(state,saved);}
+    if(window.CollectorBackgroundLists) { state.ready=false; }
+    else if(saved) {state.cursors=saved.cursors;void restoreFullReviewWindow(state,saved);}
     else if (contextChanged) void loadFullReviewPage(0);
     else state.timer = setTimeout(() => {state.timer=null;if(fullReviewContextMatches(state)) void loadFullReviewPage(0);},180);
   }
@@ -173,19 +175,19 @@ async function loadFullReviewPage(index) {
 function paintFullSessionReview() {
   const state=fullSessionReview;if(!state || !fullReviewContextMatches(state)) return;
   document.getElementById('session-review-hud').classList.remove('hidden');
-  document.querySelector('.review-page-bar')?.classList.remove('hidden');document.querySelector('.review-page-footer')?.classList.remove('hidden');
+  document.querySelector('.review-page-bar')?.classList.toggle('hidden',!!window.CollectorBackgroundLists);document.querySelector('.review-page-footer')?.classList.toggle('hidden',!!window.CollectorBackgroundLists);
   document.getElementById('session-review-empty')?.classList.add('hidden');
   const existingInput=state.editing && document.getElementById('edit-input-full-review-'+fullReviewItem(state.editing)?.queue_id);
   if(existingInput) state.drafts.set(state.editing,existingInput.value);
   const items=fullReviewItems();
   const keep=new Set(items.map(sampleKey)),nodes=[];
   for(const [key,entry] of state.cards) if(!keep.has(key)){entry.node.querySelector('img')?.removeAttribute('src');state.cards.delete(key);}
-  for(const item of items) {
+  const createReviewCard = item => {
     const key=sampleKey(item),reference='full-review-'+item.queue_id;
     const signature=JSON.stringify([item.label,item.reviewed,item.discarded,state.selected.has(key),state.editing===key,state.mutation]);
-    if(state.cards.get(key)?.signature===signature){nodes.push(state.cards.get(key).node);continue;}
+    if(!window.CollectorBackgroundLists && state.cards.get(key)?.signature===signature) return state.cards.get(key).node;
     state.cards.get(key)?.node.querySelector('img')?.removeAttribute('src');
-    const card=renderCard({imageSrc:cropImage(item),label:item.label,id:item.id,originalIdx:reference,isSelected:state.selected.has(key),
+    const card=renderCard({imageSrc:cropImage(item),label:item.label,id:item.id,originalIdx:reference,historyItem:item,isSelected:state.selected.has(key),
       isIgnored:item.discarded,isBlank:item.reviewed && item.label==='' && !item.discarded,isEditing:state.editing===key,
       onToggle:()=>toggleFullReviewSelection(key),onEdit:()=>startFullSessionEdit(key),onSave:()=>saveFullSessionLabel(key),
       onRemove:()=>removeFullSessionItems([item]),removeLabel:'Remove',onKeydown:event=>{
@@ -196,8 +198,20 @@ function paintFullSessionReview() {
     const image=card.querySelector('img');if(image){image.loading='lazy';image.decoding='async';}
     const input=card.querySelector('input.card-label');
     if(input){if(state.drafts.has(key)) input.value=state.drafts.get(key);input.disabled=state.mutation;input.oninput=()=>state.drafts.set(key,input.value);}
-    state.cards.set(key,{node:card,signature});nodes.push(card);
+    state.cards.set(key,{node:card,signature});return card;
+  };
+  if(window.CollectorBackgroundLists) {
+    sessionReviewListEl.classList.add("instant-list-host");
+    window.CollectorBackgroundLists.render(sessionReviewListEl,{path:"/api/queue/review/items",datasetId:state.datasetId,query:{run_id:state.runId,search:state.search,filter:state.filter},key:sampleKey,card:createReviewCard,dispose:(item,node)=>{const key=sampleKey(item);if(state.cards.get(key)?.node===node) state.cards.delete(key);},changed:(items,meta,loading,error)=>{
+      if(!fullReviewContextMatches(state)) return;
+      state.pages=[{index:0,items}];state.loading=loading;state.error=error ? "Could not load session crops" : "";state.ready=!loading || items.length>0;
+      if(meta?.review_stats) streamStats=meta.review_stats;if(meta?.summary) applyQueueSummary(meta.summary);
+      const select=document.getElementById("btn-review-select-all");if(select) {select.classList.toggle("hidden",!items.length);select.textContent="Select shown";select.disabled=state.mutation;}
+      updateReviewBulkUI();
+    }});
+    return;
   }
+  for(const item of items) nodes.push(createReviewCard(item));
   // Keep retained cards attached: detaching the whole grid can clamp its parent's scroll.
   const retained=new Set(nodes);
   for(const node of [...sessionReviewListEl.children]) if(!retained.has(node)) node.remove();
@@ -232,7 +246,7 @@ function toggleFullReviewSelection(key) {
 }
 function selectFullReviewShown() {
   if(!fullSessionReview || fullSessionReview.mutation) return;
-  fullSessionReview.selected=new Map(fullReviewItems().map(item=>[sampleKey(item),item]));paintFullSessionReview();
+  fullSessionReview.selected=new Map(fullReviewItems().slice(0,100).map(item=>[sampleKey(item),item]));paintFullSessionReview();
 }
 function startFullSessionEdit(key) {
   const state=fullSessionReview,item=fullReviewItem(key);if(!state || state.mutation || !item) return;
@@ -258,6 +272,7 @@ async function persistFullSessionEdit(state,item,label) {
 }
 async function refreshFullReviewWindow(state) {
   if(!fullReviewContextMatches(state)) return;
+  if(window.CollectorBackgroundLists) { state.editing=null;state.drafts.clear();state.selected.clear();await window.CollectorBackgroundLists.invalidate("/api/queue/review/items",state.datasetId);paintFullSessionReview();return; }
   // Fetch replacements while the existing window stays mounted, then swap atomically.
   const indexes=state.pages.length ? state.pages.map(page=>page.index) : [0];
   state.controller?.abort();state.controller=new AbortController();

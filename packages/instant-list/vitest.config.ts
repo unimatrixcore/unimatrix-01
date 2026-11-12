@@ -4,6 +4,6 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     include: ["test/**/*.test.{ts,tsx}"],
-    coverage: createCoverageConfig({ thresholds: { statements: 94, functions: 88 } }),
+    coverage: createCoverageConfig({ thresholds: { statements: 94, functions: 90 } }),
   },
 });

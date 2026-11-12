@@ -68,3 +68,75 @@ export const pokerGameplayColorStateSchema = z.object({
 });
 export type PokerCardSuit = z.infer<typeof pokerCardSuitSchema>;
 export type PokerGameplayColorState = z.infer<typeof pokerGameplayColorStateSchema>;
+
+export const pokerLabSystemMemorySchema = z
+  .object({
+    totalBytes: z.number().finite().positive(),
+    availableBytes: z.number().finite().nonnegative(),
+  })
+  .refine((value) => value.availableBytes <= value.totalBytes);
+export const pokerLabListPageSchema = z
+  .object({
+    items: z.array(z.unknown()),
+    nextCursor: z.string().nullable(),
+    hasMore: z.boolean(),
+    total: z.number().int().nonnegative(),
+    meta: z.unknown().refine((value) => value !== undefined),
+  })
+  .refine((value) => value.hasMore === (value.nextCursor !== null));
+export const pokerLabListItemSchema = z
+  .object({
+    id: z.string(),
+  })
+  .passthrough();
+export const pokerLabFilenameSchema = z.object({ filename: z.string().min(1) });
+export const pokerLabNameSuggestionSchema = z.object({ name: z.string().min(1) });
+export const pokerLabDatasetSchema = z
+  .object({ id: z.string().min(1), name: z.string(), archived: z.boolean() })
+  .passthrough();
+export const pokerLabDatasetMetaSchema = z.object({ default_dataset_id: z.string().min(1) });
+
+export const pokerLabDatabaseItemSchema = pokerLabListItemSchema.extend({
+  filename: z.string().min(1),
+  label: z.string(),
+});
+
+export const pokerLabListMetaSchema = z.object({
+  total: z.number().int().nonnegative(),
+  meta: z.unknown().refine((value) => value !== undefined),
+});
+export const pokerLabHistoryRowSchema = z.object({
+  kind: z.enum(["event", "prediction"]),
+  payload: z.record(z.string(), z.unknown()),
+});
+const pokerLabHistoricalNumberSchema = z.union([
+  z.number().finite(),
+  z.string().refine((value) => Number.isFinite(Number(value))),
+]);
+export const pokerLabCompletionRowSchema = z
+  .object({
+    score: pokerLabHistoricalNumberSchema,
+    items: pokerLabHistoricalNumberSchema.nullable().optional(),
+    rpm: pokerLabHistoricalNumberSchema.nullable().optional(),
+  })
+  .passthrough();
+export const pokerLabPageHandoffSchema = z.discriminatedUnion("path", [
+  z
+    .object({
+      path: z.literal("/api/queue"),
+      datasetId: z.string().min(1).max(256),
+      query: z.object({ order: z.literal("newest") }).strict(),
+      storedAt: z.number().int().nonnegative(),
+      page: pokerLabListPageSchema,
+    })
+    .strict(),
+  z
+    .object({
+      path: z.literal("/api/gameplay"),
+      datasetId: z.null(),
+      query: z.object({ archived: z.literal("0") }).strict(),
+      storedAt: z.number().int().nonnegative(),
+      page: pokerLabListPageSchema,
+    })
+    .strict(),
+]);

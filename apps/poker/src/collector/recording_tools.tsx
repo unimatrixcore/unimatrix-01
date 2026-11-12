@@ -1,37 +1,42 @@
 import { useState } from "react";
 import { Archive, MoreHorizontal, Pencil, Plus } from "lucide-react";
 import { Button, Input } from "@unimatrix/ui/public";
-import { NativeSelect } from "@unimatrix/ui/native-select";
+import {
+  InstantVirtualList,
+  useBackgroundList,
+  type BackgroundListOptions,
+} from "@unimatrix/instant-list";
 import { Popover, PopoverContent, PopoverTrigger } from "@unimatrix/ui/popover";
 
 type Recording = { id: string; name: string; frame_count: number };
-interface RecordingToolsProps {
+interface RecordingToolsProps<T extends Recording> {
   current: Recording | null;
   disabled: boolean;
   onNew: () => void;
   onRename: (name: string) => Promise<void>;
   onArchive: () => Promise<void>;
   onRestore: (id: string) => Promise<void>;
-  loadArchived: () => Promise<Recording[]>;
+  archivedOptions: BackgroundListOptions<T, string>;
+  archivedPrefetch: { onMouseEnter: () => void; onFocus: () => void };
 }
 
 /** Recording equivalents of OCR Data's create, rename, and archive tools. */
-export function RecordingTools({
+export function RecordingTools<T extends Recording>({
   current,
   disabled,
   onNew,
   onRename,
   onArchive,
   onRestore,
-  loadArchived,
-}: RecordingToolsProps) {
+  archivedOptions,
+  archivedPrefetch,
+}: RecordingToolsProps<T>) {
   const [renameOpen, setRenameOpen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
   const [name, setName] = useState("");
-  const [archived, setArchived] = useState<Recording[]>([]);
+  const archived = useBackgroundList({ ...archivedOptions, enabled: manageOpen });
   const [restoreId, setRestoreId] = useState("");
   const [pending, setPending] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const blocked = disabled || pending;
 
@@ -48,20 +53,10 @@ export function RecordingTools({
     }
   }
 
-  async function manage(open: boolean) {
+  function manage(open: boolean) {
     setManageOpen(open);
     setError("");
-    if (!open) return;
-    setLoading(true);
-    try {
-      const items = await loadArchived();
-      setArchived(items);
-      setRestoreId(items[0]?.id || "");
-    } catch (error) {
-      setError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setLoading(false);
-    }
+    if (open) setRestoreId("");
   }
 
   return (
@@ -143,7 +138,7 @@ export function RecordingTools({
       <Popover
         open={manageOpen}
         onOpenChange={(open) => {
-          void manage(open);
+          manage(open);
         }}
       >
         <PopoverTrigger asChild>
@@ -151,6 +146,7 @@ export function RecordingTools({
             variant="ghost"
             size="icon-sm"
             className="dataset-icon"
+            {...archivedPrefetch}
             aria-label="Manage recordings"
             title="Archive and restore recordings"
             disabled={blocked}
@@ -180,28 +176,38 @@ export function RecordingTools({
           <p className="text-xs text-muted-foreground">
             Archiving keeps captured frames and OCR readings.
           </p>
-          <label className="grid gap-2 text-xs">
+          <div className="grid gap-2 text-xs">
             Archived recordings
-            <NativeSelect
-              className="w-full"
-              size="sm"
-              aria-label="Archived recordings"
-              value={restoreId}
-              onChange={(event) => {
-                setRestoreId(event.target.value);
+            <InstantVirtualList
+              ariaLabel="Archived recordings"
+              items={archived.items}
+              getItemId={(item) => item.id}
+              rowHeight={40}
+              height={160}
+              isFetching={archived.isFetching}
+              error={archived.error}
+              hasNextPage={archived.hasNextPage}
+              onEndReached={archived.onEndReached}
+              onRetry={() => {
+                void archived.refetch();
               }}
-              disabled={blocked || loading || !archived.length}
-            >
-              {!archived.length && (
-                <option value="">{loading ? "Loading…" : "No archived recordings"}</option>
+              renderItem={(item) => (
+                <Button
+                  variant={restoreId === item.id ? "outline" : "ghost"}
+                  size="sm"
+                  aria-pressed={restoreId === item.id}
+                  onClick={() => {
+                    setRestoreId(item.id);
+                  }}
+                >
+                  {item.name} · {item.frame_count} frames
+                </Button>
               )}
-              {archived.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name} · {item.frame_count} {item.frame_count === 1 ? "frame" : "frames"}
-                </option>
-              ))}
-            </NativeSelect>
-          </label>
+            />
+            {!archived.isFetching && !archived.error && !archived.items.length && (
+              <span>No archived recordings</span>
+            )}
+          </div>
           {error && (
             <p role="alert" className="text-xs text-destructive">
               {error}
@@ -210,7 +216,7 @@ export function RecordingTools({
           <Button
             variant="outline"
             size="sm"
-            disabled={blocked || loading || !restoreId}
+            disabled={blocked || !restoreId}
             onClick={() =>
               void perform(
                 () => onRestore(restoreId),

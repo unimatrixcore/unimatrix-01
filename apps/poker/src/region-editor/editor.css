@@ -31,7 +31,8 @@ body {
 }
 #region-list {
   flex: 1;
-  overflow-y: auto;
+  min-height: 0;
+  overflow: hidden;
 }
 .ri {
   padding: 5px 12px;
@@ -196,7 +197,7 @@ button {
 #region-list .ri {
   display: block;
   width: 100%;
-  height: auto;
+  height: 22px;
   text-align: left;
   border-radius: 0;
   border-top: 0;

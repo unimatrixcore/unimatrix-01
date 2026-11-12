@@ -23,6 +23,31 @@ fn local_navigation(url: &tauri::Url) -> bool {
             && url.port() == Some(5180))
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SystemMemoryInfo {
+    total_bytes: u64,
+    available_bytes: u64,
+}
+
+#[tauri::command]
+async fn get_system_memory_info(window: WebviewWindow) -> Result<SystemMemoryInfo, String> {
+    let url = window.url().map_err(|error| error.to_string())?;
+    if window.label() != "main" || !local_navigation(&url) {
+        return Err("Native commands are available only to the local app window".into());
+    }
+    tauri::async_runtime::spawn_blocking(|| {
+        unimatrix_desktop::get_system_memory_info()
+            .map(|info| SystemMemoryInfo {
+                total_bytes: info.total_bytes,
+                available_bytes: info.available_bytes,
+            })
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
 #[tauri::command]
 async fn lab_request(
     request: LabRequest,
@@ -37,6 +62,24 @@ async fn lab_request(
     tauri::async_runtime::spawn_blocking(move || service.request(request))
         .await
         .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn lab_list_page(
+    request: LabRequest,
+    cursor: Option<String>,
+    limit: Option<u32>,
+    state: State<'_, Arc<LabService>>,
+    window: WebviewWindow,
+) -> Result<LabResponse, String> {
+    let url = window.url().map_err(|error| error.to_string())?;
+    if window.label() != "main" || !local_navigation(&url) {
+        return Err("Native commands are available only to the local app window".into());
+    }
+    let service = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || service.list_page(request, cursor, limit))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -230,7 +273,12 @@ fn main() {
                 .build()?;
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![lab_request, launcher_request])
+        .invoke_handler(tauri::generate_handler![
+            lab_request,
+            lab_list_page,
+            launcher_request,
+            get_system_memory_info
+        ])
         .build(tauri::generate_context!())
         .expect("Failed to build Poker Lab");
     #[cfg(unix)]

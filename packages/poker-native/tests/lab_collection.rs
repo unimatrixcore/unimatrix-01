@@ -813,3 +813,736 @@ fn fresh_private_config_uses_embedded_defaults_and_preserves_existing() {
     )
     .unwrap();
 }
+
+#[test]
+fn shared_list_pages_are_bounded_and_scope_cursors() {
+    let f = Fixture::new(false);
+    let ctx = f.service.registry.resolve("legacy").unwrap();
+    queue::ingest_frame(&ctx, &frame(125)).unwrap();
+    {
+        let conn = ctx.connection().unwrap();
+        for i in 0..125 {
+            conn.execute("INSERT INTO images(filename,label,region_id,timestamp) VALUES (?1,?2,'seat.0.name',?3)", rusqlite::params![format!("file-{i:03}.png"), if i % 2 == 0 { "match" } else { "" }, i]).unwrap();
+        }
+    }
+    let run = queue::start_stream(&ctx).unwrap()["review_batch"]["batch_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let make = |path: &str, query: BTreeMap<String, String>, dataset: &str| LabRequest {
+        method: "GET".into(),
+        path: path.into(),
+        body: Value::Null,
+        query,
+        headers: BTreeMap::from([("X-Dataset-ID".into(), dataset.into())]),
+    };
+    for (path, query, expected) in [
+        ("/api/queue", BTreeMap::new(), 125),
+        (
+            "/api/queue/review/items",
+            BTreeMap::from([
+                ("run_id".into(), run.clone()),
+                ("filter".into(), "pending".into()),
+            ]),
+            125,
+        ),
+        (
+            "/api/db_entries",
+            BTreeMap::from([("search".into(), "match".into())]),
+            63,
+        ),
+    ] {
+        let req = make(path, query.clone(), "legacy");
+        let mut cursor = None;
+        let mut ids = std::collections::BTreeSet::new();
+        let mut pages = 0;
+        loop {
+            let result = f
+                .service
+                .list_page(req.clone(), cursor.clone(), Some(20))
+                .unwrap();
+            let items = result.body["items"].as_array().unwrap();
+            assert!(items.len() <= 20);
+            assert_eq!(result.body["total"], expected);
+            for item in items {
+                assert!(ids.insert(
+                    item[if path == "/api/db_entries" {
+                        "filename"
+                    } else {
+                        "sample_key"
+                    }]
+                    .as_str()
+                    .unwrap()
+                    .to_owned()
+                ));
+            }
+            pages += 1;
+            cursor = result.body["nextCursor"].as_str().map(str::to_owned);
+            if pages == 1 {
+                let mut changed = req.clone();
+                changed.query.insert("search".into(), "different".into());
+                assert!(f
+                    .service
+                    .list_page(changed, cursor.clone(), Some(20))
+                    .is_err());
+                let other = make(path, query.clone(), "other");
+                assert!(f
+                    .service
+                    .list_page(other, cursor.clone(), Some(20))
+                    .is_err());
+            }
+            if cursor.is_none() {
+                break;
+            }
+        }
+        assert!(pages > 2);
+        assert_eq!(ids.len(), expected as usize);
+    }
+    let req = make("/api/db_entries", BTreeMap::new(), "legacy");
+    let all = f.service.list_page(req.clone(), None, Some(500)).unwrap();
+    let rows = all.body["items"].as_array().unwrap();
+    assert_eq!(rows.len(), 125);
+    assert!(rows[..63].iter().all(|row| row["label"] == "match"));
+    assert!(rows[63..].iter().all(|row| row["label"] == ""));
+    let keys = f
+        .service
+        .list_page(
+            make(
+                "/api/db_entries",
+                BTreeMap::from([("keys_only".into(), "1".into())]),
+                "legacy",
+            ),
+            None,
+            Some(10),
+        )
+        .unwrap();
+    assert!(keys.body["items"][0].get("label").is_none());
+    let capped = f
+        .service
+        .list_page(
+            make("/api/queue", BTreeMap::new(), "legacy"),
+            None,
+            Some(500),
+        )
+        .unwrap();
+    assert_eq!(capped.body["items"].as_array().unwrap().len(), 100);
+    assert_eq!(capped.body["hasMore"], true);
+    assert_eq!(
+        f.service
+            .list_page(req.clone(), None, Some(1))
+            .unwrap()
+            .body["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert!(f.service.list_page(req.clone(), None, Some(501)).is_err());
+    assert!(f
+        .service
+        .list_page(
+            make("/api/initial_data", BTreeMap::new(), "legacy"),
+            None,
+            None
+        )
+        .is_err());
+}
+
+#[test]
+fn gameplay_list_snapshot_excludes_new_frames_and_scopes_cursors() {
+    let f = Fixture::new(false);
+    assert_eq!(f.req("GET", "/api/gameplay", Value::Null).status, 200);
+    let conn = rusqlite::Connection::open(f.temp.path().join("gameplay/gameplay.sqlite3")).unwrap();
+    for i in 0..205 {
+        conn.execute("INSERT INTO sessions(id,name,source,interval_ms,status,created_at,config_hash,config_json,archived) VALUES (?1,'test','monitor',1000,'ready',?2,'hash','{}',0)",rusqlite::params![format!("session{i:03}"),format!("{i:04}")]).unwrap();
+    }
+    for i in 0..65 {
+        conn.execute("INSERT INTO frames(id,session_id,captured_at,hand_id,ocr_status,width,height,image_sha256,results_json,config_hash,config_json) VALUES (?1,'session000',?2,?3,'complete',1,1,'hash','{}','hash','{}')",rusqlite::params![format!("frame{i:03}"),format!("{i:04}"),format!("hand{i:03}")]).unwrap();
+    }
+    let request = |path: &str, query: BTreeMap<String, String>| LabRequest {
+        method: "GET".into(),
+        path: path.into(),
+        body: Value::Null,
+        query,
+        headers: BTreeMap::new(),
+    };
+    let sessions = request("/api/gameplay", BTreeMap::new());
+    let mut c = None;
+    let mut count = 0;
+    let mut pages = 0;
+    loop {
+        let p = f.service.list_page(sessions.clone(), c, Some(70)).unwrap();
+        count += p.body["items"].as_array().unwrap().len();
+        pages += 1;
+        c = p.body["nextCursor"].as_str().map(str::to_owned);
+        if c.is_none() {
+            break;
+        }
+    }
+    assert_eq!(count, 205);
+    assert!(pages > 2);
+    let first = f
+        .service
+        .list_page(sessions.clone(), None, Some(2))
+        .unwrap();
+    conn.execute(
+        "UPDATE sessions SET name='renamed' WHERE id='session000'",
+        [],
+    )
+    .unwrap();
+    assert_eq!(
+        f.service
+            .list_page(
+                sessions.clone(),
+                first.body["nextCursor"].as_str().map(str::to_owned),
+                Some(2)
+            )
+            .unwrap()
+            .status,
+        409
+    );
+    for path in [
+        "/api/gameplay/sessions/session000",
+        "/api/gameplay/sessions/session000/frames",
+    ] {
+        let query = if path.ends_with("frames") {
+            BTreeMap::from([("order".into(), "desc".into())])
+        } else {
+            BTreeMap::new()
+        };
+        let req = request(path, query);
+        let first = f.service.list_page(req.clone(), None, Some(20)).unwrap();
+        assert_eq!(first.body["meta"]["session"]["id"], "session000");
+        let mut cursor = first.body["nextCursor"].as_str().map(str::to_owned);
+        let mut ids: std::collections::BTreeSet<String> = first.body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| {
+                v[if path.ends_with("frames") {
+                    "id"
+                } else {
+                    "hand_id"
+                }]
+                .as_str()
+                .unwrap()
+                .to_owned()
+            })
+            .collect();
+        let mut wrong = req.clone();
+        wrong.path = wrong.path.replace("session000", "session001");
+        assert!(f
+            .service
+            .list_page(wrong, cursor.clone(), Some(20))
+            .is_err());
+        if path.ends_with("frames") {
+            let mut wrong = req.clone();
+            wrong.query.insert("order".into(), "asc".into());
+            assert!(f
+                .service
+                .list_page(wrong, cursor.clone(), Some(20))
+                .is_err());
+            let mut wrong = req.clone();
+            wrong.query.insert("hand_id".into(), "hand001".into());
+            assert!(f
+                .service
+                .list_page(wrong, cursor.clone(), Some(20))
+                .is_err());
+        }
+        conn.execute("INSERT INTO frames(id,session_id,captured_at,hand_id,ocr_status,width,height,image_sha256,results_json,config_hash,config_json) VALUES (?1,'session000','9999',?1,'complete',1,1,'hash','{}','hash','{}')",[if path.ends_with("frames") {"newframe"} else {"newhand"}]).unwrap();
+        let expected = if path.ends_with("frames") { 66 } else { 65 };
+        while let Some(c) = cursor {
+            let p = f.service.list_page(req.clone(), Some(c), Some(20)).unwrap();
+            for v in p.body["items"].as_array().unwrap() {
+                assert!(ids.insert(
+                    v[if path.ends_with("frames") {
+                        "id"
+                    } else {
+                        "hand_id"
+                    }]
+                    .as_str()
+                    .unwrap()
+                    .to_owned()
+                ));
+            }
+            cursor = p.body["nextCursor"].as_str().map(str::to_owned);
+        }
+        assert_eq!(ids.len(), expected);
+        assert!(!ids.contains(if path.ends_with("frames") {
+            "newframe"
+        } else {
+            "newhand"
+        }));
+        assert_eq!(
+            f.service.list_page(req, None, Some(500)).unwrap().body["items"]
+                .as_array()
+                .unwrap()
+                .len(),
+            expected + 1
+        );
+    }
+    let req = request("/api/gameplay/sessions/session000/frames", BTreeMap::new());
+    let first = f.service.list_page(req.clone(), None, Some(1)).unwrap();
+    conn.execute("DELETE FROM frames WHERE id='newframe'", [])
+        .unwrap();
+    assert_eq!(
+        f.service
+            .list_page(
+                req,
+                first.body["nextCursor"].as_str().map(str::to_owned),
+                Some(1)
+            )
+            .unwrap()
+            .status,
+        409
+    );
+    conn.execute("UPDATE sessions SET archived=1 WHERE id='session001'", [])
+        .unwrap();
+    let archived = request(
+        "/api/gameplay",
+        BTreeMap::from([("archived".into(), "1".into())]),
+    );
+    assert_eq!(
+        f.service.list_page(archived, None, Some(10)).unwrap().body["items"][0]["id"],
+        "session001"
+    );
+}
+
+#[test]
+fn paged_database_and_names_match_unicode_case_insensitively() {
+    let f = Fixture::new(false);
+    let ctx = f.service.registry.resolve("legacy").unwrap();
+    {
+        let conn = ctx.connection().unwrap();
+        for (filename, label) in [("accent.png", "ÉLISE"), ("greek.png", "ΑΘΉΝΑ")] {
+            conn.execute("INSERT INTO images(filename,label,region_id,timestamp) VALUES (?1,?2,'seat.0.name',0)", rusqlite::params![filename, label]).unwrap();
+        }
+    }
+    for path in ["/api/db_entries", "/api/name_suggestions"] {
+        for (search, expected) in [("él", "ÉLISE"), ("αθή", "ΑΘΉΝΑ")] {
+            let request = LabRequest {
+                method: "GET".into(),
+                path: path.into(),
+                body: Value::Null,
+                query: BTreeMap::from([("search".into(), search.into())]),
+                headers: BTreeMap::from([("X-Dataset-ID".into(), "legacy".into())]),
+            };
+            let page = f.service.list_page(request, None, Some(10)).unwrap();
+            assert_eq!(page.body["total"], 1);
+            assert_eq!(
+                page.body["items"][0][if path == "/api/db_entries" {
+                    "label"
+                } else {
+                    "name"
+                }],
+                expected
+            );
+        }
+    }
+}
+
+#[test]
+fn filename_history_rejects_mapping_changes_between_pages() {
+    let f = Fixture::new(false);
+    let ctx = f.service.registry.resolve("legacy").unwrap();
+    review::ensure(&ctx).unwrap();
+    {
+        let conn = ctx.connection().unwrap();
+        conn.execute("INSERT INTO review_samples(sample_key,region_id,pixel_sha256,image_sha256,filename,crop) VALUES ('a','name','hash','hash','shared.png',x'00'),('b','name','hash','hash',NULL,x'00')", []).unwrap();
+        for (sample, time) in [("a", 20), ("a", 30), ("b", 40)] {
+            conn.execute("INSERT INTO label_review_events(sample_key,prior_label,label,action,pixel_sha256,dataset_id,created_at) VALUES (?1,'','label','manual','hash','legacy',?2)", rusqlite::params![sample, time]).unwrap();
+        }
+    }
+    let request = LabRequest {
+        method: "GET".into(),
+        path: "/api/label_history".into(),
+        body: Value::Null,
+        query: BTreeMap::from([("filename".into(), "shared.png".into())]),
+        headers: BTreeMap::from([("X-Dataset-ID".into(), "legacy".into())]),
+    };
+    let first = f.service.list_page(request.clone(), None, Some(1)).unwrap();
+    assert_eq!(first.body["items"][0]["payload"]["created_at"], 30);
+    let external = rusqlite::Connection::open(ctx.directory.join("data.db")).unwrap();
+    external
+        .execute(
+            "UPDATE review_samples SET filename='shared.png' WHERE sample_key='b'",
+            [],
+        )
+        .unwrap();
+    assert_eq!(
+        f.service
+            .list_page(
+                request.clone(),
+                first.body["nextCursor"].as_str().map(str::to_owned),
+                Some(1)
+            )
+            .unwrap()
+            .status,
+        409
+    );
+    let refreshed = f.service.list_page(request, None, Some(10)).unwrap();
+    assert_eq!(refreshed.body["total"], 3);
+    assert_eq!(refreshed.body["items"][0]["payload"]["created_at"], 40);
+}
+
+#[test]
+fn paged_gameplay_hands_preserve_unidentified_groups() {
+    let f = Fixture::new(false);
+    assert_eq!(f.req("GET", "/api/gameplay", Value::Null).status, 200);
+    let conn = rusqlite::Connection::open(f.temp.path().join("gameplay/gameplay.sqlite3")).unwrap();
+    conn.execute("INSERT INTO sessions(id,name,source,interval_ms,status,created_at,config_hash,config_json,archived) VALUES ('legacy-hands','test','monitor',1000,'ready','0','hash','{}',0)", []).unwrap();
+    for (i, hand) in [None, Some(""), Some("known"), None]
+        .into_iter()
+        .enumerate()
+    {
+        conn.execute("INSERT INTO frames(id,session_id,captured_at,hand_id,ocr_status,width,height,image_sha256,results_json,config_hash,config_json) VALUES (?1,'legacy-hands',?2,?3,'complete',1,1,'hash','{}','hash','{}')", rusqlite::params![format!("frame{i}"), format!("{i:04}"), hand]).unwrap();
+    }
+    let request = LabRequest {
+        method: "GET".into(),
+        path: "/api/gameplay/sessions/legacy-hands".into(),
+        body: Value::Null,
+        query: BTreeMap::new(),
+        headers: BTreeMap::new(),
+    };
+    let mut cursor = None;
+    let mut groups = BTreeMap::new();
+    loop {
+        let page = f
+            .service
+            .list_page(request.clone(), cursor, Some(1))
+            .unwrap();
+        assert_eq!(page.body["total"], 3);
+        for item in page.body["items"].as_array().unwrap() {
+            assert!(groups
+                .insert(
+                    item["hand_id"].to_string(),
+                    item["frame_count"].as_i64().unwrap()
+                )
+                .is_none());
+        }
+        cursor = page.body["nextCursor"].as_str().map(str::to_owned);
+        if cursor.is_none() {
+            break;
+        }
+    }
+    assert_eq!(
+        groups,
+        BTreeMap::from([
+            ("null".into(), 2),
+            ("\"\"".into(), 1),
+            ("\"known\"".into(), 1)
+        ])
+    );
+    let legacy = f.req("GET", "/api/gameplay/sessions/legacy-hands", Value::Null);
+    assert_eq!(legacy.body["hands"].as_array().unwrap().len(), groups.len());
+}
+
+#[test]
+fn database_paging_rejects_external_mutations() {
+    let f = Fixture::new(false);
+    let ctx = f.service.registry.resolve("legacy").unwrap();
+    {
+        let conn = ctx.connection().unwrap();
+        for i in 0..3 {
+            conn.execute("INSERT INTO images(filename,label,region_id,timestamp) VALUES (?1,'label','seat',?2)",rusqlite::params![format!("{i}.png"),i]).unwrap();
+        }
+    }
+    let req = LabRequest {
+        method: "GET".into(),
+        path: "/api/db_entries".into(),
+        body: Value::Null,
+        query: BTreeMap::new(),
+        headers: BTreeMap::from([("X-Dataset-ID".into(), "legacy".into())]),
+    };
+    let first = f.service.list_page(req.clone(), None, Some(1)).unwrap();
+    let cursor = first.body["nextCursor"].as_str().unwrap().to_owned();
+    let external = rusqlite::Connection::open(ctx.directory.join("data.db")).unwrap();
+    external
+        .execute(
+            "UPDATE images SET label='changed' WHERE filename='0.png'",
+            [],
+        )
+        .unwrap();
+    assert_eq!(
+        f.service
+            .list_page(req, Some(cursor), Some(1))
+            .unwrap()
+            .status,
+        409
+    );
+}
+
+#[test]
+fn shared_catalog_and_history_pages_cover_scopes_and_mutations() {
+    let f = Fixture::new(false);
+    let ctx = f.service.registry.resolve("legacy").unwrap();
+    review::ensure(&ctx).unwrap();
+    f.service.ai_review.ensure(&ctx).unwrap();
+    {
+        let conn = ctx.connection().unwrap();
+        conn.execute("INSERT INTO ai_review_jobs(id,dataset_id,run_id,state,model,batch_size,auto_correct,created_at,updated_at) VALUES ('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','legacy','run','done','test',1,0,0,0)",[]).unwrap();
+        for i in 0..7 {
+            conn.execute("INSERT INTO images(filename,label,region_id,timestamp) VALUES (?1,?2,'seat.0.name',?3)",rusqlite::params![format!("name{i}.png"),format!("player{i}"),i]).unwrap();
+            conn.execute(
+                "INSERT INTO session_history(timestamp,data) VALUES (?1,?2)",
+                rusqlite::params![i, json!({"n":i}).to_string()],
+            )
+            .unwrap();
+            conn.execute("INSERT INTO model_predictions(id,sample_key,region_id,pixel_sha256,dataset_id,created_at,payload) VALUES (?1,'sample','seat.0.name','hash','legacy',?2,'{\"text\":\"test\"}')",rusqlite::params![format!("pred{i}"),i*2]).unwrap();
+            conn.execute("INSERT INTO label_review_events(sample_key,filename,prior_label,label,action,pixel_sha256,dataset_id,created_at) VALUES ('sample','name0.png','','test','manual','hash','legacy',?1)",[i*2+1]).unwrap();
+            conn.execute("INSERT INTO ai_review_items(job_id,ordinal,batch_index,queue_id,sample_key,region_id,group_name,prior_label,pixel_sha256,prior_event_id,state,result) VALUES ('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',?1,0,?1,?2,'name','name','','hash',0,'unchanged',?3)",rusqlite::params![i,format!("key{i}"),json!({"n":i}).to_string()]).unwrap();
+        }
+        conn.execute("INSERT INTO review_samples(sample_key,region_id,pixel_sha256,image_sha256,filename,crop) VALUES ('sample','name','hash','hash','name0.png',x'00')",[]).unwrap();
+    }
+    for i in 0..5 {
+        f.service.registry.create(&format!("dataset{i}")).unwrap();
+    }
+    let req = |path: &str, query: BTreeMap<String, String>| LabRequest {
+        method: "GET".into(),
+        path: path.into(),
+        body: Value::Null,
+        query,
+        headers: BTreeMap::from([("X-Dataset-ID".into(), "legacy".into())]),
+    };
+    for (path, query, expected) in [
+        ("/api/datasets", BTreeMap::new(), 6),
+        ("/api/get_session_history", BTreeMap::new(), 7),
+        ("/api/name_suggestions", BTreeMap::new(), 7),
+        (
+            "/api/label_history",
+            BTreeMap::from([("sample_key".into(), "sample".into())]),
+            14,
+        ),
+        (
+            "/api/ai-review/jobs/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/results",
+            BTreeMap::new(),
+            7,
+        ),
+    ] {
+        let request = req(path, query);
+        let mut cursor = None;
+        let mut count = 0;
+        let mut pages = 0;
+        loop {
+            let response = f
+                .service
+                .list_page(request.clone(), cursor.clone(), Some(2))
+                .unwrap();
+            let items = response.body["items"].as_array().unwrap();
+            assert!(items.len() <= 2);
+            assert_eq!(response.body["total"], expected);
+            if path == "/api/label_history" {
+                assert!(items.iter().all(|item| ["event", "prediction"]
+                    .contains(&item["kind"].as_str().unwrap())
+                    && item["payload"].is_object()));
+            }
+            if path == "/api/datasets" {
+                assert_eq!(response.body["meta"]["default_dataset_id"], "legacy");
+            }
+            count += items.len();
+            pages += 1;
+            cursor = response.body["nextCursor"].as_str().map(str::to_owned);
+            if pages == 1 {
+                let mut wrong = request.clone();
+                wrong.path = if path == "/api/get_session_history" {
+                    "/api/name_suggestions"
+                } else {
+                    "/api/get_session_history"
+                }
+                .into();
+                wrong.query.clear();
+                assert!(f.service.list_page(wrong, cursor.clone(), Some(2)).is_err());
+            }
+            if cursor.is_none() {
+                break;
+            }
+        }
+        assert!(pages > 2);
+        assert_eq!(count, expected as usize);
+        assert!(f.service.list_page(request.clone(), None, Some(0)).is_err());
+        assert!(f.service.list_page(request, None, Some(501)).is_err());
+    }
+    let request = req(
+        "/api/label_history",
+        BTreeMap::from([("filename".into(), "name0.png".into())]),
+    );
+    let first = f.service.list_page(request.clone(), None, Some(2)).unwrap();
+    assert_eq!(first.body["total"], 14);
+    let mut changed = request;
+    changed.query.insert("filename".into(), "name1.png".into());
+    assert!(f
+        .service
+        .list_page(
+            changed,
+            first.body["nextCursor"].as_str().map(str::to_owned),
+            Some(2)
+        )
+        .is_err());
+    let request = req(
+        "/api/name_suggestions",
+        BTreeMap::from([("search".into(), "player1".into())]),
+    );
+    assert_eq!(
+        f.service.list_page(request, None, Some(5)).unwrap().body["items"][0]["name"],
+        "player1"
+    );
+    let request = req("/api/datasets", BTreeMap::new());
+    let first = f.service.list_page(request.clone(), None, Some(2)).unwrap();
+    let created = f.service.registry.create("changed").unwrap();
+    assert_eq!(
+        f.service
+            .list_page(
+                request.clone(),
+                first.body["nextCursor"].as_str().map(str::to_owned),
+                Some(2)
+            )
+            .unwrap()
+            .status,
+        409
+    );
+    let first = f.service.list_page(request.clone(), None, Some(2)).unwrap();
+    f.service
+        .registry
+        .update(created["id"].as_str().unwrap(), &json!({"archived":true}))
+        .unwrap();
+    assert_eq!(
+        f.service
+            .list_page(
+                request.clone(),
+                first.body["nextCursor"].as_str().map(str::to_owned),
+                Some(2)
+            )
+            .unwrap()
+            .status,
+        409
+    );
+    assert_eq!(
+        f.service.list_page(request, None, Some(500)).unwrap().body["total"],
+        6
+    );
+    let all = req(
+        "/api/datasets",
+        BTreeMap::from([("include_archived".into(), "1".into())]),
+    );
+    assert_eq!(
+        f.service.list_page(all, None, Some(500)).unwrap().body["total"],
+        7
+    );
+}
+
+#[test]
+fn score_history_finds_older_high_scores_and_deduplicates() {
+    let f = Fixture::new(false);
+    let ctx = f.service.registry.resolve("legacy").unwrap();
+    {
+        let mut conn = ctx.connection().unwrap();
+        let tx = conn.transaction().unwrap();
+        tx.execute(
+            "INSERT INTO session_history(timestamp,data) VALUES (0,?1)",
+            [json!({"items":10,"rpm":20,"score":99999,"marker":"older"}).to_string()],
+        )
+        .unwrap();
+        tx.execute(
+            "INSERT INTO session_history(timestamp,data) VALUES (1,?1)",
+            [json!({"items":10,"rpm":20,"score":99999,"marker":"newer"}).to_string()],
+        )
+        .unwrap();
+        for i in 0..2100 {
+            tx.execute(
+                "INSERT INTO session_history(timestamp,data) VALUES (?1,?2)",
+                rusqlite::params![i + 2, json!({"items":i,"rpm":30,"score":i+1}).to_string()],
+            )
+            .unwrap();
+        }
+        tx.execute(
+            "INSERT INTO session_history(timestamp,data) VALUES (9999,?1)",
+            [json!({"items":1,"rpm":1,"score":0}).to_string()],
+        )
+        .unwrap();
+        tx.commit().unwrap();
+    }
+    let req = LabRequest {
+        method: "GET".into(),
+        path: "/api/get_session_history".into(),
+        body: Value::Null,
+        query: BTreeMap::from([("order".into(), "score".into())]),
+        headers: BTreeMap::from([("X-Dataset-ID".into(), "legacy".into())]),
+    };
+    let first = f.service.list_page(req.clone(), None, Some(2)).unwrap();
+    assert_eq!(first.body["total"], 2101);
+    assert_eq!(first.body["items"][0]["marker"], "newer");
+    assert_eq!(first.body["items"][1]["score"], 2100);
+    let cursor = first.body["nextCursor"].as_str().unwrap().to_owned();
+    {
+        let conn = ctx.connection().unwrap();
+        conn.execute(
+            "INSERT INTO session_history(timestamp,data) VALUES (10000,?1)",
+            [json!({"items":100,"rpm":100,"score":999999}).to_string()],
+        )
+        .unwrap();
+    }
+    let second = f
+        .service
+        .list_page(req.clone(), Some(cursor.clone()), Some(2))
+        .unwrap();
+    assert_eq!(second.body["items"][0]["score"], 2099);
+    assert_eq!(second.body["total"], 2101);
+    let mut recent = req;
+    recent.query.clear();
+    assert!(f.service.list_page(recent, Some(cursor), Some(2)).is_err());
+}
+
+#[test]
+fn score_history_uses_javascript_string_signatures_for_mixed_types() {
+    let f = Fixture::new(false);
+    let ctx = f.service.registry.resolve("legacy").unwrap();
+    let records = [
+        json!({"items":1,"rpm":2.5,"score":10,"tag":"numeric"}),
+        json!({"items":"1","rpm":"2.5","score":"10","tag":"string"}),
+        json!({"items":1.0,"rpm":2.5,"score":10.0,"tag":"float"}),
+        json!({"rpm":3,"score":9,"tag":"missing"}),
+        json!({"items":"undefined","rpm":3,"score":9,"tag":"undefined-string"}),
+        json!({"items":null,"rpm":3,"score":9,"tag":"null"}),
+        json!({"items":"null","rpm":3,"score":9,"tag":"null-string"}),
+        json!({"items":1e-7,"rpm":2,"score":8,"tag":"small"}),
+        json!({"items":"1e-7","rpm":2,"score":8,"tag":"small-string"}),
+        json!({"items":1e21,"rpm":2,"score":7,"tag":"large"}),
+        json!({"items":"1e+21","rpm":2,"score":7,"tag":"large-string"}),
+        json!({"items":1,"rpm":2,"score":"9invalid","tag":"invalid"}),
+    ];
+    {
+        let conn = ctx.connection().unwrap();
+        for (i, record) in records.iter().enumerate() {
+            conn.execute(
+                "INSERT INTO session_history(timestamp,data) VALUES (?1,?2)",
+                rusqlite::params![i as i64, record.to_string()],
+            )
+            .unwrap();
+        }
+    }
+    let req = LabRequest {
+        method: "GET".into(),
+        path: "/api/get_session_history".into(),
+        body: Value::Null,
+        query: BTreeMap::from([("order".into(), "score".into())]),
+        headers: BTreeMap::from([("X-Dataset-ID".into(), "legacy".into())]),
+    };
+    let result = f.service.list_page(req, None, Some(20)).unwrap();
+    assert_eq!(result.body["total"], 5);
+    let tags: Vec<_> = result.body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v["tag"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        tags,
+        vec![
+            "float",
+            "null-string",
+            "undefined-string",
+            "small-string",
+            "large-string"
+        ]
+    );
+}

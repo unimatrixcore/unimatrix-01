@@ -10,4 +10,29 @@
 @import "./collector/legacy/ai-review.css";
 @source "../../../packages/ui/src/**/*.{ts,tsx}";
 @source "../../../packages/chrome/src/**/*.{ts,tsx}";
+@source "../../../packages/instant-list/src/**/*.{ts,tsx}";
 @source "./collector/**/*.{ts,tsx}";
+
+#frame-list.instant-list-host,
+#session-review-list.instant-list-host {
+  display: block;
+}
+
+#dataset-catalog {
+  position: relative;
+}
+#dataset-catalog-list {
+  position: absolute;
+  z-index: 50;
+  width: 280px;
+  background: var(--background);
+  border: 1px solid var(--border);
+}
+.dataset-catalog-row {
+  width: 100%;
+  text-align: left;
+  padding: 10px;
+}
+#dataset-catalog-list .instant-list-host {
+  display: block;
+}

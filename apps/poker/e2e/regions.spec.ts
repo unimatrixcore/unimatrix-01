@@ -32,7 +32,10 @@ test("standalone editor draws scaled coordinates, autosaves, clears and exports 
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/regions.html");
-  await expect(page.locator(".ri")).toHaveCount(80);
+  await expect(page.getByRole("list", { name: "Region definitions" })).toBeVisible();
+  await expect(page.locator("#tc")).toHaveText("80");
+  await expect(page.locator(".ri").first()).toBeVisible();
+  expect(await page.locator(".ri").count()).toBeLessThan(80);
   await expect(page.locator("#cur")).toHaveText("Drawing: Community Card 2");
   const image = await page.evaluate(() => {
     const canvas = document.createElement("canvas");
@@ -170,4 +173,58 @@ test("video playback, frame stepping and seek retain standalone export resolutio
       ),
     )
     .toMatchObject({ screenWidth: 1920, screenHeight: 1080, export: true });
+});
+
+test("undefined keyboard jumps reveal offscreen selections and preserve sidebar geometry", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const original = window.__POKER_LAB_TEST_INVOKE__!;
+    window.__POKER_LAB_TEST_INVOKE__ = async (request) => {
+      if (request.method === "GET") {
+        const fields = ["name", "nameplate", "bank", "bet", "hand_0", "hand_1", "status", "dealer"];
+        const keys = [
+          ...Array.from({ length: 5 }, (_, i) => `community.card_${i + 1}`),
+          "pot.main",
+          "pot.split",
+          "round_id",
+          ...Array.from({ length: 9 }, (_, i) =>
+            fields.map((field) => `seat.${i}.${field}`),
+          ).flat(),
+        ];
+        return {
+          status: 200,
+          headers: { "content-type": "application/json" },
+          body: {
+            regions: Object.fromEntries(
+              keys
+                .filter((key) => key !== "seat.8.dealer" && key !== "pot.main")
+                .map((key) => [key, { x: 1, y: 2, w: 3, h: 4 }]),
+            ),
+            screenWidth: 1920,
+            screenHeight: 1080,
+          },
+        };
+      }
+      return original(request);
+    };
+  });
+  await page.goto("/regions.html");
+  await expect(page.getByRole("button", { name: "Main Pot" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await page.keyboard.press("Tab");
+  const last = page.getByRole("button", { name: "Seat 8 — Dealer Button" });
+  await expect(last).toHaveAttribute("aria-pressed", "true");
+  await expect(last).toBeInViewport();
+  expect(
+    await page.locator("#sidebar").evaluate((node) => node.getBoundingClientRect().width),
+  ).toBe(270);
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("button", { name: "Main Pot" })).toBeInViewport();
+  await expect(page.getByRole("button", { name: "Main Pot" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
 });

@@ -8,7 +8,7 @@ const Schemas = {
     isPartial: (val) => /^[a-zA-Z0-9]*\.{0,3}$/.test(val) || /^Player [1-9]?$/.test(val) || "*RESERVED*".startsWith(val),
     getSuggestion: (val) => {
       if (!val) return null;
-      const pool = usernamePool.getItems();
+      const pool = [...new Set([...usernamePool.getItems(), ...(typeof nativeNameSuggestions === "undefined" ? [] : nativeNameSuggestions)])];
       const valLower = val.toLowerCase();
       for (const s of pool) {
         if (s.toLowerCase() === valLower && s !== val) return { suggestion: s, type: 'replace' };

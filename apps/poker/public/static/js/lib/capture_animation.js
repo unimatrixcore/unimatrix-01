@@ -91,9 +91,9 @@
     const valid = () => !run.cancelled && isCurrent() && !global.document.hidden;
     let shown = false;
     let prepared = false;
-    const destinations = () => {
+    const destinations = async () => {
       prepared = true;
-      return new Map((prepareTargets ? prepareTargets() : targets || []).map(target => [target.sampleKey,target.element]));
+      return new Map((prepareTargets ? await prepareTargets() : targets || []).map(target => [target.sampleKey,target.element]));
     };
     try {
       const image = await loadFrame(run,frame.image_url);
@@ -116,7 +116,7 @@
       await paintTwice();
       if (!valid()) return {shown:false};
       shown = true;
-      if (reduced) { destinations(); await wait(run,300); return {shown:true,reducedMotion:true}; }
+      if (reduced) { await destinations(); await wait(run,300); return {shown:true,reducedMotion:true}; }
       await motion(run,panel,[{opacity:0,transform:'translateY(8px) scale(.99)'},{opacity:1,transform:'none'}],130);
       if (!valid()) return {shown};
       const imageBox = image.getBoundingClientRect();
@@ -145,7 +145,7 @@
       if (!valid()) return {shown};
       // Insert the new cards only now, so their FLIP pushdown happens together
       // with the crop flight rather than before the preview has even appeared.
-      const byKey = destinations();
+      const byKey = await destinations();
       // Fade the source away as the already-cropped pixels travel to their cards.
       const flights = [motion(run,panel,[{opacity:1},{opacity:0}],280),motion(run,backdrop,[{opacity:1},{opacity:0}],380)];
       entries.forEach(({ghost,key,region,box,outline},index) => {
@@ -169,7 +169,7 @@
     } finally {
       cleanup(run);
       if (!prepared && isCurrent() && !global.document.hidden) {
-        try { destinations(); } catch {}
+        try { await destinations(); } catch {}
       }
       // The caller schedules its next screenshot only after the overlay is gone
       // and two compositor frames have had a chance to paint the real table.

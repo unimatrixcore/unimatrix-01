@@ -1,6 +1,7 @@
 import { pokerOcrContract, pokerOcrContractSha256 } from "@unimatrix/poker";
 import { installLabTransport } from "./lib/native-transport.js";
 import "./styles.css";
+import { installOcrBackgroundLists } from "./lib/ocr-background-lists";
 
 const classicScripts = [
   "lib/utils",
@@ -29,6 +30,7 @@ function loadScript(name: string): Promise<void> {
 }
 async function start(): Promise<void> {
   installLabTransport();
+  installOcrBackgroundLists();
   window.OCR_CONTRACT = pokerOcrContract;
   window.OCR_CONTRACT_SHA256 = pokerOcrContractSha256;
   window.SERVER_START_TIME = Date.now() / 1000;

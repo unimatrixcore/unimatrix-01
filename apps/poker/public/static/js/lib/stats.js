@@ -45,6 +45,7 @@ async function showLabelingStats() {
     pointsPerRegion: ppr
   };
 
+  if(window.CollectorBackgroundLists) { try { await refreshCompletionHistory(); } catch(error) { showToast(`History unavailable: ${error.message}`,"error");return; } }
   let resultSnapshot = null;
   if(continuous) {
     queueCompletedResult=recoverCompletedResult(queueCompletedResult,queueCompletionRecorded,sessionScore) || {
@@ -58,7 +59,7 @@ async function showLabelingStats() {
   // Save session history to backend (once)
   if (!batchOnly && sessionData.score > 0 && (continuous ? !resultSnapshot.history_saved : !highscoreAdded)) {
     try {
-      if(continuous) globalHistory=await (await datasetFetch('/api/get_session_history')).json();
+      if(continuous && !window.CollectorBackgroundLists) globalHistory=await (await datasetFetch('/api/get_session_history')).json();
       const existing=continuous && globalHistory.some(row=>row.review_run_id===reviewBatch.batch_id);
       if(!existing) await datasetFetch("/api/save_session_history", {
         method: "POST",
@@ -66,10 +67,10 @@ async function showLabelingStats() {
         body: JSON.stringify({...sessionData,...(continuous ? {review_run_id:reviewBatch.batch_id} : {})})
       });
       // Refresh global history
-      globalHistory = await (await datasetFetch("/api/get_session_history")).json();
+      if(window.CollectorBackgroundLists) await refreshCompletionHistory(null,false); else globalHistory = await (await datasetFetch("/api/get_session_history")).json();
       highscoreAdded = true;
       if(resultSnapshot) resultSnapshot.history_saved=true;
-    } catch (e) { console.error("Failed to save history", e); }
+    } catch (e) { console.error("Failed to save history", e); if(window.CollectorBackgroundLists) {showToast("Could not save session history; retry to preserve the result.","error");return;} }
   }
 
   // Determine if it's a new high score
@@ -111,6 +112,7 @@ async function showLabelingStats() {
   // Render Rank List
   const hsEntries = document.getElementById("high-score-entries");
   if (hsEntries) {
+    if(window.CollectorBackgroundLists) window.CollectorBackgroundLists.clear(hsEntries);
     // Show top 5 scores
     const topScores = dedupedHistory.slice(0, 5);
     hsEntries.innerHTML = topScores.map((s, i) => {
@@ -131,6 +133,10 @@ async function showLabelingStats() {
       `;
     }).join('');
     
+    if(window.CollectorBackgroundLists && topScores.length) {
+      const nodes=[...hsEntries.children];hsEntries.replaceChildren();
+      window.CollectorBackgroundLists.snapshot(hsEntries,{items:nodes.map((node,index)=>({id:String(index),node})),key:item=>item.id,card:item=>item.node,height:Math.min(250,nodes.length*50),rowHeight:48,minColumnWidth:1000});
+    }
     if (topScores.length === 0) {
       hsEntries.innerHTML = `<div style="text-align:center; padding:10px; color:var(--text-muted); font-size:12px">No rankings yet. Complete your first session!</div>`;
     }
@@ -188,7 +194,7 @@ async function toggleDbStats(forceOpen = null) {
         btnBack.classList.add("hidden");
         
         grid.classList.remove("hidden");
-        pagination.classList.remove("hidden");
+        if(!window.CollectorBackgroundLists) pagination.classList.remove("hidden");
         gridControls.style.display = 'flex';
         btnStats.classList.remove("hidden");
     }
@@ -196,6 +202,7 @@ async function toggleDbStats(forceOpen = null) {
 
 async function fetchAndRenderStats() {
     const container = document.querySelector("#db-statistics-dashboard .stats-grid");
+    if(window.CollectorBackgroundLists) container.querySelectorAll("[data-stat-snapshot]").forEach(node=>window.CollectorBackgroundLists.clear(node));
     container.innerHTML = '<div style="grid-column: 1/-1; padding: 100px; display: flex; flex-direction: column; align-items: center; gap: 20px;"><div class="spinner"></div><div style="font-family: var(--font-mono); font-weight: 800; color: var(--primary); letter-spacing: 2px;">CALCULATING DATASET HEALTH...</div></div>';
     
     try {
@@ -209,6 +216,7 @@ async function fetchAndRenderStats() {
 
 function renderStatsDashboard(stats) {
     const container = document.querySelector("#db-statistics-dashboard .stats-grid");
+    if(window.CollectorBackgroundLists) container.querySelectorAll("[data-stat-snapshot]").forEach(node=>window.CollectorBackgroundLists.clear(node));
     container.innerHTML = "";
 
     // 1. Dataset Overview (Hero)
@@ -232,7 +240,7 @@ function renderStatsDashboard(stats) {
     const maxLabelCount = Math.max(...Object.values(stats.top_labels), 1);
     labelDistCard.innerHTML = `
         <div class="stat-card-title">TOP 10 LABELS <span>FREQUENCY</span></div>
-        <div style="display:flex; flex-direction:column; gap:10px">
+        <div data-stat-snapshot style="display:flex; flex-direction:column; gap:10px">
             ${Object.entries(stats.top_labels).sort((a,b) => b[1] - a[1]).map(([label, count]) => `
                 <div class="stat-bar-container">
                     <div class="stat-bar-label"><span>${label}</span><span>${count}</span></div>
@@ -249,7 +257,7 @@ function renderStatsDashboard(stats) {
     const maxRegionCount = Math.max(...Object.values(stats.regions), 1);
     regionCard.innerHTML = `
         <div class="stat-card-title">REGION BALANCE <span>SAMPLES</span></div>
-        <div style="display:flex; flex-direction:column; gap:10px">
+        <div data-stat-snapshot style="display:flex; flex-direction:column; gap:10px">
             ${Object.entries(stats.regions).sort((a,b) => b[1] - a[1]).map(([rid, count]) => `
                 <div class="stat-bar-container">
                     <div class="stat-bar-label"><span>${rid}</span><span>${count}</span></div>
@@ -274,7 +282,7 @@ function renderStatsDashboard(stats) {
             </div>
         </div>
         <div style="font-size: 10px; color: var(--text-muted); font-weight: 800; margin-top: 5px;">ACTION FREQUENCY</div>
-        <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 8px">
+        <div data-stat-snapshot style="display:grid; grid-template-columns: 1fr 1fr; gap: 8px">
              ${Object.entries(stats.poker.actions).sort((a,b) => b[1] - a[1]).map(([a, c]) => `<div class="stat-row" style="font-size:11px"><span>${a}</span><span style="color:var(--text-main)">${c}</span></div>`).join('')}
         </div>
     `;
@@ -301,7 +309,7 @@ function renderStatsDashboard(stats) {
     diversityCard.className = "stat-card";
     diversityCard.innerHTML = `
         <div class="stat-card-title">DIVERSITY <span>HAMMING / AR</span></div>
-        <div style="display:flex; flex-direction:column; gap:12px;">
+        <div data-stat-snapshot style="display:flex; flex-direction:column; gap:12px;">
             <div style="display:grid; grid-template-columns: 80px 1fr 60px; gap: 10px; font-size:10px; font-weight:800; color:var(--text-muted); text-transform:uppercase; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 6px;">
                 <span>Region</span>
                 <span style="text-align:right">Avg Hamming</span>
@@ -317,5 +325,9 @@ function renderStatsDashboard(stats) {
         </div>
     `;
     container.appendChild(diversityCard);
+    if(window.CollectorBackgroundLists) container.querySelectorAll('[data-stat-snapshot]').forEach(host=>{
+      const rows=[...host.children];host.replaceChildren();
+      if(rows.length) window.CollectorBackgroundLists.snapshot(host,{items:rows.map((node,index)=>({id:String(index),node})),key:item=>item.id,card:item=>item.node,height:Math.min(320,Math.max(44,rows.length*48)),rowHeight:48,minColumnWidth:1000});
+    });
 }
 

@@ -72,6 +72,8 @@ impl Store {
             }
         }
         tx.execute("UPDATE frames SET ocr_status='error',error='OCR interrupted by server restart' WHERE ocr_status='pending'", []).map_err(err)?;
+        tx.execute_batch("CREATE TABLE IF NOT EXISTS list_frame_revision(id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL); INSERT OR IGNORE INTO list_frame_revision VALUES(1,0); CREATE TRIGGER IF NOT EXISTS list_frame_delete AFTER DELETE ON frames BEGIN UPDATE list_frame_revision SET revision=revision+1 WHERE id=1; END; CREATE TRIGGER IF NOT EXISTS list_frame_update AFTER UPDATE OF session_id,hand_id,captured_at ON frames WHEN OLD.session_id IS NOT NEW.session_id OR OLD.hand_id IS NOT NEW.hand_id OR OLD.captured_at IS NOT NEW.captured_at BEGIN UPDATE list_frame_revision SET revision=revision+1 WHERE id=1; END;").map_err(err)?;
+        tx.execute_batch("CREATE TABLE IF NOT EXISTS list_session_revision(id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL); INSERT OR IGNORE INTO list_session_revision VALUES(1,0); CREATE TRIGGER IF NOT EXISTS list_session_insert AFTER INSERT ON sessions BEGIN UPDATE list_session_revision SET revision=revision+1 WHERE id=1; END; CREATE TRIGGER IF NOT EXISTS list_session_delete AFTER DELETE ON sessions BEGIN UPDATE list_session_revision SET revision=revision+1 WHERE id=1; END; CREATE TRIGGER IF NOT EXISTS list_session_update AFTER UPDATE OF name,archived,created_at ON sessions WHEN OLD.name IS NOT NEW.name OR OLD.archived IS NOT NEW.archived OR OLD.created_at IS NOT NEW.created_at BEGIN UPDATE list_session_revision SET revision=revision+1 WHERE id=1; END;").map_err(err)?;
         tx.commit().map_err(err)?;
         Ok(store)
     }
@@ -129,6 +131,127 @@ impl Store {
                 .map(|id| self.session(id))
                 .collect::<Result<Vec<_>>>()?,
         ))
+    }
+
+    pub fn list_page(
+        &self,
+        kind: &str,
+        session: Option<&str>,
+        hand: Option<&str>,
+        order: &str,
+        archived: bool,
+        cursor: Option<&str>,
+        limit: usize,
+    ) -> Result<Value> {
+        let mut conn = self.connect()?;
+        let tx = conn.transaction().map_err(err)?;
+        let revision_table = if kind == "sessions" {
+            "list_session_revision"
+        } else {
+            "list_frame_revision"
+        };
+        let revision: i64 = tx
+            .query_row(
+                &format!("SELECT revision FROM {revision_table} WHERE id=1"),
+                [],
+                |r| r.get(0),
+            )
+            .map_err(err)?;
+        let table = if kind == "sessions" {
+            "sessions"
+        } else {
+            "frames"
+        };
+        let (ceiling, offset) = if let Some(cursor) = cursor {
+            let value: Value = serde_json::from_str(cursor).map_err(err)?;
+            if value["revision"].as_i64() != Some(revision) {
+                return Err("409:Gameplay history changed; reload the list".into());
+            }
+            let ceiling = value["ceiling"]
+                .as_i64()
+                .filter(|v| *v >= 0)
+                .ok_or("400:Invalid page cursor")?;
+            let offset = value["offset"]
+                .as_i64()
+                .filter(|v| *v >= 0)
+                .ok_or("400:Invalid page cursor")?;
+            (ceiling, offset)
+        } else {
+            (
+                tx.query_row(
+                    &format!("SELECT COALESCE(MAX(rowid),0) FROM {table}"),
+                    [],
+                    |r| r.get(0),
+                )
+                .map_err(err)?,
+                0,
+            )
+        };
+        let next_offset = offset
+            .checked_add(limit as i64)
+            .ok_or("400:Invalid page cursor")?;
+        let (mut items, total): (Vec<Value>, i64) = match kind {
+            "sessions" => {
+                let total = tx
+                    .query_row(
+                        "SELECT COUNT(*) FROM sessions WHERE archived=?1 AND rowid<=?2",
+                        params![archived as i64, ceiling],
+                        |r| r.get(0),
+                    )
+                    .map_err(err)?;
+                let mut q = tx.prepare("SELECT id,name,source,interval_ms,status,created_at,stopped_at,config_hash,archived,(SELECT COUNT(*) FROM frames WHERE session_id=sessions.id),(SELECT COUNT(DISTINCT hand_id) FROM frames WHERE session_id=sessions.id) FROM sessions WHERE archived=?1 AND rowid<=?2 ORDER BY created_at DESC,id DESC LIMIT ?3 OFFSET ?4").map_err(err)?;
+                let rows = q.query_map(params![archived as i64,ceiling,(limit+1) as i64,offset], |r| Ok(json!({"id":r.get::<_,String>(0)?,"name":r.get::<_,String>(1)?,"source":r.get::<_,String>(2)?,"interval_ms":r.get::<_,i64>(3)?,"status":r.get::<_,String>(4)?,"created_at":r.get::<_,String>(5)?,"stopped_at":r.get::<_,Option<String>>(6)?,"config_hash":r.get::<_,String>(7)?,"archived":r.get::<_,i64>(8)? != 0,"frame_count":r.get::<_,i64>(9)?,"hand_count":r.get::<_,i64>(10)?}))).map_err(err)?.collect::<std::result::Result<Vec<_>,_>>().map_err(err)?;
+                (rows, total)
+            }
+            "hands" => {
+                let id = session.ok_or("400:Missing session")?;
+                let total = tx.query_row("SELECT COUNT(*) FROM (SELECT hand_id FROM frames WHERE session_id=?1 AND rowid<=?2 GROUP BY hand_id)",params![id,ceiling],|r|r.get(0)).map_err(err)?;
+                let mut q = tx.prepare("SELECT hand_id,COUNT(*),MIN(captured_at),MAX(captured_at) FROM frames WHERE session_id=?1 AND rowid<=?2 GROUP BY hand_id ORDER BY MAX(captured_at) DESC,hand_id DESC LIMIT ?3 OFFSET ?4").map_err(err)?;
+                let rows = q.query_map(params![id,ceiling,(limit+1) as i64,offset],|r|Ok(json!({"hand_id":r.get::<_,Option<String>>(0)?,"frame_count":r.get::<_,i64>(1)?,"first_at":r.get::<_,String>(2)?,"last_at":r.get::<_,String>(3)?}))).map_err(err)?.collect::<std::result::Result<Vec<_>,_>>().map_err(err)?;
+                (rows, total)
+            }
+            "frames" => {
+                let id = session.ok_or("400:Missing session")?;
+                if !["asc", "desc"].contains(&order) {
+                    return Err("400:Invalid frame order".into());
+                }
+                let predicate = if hand.is_some() {
+                    "session_id=?1 AND rowid<=?2 AND hand_id IS ?3"
+                } else {
+                    "session_id=?1 AND rowid<=?2 AND ?3 IS NULL"
+                };
+                let selected = hand.filter(|s| !s.is_empty());
+                let total = tx
+                    .query_row(
+                        &format!("SELECT COUNT(*) FROM frames WHERE {predicate}"),
+                        params![id, ceiling, selected],
+                        |r| r.get(0),
+                    )
+                    .map_err(err)?;
+                let mut q = tx.prepare(&format!("SELECT id,session_id,captured_at,hand_id,ocr_status,error,width,height,image_sha256,config_hash,timings_json FROM frames WHERE {predicate} ORDER BY captured_at {order},id {order} LIMIT ?4 OFFSET ?5")).map_err(err)?;
+                let rows = q
+                    .query_map(
+                        params![id, ceiling, selected, (limit + 1) as i64, offset],
+                        |r| Self::row_frame(r, false),
+                    )
+                    .map_err(err)?
+                    .collect::<std::result::Result<Vec<_>, _>>()
+                    .map_err(err)?;
+                (rows, total)
+            }
+            _ => return Err("400:Unsupported gameplay list".into()),
+        };
+        let more = items.len() > limit;
+        items.truncate(limit);
+        tx.commit().map_err(err)?;
+        let meta = if let Some(id) = session {
+            json!({"session": self.session(id)?})
+        } else {
+            json!({})
+        };
+        Ok(
+            json!({"items":items,"total":total,"next_cursor":if more {Some(json!({"ceiling":ceiling,"offset":next_offset,"revision":revision}).to_string())} else {None},"meta":meta}),
+        )
     }
 
     /// Create a session while keeping its original configuration provenance.

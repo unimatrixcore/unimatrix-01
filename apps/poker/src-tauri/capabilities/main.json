@@ -3,5 +3,11 @@
   "identifier": "main",
   "description": "Local Poker Lab window",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "allow-lab-request",
+    "allow-lab-list-page",
+    "allow-launcher-request",
+    "allow-get-system-memory-info"
+  ]
 }

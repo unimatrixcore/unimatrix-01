@@ -24,6 +24,7 @@ export interface InstantVirtualListProps<T> {
   rowRole?: "listitem" | "row" | "presentation";
   header?: ReactNode;
   measureRows?: boolean;
+  scrollToItemId?: string | number;
 }
 export function InstantVirtualList<T>({
   items,
@@ -42,6 +43,7 @@ export function InstantVirtualList<T>({
   rowRole = "listitem",
   header,
   measureRows = false,
+  scrollToItemId,
 }: InstantVirtualListProps<T>) {
   const parent = useRef<HTMLDivElement>(null);
   const [scrollIntent, setScrollIntent] = useState(false);
@@ -56,6 +58,13 @@ export function InstantVirtualList<T>({
     overscan: 5,
     initialRect: { width: 800, height: typeof height === "number" ? height : 480 },
   });
+  const requestedIndex =
+    scrollToItemId === undefined
+      ? -1
+      : items.findIndex((item) => getItemId(item) === scrollToItemId);
+  useEffect(() => {
+    if (requestedIndex >= 0) virtualizer.scrollToIndex(requestedIndex, { align: "auto" });
+  }, [scrollToItemId, requestedIndex, virtualizer]);
   const rows = virtualizer.getVirtualItems();
   const end = rows.at(-1)?.index ?? -1;
   useEffect(() => {

@@ -41,6 +41,11 @@ async function datasetFetch(url, options = {}) {
   try { return await request; } finally { pendingDatasetRequests.delete(request); }
 }
 async function refreshDatasets() {
+  if(window.CollectorBackgroundLists) {
+    await window.CollectorBackgroundLists.invalidate("/api/datasets","");
+    const data=await window.CollectorBackgroundLists.resolveDataset(activeDatasetId || localStorage.getItem('ocr:active-dataset'));
+    datasets=data.items;return data;
+  }
   const response = await nativeFetch('/api/datasets?include_archived=true');
   if (!response.ok) throw new Error('Could not load datasets.');
   const data = await response.json();
@@ -51,6 +56,16 @@ function renderDatasetNavigator() {
   const select = document.getElementById('dataset-select');
   const archived = document.getElementById('dataset-archived');
   select.replaceChildren(); archived.replaceChildren();
+  if(window.CollectorBackgroundLists) {
+    select.classList.add("hidden");archived.classList.add("hidden");document.getElementById("dataset-restore").classList.add("hidden");
+    const picker=document.getElementById("dataset-catalog"), host=document.getElementById("dataset-catalog-list");picker.classList.remove("hidden");
+    document.getElementById("dataset-catalog-label").textContent=datasets.find(d=>d.id===activeDatasetId)?.name || "Choose dataset";
+    window.CollectorBackgroundLists.render(host,{path:"/api/datasets",datasetId:"",query:{include_archived:"1"},height:260,rowHeight:48,minColumnWidth:1000,key:item=>item.id,
+      card:item=>{const button=document.createElement("button");button.type="button";button.className="dataset-catalog-row";button.textContent=item.name+(item.archived?" · Restore":"");
+        button.onclick=async()=>{try {if(item.archived){await datasetFetch(`/api/datasets/${encodeURIComponent(item.id)}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({archived:false})});await refreshDatasets();renderDatasetNavigator();showToast('Dataset restored.','success');}else {picker.open=false;await switchDataset(item.id);}}catch(error){reportDatasetError(error);}};return button;},
+      changed:(items)=>{const current=datasets.find(item=>item.id===activeDatasetId);datasets=[...items];if(current && !datasets.some(item=>item.id===current.id)) datasets.push(current);document.getElementById("dataset-catalog-label").textContent=datasets.find(item=>item.id===activeDatasetId)?.name || "Choose dataset";}});
+    document.getElementById('dataset-archive-empty')?.classList.add('hidden');return;
+  }
   datasets.forEach(dataset => {
     const option = new Option(dataset.name, dataset.id);
     (dataset.archived ? archived : select).add(option);
@@ -69,6 +84,7 @@ async function initDatasets() {
   const remembered = localStorage.getItem('ocr:active-dataset');
   activeDatasetId = datasets.some(d => d.id === remembered && !d.archived) ? remembered : (data.default_dataset_id || datasets.find(d => !d.archived)?.id);
   if (!activeDatasetId) throw new Error('No dataset is available.');
+  localStorage.setItem('ocr:active-dataset',activeDatasetId);window.dispatchEvent?.(new Event('poker-dataset-change'));
   renderDatasetNavigator();
   const manager = document.getElementById('dataset-manager');
   const openDatasetManager = mode => {
@@ -112,7 +128,8 @@ async function initDatasets() {
     const name = datasets.find(d => d.id === activeDatasetId)?.name;
     if (!await showConfirmModal('Archive dataset', `Archive “${name}”? All captures, labels and review history will be preserved. You can restore this dataset from Manage datasets.`)) return;
     try {
-      const next = datasets.find(d => !d.archived && d.id !== activeDatasetId);
+      let next = datasets.find(d => !d.archived && d.id !== activeDatasetId);
+      if(!next && window.CollectorBackgroundLists) {const catalog=await window.CollectorBackgroundLists.readPages("/api/datasets",null,{include_archived:"1"},"datasets",true);next=catalog.items.find(d=>!d.archived && d.id!==activeDatasetId);}
       if (!next) { showToast('Create another dataset before archiving this one.', 'error'); return; }
       const previous = activeDatasetId;
       await switchDataset(next.id);
@@ -136,9 +153,9 @@ async function initDatasets() {
         await new Promise(resolve => window.setTimeout(resolve, 500));
         status = await (await datasetFetch('/api/sync_status')).json();
       }
-      const data = await (await datasetFetch('/api/initial_data?queue_mode=paged')).json();
+      const data = await (await datasetFetch(`/api/initial_data?queue_mode=paged${window.CollectorBackgroundLists?'&background_lists=1':''}`)).json();
       frames = []; pool = []; usernamePool.counts.clear(); modelRequest++;
-      loadDatabase(data.db || []); await recoverSession(data.session);if(queueMode) applyCollectionPage(data.collection_page);renderFrames();
+      loadDatabase(data.db || []); void refreshNames(""); await recoverSession(data.session);if(queueMode) applyCollectionPage(data.collection_page);renderFrames();
       setView('collection'); renderDatasetNavigator();
     } catch (error) { reportDatasetError(error); } finally { showLoading(false); }
   };
@@ -448,9 +465,9 @@ async function switchDataset(id) {
     datasetEpoch++; modelRequest++; dbSuggestionRequest++; dbReviewSaving = false; reviewSaving = false;
     if (saveTimeout) clearTimeout(saveTimeout);
     activeDatasetId = id; watchNeedsRecovery = false;resetQueueState();
-    localStorage.setItem('ocr:active-dataset', id);
+    localStorage.setItem('ocr:active-dataset', id);window.dispatchEvent?.(new Event('poker-dataset-change'));
     frames = []; pool = []; dbEntries = []; gameCurrencyMap = {}; globalHistory = [];
-    usernamePool.counts.clear(); selectedFiles.clear(); selectedPoolIndices.clear();
+    usernamePool.counts.clear(); nativeNameSuggestions=[];lastNamesQuery=""; namesRequest++; dbTotal=0;dbSelectedMetadata.clear();dbDrafts.clear(); selectedFiles.clear(); selectedPoolIndices.clear();
     currentReviewIdx = 0; maxReachedIdx = 0; dbPage = 1; editingPoolIdx = -1;
     currentSuggestion = ''; modelPrediction = null; lastValue = ''; actionHistory = [];
     sessionScore = 0; currentCombo = 0; maxCombo = 0; quickLabels = 0; autoCompletes = 0; reviewAwards = {}; resetReviewClock();
@@ -462,12 +479,14 @@ async function switchDataset(id) {
     ['review-search','db-search','review-bulk-label-input','db-bulk-label-input'].forEach(key => document.getElementById(key).value = '');
     ['review-search-list','db-search-list','review-bulk-list','db-bulk-list','edit-datalist'].forEach(key => document.getElementById(key).replaceChildren());
     window.CollectorSharedUi?.disposeMenus?.(frameListEl);
+    if(window.CollectorBackgroundLists) window.CollectorBackgroundLists.clear(dbListEl);
     frameListEl.replaceChildren(); sessionReviewListEl.replaceChildren(); dbListEl.replaceChildren();
     document.getElementById('db-statistics-dashboard').classList.add('hidden');
     setModelState('Select a crop to begin');
-    const data = await (await datasetFetch('/api/initial_data?queue_mode=paged')).json();
+    const data = await (await datasetFetch(`/api/initial_data?queue_mode=paged${window.CollectorBackgroundLists?'&background_lists=1':''}`)).json();
     globalHistory = data.history || [];
-    loadMonitors(data.sources || data.monitors, data.settings?.last_monitor); loadDatabase(data.db || []);
+    if(window.CollectorBackgroundLists) void refreshCompletionHistory(data.session).catch(error=>console.warn("History unavailable",error));
+    loadMonitors(data.sources || data.monitors, data.settings?.last_monitor); loadDatabase(data.db || []);void refreshNames("");
     await recoverSession(data.session);
     if(queueMode) applyCollectionPage(data.collection_page);
     renderFrames(); renderDatabase();
@@ -499,6 +518,7 @@ async function requestModelSuggestion(item, force = false) {
   const requestId = ++modelRequest, epoch = datasetEpoch, key = sampleKey(item);
   freezeReviewClock('loading');
   setModelState('Loading local model…');
+  if(window.CollectorBackgroundLists) window.CollectorBackgroundLists.clear(document.getElementById('label-history'));
   document.getElementById('label-history').textContent = 'Loading history…';
   refreshLabelHistory(item, requestId);
   try {
@@ -580,7 +600,14 @@ async function persistEditedItem(item, label, action = 'correct') {
   }
   item.reviewed = true; item.review_event = data.event; item.review_action = action; item.label = label;
 }
+function renderPagedHistory(target,item) {
+  const datasetId=activeDatasetId,epoch=datasetEpoch;
+  window.CollectorBackgroundLists.render(target,{path:"/api/label_history",datasetId,query:{...(sampleKey(item)?{sample_key:sampleKey(item)}:{}),...(item.filename?{filename:item.filename}:{})},key:row=>row.id,height:240,rowHeight:52,minColumnWidth:1000,emptyLabel:"No review history yet.",
+    card:row=>{const p=document.createElement('p'),entry=row.payload;p.textContent=row.kind==='prediction' ? `Prediction ${reviewTimestamp(entry.created_at ?? entry.timestamp)} · ${entry.model_id || 'Local model'} · raw: ${JSON.stringify(entry.raw_text)} · suggested label: ${JSON.stringify(entry.text)}` : `${reviewTimestamp(entry.created_at ?? entry.timestamp)} · ${entry.action || 'Review'} · saved label: ${JSON.stringify(entry.label)} · prediction ${entry.prediction_id || 'none'}`;return p;},
+    changed:()=>{if(epoch!==datasetEpoch || datasetId!==activeDatasetId) window.CollectorBackgroundLists.clear(target);}});
+}
 async function refreshLabelHistory(item, requestId) {
+  if(window.CollectorBackgroundLists) {renderPagedHistory(document.getElementById("label-history"),item);return;}
   try {
     const query = new URLSearchParams({sample_key:sampleKey(item), filename:item.filename || ''});
     const data = await (await datasetFetch(`/api/label_history?${query}`)).json();
@@ -611,6 +638,7 @@ function renderHistory(target, data) {
 }
 
 let frames = [], pool = [], dbEntries = [], currentReviewIdx = 0;
+const legacyReviewDrafts=new Map();
 const COLLECTION_PAGE_SIZE = 60, REVIEW_BATCH_SIZE = 100, REVIEW_PREFETCH = 10, REVIEW_HISTORY = 50;
 let queueMode = false, queueSummary = null, reviewBatch = null;
 let queueCompletedStats = {items:0,time:0};
@@ -650,6 +678,8 @@ function isContinuousReview() { return queueMode && reviewBatch?.mode === 'strea
 let collectionItems = [], collectionCursor = null, collectionNextCursor = null, collectionPrevious = [];
 let queueRequest = 0, reviewBatchRequest = 0, queueLoading = false, reviewBatchLoading = false, queueCommitBusy = false, labelingEntryBusy = false;
 function resetQueueState() {
+  legacyReviewDrafts.clear();
+  if(window.CollectorBackgroundLists && frameListEl) { window.CollectorBackgroundLists.clear(frameListEl); frameListEl.classList.remove("instant-list-host"); }
   if(typeof resetFullSessionReview==='function') resetFullSessionReview();
   if(typeof resetAiReview==='function') resetAiReview();
   queueCompletedResult=null;
@@ -669,6 +699,7 @@ function applyCollectionPage(page) {
 }
 async function loadCollectionPage(cursor = null, direction = 'refresh') {
   if (!queueMode) return;
+  if(window.CollectorBackgroundLists) { await window.CollectorBackgroundLists.invalidate("/api/queue",activeDatasetId);return; }
   const token=++queueRequest,epoch=datasetEpoch,previous=collectionCursor;
   queueLoading=true;updateQueueControls();
   try {
@@ -771,7 +802,7 @@ async function advanceContinuousReview() {
 function updateQueueControls() {
   updateLabelingEntryControls();
   const pager=document.getElementById('collection-pagination');
-  if(pager) pager.classList.toggle('hidden',!queueMode || !queueSummary?.total);
+  if(pager) pager.classList.toggle('hidden',!!window.CollectorBackgroundLists || !queueMode || !queueSummary?.total);
   const previous=document.getElementById('collection-previous'),nextPage=document.getElementById('collection-next');
   if(previous) previous.disabled=queueLoading || !collectionPrevious.length;
   if(nextPage) nextPage.disabled=queueLoading || !collectionNextCursor;
@@ -830,7 +861,7 @@ async function commitContinuousReview() {
     leaveReviewClock();clearModelTextTransition();modelRequest++;streamEpoch++;releaseStreamImages();streamFetch=null;
     pool=[];frames=[];reviewBatch=null;reviewAwards={};streamStats=null;currentReviewIdx=0;maxReachedIdx=0;
     labelingUnlocked=false;reviewUnlocked=false;queueCompletedStats={items:0,time:0};queueCompletionRecorded=false;queueCompletedResult=null;
-    applyQueueSummary(data.summary);await loadCollectionPage();loadDatabase(await (await datasetFetch('/api/db_entries')).json());
+    applyQueueSummary(data.summary);await loadCollectionPage();await refreshDatabase();
     setView('collection');await saveSessionProgress(true);showToast('Reviewed collection saved.','success');
   } catch(error) {showToast(error.message,'error');}
   finally {queueCommitBusy=false;queueLoading=false;showLoading(false);updateQueueControls();}
@@ -863,7 +894,7 @@ async function commitQueueBatch(continueReview = false) {
     pool=[];frames=[];reviewBatch=null;reviewAwards={};currentReviewIdx=0;maxReachedIdx=0;
     labelingUnlocked=false;reviewUnlocked=false;selectedPoolIndices.clear();
     applyQueueSummary(data.summary);await loadCollectionPage();
-    loadDatabase(await (await datasetFetch('/api/db_entries')).json());
+    await refreshDatabase();
     if(continueReview && await loadReviewBatch(continuation)) {
       labelingUnlocked=true;
       if(pool.every(item=>item.reviewed || item.discarded)) {reviewUnlocked=true;setView('session-review');}
@@ -890,7 +921,21 @@ async function discardQueue(selection) {
     return true;
   } catch(error) {showToast(error.message,'error');return false;}
 }
-let dbPage = 1, dbPageSize = 250;
+let dbPage = 1, dbPageSize = 250, dbTotal = 0, dbSelectedMetadata = new Map(), dbDrafts = new Map();
+async function refreshDatabase() {
+  if(window.CollectorBackgroundLists) { await window.CollectorBackgroundLists.invalidate("/api/db_entries",activeDatasetId);lastNamesQuery=""; await refreshNames(""); return; }
+  const response=await datasetFetch("/api/db_entries");loadDatabase(await response.json());
+}
+let namesRequest=0, nativeNameSuggestions=[];
+async function refreshNames(search) {
+  if(!window.CollectorBackgroundLists || !activeDatasetId) return;
+  const epoch=datasetEpoch, datasetId=activeDatasetId, request=++namesRequest;
+  try { const result=await window.CollectorBackgroundLists.readPages("/api/name_suggestions",datasetId,{search},"names",false);
+    if(epoch!==datasetEpoch || datasetId!==activeDatasetId || request!==namesRequest || (search && labelInput?.value!==search)) return;
+    nativeNameSuggestions=result.items.map(item=>item.name);
+    if(pool[currentReviewIdx]?.id?.includes("name") && labelInput?.value===search) updateAutocomplete();
+  } catch(error) { if(epoch===datasetEpoch) console.warn("Name suggestions unavailable",error); }
+}
 let gameCurrencyMap = {};
 let currentSuggestion = "", currentView = 'collection', isRecovering = true, isTabbing = false;
 let sessionScore = 0, currentCombo = 0, maxCombo = 0, quickLabels = 0, autoCompletes = 0;
@@ -902,7 +947,15 @@ let selectedFiles = new Set(), selectedPoolIndices = new Set(), editingPoolIdx =
 let lastValue = "";
 let actionHistory = []; // { type: 'typing' | 'tab' | 'delete', points: number, value: string }
 let highscoreAdded = false;
-let globalHistory = [];
+let globalHistory = [], completionHistoryRequest=0;
+async function refreshCompletionHistory(session, lookup) {
+  if(!window.CollectorBackgroundLists) { globalHistory=await (await datasetFetch('/api/get_session_history')).json();return; }
+  const epoch=datasetEpoch,datasetId=activeDatasetId,request=++completionHistoryRequest,stats=session?.review_stats || streamStats;
+  const pending=session ? (!!session.queueCompletionRecorded && !session.queueCompletedResult) || !!(session.queueCompletedResult && !session.queueCompletedResult.history_saved) : (!!queueCompletionRecorded && !queueCompletedResult) || !!(queueCompletedResult && !queueCompletedResult.history_saved);
+  const rows=await window.CollectorBackgroundLists.historySummary(datasetId,session?.review_batch?.batch_id || reviewBatch?.batch_id || null,stats?.items>0 && stats?.time>0 ? {items:stats.items,time:stats.time} : null,lookup ?? pending);
+  if(epoch!==datasetEpoch || datasetId!==activeDatasetId || request!==completionHistoryRequest) throw new Error('History refresh superseded.');
+  globalHistory=rows;
+}
 let maxReachedIdx = 0;
 let currentValidationError = null;
 let isPaused = false;
@@ -1130,7 +1183,7 @@ function initDom() {
   };
 
   document.getElementById("btn-db-deselect-all").onclick = () => {
-    selectedFiles.clear();
+    selectedFiles.clear();dbSelectedMetadata.clear();
     renderDatabase();
   };
 
@@ -1159,7 +1212,14 @@ function initDom() {
     renderSessionReview();
   };
 
-  document.getElementById("btn-db-select-all").onclick = () => {
+  document.getElementById("btn-db-select-all").onclick = async () => {
+    if(window.CollectorBackgroundLists) {
+      const epoch=datasetEpoch,datasetId=activeDatasetId,search=document.getElementById("db-search").value.trim();
+      try { const result=await window.CollectorBackgroundLists.readPages("/api/db_entries",datasetId,{search},"database",true);
+        if(epoch!==datasetEpoch || datasetId!==activeDatasetId || search!==document.getElementById("db-search").value.trim()) return;
+        for(const item of result.items) {selectedFiles.add(item.filename);dbSelectedMetadata.set(item.filename,item);if(!dbEntries.some(entry=>entry.filename===item.filename)) dbEntries.push(item);} renderDatabase();
+      } catch(error) {showToast(`Could not select all crops: ${error.message}`,'error');} return;
+    }
     const search = document.getElementById("db-search").value.toLowerCase();
     dbEntries.forEach(e => {
       if (e.id.toLowerCase().includes(search) || (e.label && e.label.toLowerCase().includes(search))) {
@@ -1195,16 +1255,12 @@ function initDom() {
   document.getElementById("btn-delete-db-selected").onclick = async () => {
     if (!selectedFiles.size) return;
     if (await showConfirmModal("Remove from Database", `Permanently remove ${selectedFiles.size} selected entries from database? This action is IRREVERSIBLE.`)) {
-      const r = await datasetFetch("/api/db_delete", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({ filenames: Array.from(selectedFiles) })
-      });
-      const d = await r.json();
-      showToast(d.message, "success");
-      selectedFiles.clear();
-      const refresh = await datasetFetch("/api/db_entries");
-      loadDatabase(await refresh.json());
+      const filenames=Array.from(selectedFiles),epoch=datasetEpoch;let d,removed=0;
+      try {
+        for(let offset=0;offset<filenames.length;offset+=100) {const batch=filenames.slice(offset,offset+100),r=await datasetFetch("/api/db_delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({filenames:batch})});if(!r.ok) throw new Error("Could not remove selected crops");d=await r.json();for(const filename of batch){selectedFiles.delete(filename);dbSelectedMetadata.delete(filename);}removed+=batch.length;}
+        showToast(d?.message || "Crops removed", "success");
+      } catch(error) {if(epoch===datasetEpoch) showToast(`${error.message}; ${removed} crops removed. Remaining crops stay selected.`,"error");}
+      finally {if(epoch===datasetEpoch) {await refreshDatabase();renderDatabase();}}
     }
   };
 
@@ -1214,7 +1270,8 @@ function initDom() {
       const r = await datasetFetch("/api/db_clear", { method: "POST" });
       const d = await r.json();
       showToast(d.message, "success");
-      dbEntries = [];
+      dbEntries = [];dbTotal=0;selectedFiles.clear();dbSelectedMetadata.clear();
+      if(window.CollectorBackgroundLists) await refreshDatabase();
       renderDatabase();
       updateStepperButtons();
       showLoading(false);
@@ -1235,6 +1292,13 @@ function initDom() {
     };
   }
 
+  for(const [id,path] of [["nav-collection","/api/queue"],["nav-session-review","/api/queue/review/items"]]) {
+    const prefetch=()=>{if(!window.CollectorBackgroundLists || !queueMode || (path.includes("review") && !reviewBatch?.batch_id)) return;
+      const query=path.includes("review") ? {run_id:reviewBatch.batch_id,...fullReviewQuery()} : {order:"newest"};
+      window.CollectorBackgroundLists.prefetch({path,datasetId:activeDatasetId,query,key:sampleKey,card:()=>document.createElement("div"),changed:()=>{}});
+    };
+    document.getElementById(id)?.addEventListener("mouseenter",prefetch);document.getElementById(id)?.addEventListener("focus",prefetch);
+  }
   document.getElementById("nav-collection").onclick = () => setView('collection');
   document.getElementById("nav-labeling").onclick = beginLabeling;
   document.getElementById("nav-session-review").onclick = () => setView('session-review');
@@ -1308,8 +1372,7 @@ function initDom() {
         highscoreAdded = false;
         updateScoreDisplay();
         renderFrames();
-        updateStatusBar();        const refresh = await datasetFetch("/api/db_entries");
-        loadDatabase(await refresh.json());
+        updateStatusBar();        await refreshDatabase();
         setView('database');
       } else {
         showToast("Error: " + d.error, "error");
@@ -1570,7 +1633,7 @@ async function refreshCaptureSources() {
 function loadDatabase(entries) {
   if (entries) dbEntries = entries;
   // Clone and reverse so we add oldest first, newest last (for Map recency)
-  [...dbEntries].reverse().forEach(e => {
+  (window.CollectorBackgroundLists ? [] : [...dbEntries].reverse()).forEach(e => {
     if (e.label && e.label.trim()) {
       const l = e.label.trim();
       if (e.id.includes("name")) usernamePool.add(l);
@@ -1668,7 +1731,7 @@ function renderCard(options) {
   const div = window.PokerLabList.createCard(options);
   if (options.isError || options.isLoading) return div;
   if (onToggle) {
-    const item = filename ? dbEntries.find(entry => entry.filename === filename) : pool[originalIdx];
+    const item = options.historyItem || (filename ? dbEntries.find(entry => entry.filename === filename) : pool[originalIdx]);
     if (item) {
       const details = document.createElement('details');
       details.className = 'card-history';
@@ -1676,8 +1739,9 @@ function renderCard(options) {
       const historyBody = document.createElement('div');
       details.append(summary, historyBody);
       details.ontoggle = async () => {
-        if (!details.open) return;
+        if (!details.open) {if(window.CollectorBackgroundLists) window.CollectorBackgroundLists.clear(historyBody);return;}
         historyBody.textContent = 'Loading history…';
+        if(window.CollectorBackgroundLists) {renderPagedHistory(historyBody,item);return;}
         try {
           const query = new URLSearchParams({sample_key:sampleKey(item), filename:item.filename || ''});
           const data = await (await datasetFetch(`/api/label_history?${query}`)).json();
@@ -1713,18 +1777,24 @@ function collectionCrops() {
   return crops;
 }
 function collectionAnimationTargets(regions) {
-  return regions.map(item => ({sampleKey:sampleKey(item),element:[...frameListEl.children].find(card => card.getAttribute('data-sample-key') === sampleKey(item))})).filter(target => target.element);
+  return regions.map(item => ({sampleKey:sampleKey(item),element:[...(frameListEl.querySelectorAll?.('[data-sample-key]') || frameListEl.children)].find(card => card.getAttribute('data-sample-key') === sampleKey(item))})).filter(target => target.element);
 }
 async function showCaptureAdmission(frame, regions, isCurrent) {
   if (!isCurrent()) return;
   let prepared = false;
   const prepareTargets = () => {
     if (!isCurrent()) return [];
-    renderFrames();prepared = true;
-    return collectionAnimationTargets(regions);
+    if(!queueMode || !window.CollectorBackgroundLists) {renderFrames();prepared=true;return collectionAnimationTargets(regions);}
+    return (async()=>{
+      await window.CollectorBackgroundLists.invalidate("/api/queue",activeDatasetId);
+      renderFrames();prepared=true;
+      const deadline=Date.now()+1200;
+      while(isCurrent() && Date.now()<deadline && collectionAnimationTargets(regions).length===0) await new Promise(resolve=>setTimeout(resolve,30));
+      return isCurrent() ? collectionAnimationTargets(regions) : [];
+    })();
   };
   try {
-    if (document.hidden || !regions.length || !window.CollectorCaptureAnimation?.present) { prepareTargets();return; }
+    if (document.hidden || !regions.length || !window.CollectorCaptureAnimation?.present) { await prepareTargets();return; }
     await window.CollectorCaptureAnimation.present({frame:{...frame,image_url:scopedImage(`/api/cap_image/${encodeURIComponent(frame.source)}`)},regions,targets:[],prepareTargets,isCurrent});
   } catch(error) { console.warn('Capture preview unavailable',error); }
   finally { if (!prepared && isCurrent()) renderFrames(); }
@@ -1732,7 +1802,7 @@ async function showCaptureAdmission(frame, regions, isCurrent) {
 
 function renderFrames() {
   window.CollectorScroll?.remember('collection', activeDatasetId, {cursor:collectionCursor,previous:collectionPrevious});
-  const existing = new Map([...frameListEl.children].map(card => [card.getAttribute('data-id'),card]));
+  const existing = new Map([...(frameListEl.querySelectorAll?.('.collection-crop-card') || frameListEl.children)].map(card => [card.getAttribute('data-id'),card]));
   const positions = new Map([...existing].map(([key,card]) => [key,card.getBoundingClientRect?.()]));
   const finishedCount = queueMode ? queueSummary?.captures || 0 : frames.filter(frame => !frame.loading && !frame.error && frame.regions?.length).length;
   document.getElementById('count-frames-pill').textContent = `${finishedCount} capture${finishedCount === 1 ? '' : 's'}`;
@@ -1740,12 +1810,13 @@ function renderFrames() {
   const pending = frames.filter(frame => frame.loading || frame.error);
   document.getElementById('collection-placeholder').classList.toggle('hidden',crops.length > 0 || pending.length > 0);
   frameListEl.classList.toggle('hidden',!crops.length && !pending.length);
-  const cards = crops.map(item => {
+  const createCollectionCard = item => {
+    if(item.__pending) return renderCard({imageSrc:"",id:"Capture",isLoading:item.loading,isError:item.error,dataId:String(item.id)});
     const key = collectionCropKey(item);
     const hasCapture = !!item.source && (queueMode || frames.some(frame => frame.source === item.source));
     const signature = JSON.stringify([item.label,!!item.reviewed,!!item.discarded,item.game_id,item.source,!!item.watch,sampleKey(item),hasCapture]);
     const old = existing.get(key);
-    if (old?.getAttribute('data-render-state') === signature) return old;
+    if (!window.CollectorBackgroundLists && old?.getAttribute('data-render-state') === signature) return old;
     const card = renderCard({imageSrc:cropImage(item),label:item.label,id:item.id,isUnreviewed:!item.reviewed && !item.discarded,isBlank:item.reviewed && item.label === '',isIgnored:item.discarded,dataId:key});
     card.classList.add('collection-crop-card');
     card.setAttribute('data-sample-key',sampleKey(item));card.setAttribute('data-region-id',item.id);card.setAttribute('data-render-state',signature);
@@ -1771,7 +1842,20 @@ function renderFrames() {
       removeCapture.onclick=() => {if(!current()) return;if(queueMode) return discardQueue({frame_ids:[item.frame_id || item.watch_frame_id]});const index=frames.findIndex(frame => frame.source === item.source);if(index>=0) return removeFrame(index);};menu.appendChild(removeCapture);
     }
     meta.appendChild(menu);window.CollectorSharedUi?.enhance(card);return card;
-  });
+  };
+  if(queueMode && window.CollectorBackgroundLists) {
+    frameListEl.classList.add("instant-list-host");
+    frameListEl.classList.remove("hidden");
+    const epoch=datasetEpoch, datasetId=activeDatasetId;
+    window.CollectorBackgroundLists.render(frameListEl, {path:"/api/queue",datasetId,query:{order:"newest"},prefix:pending.map(frame=>({...frame,id:String(frame.id),__pending:true})),key:item=>item.__pending ? `pending:${item.id}` : collectionCropKey(item),card:createCollectionCard,changed:(items,meta,loading,error)=>{
+      if(epoch!==datasetEpoch || datasetId!==activeDatasetId) return;
+      collectionItems=items; if(meta?.summary) applyQueueSummary(meta.summary);
+      document.getElementById("collection-placeholder").classList.toggle("hidden",items.length>0 || pending.length>0 || loading || error);
+    }});
+    document.getElementById("collection-pagination")?.classList.add("hidden");
+    updateStatusBar();updateQueueControls();updateStepperButtons();return;
+  }
+  const cards = crops.map(createCollectionCard);
   for (const frame of pending) cards.unshift(renderCard({imageSrc:'',id:'Capture',isLoading:frame.loading,isError:frame.error,dataId:String(frame.id)}));
   const retained = new Set(cards);
   for (const old of [...frameListEl.children]) if (!retained.has(old)) { window.CollectorSharedUi?.disposeMenus?.(old);old.remove(); }
@@ -1953,10 +2037,12 @@ function renderReview() {
 
 function restoreCurrent() { if (pool.length) pool[currentReviewIdx].discarded = false; renderReview(); }
 
+let lastNamesQuery="";
 function updateAutocomplete() {
   const item = pool[currentReviewIdx]; if (!item) return;
   const schema = SchemaRegistry.getSchema(item.id);
   const typed = labelInput.value;
+  if(typeof window !== "undefined" && window.CollectorBackgroundLists && schema === Schemas.NAME && typed && typed !== lastNamesQuery) { lastNamesQuery=typed;void refreshNames(typed); }
 
   const result = schema.getSuggestion(typed, item);
 
@@ -2023,7 +2109,7 @@ function updateBulkDatalist(view) {
   const schema = SchemaRegistry.getSchema(selectedItems[0].id);
   let suggestions = [];
   if (schema === Schemas.STATUS) suggestions = schema.allowed;
-  else if (schema === Schemas.NAME) suggestions = usernamePool.getItems();
+  else if (schema === Schemas.NAME) suggestions = [...new Set([...usernamePool.getItems(),...nativeNameSuggestions])];
   else if (schema === Schemas.CARD) suggestions = schema.ranks;
   else if (schema === Schemas.BANK || schema === Schemas.MONEY) suggestions = ["G ", "S "];
 
@@ -2037,7 +2123,7 @@ function updateEditDatalist(item) {
   const schema = SchemaRegistry.getSchema(item.id);
   let suggestions = [];
   if (schema === Schemas.STATUS) suggestions = schema.allowed;
-  else if (schema === Schemas.NAME) suggestions = usernamePool.getItems();
+  else if (schema === Schemas.NAME) suggestions = [...new Set([...usernamePool.getItems(),...nativeNameSuggestions])];
   else if (schema === Schemas.CARD) suggestions = schema.ranks;
   else if (schema === Schemas.BANK || schema === Schemas.MONEY) suggestions = ["G ", "S "];
 
@@ -2235,7 +2321,7 @@ function processGamification(isValid, isDiscard, newLabel = null, item = pool[cu
     } else currentCombo = 0;
 
     // Username Discovery Bonus (+50 flat)
-    if (newLabel && item.id.includes("name") && !usernamePool.has(newLabel)) {
+    if (newLabel && item.id.includes("name") && !usernamePool.has(newLabel) && !nativeNameSuggestions.includes(newLabel)) {
       if (ptsType === 'model_accept' && pts > 0) showFloatingScore(pts, ptsType);
       pts += 50;
       showFloatingScore("NEW NAME +50", 'name_bonus');
@@ -2469,7 +2555,7 @@ const handleBulkLabel = async (view) => {
         }
       }
     }
-    document.getElementById(inputId).value = ""; selectedFiles.clear(); renderDatabase();
+    document.getElementById(inputId).value = ""; selectedFiles.clear();dbSelectedMetadata.clear();if(window.CollectorBackgroundLists) await refreshDatabase();renderDatabase();
     showLoading(false); showToast("Applied label to " + filenames.length + " items", "success");
   }
 };
@@ -2512,7 +2598,7 @@ function renderNoSearchMatches(container) {
 function renderSessionReview() {
   const fullReview=typeof isFullSessionReview==='function' && isFullSessionReview();
   document.getElementById('review-filter')?.classList.toggle('hidden',!fullReview);
-  document.querySelector('.review-page-bar')?.classList.toggle('hidden',!fullReview);document.querySelector('.review-page-footer')?.classList.toggle('hidden',!fullReview);
+  document.querySelector('.review-page-bar')?.classList.toggle('hidden',!fullReview || !!window.CollectorBackgroundLists);document.querySelector('.review-page-footer')?.classList.toggle('hidden',!fullReview || !!window.CollectorBackgroundLists);
   if(fullReview) return renderFullSessionReview();
   const hud = document.getElementById("session-review-hud");
   if (!pool.length) { setView('collection'); return; }
@@ -2533,6 +2619,13 @@ function renderSessionReview() {
   }
 
   dataList.innerHTML = Array.from(suggestions).sort().map(s => "<option value='" + s + "'>").join('');
+  if(window.CollectorBackgroundLists) {
+    sessionReviewListEl.classList.add("instant-list-host");
+    window.CollectorBackgroundLists.snapshot(sessionReviewListEl,{items:sorted,key:e=>`${sampleKey(e)}:${e.originalIdx}`,card:e=>{
+      const card=renderCard({imageSrc:cropImage(e),label:e.label,id:e.id,originalIdx:e.originalIdx,historyItem:e,isSelected:selectedPoolIndices.has(e.originalIdx),isIgnored:e.discarded,isBlank:e.reviewed && e.label==='' && !e.discarded,isEditing:editingPoolIdx===e.originalIdx,onToggle:()=>togglePoolSelection(e.originalIdx),onEdit:()=>startEditingSessionLabel(e.originalIdx),onRemove:()=>removeSessionItem(e.originalIdx),removeLabel:'Remove',onSave:()=>saveSessionLabel(e.originalIdx),onKeydown:event=>handleSessionEditKey(event,e.originalIdx)});
+      const input=card.querySelector('input.card-label'),key=sampleKey(e);if(input){if(legacyReviewDrafts.has(key)) input.value=legacyReviewDrafts.get(key);input.oninput=()=>legacyReviewDrafts.set(key,input.value);}return card;
+    }});return;
+  }
   sessionReviewListEl.innerHTML = "";
   if (!sorted.length) renderNoSearchMatches(sessionReviewListEl);
   sorted.forEach(e => {
@@ -2556,7 +2649,7 @@ async function saveSessionLabel(idx) {
     try { await persistEditedItem(item, newLabel); } catch (error) { showToast(error.message, "error"); return; }
     item.discarded = false; syncPoolsWithLabelChange(oldLabel, newLabel, category);
   }
-  editingPoolIdx = -1; saveSessionProgress(); updateStepperButtons(); renderSessionReview();
+  legacyReviewDrafts.delete(sampleKey(pool[idx]));editingPoolIdx = -1; saveSessionProgress(); updateStepperButtons(); renderSessionReview();
 }
 function handleSessionEditKey(e, idx) { if (e.key === "Enter") { e.preventDefault(); saveSessionLabel(idx); } else if (e.key === "Escape") { e.preventDefault(); editingPoolIdx = -1; renderSessionReview(); } }
 async function removeSessionItem(idx) { if (await showConfirmModal("Remove Item", "Remove this region from the current session?")) { const item = pool[idx]; if(queueMode) {await discardQueue({sample_keys:[sampleKey(item)]});selectedPoolIndices.delete(idx);renderSessionReview();return;} if (item.watch) { try { await datasetFetch('/api/watch/discard',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sample_keys:[sampleKey(item)]})}); } catch(error) { showToast(error.message,'error'); return; } } pool.splice(idx, 1); prunePoolsForItem(item); selectedPoolIndices.delete(idx); saveSessionProgress(); renderSessionReview(); updateStepperButtons(); } }
@@ -2601,6 +2694,21 @@ function updateDbBulkUI() {
 }
 
 function renderDatabase() {
+  if(window.CollectorBackgroundLists && activeDatasetId) {
+    const hud=document.getElementById("database-hud"),empty=document.getElementById("database-empty");
+    const epoch=datasetEpoch,datasetId=activeDatasetId, search=document.getElementById("db-search").value.trim();
+    dbListEl.classList.add("instant-list-host");document.getElementById("db-pagination").classList.add("hidden");
+    window.CollectorBackgroundLists.render(dbListEl,{path:"/api/db_entries",datasetId,query:{search},key:item=>item.filename,
+      card:e=>{ const card=renderCard({imageSrc:scopedImage(`/api/db_image/${encodeURIComponent(e.filename)}`),label:e.label,id:e.id,filename:e.filename,originalIdx:e.filename,isSelected:selectedFiles.has(e.filename),isBlank:e.label==='',isEditing:editingPoolIdx===e.filename,onToggle:()=>toggleDbSelection(e.filename),onEdit:()=>startEditingDbLabel(e.filename),onRemove:()=>deleteDbEntry(e.filename),removeLabel:'Remove',onSave:()=>saveDbLabel(e.filename),onKeydown:event=>handleDbEditKey(event,e.filename)});const input=card.querySelector('input.card-label');if(input){if(dbDrafts.has(e.filename)) input.value=dbDrafts.get(e.filename);input.oninput=()=>dbDrafts.set(e.filename,input.value);}return card;},
+      changed:(items,meta,loading,error,total)=>{ if(epoch!==datasetEpoch || datasetId!==activeDatasetId) return;
+        const old=new Map(dbEntries.map(item=>[item.filename,item]));dbEntries=items.map(item=>Object.assign(old.get(item.filename) || {},item));
+        for(const [filename,item] of dbSelectedMetadata) if(!dbEntries.some(entry=>entry.filename===filename)) dbEntries.push(item);
+        if(!search) dbTotal=total;hud.classList.toggle("hidden",!total && !search && !loading && !error);empty.classList.toggle("hidden",!!total || !!search || loading || error);
+        document.getElementById("count-db").textContent=String(total);document.getElementById("btn-db-select-all").classList.toggle("hidden",!total);
+        updateDbBulkUI();updateStepperButtons();
+      }});
+    return;
+  }
   const hud = document.getElementById("database-hud"); const empty = document.getElementById("database-empty");
   if (!dbEntries.length) { hud.classList.add("hidden"); empty.classList.remove("hidden"); return; }
   hud.classList.remove("hidden"); empty.classList.add("hidden");
@@ -2734,7 +2842,7 @@ async function saveDbLabel(filename, suggestedLabel, action = 'correct') {
   try {
     await persistEditedItem(entry, suggestedLabel === undefined ? input.value.trim() : suggestedLabel, action);
     if (epoch !== datasetEpoch || editingPoolIdx !== filename) return;
-    editingPoolIdx = -1; dbSuggestionRequest++; renderDatabase();
+    dbDrafts.delete(filename);editingPoolIdx = -1; dbSuggestionRequest++; if(window.CollectorBackgroundLists) await refreshDatabase();renderDatabase();
   } catch (error) { if (epoch === datasetEpoch) showToast(error.message, 'error'); }
   finally { if (epoch === datasetEpoch) { dbReviewSaving = false; renderDbSuggestion(filename); } }
 }
@@ -2750,7 +2858,7 @@ function handleDbEditKey(event, filename) {
   } else if (event.key === 'Enter') {
     event.preventDefault(); if (!event.repeat) saveDbLabel(filename);
   } else if (event.key === 'Escape') {
-    event.preventDefault(); dbSuggestionRequest++; editingPoolIdx = -1; renderDatabase();
+    event.preventDefault(); dbDrafts.delete(filename); dbSuggestionRequest++; editingPoolIdx = -1; renderDatabase();
   }
 }
 function toggleDbSelection(filename) {
@@ -2776,8 +2884,7 @@ async function deleteDbEntry(fn) {
     });
     const d = await r.json();
     showToast(d.message, "success");
-    const refresh = await datasetFetch("/api/db_entries");
-    loadDatabase(await refresh.json());
+    await refreshDatabase();
   }
 }
 
@@ -2790,7 +2897,7 @@ function isViewDisabled(v) {
   if (v === 'session-review') {
     return !reviewUnlocked || (pool.length === 0 && !(isContinuousReview() && streamStats?.total>0));
   }
-  if (v === 'database') return dbEntries.length === 0;
+  if (v === 'database') return window.CollectorBackgroundLists ? dbTotal === 0 : dbEntries.length === 0;
   return false;
 }
 
@@ -2864,6 +2971,7 @@ const setView = (v, pushState = true) => {
     sessionReviewListEl?.replaceChildren();
   }
   if(queueMode && v==='labeling') {
+    if(window.CollectorBackgroundLists && frameListEl) window.CollectorBackgroundLists.clear(frameListEl);
     window.CollectorSharedUi?.disposeMenus?.(frameListEl);
     frameListEl?.replaceChildren();collectionItems=[];
     dbListEl?.replaceChildren();sessionReviewListEl?.replaceChildren();
@@ -2979,9 +3087,10 @@ async function init() {
   } catch (e) { console.error("Sync check failed", e); }
   updateLoadingProgress("Fetching Data...", 90);
   try {
-    const data = await (await datasetFetch("/api/initial_data?queue_mode=paged")).json();
+    const data = await (await datasetFetch(`/api/initial_data?queue_mode=paged${window.CollectorBackgroundLists?"&background_lists=1":""}`)).json();
     globalHistory = data.history || [];
-    loadMonitors(data.sources || data.monitors, data.settings.last_monitor); loadDatabase(data.db); await recoverSession(data.session);
+    if(window.CollectorBackgroundLists) void refreshCompletionHistory(data.session).catch(error=>console.warn("History unavailable",error));
+    loadMonitors(data.sources || data.monitors, data.settings.last_monitor); loadDatabase(data.db); void refreshNames(""); await recoverSession(data.session);
     if(queueMode) {if(savedCollection?.cursor) {collectionPrevious=Array.isArray(savedCollection.previous)?savedCollection.previous:[];await loadCollectionPage(savedCollection.cursor);}else if(data.collection_page) applyCollectionPage(data.collection_page);else await loadCollectionPage();renderFrames();}
   } catch (e) { throw new Error('Could not recover the collection: ' + e.message); }
   let initialView = 'collection'; const path = window.location.pathname.replace(/^\/+/, '');

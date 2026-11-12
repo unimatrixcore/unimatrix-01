@@ -6155,9 +6155,11 @@ dependencies = [
  "base64 0.22.1",
  "libc",
  "poker-native",
+ "serde",
  "serde_json",
  "tauri",
  "tauri-build",
+ "unimatrix-desktop",
 ]
 
 [[package]]

@@ -87,7 +87,10 @@ test("preserves dataset creation and source capture errors without adding naviga
   await page.getByRole("button", { name: "Create dataset", exact: true }).click();
   await page.locator("#dataset-name-input").fill("New fixture");
   await page.locator("#dataset-create").click();
-  await expect(page.getByLabel("Working dataset", { exact: true })).toHaveValue("dataset-2");
+  await expect(page.locator("#dataset-catalog-label")).toHaveText("New fixture");
+  await page.locator("#dataset-catalog-label").click();
+  await expect(page.getByRole("button", { name: "New fixture", exact: true })).toBeVisible();
+  await page.locator("#dataset-catalog-label").click();
   await expect(page.locator("#collector-workspace")).toHaveClass(/ready/);
   await expect(page.locator("#nav-collection")).toBeVisible();
 });
@@ -112,9 +115,14 @@ test("retains original Gameplay recording workspace and shared recording panel",
   await expect(page.locator(".capture-settings-note")).toHaveCount(0);
 });
 
-test("review actions, shared selection and enlarged crop preview retain their behavior", async ({
+test("review actions, shared selection and pointer-centered crop lens retain their behavior", async ({
   page,
 }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") errors.push(message.text());
+  });
   await page.goto("/collection");
   await expect(page.locator("#collector-workspace")).toHaveClass(/ready/);
   await page.evaluate(() => {
@@ -125,7 +133,7 @@ test("review actions, shared selection and enlarged crop preview retain their be
     const card = createCard({
       id: "seat name",
       imageSrc:
-        "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='60'%3E%3Crect width='120' height='60' fill='red'/%3E%3C/svg%3E",
+        "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='60'%3E%3Crect width='40' height='60' fill='red'/%3E%3Crect x='40' width='40' height='60' fill='lime'/%3E%3Crect x='80' width='40' height='60' fill='blue'/%3E%3C/svg%3E",
       isSelected: false,
       onToggle: () => {
         const input = document.querySelector<HTMLInputElement>(
@@ -143,8 +151,26 @@ test("review actions, shared selection and enlarged crop preview retain their be
       onSave: () => {},
     });
     card.id = "fixture-review-card";
-    document.getElementById("collection-placeholder")?.before(card);
-    window.CollectorSharedUi.enhance(card);
+    const grid = document.createElement("div");
+    grid.id = "fixture-card-grid";
+    grid.className = "capture-list grid";
+    document.getElementById("collection-placeholder")?.before(grid);
+    grid.append(card);
+    for (const id of ["neighbor-one", "neighbor-two"]) {
+      grid.append(
+        createCard({
+          id,
+          imageSrc: card.querySelector("img")!.src,
+          isSelected: false,
+          onToggle: () => {},
+          onEdit: () => {},
+          onRemove: () => {},
+          onSave: () => {},
+        }),
+      );
+    }
+    document.getElementById("collection-placeholder")?.classList.add("hidden");
+    window.CollectorSharedUi.enhance(grid);
   });
   const card = page.locator("#fixture-review-card");
   const checkbox = card.getByRole("checkbox", { name: "Select seat name crop" });
@@ -161,25 +187,130 @@ test("review actions, shared selection and enlarged crop preview retain their be
   await card.getByRole("button", { name: "Remove", exact: true }).click();
   await expect(page.locator("body")).toHaveAttribute("data-remove-clicked", "yes");
   const source = card.locator("img");
-  await source.hover();
-  await page.keyboard.down("Shift");
-  const zoom = page.locator(".crop-zoom-preview");
-  await expect(zoom).toBeVisible();
-  const imageSize = await source.evaluate((img) => {
+  const cardBounds = await card.boundingBox();
+  const gridBounds = await page.locator("#fixture-card-grid").boundingBox();
+  expect(cardBounds!.width).toBeLessThan(gridBounds!.width / 2);
+  const region = await source.evaluate((img) => {
     const rect = img.getBoundingClientRect();
+    const style = getComputedStyle(img);
+    const px = (value: string) => Number.parseFloat(value) || 0;
+    const left = px(style.paddingLeft) + px(style.borderLeftWidth);
+    const top = px(style.paddingTop) + px(style.borderTopWidth);
+    const width = rect.width - left - px(style.paddingRight) - px(style.borderRightWidth);
+    const height = rect.height - top - px(style.paddingBottom) - px(style.borderBottomWidth);
     const source = img as HTMLImageElement;
-    return Math.min(
-      rect.width - 20,
-      (rect.height - 20) * (source.naturalWidth / source.naturalHeight),
-    );
+    const scale = Math.min(width / source.naturalWidth, height / source.naturalHeight);
+    const imageWidth = source.naturalWidth * scale;
+    const imageHeight = source.naturalHeight * scale;
+    return {
+      left: rect.left + left + (width - imageWidth) / 2,
+      top: rect.top + top + (height - imageHeight) / 2,
+      width: imageWidth,
+      height: imageHeight,
+    };
   });
-  const zoomSize = await zoom.boundingBox();
-  expect(zoomSize!.width).toBeGreaterThan(imageSize * 1.8);
-  expect(zoomSize!.x).toBeGreaterThanOrEqual(0);
-  expect(zoomSize!.y).toBeGreaterThanOrEqual(0);
-  await page.screenshot({ path: "../../.orchestration/evidence/poker-review-controls.png" });
+  const zoom = page.locator(".crop-zoom-preview");
+  const zoomImage = zoom.locator("img");
+  await page.mouse.move(region.left + region.width / 6, region.top + region.height / 2);
+  await expect(zoom).toBeHidden();
+  await page.keyboard.down("Shift");
+  await expect(zoom).toBeVisible();
+  await expect(zoomImage).toHaveCSS("image-rendering", "pixelated");
+  const assertCenter = async (fraction: number) => {
+    const sample = await zoomImage.evaluate((img) => {
+      const rect = img.getBoundingClientRect();
+      const lens = img.parentElement!.getBoundingClientRect();
+      return {
+        x: (lens.x + lens.width / 2 - rect.x) / rect.width,
+        y: (lens.y + lens.height / 2 - rect.y) / rect.height,
+        width: rect.width,
+        height: rect.height,
+      };
+    });
+    expect(sample.x).toBeCloseTo(
+      (Math.trunc(region.left + region.width * fraction) - region.left) / region.width,
+      4,
+    );
+    expect(sample.y).toBeCloseTo(0.5, 4);
+    expect(sample.width).toBe(region.width * 2);
+    expect(sample.height).toBe(region.height * 2);
+    const lens = (await zoom.boundingBox())!;
+    expect(lens.width).toBe(260);
+    expect(lens.height).toBe(160);
+    expect(lens.x).toBeGreaterThanOrEqual(8);
+    expect(lens.y).toBeGreaterThanOrEqual(8);
+    return imgTranslation();
+  };
+  const imgTranslation = () => zoomImage.evaluate((img) => img.style.left);
+  const assertLensPixel = async (path: string, expected: number[]) => {
+    const lens = (await zoom.boundingBox())!;
+    const screenshot = await page.screenshot({ path });
+    const pixel = await page.evaluate(
+      async ({ base64, x, y }) => {
+        const image = new Image();
+        image.src = `data:image/png;base64,${base64}`;
+        await image.decode();
+        const canvas = document.createElement("canvas");
+        canvas.width = image.width;
+        canvas.height = image.height;
+        const context = canvas.getContext("2d")!;
+        context.drawImage(image, 0, 0);
+        return Array.from(context.getImageData(x, y, 1, 1).data);
+      },
+      {
+        base64: screenshot.toString("base64"),
+        x: Math.floor(lens.x + lens.width / 2),
+        y: Math.floor(lens.y + lens.height / 2),
+      },
+    );
+    expect(pixel).toEqual([...expected, 255]);
+  };
+  const first = await assertCenter(1 / 6);
+  await assertLensPixel("../../.orchestration/evidence/pointer-magnifier-red.png", [255, 0, 0]);
+  await page.mouse.move(region.left + (region.width * 5) / 6, region.top + region.height / 2);
+  const second = await assertCenter(5 / 6);
+  expect(second).not.toBe(first);
+  await assertLensPixel("../../.orchestration/evidence/pointer-magnifier-blue.png", [0, 0, 255]);
+  const sourceBox = (await source.boundingBox())!;
+  await page.mouse.move(sourceBox.x + 5, sourceBox.y + 100);
+  await expect(zoom).toBeHidden();
+  await source.hover({ position: { x: 1, y: 1 } });
+  await expect(zoom).toBeHidden();
+  await page.mouse.move(region.left + region.width / 2, region.top + region.height / 2);
+  await expect(zoom).toBeVisible();
   await page.keyboard.up("Shift");
   await expect(zoom).toBeHidden();
+  await page.keyboard.down("Shift");
+  await expect(zoom).toBeVisible();
+  await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+  await expect(zoom).toBeHidden();
+  await page.keyboard.up("Shift");
+  await page.keyboard.down("Shift");
+  await expect(zoom).toBeVisible();
+  await page.mouse.move(1, 1);
+  await expect(zoom).toBeHidden();
+  await page.keyboard.up("Shift");
+  await page.setViewportSize({ width: 320, height: 240 });
+  await source.evaluate((img) => {
+    img.style.cssText =
+      "position:fixed;right:2px;bottom:2px;z-index:4000;width:180px;height:90px;padding:0;border:0;object-fit:fill;max-width:none";
+  });
+  await source.hover({ position: { x: 179, y: 89 } });
+  await page.keyboard.down("Shift");
+  await expect(zoom).toBeVisible();
+  const edge = (await zoom.boundingBox())!;
+  expect(edge.x).toBeGreaterThanOrEqual(8);
+  expect(edge.y).toBeGreaterThanOrEqual(8);
+  expect(edge.x + edge.width).toBeLessThanOrEqual(312);
+  expect(edge.y + edge.height).toBeLessThanOrEqual(232);
+  await page.screenshot({
+    path: "../../.orchestration/evidence/pointer-magnifier-viewport-edge.png",
+  });
+  await page.keyboard.up("Shift");
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await source.evaluate((img) => {
+    img.removeAttribute("style");
+  });
   await page.evaluate(() => {
     document.getElementById("view-collection")?.classList.add("hidden");
     const review = document.getElementById("view-session-review");
@@ -212,6 +343,7 @@ test("review actions, shared selection and enlarged crop preview retain their be
   await expect(page.getByRole("button", { name: "Remove 1 Selected", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "AI review", exact: true })).toBeVisible();
   await expect(page.locator("#ai-review-button-progress")).toHaveText("Review complete");
+  expect(errors).toEqual([]);
   await page.screenshot({
     path: "../../.orchestration/evidence/poker-review-toolbar.png",
     fullPage: true,
