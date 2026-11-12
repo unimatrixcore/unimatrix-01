@@ -35,17 +35,11 @@ export default defineConfig({
         replacement: fileURLToPath(new URL("./node_modules/react", import.meta.url)),
       },
     ],
-    dedupe: ["react", "react-dom"],
+    dedupe: ["@tanstack/react-query", "react", "react-dom"],
   },
   test: {
     coverage: createCoverageConfig({
-      // Re-measured after the CMS and Clerk auth left for `apps/admin`
-      // (2026-08-02): 52.38%/50% statements/functions, rounded down to 52/50.
-      // The drop from the prior 59/60 is the CMS's own well-tested code
-      // leaving alongside it, not a new gap — the remaining `*.lazy.tsx` route
-      // components are still only exercised by the Playwright smoke suite,
-      // same as before the move.
-      thresholds: { statements: 52, functions: 50 },
+      thresholds: { statements: 72, functions: 71 },
     }),
     environment: "jsdom",
     include: ["test/**/*.test.ts", "test/**/*.test.tsx"],

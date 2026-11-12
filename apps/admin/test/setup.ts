@@ -52,6 +52,22 @@ if (!("ResizeObserver" in globalThis)) {
     NoopResizeObserver;
 }
 
+// jsdom has no layout; virtualized viewports need deterministic dimensions.
+Object.defineProperties(Element.prototype, {
+  clientHeight: {
+    configurable: true,
+    get() {
+      return 480;
+    },
+  },
+  clientWidth: {
+    configurable: true,
+    get() {
+      return 800;
+    },
+  },
+});
+
 afterEach(() => {
   cleanup();
 });

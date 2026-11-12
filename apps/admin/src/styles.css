@@ -1,3 +1,4 @@
+@source "../../../packages/instant-list/src/**/*.{ts,tsx}";
 @import "@unimatrix/ui/styles.css";
 
 /* Tailwind v4 source detection does not reach a sibling workspace package: it

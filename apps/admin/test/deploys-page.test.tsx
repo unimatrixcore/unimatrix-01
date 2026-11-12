@@ -319,78 +319,28 @@ beforeEach(() => {
 });
 
 describe("DeploysPage", () => {
-  it("fills recent deploy space with complete rows and opens their logs", async () => {
-    let availableHeight = 400;
-    const resizeCallbacks: (() => void)[] = [];
-    const resize = () => {
-      resizeCallbacks.forEach((callback) => {
-        callback();
-      });
-    };
-    const BaseResizeObserver = globalThis.ResizeObserver;
-    const observer = vi.spyOn(globalThis, "ResizeObserver").mockImplementation(
-      class extends BaseResizeObserver {
-        constructor(callback: ResizeObserverCallback) {
-          super(callback);
-          resizeCallbacks.push(() => {
-            callback([], this);
-          });
-        }
-      },
+  it("virtualizes recent deploy rows and opens their logs", async () => {
+    attempts = Array.from({ length: 100 }, (_, index) =>
+      attempt({
+        id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+        requestedAt: 1000 - index,
+        commitSubject: `Deployment ${index + 1}`,
+        image: { ...attempt().image!, tag: `release-${index + 1}` },
+      }),
     );
-    const height = vi.spyOn(Element.prototype, "clientHeight", "get").mockImplementation(function (
-      this: Element,
-    ) {
-      return this.getAttribute("aria-label") === "Recent deploy history" ? availableHeight : 0;
+    mount();
+    fireEvent.click(await screen.findByRole("button", { name: "Select api" }));
+    await ready();
+    const recent = screen.getByRole("region", { name: "Recent deploy history" });
+    expect(await within(recent).findByText("Deployment 1")).toBeInTheDocument();
+    expect(within(recent).getAllByRole("listitem").length).toBeLessThan(100);
+    fireEvent.click(within(recent).getByRole("button", { name: "Log for release-1" }));
+    await waitFor(() => {
+      expect(requestedOptions(adminDeployAttemptLogsContract)).toContainEqual({
+        query: { app: "api", attemptId: attempts[0]!.id },
+      });
     });
-    const rect = vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
-      this: Element,
-    ) {
-      return DOMRect.fromRect({ height: this.tagName === "LI" ? 48 : 0 });
-    });
-    try {
-      attempts = Array.from({ length: 8 }, (_, index) =>
-        attempt({
-          id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
-          requestedAt: 1000 - index,
-          commitSubject: `Deployment ${index + 1}`,
-          image: { ...attempt().image!, tag: `release-${index + 1}` },
-        }),
-      );
-      mount();
-      fireEvent.click(await screen.findByRole("button", { name: "Select api" }));
-      await ready();
-      const recent = screen.getByRole("region", { name: "Recent deploy history" });
-      await within(recent).findByText("Deployment 8");
-      expect(within(recent).getAllByRole("listitem")).toHaveLength(8);
-      availableHeight = 145;
-      act(() => {
-        resize();
-      });
-      expect(within(recent).getAllByRole("listitem")).toHaveLength(3);
-      expect(within(recent).queryByText("Deployment 4")).not.toBeInTheDocument();
-      availableHeight = 0;
-      act(() => {
-        resize();
-      });
-      expect(within(recent).queryAllByRole("listitem")).toHaveLength(0);
-      availableHeight = 400;
-      act(() => {
-        resize();
-      });
-      expect(within(recent).getAllByRole("listitem")).toHaveLength(8);
-      fireEvent.click(within(recent).getByRole("button", { name: "Log for release-8" }));
-      await waitFor(() => {
-        expect(requestedOptions(adminDeployAttemptLogsContract)).toContainEqual({
-          query: { app: "api", attemptId: attempts[7]!.id },
-        });
-      });
-      expect(screen.getByRole("tab", { name: "Logs" })).toHaveAttribute("data-state", "active");
-    } finally {
-      observer.mockRestore();
-      height.mockRestore();
-      rect.mockRestore();
-    }
+    expect(screen.getByRole("tab", { name: "Logs" })).toHaveAttribute("data-state", "active");
   });
 
   it.each([false, true])(
@@ -538,7 +488,7 @@ describe("DeploysPage", () => {
     ).toBeInTheDocument();
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     tab("Deploys");
-    expect(screen.getByRole("table")).toHaveClass("table-fixed");
+    expect(screen.getByRole("table")).toHaveStyle({ scrollbarGutter: "stable" });
     expect(screen.getAllByRole("button", { name: /^Logs for/u })).toHaveLength(2);
     fireEvent.click(screen.getAllByRole("button", { name: /^Logs for/u })[0]!);
     expect(

@@ -1,3 +1,6 @@
+import { InstantVirtualList, useBackgroundList, usePrefetchList } from "@unimatrix/instant-list";
+import { toBlogEntry, toProjectEntry } from "@/features/content/entries";
+import { publishedBackgroundPostsOptions } from "@/features/content/queries/background-posts";
 import { Link, createLazyFileRoute } from "@tanstack/react-router";
 import { RiArrowRightUpLine, RiArticleLine, RiFolderLine } from "@remixicon/react";
 
@@ -16,7 +19,21 @@ export const Route = createLazyFileRoute("/")({
 });
 
 function IndexRoute() {
-  const { blogEntries, home, projects } = Route.useLoaderData();
+  const blog = useBackgroundList({
+    ...publishedBackgroundPostsOptions("blog"),
+    maxBackgroundItems: 50,
+  });
+  const featured = useBackgroundList(publishedBackgroundPostsOptions("project", true));
+  const projects = featured.items.map(toProjectEntry);
+  const blogEntries = blog.items.slice(0, 2).map(toBlogEntry);
+  const home = homeContent;
+  const projectIntent = usePrefetchList(publishedBackgroundPostsOptions("project"));
+  const blogIntent = usePrefetchList(publishedBackgroundPostsOptions("blog"));
+  if (
+    (blog.isError && blog.items.length === 0) ||
+    (featured.isError && featured.items.length === 0)
+  )
+    return <HomeUnavailable />;
 
   return (
     <div className="space-y-8 lg:space-y-10">
@@ -43,28 +60,41 @@ function IndexRoute() {
             titleClassName="sr-only"
           />
 
-          <div className="grid flex-1 gap-3">
-            {projects.map((project, index) => (
-              <PublicProjectLedgerItem
-                index={index + 1}
-                key={project.slug}
-                project={project}
-                renderLink={({ ariaLabel, children, className }) => (
-                  <Link
-                    aria-label={ariaLabel}
-                    className={className}
-                    params={{ slug: project.slug }}
-                    to="/projects/$slug"
-                  >
-                    {children}
-                  </Link>
-                )}
-              />
-            ))}
-          </div>
+          <InstantVirtualList
+            items={projects}
+            getItemId={(project) => project.slug}
+            rowHeight={230}
+            measureRows
+            height={480}
+            ariaLabel="Featured projects"
+            error={featured.error}
+            onRetry={featured.onEndReached}
+            onEndReached={featured.onEndReached}
+            hasNextPage={featured.hasNextPage}
+            isFetching={featured.isFetching}
+            renderItem={(project, index) => (
+              <div className="pb-3">
+                <PublicProjectLedgerItem
+                  index={index + 1}
+                  key={project.slug}
+                  project={project}
+                  renderLink={({ ariaLabel, children, className }) => (
+                    <Link
+                      aria-label={ariaLabel}
+                      className={className}
+                      params={{ slug: project.slug }}
+                      to="/projects/$slug"
+                    >
+                      {children}
+                    </Link>
+                  )}
+                />
+              </div>
+            )}
+          />
 
           <Button asChild className="w-fit gap-2" variant="outline">
-            <Link to="/projects">
+            <Link to="/projects" {...projectIntent}>
               View all projects
               <RiArrowRightUpLine aria-hidden="true" className="size-4" />
             </Link>
@@ -87,28 +117,36 @@ function IndexRoute() {
             titleClassName="sr-only"
           />
 
-          <div className="grid flex-1 gap-3">
-            {blogEntries.map((entry, index) => (
-              <PublicTransmissionListItem
-                entry={entry}
-                index={index + 1}
-                key={entry.slug}
-                renderLink={({ ariaLabel, children, className }) => (
-                  <Link
-                    aria-label={ariaLabel}
-                    className={className}
-                    params={{ slug: entry.slug }}
-                    to="/blog/$slug"
-                  >
-                    {children}
-                  </Link>
-                )}
-              />
-            ))}
-          </div>
+          <InstantVirtualList
+            items={blogEntries}
+            getItemId={(entry) => entry.slug}
+            rowHeight={230}
+            measureRows
+            height={480}
+            ariaLabel="Recent blog posts"
+            renderItem={(entry, index) => (
+              <div className="pb-3">
+                <PublicTransmissionListItem
+                  entry={entry}
+                  index={index + 1}
+                  key={entry.slug}
+                  renderLink={({ ariaLabel, children, className }) => (
+                    <Link
+                      aria-label={ariaLabel}
+                      className={className}
+                      params={{ slug: entry.slug }}
+                      to="/blog/$slug"
+                    >
+                      {children}
+                    </Link>
+                  )}
+                />
+              </div>
+            )}
+          />
 
           <Button asChild className="w-fit gap-2" variant="outline">
-            <Link to="/blog">
+            <Link to="/blog" {...blogIntent}>
               View all blog posts
               <RiArrowRightUpLine aria-hidden="true" className="size-4" />
             </Link>

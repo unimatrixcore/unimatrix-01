@@ -9,6 +9,12 @@ export default defineConfig({
   resolve: {
     alias: [
       {
+        find: /^@unimatrix\/instant-list$/,
+        replacement: fileURLToPath(
+          new URL("../../packages/instant-list/src/index.ts", import.meta.url),
+        ),
+      },
+      {
         find: /^@unimatrix\/ui\/scroll-area$/,
         replacement: fileURLToPath(
           new URL("../../packages/ui/src/components/ui/scroll-area.tsx", import.meta.url),
@@ -59,7 +65,7 @@ export default defineConfig({
         replacement: fileURLToPath(new URL("./node_modules/react", import.meta.url)),
       },
     ],
-    dedupe: ["@tanstack/react-router", "react", "react-dom"],
+    dedupe: ["@tanstack/react-query", "@tanstack/react-router", "react", "react-dom"],
   },
   test: {
     // This workspace's own floor, measured on this workspace rather than

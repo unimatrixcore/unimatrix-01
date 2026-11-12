@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { RiCheckboxCircleLine, RiErrorWarningLine, RiRefreshLine } from "@remixicon/react";
 import { ToolShell } from "@unimatrix/chrome/tool";
+import { InstantVirtualList } from "@unimatrix/instant-list";
 import { Button, HealthHistory, type HealthHistoryDay } from "@unimatrix/ui/public";
 import type { PublicDeploymentStatusResponse } from "@unimatrix/shared";
 
@@ -35,7 +36,7 @@ function ServiceHistory({ service }: { service: PublicService }) {
   const days = completeStatusHistory(service.history, Date.now());
   const uptime = service.summary.uptimePercent;
   return (
-    <li className="space-y-4 p-5 sm:p-6">
+    <div className="space-y-4 border-b border-border p-5 sm:p-6">
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-sm font-medium">{service.displayName}</h3>
         <span className={`flex items-center gap-2 text-xs ${colors[service.state]}`}>
@@ -53,7 +54,7 @@ function ServiceHistory({ service }: { service: PublicService }) {
         <span className="h-px flex-1 bg-border" />
         <span>Today</span>
       </div>
-    </li>
+    </div>
   );
 }
 
@@ -110,14 +111,19 @@ export function PublicStatusPage() {
           <h2 className="text-base font-medium">{heading}</h2>
         </div>
         {apps !== undefined && apps.length > 0 ? (
-          <ul
-            aria-label="Services"
-            className="mt-16 divide-y divide-border border border-border bg-card sm:mt-24"
-          >
-            {apps.map((service, index) => (
-              <ServiceHistory key={`${service.displayName}-${index}`} service={service} />
-            ))}
-          </ul>
+          <InstantVirtualList
+            items={apps.map((service, index) => ({
+              service,
+              id: JSON.stringify([service.displayName, index]),
+            }))}
+            getItemId={(row) => row.id}
+            renderItem={({ service }) => <ServiceHistory service={service} />}
+            rowHeight={180}
+            height={Math.min(apps.length * 180, 540)}
+            measureRows
+            ariaLabel="Services"
+            className="mt-16 border border-border bg-card sm:mt-24"
+          />
         ) : null}
       </div>
     </ToolShell>

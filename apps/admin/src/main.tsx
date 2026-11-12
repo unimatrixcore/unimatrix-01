@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { createInstantQueryClient } from "@unimatrix/instant-list";
 import { RouterProvider } from "@tanstack/react-router";
 
 import { AuthProvider } from "@unimatrix/auth/react";
@@ -34,7 +35,7 @@ const runtimeConfig = {
   requireSignIn: true,
 };
 
-const queryClient = new QueryClient();
+const queryClient = createInstantQueryClient();
 const router = createAppRouter({ queryClient, runtimeConfig });
 
 // `signInUrl`/`signUpUrl` point at the auth hub rather than at a local route:

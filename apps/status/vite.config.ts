@@ -36,6 +36,12 @@ export function createStatusViteConfig(mode: string): UserConfig {
     preview: { port: 4177, strictPort: true },
     resolve: {
       alias: [
+        {
+          find: /^@unimatrix\/instant-list$/,
+          replacement: fileURLToPath(
+            new URL("../../packages/instant-list/src/index.ts", import.meta.url),
+          ),
+        },
         { find: "@", replacement: fileURLToPath(new URL("./src", import.meta.url)) },
         {
           find: /^@unimatrix\/app-config$/,
@@ -78,7 +84,7 @@ export function createStatusViteConfig(mode: string): UserConfig {
           replacement: fileURLToPath(new URL("./node_modules/react", import.meta.url)),
         },
       ],
-      dedupe: ["@tanstack/react-router", "react", "react-dom"],
+      dedupe: ["@tanstack/react-router", "@tanstack/react-query", "react", "react-dom"],
     },
   };
 }

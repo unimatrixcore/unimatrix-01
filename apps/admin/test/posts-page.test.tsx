@@ -1,5 +1,5 @@
 import type { ApiClient } from "@unimatrix/api-client";
-import type { ContentPostSummary } from "@unimatrix/shared";
+import type { AdminListPostsQuery, ContentPostSummary } from "@unimatrix/shared";
 import type * as EditorModule from "@unimatrix/ui/editor";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -68,11 +68,14 @@ function panel(name: "Blog posts" | "Projects") {
 describe("PostsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    apiClient.adminListPosts.mockResolvedValue({ posts: [DRAFT, PUBLISHED] });
+    apiClient.adminListPosts.mockImplementation((query: AdminListPostsQuery) =>
+      Promise.resolve({ posts: [DRAFT, PUBLISHED].filter((post) => post.type === query.type) }),
+    );
   });
 
   afterEach(() => {
     vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
   });
 
   it("lists every post in every publication state", async () => {
@@ -80,15 +83,102 @@ describe("PostsPage", () => {
 
     expect(await screen.findByText("A post")).toBeInTheDocument();
     panel("Projects");
-    expect(screen.getByText("Shipped project")).toBeInTheDocument();
+    expect(await screen.findByText("Shipped project")).toBeInTheDocument();
     // Drafts are the whole reason this page exists — they are absent from the
     // public list by design.
     panel("Blog posts");
     expect(screen.getByText("draft")).toBeInTheDocument();
     panel("Projects");
     expect(screen.getByText("published")).toBeInTheDocument();
-    // One unfiltered request, not one per collection.
-    expect(apiClient.adminListPosts).toHaveBeenCalledWith({});
+    expect(apiClient.adminListPosts).toHaveBeenCalledWith(
+      { type: "blog", limit: 100 },
+      { signal: expect.any(AbortSignal) as AbortSignal, priority: "high" },
+    );
+  });
+
+  it("filters the collection before paging even when background loading is disabled", async () => {
+    vi.stubGlobal("navigator", { deviceMemory: 1, connection: { saveData: true } });
+    const records = [
+      ...Array.from({ length: 250 }, (_, index) => ({ ...PUBLISHED, id: `project-${index}` })),
+      DRAFT,
+    ];
+    apiClient.adminListPosts.mockImplementation((query: AdminListPostsQuery) => {
+      const matches = records.filter(
+        (post) => query.type === undefined || post.type === query.type,
+      );
+      return Promise.resolve({ posts: matches.slice(0, query.limit), nextCursor: null });
+    });
+    renderInRouter(<PostsPage />);
+    expect(await screen.findByText("A post")).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("region", { name: "Blog posts" })).queryByText("Nothing here yet."),
+    ).not.toBeInTheDocument();
+    expect(apiClient.adminListPosts).toHaveBeenCalledTimes(1);
+    expect(apiClient.adminListPosts).toHaveBeenCalledWith(
+      { type: "blog", limit: 100 },
+      { signal: expect.any(AbortSignal) as AbortSignal, priority: "high" },
+    );
+  });
+
+  it("prefetches each tab into its own cache and starts its cursor at page one", async () => {
+    apiClient.adminListPosts.mockImplementation((query: AdminListPostsQuery) => {
+      if (query.type === "project") {
+        expect(query.cursor).toBeUndefined();
+        return Promise.resolve({ posts: [PUBLISHED], nextCursor: null });
+      }
+      return Promise.resolve(
+        query.cursor === undefined
+          ? { posts: [DRAFT], nextCursor: "blog-page-two" }
+          : { posts: [{ ...DRAFT, id: "next-blog", title: "Next blog" }], nextCursor: null },
+      );
+    });
+    renderInRouter(<PostsPage />);
+    expect(await screen.findByText("Next blog")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select A post" }));
+    fireEvent.focus(screen.getByRole("tab", { name: "Projects" }));
+    await waitFor(() => {
+      expect(apiClient.adminListPosts).toHaveBeenCalledWith(
+        { type: "project", limit: 100 },
+        { signal: expect.any(AbortSignal) as AbortSignal, priority: "high" },
+      );
+    });
+    expect(await panel("Projects").findByText("Shipped project")).toBeInTheDocument();
+    expect(apiClient.adminListPosts).toHaveBeenCalledTimes(3);
+    panel("Blog posts");
+    expect(screen.getByRole("checkbox", { name: "Select A post" })).toBeChecked();
+    expect(screen.getByText("Next blog")).toBeInTheDocument();
+    expect(apiClient.adminListPosts).toHaveBeenCalledTimes(3);
+  });
+
+  it("drains cursor pages without scrolling and replaces duplicate records", async () => {
+    apiClient.adminListPosts
+      .mockResolvedValueOnce({ posts: [DRAFT], nextCursor: "page-two" })
+      .mockResolvedValueOnce({
+        posts: [
+          { ...DRAFT, title: "Updated post" },
+          { ...DRAFT, id: "third", title: "Next post" },
+        ],
+        nextCursor: null,
+      });
+    renderInRouter(<PostsPage />);
+    expect(await screen.findByText("Updated post")).toBeInTheDocument();
+    expect(screen.getByText("Next post")).toBeInTheDocument();
+    expect(screen.queryByText("A post")).not.toBeInTheDocument();
+    expect(apiClient.adminListPosts).toHaveBeenNthCalledWith(
+      2,
+      { type: "blog", limit: 100, cursor: "page-two" },
+      { signal: expect.any(AbortSignal) as AbortSignal, priority: "low" },
+    );
+  });
+
+  it("keeps loaded posts available when a later page fails", async () => {
+    apiClient.adminListPosts
+      .mockResolvedValueOnce({ posts: [DRAFT], nextCursor: "page-two" })
+      .mockRejectedValueOnce(new Error("network down"));
+    renderInRouter(<PostsPage />);
+    expect(await screen.findByText("Could not load more.")).toBeInTheDocument();
+    expect(screen.getByText("A post")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Edit A post" })).toBeInTheDocument();
   });
 
   it("keeps bulk actions hidden until something is selected", async () => {
@@ -121,7 +211,7 @@ describe("PostsPage", () => {
     renderInRouter(<PostsPage />);
 
     await screen.findByText("A post");
-    fireEvent.click(panel("Blog posts").getByRole("checkbox", { name: "Select all rows" }));
+    fireEvent.click(panel("Blog posts").getByRole("checkbox", { name: "Select loaded rows" }));
 
     // The project row is in the sibling table and must be untouched: a shared
     // selection would make a bulk action reach into a collection the admin was
@@ -131,7 +221,7 @@ describe("PostsPage", () => {
       panel("Projects").queryByRole("toolbar", { name: "Selection actions" }),
     ).not.toBeInTheDocument();
 
-    fireEvent.click(panel("Blog posts").getByRole("checkbox", { name: "Select all rows" }));
+    fireEvent.click(panel("Blog posts").getByRole("checkbox", { name: "Select loaded rows" }));
     expect(
       panel("Blog posts").queryByRole("toolbar", { name: "Selection actions" }),
     ).not.toBeInTheDocument();
@@ -144,7 +234,9 @@ describe("PostsPage", () => {
 
     await screen.findByText("A post");
     fireEvent.click(panel("Blog posts").getByRole("checkbox", { name: "Select A post" }));
-    fireEvent.click(panel("Projects").getByRole("checkbox", { name: "Select Shipped project" }));
+    fireEvent.click(
+      await panel("Projects").findByRole("checkbox", { name: "Select Shipped project" }),
+    );
     fireEvent.click(panel("Blog posts").getByRole("button", { name: "Delete selected" }));
 
     const dialog = await screen.findByRole("alertdialog");
@@ -191,7 +283,9 @@ describe("PostsPage", () => {
 
     // A different row is ticked, so a selection-driven delete would take it.
     fireEvent.click(await screen.findByRole("checkbox", { name: "Select A post" }));
-    fireEvent.click(panel("Projects").getByRole("button", { name: "Delete Shipped project" }));
+    fireEvent.click(
+      await panel("Projects").findByRole("button", { name: "Delete Shipped project" }),
+    );
 
     const dialog = await screen.findByRole("alertdialog");
 
@@ -215,9 +309,6 @@ describe("PostsPage", () => {
 
     renderInRouter(<PostsPage />);
 
-    // One request backs both collections, but the failure is reported inside
-    // each panel: collapsing to a single combined card would change the shape
-    // of the dashboard whenever the API blips.
     expect(await screen.findAllByText("Posts could not be loaded.")).toHaveLength(2);
     expect(screen.getByRole("region", { name: "Blog posts" })).toBeInTheDocument();
     panel("Projects");

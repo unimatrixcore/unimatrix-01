@@ -1,3 +1,4 @@
+import { InstantVirtualList } from "@unimatrix/instant-list";
 import { RiKeyLine, RiPlugLine, RiAddLine, RiEraserLine, RiRefreshLine } from "@remixicon/react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -16,12 +17,6 @@ import {
   TabsList,
   TabsTrigger,
   TabsContent,
-  Table,
-  TableHeader,
-  TableHead,
-  TableRow,
-  TableBody,
-  TableCell,
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -248,49 +243,66 @@ function SecretsList({
   }
 
   return (
-    <Table className="table-fixed">
-      <TableHeader>
-        <TableRow>
-          <TableHead>Credential</TableHead>
-          <TableHead className="w-20 sm:w-24">State</TableHead>
-          <TableHead className="w-20">
-            <span className="sr-only">Actions</span>
-          </TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {rows.map((row) => (
-          <TableRow key={row.name}>
-            <TableCell className="min-w-0 py-3">
-              <p title={row.name} className="truncate font-mono text-sm">
-                {row.name}
-              </p>
-              <RowMeta row={row} />
-              {row.needsReseal ? (
-                <p className="mt-1 text-xs text-muted-foreground">Sealed under an older key</p>
-              ) : null}
-            </TableCell>
-            <TableCell>
-              <StatusBadge row={row} />
-            </TableCell>
-            <TableCell>
-              <div className="flex justify-end gap-1">
-                {row.actions.map((action) => (
-                  <RowActionButton
-                    key={action}
-                    action={action}
-                    row={row}
-                    onClick={() => {
-                      onAct(action, row);
-                    }}
-                  />
-                ))}
-              </div>
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+    <InstantVirtualList
+      items={rows}
+      getItemId={(row) => row.name}
+      rowHeight={88}
+      height={480}
+      role="table"
+      rowRole="presentation"
+      ariaLabel="Credentials"
+      header={
+        <div role="rowgroup">
+          <div
+            role="row"
+            className="grid h-10 grid-cols-[minmax(0,1fr)_96px_80px] items-center border-b text-sm"
+          >
+            <div role="columnheader" className="min-w-0 truncate px-2" title="Credential">
+              Credential
+            </div>
+            <div role="columnheader" className="w-20 sm:w-24">
+              State
+            </div>
+            <div role="columnheader" className="w-20">
+              <span className="sr-only">Actions</span>
+            </div>
+          </div>
+        </div>
+      }
+      renderItem={(row) => (
+        <div
+          role="row"
+          className="grid h-full grid-cols-[minmax(0,1fr)_96px_80px] items-center border-b text-sm"
+        >
+          <div role="cell" className="p-2 min-w-0 py-3">
+            <p title={row.name} className="truncate font-mono text-sm">
+              {row.name}
+            </p>
+            <RowMeta row={row} />
+            {row.needsReseal ? (
+              <p className="mt-1 text-xs text-muted-foreground">Sealed under an older key</p>
+            ) : null}
+          </div>
+          <div role="cell" className="min-w-0 p-2">
+            <StatusBadge row={row} />
+          </div>
+          <div role="cell" className="min-w-0 p-2">
+            <div className="flex justify-end gap-1">
+              {row.actions.map((action) => (
+                <RowActionButton
+                  key={action}
+                  action={action}
+                  row={row}
+                  onClick={() => {
+                    onAct(action, row);
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    />
   );
 }
 

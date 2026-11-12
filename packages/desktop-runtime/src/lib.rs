@@ -1,4 +1,6 @@
 use rusqlite::{Connection, OpenFlags};
+mod memory;
+pub use memory::{get_system_memory_info, SystemMemoryInfo};
 use std::{
     ffi::OsString,
     io,

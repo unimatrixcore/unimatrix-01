@@ -1,3 +1,4 @@
+@source "../../../packages/instant-list/src/**/*.{ts,tsx}";
 @import "@unimatrix/ui/styles.css";
 
 @source "../../../packages/ui/src/**/*.{ts,tsx}";

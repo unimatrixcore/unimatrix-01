@@ -1,3 +1,4 @@
+import { InstantListProvider } from "@unimatrix/instant-list";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { RouterProvider } from "@tanstack/react-router";
@@ -34,7 +35,9 @@ const appRoot = rootElement;
 function renderApp(): void {
   ReactDOM.createRoot(appRoot).render(
     <React.StrictMode>
-      <RouterProvider router={router} />
+      <InstantListProvider>
+        <RouterProvider router={router} />
+      </InstantListProvider>
     </React.StrictMode>,
   );
 }

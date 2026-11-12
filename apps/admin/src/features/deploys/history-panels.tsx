@@ -1,3 +1,4 @@
+import { InstantVirtualList } from "@unimatrix/instant-list";
 import { RiPulseLine, RiTerminalBoxLine } from "@remixicon/react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -23,12 +24,6 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
   cn,
   toast,
 } from "@unimatrix/ui/editor";
@@ -90,79 +85,100 @@ export function AttemptHistory({ attempts, onSelect, runningTag }: AttemptHistor
   }
 
   return (
-    <Table className="table-fixed [&_th]:truncate [&_td]:truncate">
-      <TableHeader>
-        <TableRow>
-          <TableHead className="w-[42%]" title="Tag">
-            Tag
-          </TableHead>
-          <TableHead className="w-[18%]" title="Requested">
-            Requested
-          </TableHead>
-          <TableHead className="w-[20%]" title="Result">
-            Result
-          </TableHead>
-          <TableHead className="w-[12%]" title="Duration">
-            Duration
-          </TableHead>
-          <TableHead className="w-[8%] text-right" title="Log">
-            Log
-          </TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {attempts.map((attempt) => {
-          const completedAt = completionTime(attempt);
-          return (
-            <TableRow key={attempt.id}>
-              <TableCell>
-                <span className="block truncate font-mono text-xs" title={attemptTag(attempt)}>
-                  {attemptTag(attempt)}
-                  {runningTag != null && runningTag === attempt.image?.tag ? " · running now" : ""}
-                </span>
-                {attempt.commitSubject && (
-                  <span
-                    className="block truncate text-xs text-muted-foreground"
-                    title={attempt.commitSubject}
-                  >
-                    {attempt.commitSubject}
-                  </span>
-                )}
-              </TableCell>
-              <TableCell className="truncate text-xs" title={formatTime(attempt.requestedAt)}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span tabIndex={0}>{relativeTime(attempt.requestedAt)} ago</span>
-                  </TooltipTrigger>
-                  <TooltipContent>{formatTime(attempt.requestedAt)}</TooltipContent>
-                </Tooltip>
-              </TableCell>
-              <TableCell
-                className={cn("truncate text-xs", attemptTone(attempt))}
-                title={outcomeLabel(attempt)}
-              >
-                {outcomeLabel(attempt)}
-              </TableCell>
-              <TableCell className="truncate font-mono text-xs whitespace-nowrap text-muted-foreground">
-                {completedAt === null ? "—" : durationLabel(completedAt - attempt.requestedAt)}
-              </TableCell>
-              <TableCell className="text-right whitespace-nowrap">
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  aria-label={`Logs for ${attemptTag(attempt)} requested ${formatTime(attempt.requestedAt)}`}
-                  onClick={() => {
-                    onSelect(attempt.id);
-                  }}
+    <InstantVirtualList
+      items={attempts}
+      getItemId={(attempt) => attempt.id}
+      rowHeight={64}
+      height={480}
+      role="table"
+      rowRole="presentation"
+      ariaLabel="Deployment attempts"
+      header={
+        <div role="rowgroup">
+          <div
+            role="row"
+            className="grid h-10 grid-cols-[42%_18%_20%_12%_8%] items-center border-b text-sm"
+          >
+            <div role="columnheader" className="w-[42%]" title="Tag">
+              Tag
+            </div>
+            <div role="columnheader" className="w-[18%]" title="Requested">
+              Requested
+            </div>
+            <div role="columnheader" className="w-[20%]" title="Result">
+              Result
+            </div>
+            <div role="columnheader" className="w-[12%]" title="Duration">
+              Duration
+            </div>
+            <div role="columnheader" className="w-[8%] text-right" title="Log">
+              Log
+            </div>
+          </div>
+        </div>
+      }
+      renderItem={(attempt) => {
+        const completedAt = completionTime(attempt);
+        return (
+          <div
+            role="row"
+            className="grid h-full grid-cols-[42%_18%_20%_12%_8%] items-center border-b text-sm"
+          >
+            <div role="cell" className="min-w-0 p-2">
+              <span className="block truncate font-mono text-xs" title={attemptTag(attempt)}>
+                {attemptTag(attempt)}
+                {runningTag != null && runningTag === attempt.image?.tag ? " · running now" : ""}
+              </span>
+              {attempt.commitSubject && (
+                <span
+                  className="block truncate text-xs text-muted-foreground"
+                  title={attempt.commitSubject}
                 >
-                  <RiTerminalBoxLine aria-hidden="true" className="size-4" />
-                </Button>
-              </TableCell>
-            </TableRow>
-          );
-        })}
-      </TableBody>
-    </Table>
+                  {attempt.commitSubject}
+                </span>
+              )}
+            </div>
+            <div
+              role="cell"
+              className="min-w-0 p-2 truncate text-xs"
+              title={formatTime(attempt.requestedAt)}
+            >
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span tabIndex={0}>{relativeTime(attempt.requestedAt)} ago</span>
+                </TooltipTrigger>
+                <TooltipContent>{formatTime(attempt.requestedAt)}</TooltipContent>
+              </Tooltip>
+            </div>
+            <div
+              role="cell"
+              className={cn("truncate text-xs", attemptTone(attempt))}
+              title={outcomeLabel(attempt)}
+            >
+              {outcomeLabel(attempt)}
+            </div>
+            <div
+              role="cell"
+              className="min-w-0 p-2 truncate font-mono text-xs whitespace-nowrap text-muted-foreground"
+            >
+              {completedAt === null ? "—" : durationLabel(completedAt - attempt.requestedAt)}
+            </div>
+            <div role="cell" className="min-w-0 p-2 text-right whitespace-nowrap">
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label={`Logs for ${attemptTag(attempt)} requested ${formatTime(attempt.requestedAt)}`}
+                onClick={() => {
+                  onSelect(attempt.id);
+                }}
+              >
+                <RiTerminalBoxLine aria-hidden="true" className="size-4" />
+              </Button>
+            </div>
+          </div>
+        );
+      }}
+    />
   );
 }
 
@@ -261,20 +277,30 @@ export function AttemptLogs({ app, attempts, selectedId, onSelect }: AttemptLogs
           ) : null}
           {(logs.data?.diagnosticLines?.length ?? 0) > 0 && (
             <div role="log" aria-label="Deployment diagnostics" className="font-mono">
-              {logs.data?.diagnosticLines?.map((line, index) => (
-                <p
-                  key={index}
-                  className={
-                    line.startsWith("✔")
-                      ? "text-emerald-400"
-                      : line.startsWith("✖")
-                        ? "text-destructive"
-                        : "text-sky-400"
-                  }
-                >
-                  {line}
-                </p>
-              ))}
+              <InstantVirtualList
+                items={(logs.data?.diagnosticLines ?? []).map((line, index) => ({
+                  line,
+                  id: index,
+                }))}
+                getItemId={(entry) => entry.id}
+                rowHeight={24}
+                measureRows
+                height={Math.min(320, (logs.data?.diagnosticLines?.length ?? 0) * 24)}
+                ariaLabel="Diagnostic lines"
+                renderItem={({ line }) => (
+                  <p
+                    className={
+                      line.startsWith("✔")
+                        ? "text-emerald-400"
+                        : line.startsWith("✖")
+                          ? "text-destructive"
+                          : "text-sky-400"
+                    }
+                  >
+                    {line}
+                  </p>
+                )}
+              />
             </div>
           )}
           {logs.data?.status === "unavailable" ? (
@@ -283,11 +309,17 @@ export function AttemptLogs({ app, attempts, selectedId, onSelect }: AttemptLogs
           {logs.data?.status === "available" ? (
             <>
               <div className="font-mono" role="log" aria-label="Recognized deployment events">
-                {logs.data.events.map((event, index) => (
-                  <p key={`${event}-${String(index)}`} className={logEvents[event].tone}>
-                    {logEvents[event].text}
-                  </p>
-                ))}
+                <InstantVirtualList
+                  items={logs.data.events.map((event, index) => ({ event, id: index }))}
+                  getItemId={(entry) => entry.id}
+                  rowHeight={24}
+                  measureRows
+                  height={Math.min(320, logs.data.events.length * 24)}
+                  ariaLabel="Deployment events"
+                  renderItem={({ event }) => (
+                    <p className={logEvents[event].tone}>{logEvents[event].text}</p>
+                  )}
+                />
                 {logs.data.events.length === 0 ? <p>No recognized events in this log.</p> : null}
               </div>
               <p className="text-muted-foreground">
@@ -389,44 +421,59 @@ export function HealthPanel({
       </div>
       <div className="space-y-2">
         <p className="text-sm font-medium text-foreground">Recent checks</p>
-        <Table className="table-fixed [&_th]:truncate [&_td]:truncate">
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-56">Checked</TableHead>
-              <TableHead>Result</TableHead>
-              <TableHead>Response</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {[...history.recent]
-              .sort((a, b) => b.checkedAt - a.checkedAt)
-              .map((probe) => (
-                <TableRow key={probe.checkedAt}>
-                  <TableCell
-                    className="text-xs whitespace-nowrap"
-                    title={formatTime(probe.checkedAt)}
-                  >
-                    {relativeTime(probe.checkedAt)} ago
-                  </TableCell>
-                  <TableCell
-                    className={cn(
-                      "text-xs",
-                      probe.state === "up"
-                        ? "text-emerald-600 dark:text-emerald-400"
-                        : probe.state === "down"
-                          ? "text-destructive"
-                          : "text-muted-foreground",
-                    )}
-                  >
-                    {stateLabel[probe.state]}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">
-                    {probe.durationMs == null ? "Unknown" : `${probe.durationMs}ms`}
-                  </TableCell>
-                </TableRow>
-              ))}
-          </TableBody>
-        </Table>
+        <InstantVirtualList
+          items={[...history.recent].sort((a, b) => b.checkedAt - a.checkedAt)}
+          getItemId={(probe) => probe.checkedAt}
+          rowHeight={48}
+          height={320}
+          role="table"
+          rowRole="presentation"
+          ariaLabel="Recent health checks"
+          header={
+            <div role="rowgroup">
+              <div
+                role="row"
+                className="grid h-10 grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)] items-center border-b text-sm"
+              >
+                <div role="columnheader" className="w-56">
+                  Checked
+                </div>
+                <div role="columnheader">Result</div>
+                <div role="columnheader">Response</div>
+              </div>
+            </div>
+          }
+          renderItem={(probe) => (
+            <div
+              role="row"
+              className="grid h-full grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)] items-center border-b text-sm"
+            >
+              <div
+                role="cell"
+                className="text-xs whitespace-nowrap"
+                title={formatTime(probe.checkedAt)}
+              >
+                {relativeTime(probe.checkedAt)} ago
+              </div>
+              <div
+                role="cell"
+                className={cn(
+                  "text-xs",
+                  probe.state === "up"
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : probe.state === "down"
+                      ? "text-destructive"
+                      : "text-muted-foreground",
+                )}
+              >
+                {stateLabel[probe.state]}
+              </div>
+              <div role="cell" className="min-w-0 p-2 font-mono text-xs text-muted-foreground">
+                {probe.durationMs == null ? "Unknown" : `${probe.durationMs}ms`}
+              </div>
+            </div>
+          )}
+        />
         {history.recent.length === 0 ? (
           <p className="text-xs text-muted-foreground">No recent probes recorded.</p>
         ) : null}

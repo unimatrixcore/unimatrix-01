@@ -1,3 +1,5 @@
+import { usePrefetchList } from "@unimatrix/instant-list";
+import { publishedBackgroundPostsOptions } from "@/features/content/queries/background-posts";
 import type { ReactNode } from "react";
 import { useMemo } from "react";
 import { useRouterState } from "@tanstack/react-router";
@@ -75,6 +77,8 @@ function SiteFooterLinks() {
 }
 
 export function AppShell({ children }: AppShellProps) {
+  const blogIntent = usePrefetchList(publishedBackgroundPostsOptions("blog"));
+  const projectIntent = usePrefetchList(publishedBackgroundPostsOptions("project"));
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
@@ -146,12 +150,13 @@ export function AppShell({ children }: AppShellProps) {
   const shellNavItems = useMemo<PublicNavItem[]>(
     () =>
       navItems.map(({ exact, icon, label, to }) => ({
+        ...(to === "/blog" ? blogIntent : to === "/projects" ? projectIntent : {}),
         active: isNavItemActive(pathname, exact, to),
         icon,
         label,
         to,
       })),
-    [pathname],
+    [pathname, blogIntent, projectIntent],
   );
 
   return (

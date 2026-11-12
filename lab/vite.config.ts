@@ -94,7 +94,7 @@ export function createLabViteConfig(): UserConfig {
       // declares it as a peer and resolves from its own directory, so without
       // this the bundle can carry two copies and the shell's `useRouterState`
       // reads a router context the app's `RouterProvider` never wrote to.
-      dedupe: ["@tanstack/react-router", "react", "react-dom"],
+      dedupe: ["@tanstack/react-query", "@tanstack/react-router", "react", "react-dom"],
     },
   };
 }

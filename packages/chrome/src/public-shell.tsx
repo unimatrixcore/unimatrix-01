@@ -53,6 +53,8 @@ export type PublicNavItem = {
   icon: PublicNavIcon;
   label: string;
   to: string;
+  onMouseEnter?: () => void;
+  onFocus?: () => void;
 };
 
 export type PublicShellProps = {
@@ -240,11 +242,13 @@ function PublicNav({
 }) {
   return (
     <nav aria-label={label} className={className}>
-      {items.map(({ active, icon: Icon, label: itemLabel, to }) => (
+      {items.map(({ active, icon: Icon, label: itemLabel, to, onMouseEnter, onFocus }) => (
         <Link
           aria-current={active ? "page" : undefined}
           className={itemClassName(active)}
           key={to}
+          onMouseEnter={onMouseEnter}
+          onFocus={onFocus}
           to={to}
         >
           <Icon aria-hidden="true" className={iconClassName} />

@@ -23,6 +23,28 @@ test("generates isolated local IPC app and refuses overwrite and traversal", asy
       await readFile(path.join(destination, "src-tauri/capabilities/main.json"), "utf8"),
     );
     assert.deepEqual(capability.permissions, []);
+    const main = await readFile(path.join(destination, "src/main.tsx"), "utf8");
+    assert.match(
+      main,
+      /configureListMemoryProvider\(\(\) => client\(getSystemMemoryInfo, null\)\)/,
+    );
+    assert.match(main, /const queryClient = createInstantQueryClient\(\)/);
+    const commands = await readFile(path.join(destination, "src/commands.ts"), "utf8");
+    assert.match(commands, /name: "get_system_memory_info"/);
+    assert.match(commands, /availableBytes <= memory.totalBytes/);
+    const rust = await readFile(path.join(destination, "src-tauri/src/main.rs"), "utf8");
+    assert.match(rust, /async fn get_system_memory_info\(input: \(\)\)/);
+    assert.match(rust, /spawn_blocking\(\|\|/);
+    assert.match(
+      rust,
+      /generate_handler!\[\s*read_counter,\s*save_counter,\s*get_system_memory_info\s*\]/,
+    );
+    const manifest = JSON.parse(await readFile(path.join(destination, "package.json"), "utf8"));
+    assert.equal(manifest.dependencies["@unimatrix/instant-list"], "workspace:*");
+    const typescript = JSON.parse(await readFile(path.join(destination, "tsconfig.json"), "utf8"));
+    assert.deepEqual(typescript.compilerOptions.paths["@unimatrix/instant-list"], [
+      "../../packages/instant-list/src/index.ts",
+    ]);
     await assert.rejects(access(path.join(destination, "Dockerfile")));
     await assert.rejects(createTauriApp(options), /already exists/);
     assert.equal(

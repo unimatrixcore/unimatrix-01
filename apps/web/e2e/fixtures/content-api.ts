@@ -84,10 +84,14 @@ async function fulfillJson(route: Route, status: number, body: unknown): Promise
  */
 export async function stubContentApi(page: Page): Promise<void> {
   await page.route("**/api/content/posts?*", async (route) => {
-    const type = new URL(route.request().url()).searchParams.get("type");
+    const params = new URL(route.request().url()).searchParams;
+    const type = params.get("type");
 
     await fulfillJson(route, 200, {
-      posts: POSTS.filter((post) => post.type === type).map(toSummary),
+      posts: POSTS.filter(
+        (post) => post.type === type && (params.get("featured") !== "true" || post.featured),
+      ).map(toSummary),
+      nextCursor: null,
     });
   });
 

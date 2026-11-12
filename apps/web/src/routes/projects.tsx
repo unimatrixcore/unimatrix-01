@@ -1,16 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-import { toProjectEntry } from "@/features/content/entries";
-import { publishedPostsQueryOptions } from "@/features/content/queries/content-posts";
+import { backgroundListQueryOptions } from "@unimatrix/instant-list";
+import { publishedBackgroundPostsOptions } from "@/features/content/queries/background-posts";
 
 export const Route = createFileRoute("/projects")({
-  loader: async ({ context }) => {
-    const { posts } = await context.queryClient.ensureQueryData(
-      publishedPostsQueryOptions("project"),
-    );
-
-    return posts.map(toProjectEntry);
-  },
+  loader: ({ context }) =>
+    context.queryClient.ensureInfiniteQueryData(
+      backgroundListQueryOptions(publishedBackgroundPostsOptions("project")),
+    ),
   head: () => ({
     meta: [
       { title: "Unimatrix-01 - Projects" },

@@ -7,6 +7,28 @@ const MIGRATIONS: &[&str] = &["CREATE TABLE counter (id INTEGER PRIMARY KEY CHEC
 
 struct Database(PathBuf);
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SystemMemoryInfo {
+    total_bytes: u64,
+    available_bytes: u64,
+}
+
+#[tauri::command]
+async fn get_system_memory_info(input: ()) -> Result<SystemMemoryInfo, String> {
+    let _ = input;
+    tauri::async_runtime::spawn_blocking(|| {
+        let memory =
+            unimatrix_desktop::get_system_memory_info().map_err(|error| error.to_string())?;
+        Ok(SystemMemoryInfo {
+            total_bytes: memory.total_bytes,
+            available_bytes: memory.available_bytes,
+        })
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
 async fn counter_operation(path: PathBuf, value: Option<i64>) -> Result<i64, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let connection = open_database(&path, MIGRATIONS).map_err(|error| error.to_string())?;
@@ -50,7 +72,11 @@ fn main() {
             app.manage(Database(directories.database_path("app.sqlite")?));
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![read_counter, save_counter])
+        .invoke_handler(tauri::generate_handler![
+            read_counter,
+            save_counter,
+            get_system_memory_info
+        ])
         .run(tauri::generate_context!())
         .expect("Desktop application failed");
 }

@@ -3,6 +3,7 @@
   "compilerOptions": {
     "jsx": "react-jsx",
     "paths": {
+      "@unimatrix/instant-list": ["../../packages/instant-list/src/index.ts"],
       "@/*": ["./src/*"],
       "@unimatrix/app-config": ["../../packages/app-config/src/index.ts"],
       "@unimatrix/api-client": ["../../packages/api-client/src/index.ts"],

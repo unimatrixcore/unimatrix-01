@@ -9,6 +9,8 @@ import type {
   ContentPostSummary,
   ContentPostType,
   CreatePostBody,
+  ListPostsQuery,
+  ListPostsResponse,
   UpdatePostBody,
 } from "@unimatrix/shared";
 import { and, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
@@ -106,6 +108,49 @@ export async function listPublishedPosts(
     .orderBy(desc(contentPostsTable.publishedAt));
 
   return rows.map(toSummary);
+}
+
+export async function listContentPage(
+  db: ContentDb,
+  filters: AdminListPostsQuery | ListPostsQuery,
+  visibility: "public" | "admin",
+): Promise<ListPostsResponse> {
+  const conditions: SQL[] = [notDeleted()];
+  if (filters.type !== undefined) conditions.push(eq(contentPostsTable.type, filters.type));
+  if (visibility === "public") {
+    conditions.push(eq(contentPostsTable.publicationState, "published"));
+    if ("featured" in filters && filters.featured !== undefined) {
+      conditions.push(eq(contentPostsTable.featured, filters.featured === "true"));
+    }
+  } else if ("publicationState" in filters && filters.publicationState !== undefined) {
+    conditions.push(eq(contentPostsTable.publicationState, filters.publicationState));
+  }
+  const sortColumn =
+    visibility === "public" ? contentPostsTable.publishedAt : contentPostsTable.updatedAt;
+  const sortValue = sql<string>`coalesce(${sortColumn}, '')`;
+  if (filters.cursor !== undefined) {
+    const [time, id] = JSON.parse(filters.cursor) as [string, string];
+    conditions.push(sql`(${sortValue}, ${contentPostsTable.id}) < (${time}, ${id})`);
+  }
+  const limit = filters.limit ?? 50;
+  const rows = await db
+    .select(summaryColumns)
+    .from(contentPostsTable)
+    .where(and(...conditions))
+    .orderBy(desc(sortValue), desc(contentPostsTable.id))
+    .limit(limit + 1);
+  const posts = rows.slice(0, limit).map(toSummary);
+  const last = posts.at(-1);
+  return {
+    posts,
+    nextCursor:
+      rows.length > limit && last !== undefined
+        ? JSON.stringify([
+            visibility === "public" ? (last.publishedAt ?? "") : last.updatedAt,
+            last.id,
+          ])
+        : null,
+  };
 }
 
 export async function getPublishedPost(

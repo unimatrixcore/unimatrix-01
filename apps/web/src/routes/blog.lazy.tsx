@@ -1,3 +1,6 @@
+import { InstantVirtualList, useBackgroundList } from "@unimatrix/instant-list";
+import { toBlogEntry } from "@/features/content/entries";
+import { publishedBackgroundPostsOptions } from "@/features/content/queries/background-posts";
 import { Link, createLazyFileRoute } from "@tanstack/react-router";
 
 import {
@@ -12,7 +15,17 @@ export const Route = createLazyFileRoute("/blog")({
 });
 
 function BlogRoute() {
-  const entries = Route.useLoaderData();
+  const list = useBackgroundList(publishedBackgroundPostsOptions("blog"));
+  const entries = list.items.map(toBlogEntry);
+  if (list.isPending)
+    return (
+      <PublicNotice
+        label="Loading"
+        title="Loading blog"
+        description="Fetching the first records."
+      />
+    );
+  if (list.isError && list.items.length === 0) return <BlogUnavailable />;
 
   return (
     <div className="space-y-5">
@@ -25,9 +38,20 @@ function BlogRoute() {
           title="The blog is empty."
         />
       ) : (
-        <div className="grid gap-3">
-          {entries.map((entry, index) => (
-            <div className="grid gap-3" key={entry.slug}>
+        <InstantVirtualList
+          items={entries}
+          getItemId={(entry) => entry.slug}
+          rowHeight={220}
+          measureRows
+          height="min(70vh, 760px)"
+          ariaLabel="Blog posts"
+          error={list.error}
+          onRetry={list.onEndReached}
+          onEndReached={list.onEndReached}
+          hasNextPage={list.hasNextPage}
+          isFetching={list.isFetching}
+          renderItem={(entry, index) => (
+            <div className="grid gap-3 pb-3" key={entry.slug}>
               <PublicTransmissionListItem
                 headingLevel={2}
                 entry={entry}
@@ -44,8 +68,8 @@ function BlogRoute() {
                 )}
               />
             </div>
-          ))}
-        </div>
+          )}
+        />
       )}
     </div>
   );

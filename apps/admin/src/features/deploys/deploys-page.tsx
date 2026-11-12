@@ -1,3 +1,4 @@
+import { InstantVirtualList } from "@unimatrix/instant-list";
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiClientError } from "@unimatrix/api-client";
@@ -338,64 +339,71 @@ export function DeploysPage() {
               }
               list={
                 <nav aria-label="Services" className="pt-2">
-                  {apps.map((entry) => {
-                    const last = attempts.data?.attempts
-                      .filter((run) => run.app === entry.appDir)
-                      .sort((a, b) => b.requestedAt - a.requestedAt)[0];
-                    const failed = last && attemptNeedsAttention(last);
-                    const status = serviceStatus(entry.container);
-                    return (
-                      <button
-                        type="button"
-                        key={entry.appDir}
-                        onClick={() => {
-                          setSelectedApp(entry.appDir);
-                          setAttemptId(null);
-                        }}
-                        disabled={mutation.isPending}
-                        aria-label={`Select ${entry.appDir}`}
-                        aria-current={entry.appDir === appName ? "true" : undefined}
-                        className={`flex w-full items-start gap-2.5 border-l-2 px-3 py-2.5 text-left transition-colors ${entry.appDir === appName ? "border-primary bg-muted/60" : "border-transparent hover:border-border hover:bg-muted/30"}`}
-                      >
-                        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                          <span className="flex min-w-0 items-center gap-1.5">
-                            {failed ? (
-                              <RiErrorWarningFill
-                                aria-hidden="true"
-                                className="size-3.5 shrink-0 text-destructive"
-                              />
-                            ) : null}
-                            <span
-                              className={`min-w-0 flex-1 truncate text-sm ${failed ? "font-medium text-destructive" : "text-foreground"}`}
-                            >
-                              {entry.appDir}
-                            </span>
-                            <StatusDot tone={status.tone} label={status.label} />
-                          </span>
-                          <span className="flex min-w-0 items-center justify-between gap-2 font-mono text-xs text-muted-foreground">
-                            <span
-                              className="truncate"
-                              title={
-                                entry.container.kind === "matched"
-                                  ? (entry.container.imageTag ?? undefined)
-                                  : undefined
-                              }
-                            >
-                              {entry.container.kind === "matched"
-                                ? shortTag(entry.container.imageTag)
-                                : "no container"}
-                            </span>
-                            {entry.container.kind === "matched" ? (
-                              <span className="flex shrink-0 items-center gap-1">
-                                <RiTimeLine aria-hidden="true" className="size-3" />
-                                {uptimeLabel(entry.container.startedAt)}
+                  <InstantVirtualList
+                    items={apps}
+                    getItemId={(entry) => entry.appDir}
+                    rowHeight={68}
+                    height="min(70vh, 800px)"
+                    ariaLabel="Deployment services"
+                    renderItem={(entry) => {
+                      const last = attempts.data?.attempts
+                        .filter((run) => run.app === entry.appDir)
+                        .sort((a, b) => b.requestedAt - a.requestedAt)[0];
+                      const failed = last && attemptNeedsAttention(last);
+                      const status = serviceStatus(entry.container);
+                      return (
+                        <button
+                          type="button"
+                          key={entry.appDir}
+                          onClick={() => {
+                            setSelectedApp(entry.appDir);
+                            setAttemptId(null);
+                          }}
+                          disabled={mutation.isPending}
+                          aria-label={`Select ${entry.appDir}`}
+                          aria-current={entry.appDir === appName ? "true" : undefined}
+                          className={`flex w-full items-start gap-2.5 border-l-2 px-3 py-2.5 text-left transition-colors ${entry.appDir === appName ? "border-primary bg-muted/60" : "border-transparent hover:border-border hover:bg-muted/30"}`}
+                        >
+                          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                            <span className="flex min-w-0 items-center gap-1.5">
+                              {failed ? (
+                                <RiErrorWarningFill
+                                  aria-hidden="true"
+                                  className="size-3.5 shrink-0 text-destructive"
+                                />
+                              ) : null}
+                              <span
+                                className={`min-w-0 flex-1 truncate text-sm ${failed ? "font-medium text-destructive" : "text-foreground"}`}
+                              >
+                                {entry.appDir}
                               </span>
-                            ) : null}
+                              <StatusDot tone={status.tone} label={status.label} />
+                            </span>
+                            <span className="flex min-w-0 items-center justify-between gap-2 font-mono text-xs text-muted-foreground">
+                              <span
+                                className="truncate"
+                                title={
+                                  entry.container.kind === "matched"
+                                    ? (entry.container.imageTag ?? undefined)
+                                    : undefined
+                                }
+                              >
+                                {entry.container.kind === "matched"
+                                  ? shortTag(entry.container.imageTag)
+                                  : "no container"}
+                              </span>
+                              {entry.container.kind === "matched" ? (
+                                <span className="flex shrink-0 items-center gap-1">
+                                  <RiTimeLine aria-hidden="true" className="size-3" />
+                                  {uptimeLabel(entry.container.startedAt)}
+                                </span>
+                              ) : null}
+                            </span>
                           </span>
-                        </span>
-                      </button>
-                    );
-                  })}
+                        </button>
+                      );
+                    }}
+                  />
                 </nav>
               }
               detail={

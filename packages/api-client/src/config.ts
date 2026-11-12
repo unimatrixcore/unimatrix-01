@@ -16,7 +16,12 @@ export interface ApiClientConfig {
   getAuthToken?: ApiClientAuthTokenProvider;
 }
 
-export interface ApiClientRequestInit {
+export interface ApiClientRequestControl {
+  readonly signal?: { readonly aborted: boolean; readonly reason: unknown; throwIfAborted(): void };
+  readonly priority?: "high" | "low" | "auto";
+}
+
+export interface ApiClientRequestInit extends ApiClientRequestControl {
   readonly body?: string;
   readonly headers?: Readonly<Record<string, string>>;
   readonly method?: string;
@@ -25,6 +30,7 @@ export interface ApiClientRequestInit {
 export interface ApiClientResponse {
   readonly ok: boolean;
   readonly status: number;
+  readonly headers?: { get(name: string): string | null };
   json(): Promise<unknown>;
   text(): Promise<string>;
 }

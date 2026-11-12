@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { createPostBodySchema, updatePostBodySchema } from "../src/index.js";
+import {
+  createPostBodySchema,
+  updatePostBodySchema,
+  listPostsQuerySchema,
+  adminListPostsQuerySchema,
+} from "../src/index.js";
 
 const POST_ID = "3f8a1c2e-5b7d-4e91-a0c3-6d2f8b4e1a97";
 
@@ -57,5 +62,33 @@ describe("urlSchema scheme restriction", () => {
 
   it("still allows clearing a URL with null", () => {
     expect(createPostBodySchema.safeParse({ ...BASE_POST, liveUrl: null }).success).toBe(true);
+  });
+});
+
+describe("content paging boundary", () => {
+  it("accepts serialized stable cursors and coerces HTTP page sizes", () => {
+    const cursor = JSON.stringify(["2026-11-01T00:00:00.000Z", POST_ID]);
+    expect(
+      listPostsQuerySchema.parse({ type: "project", featured: "true", limit: "50", cursor }),
+    ).toEqual({ type: "project", featured: "true", limit: 50, cursor });
+    expect(adminListPostsQuerySchema.parse({ limit: "1", cursor }).limit).toBe(1);
+  });
+
+  it("rejects malformed cursors and unbounded page sizes before querying storage", () => {
+    for (const cursor of [
+      "broken",
+      "null",
+      "{}",
+      "[1,2]",
+      JSON.stringify(["time", ""]),
+      JSON.stringify(["time", "x".repeat(129)]),
+      "x".repeat(513),
+    ]) {
+      expect(listPostsQuerySchema.safeParse({ type: "blog", cursor }).success).toBe(false);
+    }
+    for (const limit of [0, -1, 201, 1.5, "bad"]) {
+      expect(listPostsQuerySchema.safeParse({ type: "blog", limit }).success).toBe(false);
+      expect(adminListPostsQuerySchema.safeParse({ limit }).success).toBe(false);
+    }
   });
 });

@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   adminPostsQueryOptions,
+  adminPostsListOptions,
   adminQueryKeys,
   findPostBySlug,
   invalidateContent,
@@ -59,6 +60,24 @@ describe("admin content queries", () => {
     await options.queryFn?.({} as never);
 
     expect(adminListPosts).toHaveBeenCalledWith({ type: "project" });
+  });
+
+  it("uses the same default blog key for navigation intent and the list", async () => {
+    const { client, adminListPosts } = stubClient();
+    const defaultOptions = adminPostsListOptions(client);
+    expect(defaultOptions.queryKey).toEqual(adminPostsListOptions(client, "blog").queryKey);
+    expect(defaultOptions.queryKey).not.toEqual(adminPostsListOptions(client, "project").queryKey);
+    const signal = new AbortController().signal;
+    await adminPostsListOptions(client, "project").fetchPage({
+      cursor: "project-next",
+      signal,
+      priority: "low",
+      limit: 100,
+    });
+    expect(adminListPosts).toHaveBeenCalledWith(
+      { type: "project", cursor: "project-next", limit: 100 },
+      { signal, priority: "low" },
+    );
   });
 
   it("does not retry a 403, but does retry a transport failure", () => {
