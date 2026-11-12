@@ -2,26 +2,65 @@ import { copyFile, mkdir, readFile, readdir, writeFile, rm } from "node:fs/promi
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { format } from "prettier";
+import { z } from "zod";
 
 const repository = fileURLToPath(new URL("../../", import.meta.url));
 const templates = fileURLToPath(new URL("../templates/tauri-app/", import.meta.url));
 
-export async function createTauriApp({
-  name,
-  identifier,
-  port = 1420,
-  router = false,
-  root = repository,
-}) {
-  if (!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(name ?? "")) {
-    throw new Error("Name must be a lowercase kebab-case application name");
+const optionsSchema = z.strictObject({
+  name: z
+    .string()
+    .regex(
+      /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/,
+      "Name must be a lowercase kebab-case application name",
+    ),
+  identifier: z
+    .string()
+    .regex(
+      /^[A-Za-z][A-Za-z0-9-]*(?:\.[A-Za-z][A-Za-z0-9-]*)+$/,
+      "Identifier must be a stable reverse-DNS identifier",
+    ),
+  port: z
+    .number()
+    .int("Port must be an integer")
+    .min(1024, "Port must be at least 1024")
+    .max(65535, "Port must be at most 65535")
+    .default(1420),
+  router: z.boolean().default(false),
+  root: z.string().refine(path.isAbsolute, "Root must be an absolute path").default(repository),
+});
+
+async function assertUniqueWorkspaceName(root, name) {
+  const manifests = [path.join(root, "lab", "package.json")];
+  for (const parent of ["apps", "packages"]) {
+    let entries;
+    try {
+      entries = await readdir(path.join(root, parent), { withFileTypes: true });
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+      continue;
+    }
+    manifests.push(
+      ...entries
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => path.join(root, parent, entry.name, "package.json")),
+    );
   }
-  if (!/^[A-Za-z][A-Za-z0-9-]*(?:\.[A-Za-z][A-Za-z0-9-]*)+$/.test(identifier ?? "")) {
-    throw new Error("Identifier must be a stable reverse-DNS identifier");
+  for (const file of manifests) {
+    let manifest;
+    try {
+      manifest = JSON.parse(await readFile(file, "utf8"));
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+      continue;
+    }
+    if (manifest.name === name) throw new Error(`Workspace package already exists: ${name}`);
   }
-  if (!Number.isInteger(port) || port < 1024 || port > 65535) {
-    throw new Error("Port must be an integer from 1024 through 65535");
-  }
+}
+
+export async function createTauriApp(options) {
+  const { name, identifier, port, router, root } = optionsSchema.parse(options);
+  await assertUniqueWorkspaceName(root, `@unimatrix/${name}`);
   const destination = path.join(root, "apps", name);
   await mkdir(path.dirname(destination), { recursive: true });
   await mkdir(destination);

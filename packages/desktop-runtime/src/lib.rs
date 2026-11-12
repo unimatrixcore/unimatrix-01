@@ -1,4 +1,4 @@
-use rusqlite::Connection;
+use rusqlite::{Connection, OpenFlags};
 use std::{
     ffi::OsString,
     io,
@@ -79,7 +79,14 @@ impl AppDirectories {
 
     pub fn create(&self) -> io::Result<()> {
         for directory in [&self.config, &self.data, &self.cache, &self.state] {
-            std::fs::create_dir_all(directory)?;
+            let mut builder = std::fs::DirBuilder::new();
+            builder.recursive(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::DirBuilderExt;
+                builder.mode(0o700);
+            }
+            builder.create(directory)?;
         }
         Ok(())
     }
@@ -91,7 +98,29 @@ impl AppDirectories {
 }
 
 pub fn open_database(path: &Path, migrations: &[&str]) -> rusqlite::Result<Connection> {
-    let mut connection = Connection::open(path)?;
+    let mut file = std::fs::OpenOptions::new();
+    file.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        file.mode(0o600);
+    }
+    match file.open(path) {
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+        Err(error) => {
+            return Err(rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CANTOPEN),
+                Some(error.to_string()),
+            ));
+        }
+    }
+    let mut connection = Connection::open_with_flags(
+        path,
+        OpenFlags::SQLITE_OPEN_READ_WRITE
+            | OpenFlags::SQLITE_OPEN_NO_MUTEX
+            | OpenFlags::SQLITE_OPEN_NOFOLLOW,
+    )?;
     connection.busy_timeout(Duration::from_secs(5))?;
     connection.pragma_update(None, "foreign_keys", true)?;
     let transaction =
@@ -251,6 +280,108 @@ mod tests {
             reexecuted.status.success(),
             "{}",
             String::from_utf8_lossy(&reexecuted.stdout)
+        );
+    }
+    #[cfg(unix)]
+    #[test]
+    fn private_storage_permissions_child() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        if std::env::var_os("UNIMATRIX_STORAGE_PERMISSIONS_PROBE").is_none() {
+            return;
+        }
+        let mode = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        let root = tempfile::tempdir().unwrap();
+        let parent = root.path().join("permissive");
+        std::fs::create_dir(&parent).unwrap();
+        assert_eq!(mode(&parent), 0o755, "child must run with umask 022");
+        std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o777)).unwrap();
+        let directories = AppDirectories {
+            config: parent.join("config/dev.test"),
+            data: parent.join("data/dev.test"),
+            cache: parent.join("cache/dev.test"),
+            state: parent.join("state/dev.test"),
+        };
+        directories.create().unwrap();
+        for directory in [
+            &directories.config,
+            &directories.data,
+            &directories.cache,
+            &directories.state,
+        ] {
+            assert_eq!(mode(directory), 0o700);
+            assert_eq!(mode(directory.parent().unwrap()), 0o700);
+        }
+        assert_eq!(
+            mode(&parent),
+            0o777,
+            "existing ancestors must remain unchanged"
+        );
+        std::fs::set_permissions(&directories.config, std::fs::Permissions::from_mode(0o500))
+            .unwrap();
+        std::fs::set_permissions(&directories.data, std::fs::Permissions::from_mode(0o755))
+            .unwrap();
+        directories.create().unwrap();
+        assert_eq!(
+            mode(&directories.config),
+            0o500,
+            "existing restrictive permissions must not be loosened"
+        );
+        assert_eq!(
+            mode(&directories.data),
+            0o755,
+            "existing app directories retain their permissions"
+        );
+
+        let path = parent.join("private.sqlite");
+        let migration = "CREATE TABLE saved (value TEXT); INSERT INTO saved VALUES ('kept');";
+        drop(open_database(&path, &[migration]).unwrap());
+        assert_eq!(
+            mode(&path),
+            0o600,
+            "new database must be private even in an existing permissive directory"
+        );
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o640)).unwrap();
+        let reopened = open_database(&path, &[migration]).unwrap();
+        assert_eq!(
+            reopened
+                .query_row("SELECT value FROM saved", [], |row| row.get::<_, String>(0))
+                .unwrap(),
+            "kept"
+        );
+        assert_eq!(
+            mode(&path),
+            0o640,
+            "existing database permissions remain unchanged"
+        );
+        assert_eq!(mode(&parent), 0o777);
+        drop(reopened);
+        let link = parent.join("linked.sqlite");
+        symlink(&path, &link).unwrap();
+        assert!(
+            open_database(&link, &[migration]).is_err(),
+            "existing database symlinks are rejected"
+        );
+        let missing_target = parent.join("missing.sqlite");
+        let dangling = parent.join("dangling.sqlite");
+        symlink(&missing_target, &dangling).unwrap();
+        assert!(open_database(&dangling, &[]).is_err());
+        assert!(!missing_target.exists(), "must not create a symlink target");
+        assert!(open_database(&parent.join("absent/db.sqlite"), &[]).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn private_storage_permissions() {
+        let child = std::process::Command::new("sh")
+            .args(["-c", "umask 022; exec \"$1\" --exact tests::private_storage_permissions_child --nocapture", "storage-permissions"])
+            .arg(std::env::current_exe().unwrap())
+            .env("UNIMATRIX_STORAGE_PERMISSIONS_PROBE", "1")
+            .output().unwrap();
+        assert!(
+            child.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&child.stdout),
+            String::from_utf8_lossy(&child.stderr)
         );
     }
 }

@@ -9,7 +9,10 @@ export function App() {
   const counter = useQuery(options);
   const save = useMutation({
     ...commandMutationOptions(client, saveCounter),
-    onSuccess: (value) => queryClient.setQueryData(options.queryKey, value),
+    onSuccess: async (value) => {
+      await queryClient.cancelQueries({ queryKey: options.queryKey });
+      queryClient.setQueryData(options.queryKey, value);
+    },
   });
   const error = counter.error ?? save.error;
   return (

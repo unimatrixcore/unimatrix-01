@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, access } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, rm, access } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -24,7 +24,7 @@ test("generates isolated local IPC app and refuses overwrite and traversal", asy
     );
     assert.deepEqual(capability.permissions, []);
     await assert.rejects(access(path.join(destination, "Dockerfile")));
-    await assert.rejects(createTauriApp(options), /EEXIST/);
+    await assert.rejects(createTauriApp(options), /already exists/);
     assert.equal(
       JSON.parse(await readFile(path.join(destination, "package.json"), "utf8")).name,
       "@unimatrix/counter",
@@ -37,6 +37,46 @@ test("generates isolated local IPC app and refuses overwrite and traversal", asy
     const routed = await createTauriApp({ ...options, name: "routed", router: true, port: 1421 });
     assert.match(await readFile(path.join(routed, "src/main.tsx"), "utf8"), /RouterProvider/);
     assert.match(await readFile(path.join(routed, "src/router.tsx"), "utf8"), /createRouter/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("rejects workspace name collisions by manifest name before creating an app", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "tauri-collision-"));
+  try {
+    for (const location of ["packages/shared-ui", "apps/web", "lab"]) {
+      await mkdir(path.join(root, location), { recursive: true });
+      const manifest = path.join(root, location, "package.json");
+      const content = JSON.stringify({ name: "@unimatrix/counter" });
+      await writeFile(manifest, content);
+      await assert.rejects(
+        createTauriApp({ root, name: "counter", identifier: "dev.test.counter" }),
+        /Workspace package already exists/,
+      );
+      await assert.rejects(access(path.join(root, "apps/counter")));
+      assert.equal(await readFile(manifest, "utf8"), content);
+      await rm(path.join(root, location), { recursive: true });
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("validates programmatic option types before filesystem writes", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "tauri-options-"));
+  try {
+    const options = { root, name: "counter", identifier: "dev.test.counter" };
+    for (const invalid of [
+      { router: "false" },
+      { root: 123 },
+      { root: "relative" },
+      { port: "1420" },
+      { typo: true },
+    ]) {
+      await assert.rejects(createTauriApp({ ...options, ...invalid }));
+      await assert.rejects(access(path.join(root, "apps")));
+    }
   } finally {
     await rm(root, { recursive: true, force: true });
   }

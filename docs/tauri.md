@@ -35,6 +35,10 @@ Each base receives an application-specific subdirectory. Empty or relative XDG
 values use the default. Runtime sockets belong under `XDG_RUNTIME_DIR`, which
 must be supplied by the session; durable data must never go there.
 
+New storage directories use mode `0700` and new SQLite files use `0600`. Existing
+permissions are preserved; review them explicitly when adopting an existing data
+directory. Database symlinks are rejected.
+
 Keep database queries and file paths inside Rust commands. Expose application
 operations instead of arbitrary SQL or frontend-selected filesystem paths. Run
 blocking rusqlite work on a blocking worker, and invalidate affected Query keys
@@ -103,7 +107,7 @@ checks frontend behavior but cannot prove Rust persistence or Wayland placement.
 The shared Rust package participates in workspace lint, typecheck, and test tasks;
 the generator tests run through `check:ci`. Generated frontend builds and native
 builds are separate: run the application's `build`, `lint`, `typecheck`, and
-`desktop:check` tasks, followed by `desktop:build`. The first native build creates
+`desktop:build` tasks, then `desktop:check`. The first native build creates
 its Cargo lockfile; retain that file before using `desktop:check`, which requires
 locked dependencies.
 
@@ -116,7 +120,7 @@ recovered the prior value. The embedded frontend also saved a value after the Vi
 Distribution bundles require their own acceptance
 check when a project selects a packaging target.
 
-Repository verification completed with `pnpm verify` (110 successful tasks).
-The final Rust fmt/check and five tests also passed after the explicit-XDG
-without-HOME case was added. Frozen pnpm installation passed after removing the
-temporary generated application.
+When changing command cache updates, exercise a delayed background read that
+resolves after a successful save. The generated callback cancels pending reads
+before writing the saved value into the cache, so that response cannot restore
+stale state.
