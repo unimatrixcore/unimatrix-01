@@ -1,5 +1,5 @@
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { RegionEditor } from "../src/region-editor/editor.js";
 import { editorRegions } from "../src/region-editor/geometry.js";
 import { loadEditorConfig, saveEditorConfig } from "../src/region-editor/api.js";
@@ -8,6 +8,7 @@ vi.mock("../src/region-editor/api.js", () => ({
   saveEditorConfig: vi.fn(),
 }));
 const alertMock = vi.fn();
+const originalScrollTo = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollTo");
 beforeEach(() => {
   vi.clearAllMocks();
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
@@ -28,7 +29,9 @@ beforeEach(() => {
     configurable: true,
     value: function (this: HTMLElement, options: ScrollToOptions) {
       this.scrollTop = options.top ?? 0;
-      queueMicrotask(() => fireEvent.scroll(this));
+      queueMicrotask(() => {
+        if (this.isConnected) fireEvent.scroll(this);
+      });
     },
   });
   vi.mocked(loadEditorConfig).mockResolvedValue({
@@ -41,7 +44,12 @@ beforeEach(() => {
   vi.spyOn(window, "alert").mockImplementation(alertMock);
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
 });
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  if (originalScrollTo) Object.defineProperty(HTMLElement.prototype, "scrollTo", originalScrollTo);
+  else Reflect.deleteProperty(HTMLElement.prototype, "scrollTo");
+});
 it("restores rectangles, clears with keyboard, serializes saves and exports", async () => {
   render(<RegionEditor />);
   await waitFor(() => expect(screen.getByRole("button", { name: "Main Pot" })).toHaveClass("done"));
@@ -85,19 +93,55 @@ it("reveals the offscreen first undefined region and retains it when it is the o
   const regions = Object.fromEntries(
     definitions.slice(0, -1).map((region) => [region.key, { x: 1, y: 2, w: 3, h: 4 }]),
   );
-  vi.mocked(loadEditorConfig).mockResolvedValueOnce({
-    regions,
-    screenWidth: 1920,
-    screenHeight: 1080,
+  let resolveConfig!: (value: Awaited<ReturnType<typeof loadEditorConfig>>) => void;
+  vi.mocked(loadEditorConfig).mockReturnValueOnce(
+    new Promise((resolve) => {
+      resolveConfig = resolve;
+    }),
+  );
+  const frames = new Map<number, FrameRequestCallback>();
+  let frameId = 0;
+  vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+    frames.set(++frameId, callback);
+    return frameId;
+  });
+  vi.spyOn(window, "cancelAnimationFrame").mockImplementation((id) => {
+    frames.delete(id);
+  });
+  const writes: number[] = [];
+  const pendingScrolls: HTMLElement[] = [];
+  vi.spyOn(HTMLElement.prototype, "scrollTo").mockImplementation(function (
+    this: HTMLElement,
+    options,
+  ) {
+    const top = (options as ScrollToOptions).top ?? 0;
+    writes.push(top);
+    this.scrollTop = top;
+    pendingScrolls.push(this);
   });
   render(<RegionEditor />);
   const last = definitions.at(-1)!;
-  await waitFor(() =>
-    expect(screen.getByRole("button", { name: last.label })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    ),
-  );
+  await act(async () => {
+    resolveConfig({ regions, screenWidth: 1920, screenHeight: 1080 });
+    await Promise.resolve();
+  });
+  expect(writes[0]).toBe(0);
+  expect(writes.at(-1)).toBe(1360);
+  expect(screen.getByText("Drawing: Seat 8 — Dealer Button")).toBeInTheDocument();
+  await act(async () => {
+    for (const element of pendingScrolls.splice(0)) fireEvent.scroll(element);
+    for (let i = 0; i < 3; i++) {
+      const callbacks = [...frames.values()];
+      frames.clear();
+      callbacks.forEach((callback) => {
+        callback(performance.now());
+      });
+      for (const element of pendingScrolls.splice(0)) fireEvent.scroll(element);
+    }
+    await Promise.resolve();
+  });
+  expect(writes.at(-1)).toBe(1360);
+  expect(screen.getByRole("button", { name: last.label })).toHaveAttribute("aria-pressed", "true");
   expect(screen.getByRole("list", { name: "Region definitions" }).scrollTop).toBeGreaterThan(0);
   fireEvent.keyDown(document, { key: "Delete" });
   await waitFor(() => {

@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { PokerRegionEditorSave } from "@unimatrix/shared";
+import { editorRegions } from "../src/region-editor/geometry";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
@@ -227,4 +228,43 @@ test("undefined keyboard jumps reveal offscreen selections and preserve sidebar 
     "aria-pressed",
     "true",
   );
+});
+
+test("initial offscreen gap is revealed while manual scrolling remains available", async ({
+  page,
+}) => {
+  const keys = editorRegions()
+    .slice(0, -1)
+    .map((region) => region.key);
+  await page.addInitScript((definedKeys) => {
+    const original = window.__POKER_LAB_TEST_INVOKE__!;
+    window.__POKER_LAB_TEST_INVOKE__ = async (request) => {
+      if (request.method !== "GET") return original(request);
+      return {
+        status: 200,
+        headers: { "content-type": "application/json" },
+        body: {
+          regions: Object.fromEntries(definedKeys.map((key) => [key, { x: 1, y: 2, w: 3, h: 4 }])),
+          screenWidth: 1920,
+          screenHeight: 1080,
+        },
+      };
+    };
+  }, keys);
+  await page.goto("/regions.html");
+  const list = page.getByRole("list", { name: "Region definitions" });
+  const last = page.getByRole("button", { name: "Seat 8 — Dealer Button" });
+  await expect(last).toHaveAttribute("aria-pressed", "true");
+  await expect(last).toBeInViewport();
+  expect(await page.locator(".ri").count()).toBeLessThan(80);
+  await page.keyboard.press("Tab");
+  await expect(last).toHaveAttribute("aria-pressed", "true");
+  await list.hover();
+  await page.mouse.wheel(0, -3000);
+  await expect.poll(() => list.evaluate((element) => element.scrollTop)).toBe(0);
+  await expect(page.getByRole("button", { name: "Community Card 1" })).toBeInViewport();
+  await page.getByRole("button", { name: "Community Card 1" }).click();
+  await page.keyboard.press("Tab");
+  await expect(last).toHaveAttribute("aria-pressed", "true");
+  await expect(last).toBeInViewport();
 });
