@@ -1,0 +1,26 @@
+{
+  "extends": "@unimatrix/config-typescript/vite-app.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "types": ["vite/client", "node"],
+    "paths": {
+      "@unimatrix/chrome/tool": ["../../packages/chrome/src/tool.ts"],
+      "@unimatrix/ui/public": ["../../packages/ui/src/public.ts"],
+      "@unimatrix/ui": ["../../packages/ui/src/index.ts"],
+      "@unimatrix/shared": ["../../packages/shared/src/index.ts"],
+      "@unimatrix/poker": ["../../packages/poker/src/index.ts"],
+      "@unimatrix/poker/client": ["../../packages/poker/src/client.ts"],
+      "@unimatrix/ui/scroll-area": ["../../packages/ui/src/components/ui/scroll-area.tsx"]
+    }
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "test/**/*.ts",
+    "test/**/*.tsx",
+    "e2e/**/*.ts",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "playwright.config.ts"
+  ]
+}

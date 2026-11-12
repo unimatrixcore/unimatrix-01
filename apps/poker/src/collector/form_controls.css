@@ -1,0 +1,13 @@
+/* The actual shared fields supply their borders, focus rings and chevrons. */
+.shared-native-select { max-width:100%;vertical-align:middle; }
+.dataset-tools > .shared-ui-island > .shared-native-select { width:180px;flex-shrink:0; }
+.monitor-control > .shared-ui-island > .shared-native-select,
+.dataset-actions > .shared-ui-island > .shared-native-select,
+.ai-review-settings-grid label > .shared-ui-island > .shared-native-select { width:100%; }
+.watch-settings-fields label > .shared-ui-island > .shared-native-select { width:112px;flex-shrink:0; }
+/* Avoid stacking the collector's old outline around the shared focus ring. */
+.collector-shell :is(input,select)[data-slot]:focus-visible,
+:is(input,select)[data-slot]:focus-visible { outline:none;outline-offset:0; }
+select[data-slot=native-select] { background-image:none; }
+@media(max-width:800px) { .dataset-tools > .shared-ui-island > .shared-native-select { width:155px; } }
+@media(max-width:600px) { .dataset-tools > .shared-ui-island > .shared-native-select { width:clamp(110px,33vw,145px); } }

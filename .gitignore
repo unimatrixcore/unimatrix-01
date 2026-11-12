@@ -94,8 +94,13 @@ lab/prototypes/*
 !lab/prototypes/.gitkeep
 !lab/prototypes/README.md
 
-# Rust and Tauri build output
+# Native desktop build outputs and local migration evidence.
 **/target/
-**/src-tauri/gen/schemas/
-
+**/gen/schemas/
+apps/poker/test-results/
+apps/poker/playwright-report/
+apps/poker-assistant/test-results/
+apps/poker-assistant/playwright-report/
 .orchestration/
+apps/poker/.test-browser-dist/
+apps/poker-assistant/.test-browser-dist/

@@ -1,4 +1,12 @@
 [workspace]
-members = ["packages/desktop-runtime"]
-exclude = ["apps"]
+members = ["packages/desktop-runtime", "packages/poker-native", "apps/poker/src-tauri", "apps/poker-assistant/src-tauri"]
 resolver = "2"
+
+[profile.dev.package.ocrs]
+opt-level = 3
+[profile.dev.package.rten]
+opt-level = 3
+[profile.dev.package.rten-vecmath]
+opt-level = 3
+[profile.dev.package.rten-simd]
+opt-level = 3

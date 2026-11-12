@@ -30,13 +30,13 @@ const Toaster = ({ ...props }: ToasterProps) => {
       style={
         {
           // Sonner injects `[data-sonner-toaster] { font-family: <sans stack> }`
-          // into the head at runtime, which overrides the inherited Geist Mono
+          // into the head at runtime, which overrides the inherited monospace font
           // and makes the toast the only proportional-font surface on the site.
           // Set inline rather than by class: a Tailwind `font-mono` utility ties
           // that selector on specificity and loses on source order, because the
           // injected rule lands after the stylesheet. Verified in Chromium —
-          // computed `font-family` on `[data-sonner-toast]` was the sans stack
-          // before this line and "Geist Mono Variable", monospace after.
+          // computed `font-family` on `[data-sonner-toast]` follows the shared
+          // monospace family once this inline inheritance is applied.
           fontFamily: "inherit",
           "--normal-bg": "var(--popover)",
           "--normal-text": "var(--popover-foreground)",

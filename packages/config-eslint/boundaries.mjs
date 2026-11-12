@@ -16,6 +16,9 @@ import boundaries from "eslint-plugin-boundaries";
  * against new coupling rather than a backlog of pre-existing failures.
  */
 const ALLOWED_PACKAGE_IMPORTS = {
+  "apps/poker": ["chrome", "poker", "shared", "ui"],
+  "apps/poker-assistant": ["chrome", "poker", "shared", "ui"],
+  "packages/poker": ["shared"],
   // `e2e-helpers` is granted only to the two workspaces that actually run a
   // Playwright suite, rather than to everyone via SHARED_CONFIG_PACKAGES below.
   // It ships assertion code, not configuration, so a workspace importing it is

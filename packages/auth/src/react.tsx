@@ -12,7 +12,7 @@ export type ClerkAppearance = NonNullable<ClerkProviderProps["appearance"]>;
 /**
  * Shared Clerk appearance that themes every Clerk widget (SignIn, SignUp,
  * UserProfile, UserButton, ...) to match unimatrix-ui: forced-dark (via the
- * `dark` base theme), zero border radius, Geist Mono, and the ShadCN color
+ * `dark` base theme), zero border radius, GeistMono Nerd Font, and the ShadCN color
  * tokens. Colors reference the app's CSS custom properties so they track the
  * active theme instead of being hard-coded here.
  */

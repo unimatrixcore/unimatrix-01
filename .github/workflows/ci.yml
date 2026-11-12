@@ -21,7 +21,7 @@ jobs:
   verify:
     name: Verify
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     permissions:
       contents: read
     env:
@@ -150,6 +150,19 @@ jobs:
         if: steps.plan.outputs.browser == 'true'
         run: pnpm exec playwright install --with-deps chromium
 
+      - name: Install native desktop prerequisites
+        if: steps.plan.outputs.full == 'true' || contains(fromJSON(steps.plan.outputs.packages), '@unimatrix/poker-app') || contains(fromJSON(steps.plan.outputs.packages), '@unimatrix/poker-assistant')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libssl-dev librsvg2-dev libxdo-dev pkg-config libclang-dev libxcb1-dev libxrandr-dev libdbus-1-dev libpipewire-0.3-dev libwayland-dev libegl-dev
+          rustup toolchain install 1.99.1 --profile minimal --component rustfmt
+
+      - name: Native Poker tests and desktop compilation
+        if: steps.plan.outputs.full == 'true' || contains(fromJSON(steps.plan.outputs.packages), '@unimatrix/poker-app') || contains(fromJSON(steps.plan.outputs.packages), '@unimatrix/poker-assistant')
+        env:
+          RUSTUP_TOOLCHAIN: 1.99.1
+        run: pnpm check:poker-native
+
       - name: Build
         run: node infra/scripts/ci-plan.mjs run build --plan "$CI_PLAN_PATH"
 
@@ -215,7 +228,7 @@ jobs:
           # turning one failure into two.
           if-no-files-found: warn
 
-  # `Verify` builds with Vite and tsc; it never touches a Dockerfile. That left a
+  # `Verify` builds web and desktop source; it never touches a Dockerfile. That left a
   # whole class of breakage invisible: a dependency can pass every check on the
   # runner while making the deployable image unbuildable.
   #

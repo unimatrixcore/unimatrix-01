@@ -39,7 +39,7 @@
     <rect x="850" y="150" width="210" height="164" />
     <rect x="295" y="332" width="580" height="196" />
   </g>
-  <g fill="#d7efe8" font-family="'Geist Mono Variable', 'Courier New', monospace">
+  <g fill="#d7efe8" font-family="'GeistMono Nerd Font', 'Courier New', monospace">
     <text x="122" y="190" font-size="20" letter-spacing="4">PUBLIC_SITE</text>
     <text x="122" y="224" font-size="42">OPS CONSOLE</text>
     <text x="122" y="262" font-size="18" fill="#8cb6b0">desktop-first chrome</text>

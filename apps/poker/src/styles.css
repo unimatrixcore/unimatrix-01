@@ -1,0 +1,13 @@
+@import "@unimatrix/ui/styles.css";
+@import "./collector/capture_empty_state.css";
+@import "./collector/form_controls.css";
+@import "./collector/gameplay.css";
+@import "./collector/gameplay_preview.css";
+@import "./collector/recording_panel.css";
+@import "./collector/workspace_topbar.css";
+@import "./collector/legacy/styles.css";
+@import "./collector/legacy/capture-animation.css";
+@import "./collector/legacy/ai-review.css";
+@source "../../../packages/ui/src/**/*.{ts,tsx}";
+@source "../../../packages/chrome/src/**/*.{ts,tsx}";
+@source "./collector/**/*.{ts,tsx}";

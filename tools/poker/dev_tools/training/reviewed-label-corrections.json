@@ -1,0 +1,281 @@
+[
+  {
+    "sample_id": "487",
+    "old_label": "G 117.5 BB",
+    "label": "G 117.4 BB",
+    "split": "train",
+    "pixel_sha256": "06f9f38f792bdb89bd3abeb602d125039404bac140192fd40237680ddfa3f535",
+    "visually_reviewed": true,
+    "source_recrop_pixel_equal": true
+  },
+  {
+    "sample_id": "1556",
+    "old_label": "Gto58",
+    "label": "Gto68",
+    "split": "train",
+    "pixel_sha256": "ae7b4d2b278e9b7c0fd8f176ea0539388a0297af4520052bc11eff39e41bd0bf",
+    "visually_reviewed": true,
+    "source_recrop_pixel_equal": true
+  },
+  {
+    "sample_id": "1679",
+    "old_label": "G 231.5 BB",
+    "label": "G 241.5 BB",
+    "split": "train",
+    "pixel_sha256": "b186af7935eca6c986aa60d120fd0dfb03037bb96f3fcad4c9de1c68d51cb3bc",
+    "visually_reviewed": true,
+    "source_recrop_pixel_equal": true
+  },
+  {
+    "sample_id": "1993",
+    "old_label": "G 34.5 BB",
+    "label": "G 342.5 BB",
+    "split": "train",
+    "pixel_sha256": "dbf3f7d766d07b1f070e757afcd095c0d448b1dd23f528ba9ac0abb7c9c3eef1",
+    "visually_reviewed": true,
+    "source_recrop_pixel_equal": true
+  },
+  {
+    "sample_id": "2054",
+    "old_label": "Raise",
+    "label": "SB",
+    "split": "train",
+    "pixel_sha256": "15ceb060a173fa7403a855a43fef3dc26538ba870ac8597c6ecb69718bb4cee7",
+    "visually_reviewed": true,
+    "source_recrop_pixel_equal": true
+  },
+  {
+    "sample_id": "2724",
+    "old_label": "S 153 BB",
+    "label": "S 153.5 BB",
+    "split": "train",
+    "pixel_sha256": "b097ef113fcffce3b069feb0b5e227165a50f1487a2cdbb87b1635eb3f1ea91c",
+    "visually_reviewed": true,
+    "source_recrop_pixel_equal": true
+  },
+  {
+    "sample_id": "2879",
+    "old_label": "krz",
+    "label": "Krzyjess",
+    "split": "train",
+    "pixel_sha256": "42d41301e4a9ebed96a714adf47b476a7891620205171cab67c513ae20aebff5",
+    "visually_reviewed": true,
+    "source_recrop_pixel_equal": true
+  },
+  {
+    "sample_id": "2937",
+    "old_label": "S 129.5 BB S 25 BB S 9 BB",
+    "label": "S 129.5 BB S 24 BB S 9 BB",
+    "split": "train",
+    "pixel_sha256": "f39834d2e9c5d5659bc898548ce2597d78c3e8e2e421dc479924043be4cdd1be",
+    "visually_reviewed": true,
+    "source_recrop_pixel_equal": true
+  },
+  {
+    "sample_id": "3617",
+    "old_label": "G 12.3 BB",
+    "label": "G 12.5 BB",
+    "split": "train",
+    "pixel_sha256": "f32902c94c1bdadc1c1bd399a3cdcca6d4d150a0d7992a0072b0d2a14af98781",
+    "visually_reviewed": true,
+    "source_recrop_pixel_equal": null
+  },
+  {
+    "sample_id": "3650",
+    "old_label": "G 39.1 BB",
+    "label": "G 89.1 BB",
+    "split": "train",
+    "pixel_sha256": "4deaccc8d0930148d7619173cfb79132ff71f165ec3ee05938219aa196c86a28",
+    "visually_reviewed": true,
+    "source_recrop_pixel_equal": null
+  },
+  {
+    "sample_id": "6659",
+    "old_label": "G 185.6 BB",
+    "label": "G 184.6 BB",
+    "split": "train",
+    "pixel_sha256": "d99554bfc2e5e7a82fd7f4f3c797f7c5795ebc4f1a77c2342b630676c460331b",
+    "visually_reviewed": true,
+    "source_recrop_pixel_equal": true
+  },
+  {
+    "sample_id": "6764",
+    "old_label": "G 39.5 BB G 7.2 BB",
+    "label": "G 39.4 BB G 7.2 BB",
+    "split": "train",
+    "pixel_sha256": "bf67adfa97406403a2fc8c7fe505a11ea74a357b2142bd1492354c1691014a10",
+    "visually_reviewed": true,
+    "source_recrop_pixel_equal": true
+  },
+  {
+    "sample_id": "1658",
+    "old_label": "Decline Straddle",
+    "label": "Show Cards",
+    "split": "train",
+    "pixel_sha256": "6e3e336d29b423f17d3de96de12ff6917b3c05a5c4f5ab8892fa06abc326d4f8",
+    "visually_reviewed": true,
+    "source_recrop_pixel_equal": true
+  },
+  {
+    "sample_id": "1664",
+    "old_label": "Decline Straddle",
+    "label": "Show Cards",
+    "split": "train",
+    "pixel_sha256": "176ebc671a916df617fc89a3ef580b09e776855d3553a588c2bd7370e41928b9",
+    "visually_reviewed": true,
+    "source_recrop_pixel_equal": true
+  },
+  {
+    "sample_id": "1732",
+    "old_label": "Decline Straddle",
+    "label": "Show Cards",
+    "split": "train",
+    "pixel_sha256": "52916b09375301d156c6f908572a38eb598a3efa5b80988b99327dd9c1187f14",
+    "visually_reviewed": true,
+    "source_recrop_pixel_equal": true
+  },
+  {
+    "sample_id": "1736",
+    "old_label": "Decline Straddle",
+    "label": "Show Cards",
+    "split": "train",
+    "pixel_sha256": "3aa131d4dfb40ec594c218a53c318ba2ad37893273ff867f82b9ef5aa261da97",
+    "visually_reviewed": true,
+    "source_recrop_pixel_equal": true
+  },
+  {
+    "sample_id": "1750",
+    "old_label": "Decline Straddle",
+    "label": "Show Cards",
+    "split": "train",
+    "pixel_sha256": "abfcb5b08016fcc43281a314d4e22074fb02afd533e563fe7fcf5c6fed0e1fdb",
+    "visually_reviewed": true,
+    "source_recrop_pixel_equal": true
+  },
+  {
+    "sample_id": "1936",
+    "old_label": "Decline Straddle",
+    "label": "Show Cards",
+    "split": "train",
+    "pixel_sha256": "5659b98bba39f426a7008df3a4380c1522095a26b80430d191c08cec3965aff3",
+    "visually_reviewed": true,
+    "source_recrop_pixel_equal": true
+  },
+  {
+    "sample_id": "2014",
+    "old_label": "littelifters",
+    "label": "littlelifters",
+    "split": "train",
+    "pixel_sha256": "688dd0fbdf3d0be14bb879ad38adff3dc161bb7389ed04143bbd94ea1784587f",
+    "visually_reviewed": true,
+    "source_recrop_pixel_equal": true
+  },
+  {
+    "sample_id": "2047",
+    "old_label": "littelifters",
+    "label": "littlelifters",
+    "split": "train",
+    "pixel_sha256": "43caa6349e37184c398d39b6d7401f93814ee53a70ef87adaaf98d068724503b",
+    "visually_reviewed": true,
+    "source_recrop_pixel_equal": true
+  },
+  {
+    "sample_id": "2181",
+    "old_label": "littelifters",
+    "label": "littlelifters",
+    "split": "train",
+    "pixel_sha256": "735fbeb0d62162b6da31ded82cd3ee06004bd42b692643d44cde7dc70c4c8d90",
+    "visually_reviewed": true,
+    "source_recrop_pixel_equal": true
+  },
+  {
+    "sample_id": "2344",
+    "old_label": "littelifters",
+    "label": "littlelifters",
+    "split": "train",
+    "pixel_sha256": "f1a42b173175b6c3cdc4532afa770aaa8f552cbf3564b606b422a39d480eb094",
+    "visually_reviewed": true,
+    "source_recrop_pixel_equal": true
+  },
+  {
+    "sample_id": "2346",
+    "old_label": "littelifters",
+    "label": "littlelifters",
+    "split": "train",
+    "pixel_sha256": "f862d00257e61a5683c56fa77ad2205eaaa41cb2d652ddc1c1883e144017d274",
+    "visually_reviewed": true,
+    "source_recrop_pixel_equal": true
+  },
+  {
+    "sample_id": "2426",
+    "old_label": "littelifters",
+    "label": "littlelifters",
+    "split": "train",
+    "pixel_sha256": "1aa43f86d2bc5e98e3751d0774126e1d4e8f7bc4f94dc551b58da054e99a0dcb",
+    "visually_reviewed": true,
+    "source_recrop_pixel_equal": true
+  },
+  {
+    "sample_id": "2457",
+    "old_label": "littelifters",
+    "label": "littlelifters",
+    "split": "train",
+    "pixel_sha256": "8f3370f503ae75338613e1eb54b09996ed615561c78d48c2610b2837f9738980",
+    "visually_reviewed": true,
+    "source_recrop_pixel_equal": true
+  },
+  {
+    "sample_id": "2459",
+    "old_label": "littelifters",
+    "label": "littlelifters",
+    "split": "train",
+    "pixel_sha256": "8a1dbf633f537e41d23b32da3581c65166b4c2a760cbc69a9d93e0b07a8e3e6f",
+    "visually_reviewed": true,
+    "source_recrop_pixel_equal": true
+  },
+  {
+    "sample_id": "2461",
+    "old_label": "littelifters",
+    "label": "littlelifters",
+    "split": "train",
+    "pixel_sha256": "9771043aeb11e97819726125fb57378677d2aa46195f458c8b78009b6d89afc6",
+    "visually_reviewed": true,
+    "source_recrop_pixel_equal": true
+  },
+  {
+    "sample_id": "2521",
+    "old_label": "littelifters",
+    "label": "littlelifters",
+    "split": "train",
+    "pixel_sha256": "89c5fbf21f61f4748b8170700ce208bfeb1459a8aecebf6c92d3053b9fec4659",
+    "visually_reviewed": true,
+    "source_recrop_pixel_equal": true
+  },
+  {
+    "sample_id": "2524",
+    "old_label": "littelifters",
+    "label": "littlelifters",
+    "split": "train",
+    "pixel_sha256": "57a4c4d8dd8dc3b04db35e51342234fce7085143f4c92cb42288457b5de1b07c",
+    "visually_reviewed": true,
+    "source_recrop_pixel_equal": true
+  },
+  {
+    "sample_id": "2531",
+    "old_label": "littelifters",
+    "label": "littlelifters",
+    "split": "train",
+    "pixel_sha256": "a62348851e96ddfba7d22ef2fc701a633b982580bde5443579568dd374db2c2c",
+    "visually_reviewed": true,
+    "source_recrop_pixel_equal": true
+  },
+  {
+    "sample_id": "2533",
+    "old_label": "littelifters",
+    "label": "littlelifters",
+    "split": "train",
+    "pixel_sha256": "a617a46fbe46e3f6693a152fa8cd4eec39ef6d633be6b73cb86d2e052ff23896",
+    "visually_reviewed": true,
+    "source_recrop_pixel_equal": true
+  }
+]

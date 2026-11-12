@@ -25,3 +25,18 @@ packages/db/local/
 # Google verification file — Google checks its exact bytes; formatting it
 # breaks the check with no visible symptom beyond verification silently failing.
 apps/cflop/public/google*.html
+
+# OCR release identity includes the original contract bytes.
+packages/poker/ocr-contract.json
+packages/poker-native/assets/regions.json
+packages/poker-native/assets/regions-flat.json
+
+# Retained model qualification sources and manifests preserve source identity.
+tools/poker/dev_tools/
+
+# Original Poker-Lab behavior and layout are checked against source hashes.
+apps/poker/public/static/js/
+apps/poker/public/static/css/
+apps/poker/src/collector/legacy/
+apps/poker/test/upstream/
+apps/poker/src/collector/*.css

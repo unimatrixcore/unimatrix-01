@@ -1,0 +1,100 @@
+{
+  "family": "GeistMono Nerd Font",
+  "sourcePackage": "otf-geist-mono-nerd",
+  "sourceVersion": "3.5.1-2",
+  "upstream": "https://github.com/ryanoasis/nerd-fonts/tree/v3.5.1/patched-fonts/GeistMono",
+  "license": "OFL-1.1-no-RFN",
+  "conversion": "woff2_compress",
+  "faces": [
+    {
+      "file": "GeistMonoNerdFont-Thin.woff2",
+      "weight": 100,
+      "style": "normal"
+    },
+    {
+      "file": "GeistMonoNerdFont-ThinItalic.woff2",
+      "weight": 100,
+      "style": "italic"
+    },
+    {
+      "file": "GeistMonoNerdFont-ExtraLight.woff2",
+      "weight": 200,
+      "style": "normal"
+    },
+    {
+      "file": "GeistMonoNerdFont-ExtraLightItalic.woff2",
+      "weight": 200,
+      "style": "italic"
+    },
+    {
+      "file": "GeistMonoNerdFont-Light.woff2",
+      "weight": 300,
+      "style": "normal"
+    },
+    {
+      "file": "GeistMonoNerdFont-LightItalic.woff2",
+      "weight": 300,
+      "style": "italic"
+    },
+    {
+      "file": "GeistMonoNerdFont-Regular.woff2",
+      "weight": 400,
+      "style": "normal"
+    },
+    {
+      "file": "GeistMonoNerdFont-Italic.woff2",
+      "weight": 400,
+      "style": "italic"
+    },
+    {
+      "file": "GeistMonoNerdFont-Medium.woff2",
+      "weight": 500,
+      "style": "normal"
+    },
+    {
+      "file": "GeistMonoNerdFont-MediumItalic.woff2",
+      "weight": 500,
+      "style": "italic"
+    },
+    {
+      "file": "GeistMonoNerdFont-SemiBold.woff2",
+      "weight": 600,
+      "style": "normal"
+    },
+    {
+      "file": "GeistMonoNerdFont-SemiBoldItalic.woff2",
+      "weight": 600,
+      "style": "italic"
+    },
+    {
+      "file": "GeistMonoNerdFont-Bold.woff2",
+      "weight": 700,
+      "style": "normal"
+    },
+    {
+      "file": "GeistMonoNerdFont-BoldItalic.woff2",
+      "weight": 700,
+      "style": "italic"
+    },
+    {
+      "file": "GeistMonoNerdFont-ExtraBold.woff2",
+      "weight": 800,
+      "style": "normal"
+    },
+    {
+      "file": "GeistMonoNerdFont-ExtraBoldItalic.woff2",
+      "weight": 800,
+      "style": "italic"
+    },
+    {
+      "file": "GeistMonoNerdFont-Black.woff2",
+      "weight": 900,
+      "style": "normal"
+    },
+    {
+      "file": "GeistMonoNerdFont-BlackItalic.woff2",
+      "weight": 900,
+      "style": "italic"
+    }
+  ]
+}

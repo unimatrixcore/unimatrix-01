@@ -1,0 +1,38 @@
+// Regression: actual page/control updates, not a stubbed updateStepperButtons.
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path'),os=require('node:os');
+const {createRequire}=require('node:module');
+const root=process.env.UNIMATRIX_UI_ROOT||path.join(os.homedir(),'repositories/unimatrix-01/packages/ui');
+const {JSDOM}=createRequire(path.join(root,'package.json'))('jsdom');
+const dom=new JSDOM(fs.readFileSync('dev_tools/templates/poker_lab.html','utf8'),{url:'http://localhost/collection',runScripts:'outside-only'}),{window}=dom;
+const rows=Array.from({length:100},(_,i)=>({queue_id:i+1,sample_key:'entry:'+i,id:'seats[0].name',image_url:'/api/queue/image/'+(i+1),label:'',reviewed:false,discarded:false,frame_id:'frame',source:'capture.png'}));
+let reviewRequests=0;
+window.fetch=async url=>({ok:true,status:200,json:async()=>url.startsWith('/api/queue/review')?(reviewRequests++,{items:rows,review_batch:{batch_id:'entry-batch',keys:rows.map(r=>r.sample_key)},summary:{total:4263,pending:4263,revision:1}}):{items:rows.slice(0,60),next_cursor:'older',summary:{total:4263,pending:4263,revision:1}}});
+window.matchMedia=()=>({matches:true});
+require('./helpers/browser.cjs')(window);window.eval(fs.readFileSync('dev_tools/static/ui/collector-ui.js','utf8'));
+const context=dom.getInternalVMContext();
+const source=fs.readFileSync('dev_tools/static/js/app.js','utf8').replace('init().catch(error => { showLoading(false); showToast(error.message, "error"); });','').replace('const setView =','let setView =');
+vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../static/js/lib/list_cards.js'),'utf8'),context);vm.runInContext(source,context);const run=s=>vm.runInContext(s,context);
+run(`activeDatasetId='synthetic';isRecovering=false;queueMode=true;currentView='collection';
+frameListEl=document.getElementById('frame-list');labelInput=document.getElementById('label-input');
+monitorSelect=document.getElementById('monitor-select');usernamePool={getItems:()=>[],has:()=>false,counts:{clear(){}}};
+showToast=()=>{};setView=view=>{currentView=view;};`);
+const start=source.indexOf('  const btnLabelRegions = document.getElementById("btn-label-regions");');
+vm.runInContext(source.slice(start,source.indexOf('  const btnStatsReview',start)),context);
+vm.runInContext(source.match(/  document.getElementById\("nav-labeling"\)\.onclick = .*;/)[0],context);
+(async()=>{try {
+ await run('loadCollectionPage()');
+ const button=window.document.getElementById('btn-label-regions'),nav=window.document.getElementById('nav-labeling');
+ assert.equal(run('pool.length'),0);
+ assert.equal(run('queueLoading'),false);
+ assert.equal(button.disabled,false,'Review crops is re-enabled after the collection page finishes');
+ assert.equal(nav.disabled,false,'Labeling tab can start a disk-backed batch without an in-memory pool');
+ await Promise.all([nav.onclick(),button.onclick()]);
+ assert.equal(reviewRequests,1,'entry clicks serialize across both controls');
+ assert.equal(run('currentView'),'labeling');assert.equal(run('pool.length'),100);
+ assert.equal(run('labelingUnlocked'),true);
+ run(`currentView='collection';pool=[];labelingUnlocked=false;queueSummary={total:0,pending:0,revision:2};updateStepperButtons();`);
+ assert.equal(button.disabled,true);assert.equal(nav.disabled,true,'a genuinely empty collection stays disabled');
+ run(`queueSummary={total:4263,pending:4263,revision:3};updateStepperButtons();`);
+ await button.onclick();assert.equal(run('currentView'),'labeling','Review crops uses the same entry path');
+ console.log('PASS: page completion enables both labeling entries; disk-backed batch loads once; empty collection stays disabled.');
+} finally {window.close();}})().catch(error=>{console.error(error);process.exitCode=1;});

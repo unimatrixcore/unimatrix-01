@@ -1,0 +1,27 @@
+{
+  "extends": "@unimatrix/config-typescript/vite-app.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "paths": {
+      "@unimatrix/chrome/tool": ["../../packages/chrome/src/tool.ts"],
+      "@unimatrix/ui/scroll-area": ["../../packages/ui/src/components/ui/scroll-area.tsx"],
+      "@unimatrix/ui/public": ["../../packages/ui/src/public.ts"],
+      "@unimatrix/ui": ["../../packages/ui/src/index.ts"],
+      "@unimatrix/shared": ["../../packages/shared/src/index.ts"],
+      "@unimatrix/poker/client": ["../../packages/poker/src/client.ts"],
+      "@unimatrix/poker": ["../../packages/poker/src/index.ts"],
+      "@unimatrix/ui/native-select": ["../../packages/ui/src/components/ui/native-select.tsx"],
+      "@unimatrix/ui/popover": ["../../packages/ui/src/components/ui/popover.tsx"]
+    },
+    "types": ["vite/client", "node"]
+  },
+  "include": [
+    "scripts/**/*.ts",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "test/**/*.ts",
+    "test/**/*.tsx",
+    "e2e/**/*.ts",
+    "*.config.ts"
+  ]
+}

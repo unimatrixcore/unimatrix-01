@@ -6,7 +6,13 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const tasks = new Set(["build", "lint", "typecheck", "test"]);
-const smokeApps = new Set(["apps/web", "apps/cflop", "apps/status"]);
+const smokeApps = new Set([
+  "apps/web",
+  "apps/cflop",
+  "apps/status",
+  "apps/poker",
+  "apps/poker-assistant",
+]);
 const lighthouseApps = new Set(["apps/web", "apps/cflop"]);
 
 export function workspaceFromManifest(path, manifest) {

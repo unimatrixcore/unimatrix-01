@@ -1,0 +1,4 @@
+.placeholder-box.capture-empty-state { border:0; }
+.capture-empty-state > svg { color:var(--muted-foreground); }
+.capture-empty-state h3 { color:var(--foreground);text-wrap:balance; }
+.capture-empty-state p { max-width:440px;text-wrap:pretty; }

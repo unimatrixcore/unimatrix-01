@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -18,7 +18,15 @@ test("root and workspace heavy scripts use the shared workload guard", () => {
   const directories = [root, join(root, "lab")];
   for (const parent of ["apps", "packages"])
     for (const entry of readdirSync(join(root, parent), { withFileTypes: true }))
-      if (entry.isDirectory()) directories.push(join(root, parent, entry.name));
+      if (entry.isDirectory()) {
+        const directory = join(root, parent, entry.name);
+        if (existsSync(join(directory, "package.json"))) directories.push(directory);
+        else
+          assert.ok(
+            existsSync(join(directory, "Cargo.toml")),
+            `${directory}: no workspace manifest`,
+          );
+      }
 
   for (const directory of directories) {
     const { scripts = {} } = manifest(directory);
