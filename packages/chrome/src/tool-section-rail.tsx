@@ -28,6 +28,8 @@ export type ToolSection = {
   icon?: ToolSectionIcon;
   label: string;
   to: string;
+  onMouseEnter?: () => void;
+  onFocus?: () => void;
 };
 
 /**
@@ -188,6 +190,8 @@ export function ToolSectionRail({
               )}
               key={section.to}
               onClick={handleNavigation}
+              onMouseEnter={section.onMouseEnter}
+              onFocus={section.onFocus}
               title={section.label}
               to={section.to}
             >

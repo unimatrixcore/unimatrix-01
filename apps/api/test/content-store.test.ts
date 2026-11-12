@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { createDatabase, type DatabaseInstance } from "@unimatrix/db";
+import { createDatabase, contentPostsTable, type DatabaseInstance } from "@unimatrix/db";
 import type { CreatePostBody } from "@unimatrix/shared";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
@@ -14,6 +14,7 @@ import {
   getPostForAdmin,
   getPublishedPost,
   listAssets,
+  listContentPage,
   listPostsForAdmin,
   listPublishedPosts,
   putAsset,
@@ -283,6 +284,51 @@ void test("putAsset is content-addressed and idempotent", async () => {
 
     assert.ok(stored?.data.equals(data));
     assert.equal(await getAsset(db, "d".repeat(64)), undefined);
+  } finally {
+    client.close();
+  }
+});
+
+void test("cursor pages cover timestamp ties once and survive cursor-row deletion", async () => {
+  const { client, db } = createMigratedInMemoryDatabase();
+  try {
+    const saved = [];
+    for (let i = 0; i < 7; i++) {
+      saved.push(
+        await createPost(
+          db,
+          ADMIN_USER_ID,
+          buildCreateBody({ slug: `page-${i}`, publicationState: "published" }),
+        ),
+      );
+    }
+    await createPost(db, ADMIN_USER_ID, buildCreateBody({ slug: "hidden-draft" }));
+    await db
+      .update(contentPostsTable)
+      .set({ publishedAt: "2026-11-01T00:00:00.000Z", updatedAt: "2026-11-01T00:00:00.000Z" });
+    const first = await listContentPage(db, { type: "blog", limit: 2 }, "public");
+    assert.equal(first.posts.length, 2);
+    assert.ok(first.nextCursor);
+    const ids = first.posts.map((post) => post.id);
+    await deletePosts(db, ADMIN_USER_ID, [first.posts[1]!.id]);
+    let cursor: string | null | undefined = first.nextCursor;
+    while (cursor) {
+      const page = await listContentPage(db, { type: "blog", limit: 2, cursor }, "public");
+      ids.push(...page.posts.map((post) => post.id));
+      cursor = page.nextCursor;
+    }
+    assert.equal(new Set(ids).size, 7);
+    assert.deepEqual([...ids].sort(), saved.map((post) => post.id).sort());
+    const admin = await listContentPage(db, { publicationState: "draft", limit: 2 }, "admin");
+    assert.equal(admin.posts.length, 1);
+    assert.equal(admin.posts[0]?.slug, "hidden-draft");
+    assert.equal(admin.nextCursor, null);
+    const featured = await listContentPage(
+      db,
+      { type: "project", featured: "true", limit: 2 },
+      "public",
+    );
+    assert.deepEqual(featured, { posts: [], nextCursor: null });
   } finally {
     client.close();
   }

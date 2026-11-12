@@ -731,3 +731,30 @@ describe("api client", () => {
     expect(result).toEqual({ deleted: true });
   });
 });
+
+describe("list transport controls", () => {
+  it("forwards abort and priority and preserves Retry-After on rate limits", async () => {
+    const controller = new AbortController();
+    const fetchMock = vi.fn<ApiClientFetch>().mockResolvedValue({
+      ok: false,
+      status: 429,
+      headers: { get: () => "2" },
+      json: () => Promise.resolve({ error: { message: "Rate limited" } }),
+      text: () => Promise.resolve(""),
+    });
+    const client = createApiClient({ baseUrl: "https://example.test", fetch: fetchMock });
+    await expect(
+      client.listPosts(
+        { type: "blog", limit: 50 },
+        {
+          signal: controller.signal,
+          priority: "low",
+        },
+      ),
+    ).rejects.toMatchObject({ status: 429, retryAfterMs: 2000 });
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      signal: controller.signal,
+      priority: "low",
+    });
+  });
+});

@@ -3,6 +3,16 @@ import { createCommandClient, defineCommand } from "@unimatrix/tauri";
 import { tauriTransport } from "@unimatrix/tauri/transport";
 
 export const client = createCommandClient(tauriTransport);
+export const getSystemMemoryInfo = defineCommand({
+  name: "get_system_memory_info",
+  input: z.null(),
+  output: z
+    .strictObject({
+      totalBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+      availableBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    })
+    .refine((memory) => memory.availableBytes <= memory.totalBytes),
+});
 export const readCounter = defineCommand({
   name: "read_counter",
   input: z.null(),

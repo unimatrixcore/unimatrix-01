@@ -1,3 +1,6 @@
+import { InstantVirtualList, useBackgroundList } from "@unimatrix/instant-list";
+import { toProjectEntry } from "@/features/content/entries";
+import { publishedBackgroundPostsOptions } from "@/features/content/queries/background-posts";
 import { Link, createLazyFileRoute } from "@tanstack/react-router";
 import { RiArrowRightUpLine } from "@remixicon/react";
 
@@ -14,7 +17,17 @@ export const Route = createLazyFileRoute("/projects")({
 });
 
 function ProjectsRoute() {
-  const projects = Route.useLoaderData();
+  const list = useBackgroundList(publishedBackgroundPostsOptions("project"));
+  const projects = list.items.map(toProjectEntry);
+  if (list.isPending)
+    return (
+      <PublicNotice
+        label="Loading"
+        title="Loading projects"
+        description="Fetching the first records."
+      />
+    );
+  if (list.isError && list.items.length === 0) return <ProjectsUnavailable />;
 
   if (projects.length === 0) {
     return (
@@ -34,13 +47,24 @@ function ProjectsRoute() {
     <div className="space-y-5">
       <PublicSectionHeading headingLevel={1} title="Projects" />
 
-      <div className="grid gap-3">
-        {projects.map((project, index) => {
+      <InstantVirtualList
+        items={projects}
+        getItemId={(project) => project.slug}
+        rowHeight={240}
+        measureRows
+        height="min(70vh, 760px)"
+        ariaLabel="Projects"
+        error={list.error}
+        onRetry={list.onEndReached}
+        onEndReached={list.onEndReached}
+        hasNextPage={list.hasNextPage}
+        isFetching={list.isFetching}
+        renderItem={(project, index) => {
           const { liveUrl, repoUrl } = project.frontmatter;
           const hasActions = Boolean(liveUrl) || Boolean(repoUrl);
 
           return (
-            <div className="grid gap-3" key={project.slug}>
+            <div className="grid gap-3 pb-3" key={project.slug}>
               <PublicProjectLedgerItem
                 headingLevel={2}
                 actions={
@@ -80,8 +104,8 @@ function ProjectsRoute() {
               />
             </div>
           );
-        })}
-      </div>
+        }}
+      />
     </div>
   );
 }

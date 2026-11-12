@@ -42,6 +42,12 @@ export function createAdminAppViteConfig(mode: string): UserConfig {
     resolve: {
       alias: [
         {
+          find: /^@unimatrix\/instant-list$/,
+          replacement: fileURLToPath(
+            new URL("../../packages/instant-list/src/index.ts", import.meta.url),
+          ),
+        },
+        {
           find: /^@unimatrix\/ui\/scroll-area$/,
           replacement: fileURLToPath(
             new URL("../../packages/ui/src/components/ui/scroll-area.tsx", import.meta.url),
@@ -106,7 +112,7 @@ export function createAdminAppViteConfig(mode: string): UserConfig {
       // this the bundle can carry two copies and the shell's `useRouterState`
       // reads a router context the app's `RouterProvider` never wrote to — a
       // failure that shows up only in a browser.
-      dedupe: ["@tanstack/react-router", "react", "react-dom"],
+      dedupe: ["@tanstack/react-query", "@tanstack/react-router", "react", "react-dom"],
     },
   };
 }

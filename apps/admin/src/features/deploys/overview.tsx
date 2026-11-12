@@ -11,7 +11,7 @@ import {
   RiTimeLine,
   RiUploadCloud2Line,
 } from "@remixicon/react";
-import { useLayoutEffect, useRef, useState } from "react";
+import { InstantVirtualList } from "@unimatrix/instant-list";
 import type {
   DeployAttemptRecord,
   DeployHealthHistoryResponse,
@@ -173,32 +173,6 @@ export function Overview({
   onTab,
   onAttempt,
 }: OverviewProps) {
-  const recentHistoryRef = useRef<HTMLDivElement>(null);
-  const recentRowHeight = useRef(0);
-  const [visibleAttempts, setVisibleAttempts] = useState<number | null>(null);
-  const firstAttemptId = attempts[0]?.id;
-  const hasVisibleAttempts = visibleAttempts !== 0;
-  useLayoutEffect(() => {
-    const history = recentHistoryRef.current;
-    if (!history) return;
-    const row = history.querySelector("li");
-    const measure = () => {
-      const rowHeight = row?.getBoundingClientRect().height ?? 0;
-      if (rowHeight > 0) {
-        recentRowHeight.current = rowHeight;
-      }
-      if (recentRowHeight.current > 0) {
-        setVisibleAttempts(Math.floor(history.clientHeight / recentRowHeight.current));
-      }
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(history);
-    if (row) observer.observe(row);
-    return () => {
-      observer.disconnect();
-    };
-  }, [attempts.length, firstAttemptId, hasVisibleAttempts]);
   const now = Date.now();
   const summary = reconciliation ? reconciliationSummary(reconciliation, app.appDir) : null;
   const result = reconciliation?.results.find((entry) => entry.appDir === app.appDir);
@@ -253,16 +227,20 @@ export function Overview({
           }
         >
           <div
-            ref={recentHistoryRef}
             aria-label="Recent deploy history"
             className={cn("-mx-4 h-0 flex-1 overflow-hidden", attempts.length > 0 && "min-h-40")}
             role="region"
           >
-            <ul>
-              {attempts.slice(0, visibleAttempts ?? attempts.length).map((attempt) => {
+            <InstantVirtualList
+              items={attempts}
+              getItemId={(attempt) => attempt.id}
+              rowHeight={64}
+              height="100%"
+              ariaLabel="Recent deployment attempts"
+              renderItem={(attempt) => {
                 const tone = attemptTone(attempt);
                 return (
-                  <li
+                  <div
                     className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 border-b border-border/60 px-5 py-3 hover:bg-muted/40 sm:flex sm:gap-4"
                     key={attempt.id}
                   >
@@ -308,10 +286,10 @@ export function Overview({
                     >
                       <RiTerminalBoxLine aria-hidden="true" className="size-4" />
                     </Button>
-                  </li>
+                  </div>
                 );
-              })}
-            </ul>
+              }}
+            />
           </div>
           {!attempts.length ? (
             <p className="text-sm text-muted-foreground">

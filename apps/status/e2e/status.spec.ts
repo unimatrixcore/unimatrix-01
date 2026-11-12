@@ -100,3 +100,29 @@ test("root reload preserves the standalone status surface", async ({ page }) => 
   await expect(page).toHaveURL("http://localhost:4177/");
   await expect(page).toHaveTitle("Unimatrix Status");
 });
+
+test("virtualizes services while the aggregate status includes rows outside the viewport", async ({
+  page,
+}) => {
+  const service = publicStatus().apps[0]!;
+  const apps = Array.from({ length: 100 }, (_, index) => ({
+    ...service,
+    displayName: `Service ${index + 1}`,
+    state: index === 99 ? "down" : "up",
+  }));
+  await page.route("**/deployment/status", (route) => route.fulfill({ json: { apps } }));
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Some services unavailable" })).toBeVisible();
+  const list = page.getByRole("list", { name: "Services" });
+  await expect(list.getByRole("heading", { name: "Service 1", exact: true })).toBeVisible();
+  expect(await list.getByRole("listitem").count()).toBeLessThan(100);
+  await expect(list).toHaveCSS("scrollbar-gutter", "stable");
+  await list.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect(list.getByRole("heading", { name: "Service 100", exact: true })).toBeVisible();
+  const scrollTop = await list.evaluate((element) => element.scrollTop);
+  await page.getByRole("button", { name: "Refresh status", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Refresh status", exact: true })).toBeEnabled();
+  expect(await list.evaluate((element) => element.scrollTop)).toBe(scrollTop);
+});

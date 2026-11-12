@@ -124,7 +124,7 @@ describe("public UI package usage", () => {
       (path) => path.endsWith(".tsx") && !path.endsWith(".lazy.tsx"),
     );
     const missing = routeFiles.flatMap((routePath) => {
-      if (!/ensureQueryData/u.test(stripComments(readRepositoryFile(routePath)))) {
+      if (!/ensure(?:Infinite)?QueryData/u.test(stripComments(readRepositoryFile(routePath)))) {
         return [];
       }
 
@@ -292,7 +292,7 @@ describe("public UI package usage", () => {
 
     expect(homeRouteSource).toMatch(/createFileRoute\("\/"\)/u);
     expect(homeRouteSource).toMatch(/loader/u);
-    expect(homeRouteSource).toMatch(/ensureQueryData/u);
+    expect(homeRouteSource).toMatch(/ensureInfiniteQueryData/u);
     expect(homeRouteSource).not.toMatch(/PublicMarkdown/u);
     expect(homeLazyRouteSource).toMatch(/createLazyFileRoute\("\/"\)/u);
     expect(homeLazyRouteSource).toMatch(/@unimatrix\/ui\/public/u);
@@ -311,8 +311,8 @@ describe("public UI package usage", () => {
     expect(projectsRouteSource).toMatch(/createFileRoute\("\/projects"\)/u);
     // Content is fetched from the API now: the non-lazy route file owns the
     // data (through the router's query client), the lazy file owns the UI.
-    expect(projectsRouteSource).toMatch(/publishedPostsQueryOptions\("project"\)/u);
-    expect(projectsRouteSource).toMatch(/ensureQueryData/u);
+    expect(projectsRouteSource).toMatch(/publishedBackgroundPostsOptions\("project"\)/u);
+    expect(projectsRouteSource).toMatch(/ensureInfiniteQueryData/u);
     expect(projectsRouteSource).not.toMatch(/PublicProjectLedgerItem/u);
     expect(projectsLazyRouteSource).toMatch(/errorComponent/u);
     expect(projectsLazyRouteSource).toMatch(/createLazyFileRoute\("\/projects"\)/u);
@@ -324,8 +324,8 @@ describe("public UI package usage", () => {
     expect(projectsLazyRouteSource).toMatch(/Open repository/u);
 
     expect(blogRouteSource).toMatch(/createFileRoute\("\/blog"\)/u);
-    expect(blogRouteSource).toMatch(/publishedPostsQueryOptions\("blog"\)/u);
-    expect(blogRouteSource).toMatch(/ensureQueryData/u);
+    expect(blogRouteSource).toMatch(/publishedBackgroundPostsOptions\("blog"\)/u);
+    expect(blogRouteSource).toMatch(/ensureInfiniteQueryData/u);
     expect(blogRouteSource).not.toMatch(/PublicTransmissionListItem/u);
     expect(blogLazyRouteSource).toMatch(/errorComponent/u);
     expect(blogLazyRouteSource).toMatch(/createLazyFileRoute\("\/blog"\)/u);

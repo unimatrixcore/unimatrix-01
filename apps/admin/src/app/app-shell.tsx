@@ -8,6 +8,7 @@ import { useAdminSections } from "./sections";
 
 type AppShellProps = {
   children: ReactNode;
+  contentIntent?: { onMouseEnter: () => void; onFocus: () => void };
 };
 
 /**
@@ -27,7 +28,7 @@ type AppShellProps = {
  * back to the public site from admin chrome; `homeHref` is omitted rather
  * than passed and unused.
  */
-export function AppShell({ children }: AppShellProps) {
+export function AppShell({ children, contentIntent }: AppShellProps) {
   const sections = useAdminSections();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
 
@@ -45,7 +46,9 @@ export function AppShell({ children }: AppShellProps) {
           ? "section"
           : "page"
       }
-      sections={sections}
+      sections={sections.map((section) =>
+        section.to === "/content" ? { ...section, ...contentIntent } : section,
+      )}
       width="wide"
       sectionsHomeHref="/"
       showFooter={false}

@@ -1,3 +1,4 @@
+import { InstantVirtualList } from "@unimatrix/instant-list";
 import {
   RiBox3Line,
   RiExternalLinkLine,
@@ -16,15 +17,7 @@ import type {
   DeployReconciliationResponse,
   DeployStateResponse,
 } from "@unimatrix/shared";
-import {
-  Button,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@unimatrix/ui/editor";
+import { Button } from "@unimatrix/ui/editor";
 import type { ReactNode } from "react";
 
 type EnvironmentSource = DeployDeclaration["env"][number]["source"];
@@ -98,31 +91,49 @@ function DefaultsTable({
   valueLabel: string;
 }) {
   return (
-    <Table className="table-fixed [&_th]:truncate [&_td]:truncate">
-      <TableHeader>
-        <TableRow>
-          <TableHead className="w-72">Name</TableHead>
-          <TableHead title={valueLabel}>{valueLabel}</TableHead>
-          <TableHead className="w-40 text-right" />
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {rows.map((row) => (
-          <TableRow key={row.name}>
-            <TableCell className="truncate font-mono text-xs" title={row.name}>
-              {row.name}
-            </TableCell>
-            <TableCell
-              className="truncate font-mono text-xs text-muted-foreground"
-              title={row.value}
-            >
-              {row.value === undefined ? "No default declared" : row.value || '""'}
-            </TableCell>
-            <TableCell />
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+    <InstantVirtualList
+      items={rows}
+      getItemId={(row) => row.name}
+      rowHeight={48}
+      height={Math.min(400, rows.length * 48 + 40)}
+      role="table"
+      rowRole="presentation"
+      ariaLabel="Defaults"
+      header={
+        <div role="rowgroup">
+          <div
+            role="row"
+            className="grid h-10 grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(0,1fr)] items-center border-b text-sm"
+          >
+            <div role="columnheader" className="w-72">
+              Name
+            </div>
+            <div role="columnheader" title={valueLabel}>
+              {valueLabel}
+            </div>
+            <div role="columnheader" className="w-40 text-right" />
+          </div>
+        </div>
+      }
+      renderItem={(row) => (
+        <div
+          role="row"
+          className="grid h-full grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(0,1fr)] items-center border-b text-sm"
+        >
+          <div role="cell" className="min-w-0 p-2 truncate font-mono text-xs" title={row.name}>
+            {row.name}
+          </div>
+          <div
+            role="cell"
+            className="truncate font-mono text-xs text-muted-foreground"
+            title={row.value}
+          >
+            {row.value === undefined ? "No default declared" : row.value || '""'}
+          </div>
+          <div role="cell" />
+        </div>
+      )}
+    />
   );
 }
 
@@ -222,50 +233,65 @@ export function ConfigPanel({
             <span className="font-mono text-xs">{declaration.configPath}</span>.
           </p>
         ) : (
-          <Table className="table-fixed [&_th]:truncate [&_td]:truncate">
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-72">Name</TableHead>
-                <TableHead>Value</TableHead>
-                <TableHead className="w-40 text-right" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {declaration.env.map(({ name, source }) => (
-                <TableRow key={name}>
-                  <TableCell className="text-xs">
-                    <span className="block truncate font-mono" title={name}>
-                      {name}
-                    </span>
-                    <span
-                      className="block truncate text-xs text-muted-foreground"
-                      title={sourceDescription(source)}
-                    >
-                      {sourceDescription(source)}
-                    </span>
-                  </TableCell>
-                  <TableCell className="truncate text-xs">
-                    <span
-                      className="block truncate font-mono text-muted-foreground"
-                      title={sourceValue(source)}
-                    >
-                      {sourceValue(source)}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-right text-xs">
-                    {source.kind === "secrets-store" ? (
-                      <Button variant="link" className="h-auto px-0 text-xs" asChild>
-                        <Link to="/secrets">
-                          <RiKeyLine aria-hidden="true" className="size-3.5" />
-                          Open in Secrets
-                        </Link>
-                      </Button>
-                    ) : null}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <InstantVirtualList
+            items={declaration.env}
+            getItemId={(row) => row.name}
+            rowHeight={64}
+            height={Math.min(400, declaration.env.length * 64 + 40)}
+            role="table"
+            rowRole="presentation"
+            ariaLabel="Environment variables"
+            header={
+              <div role="rowgroup">
+                <div
+                  role="row"
+                  className="grid h-10 grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(0,1fr)] items-center border-b text-sm"
+                >
+                  <div role="columnheader" className="w-72">
+                    Name
+                  </div>
+                  <div role="columnheader">Value</div>
+                  <div role="columnheader" className="w-40 text-right" />
+                </div>
+              </div>
+            }
+            renderItem={({ name, source }) => (
+              <div
+                role="row"
+                className="grid h-full grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(0,1fr)] items-center border-b text-sm"
+              >
+                <div role="cell" className="min-w-0 p-2 text-xs">
+                  <span className="block truncate font-mono" title={name}>
+                    {name}
+                  </span>
+                  <span
+                    className="block truncate text-xs text-muted-foreground"
+                    title={sourceDescription(source)}
+                  >
+                    {sourceDescription(source)}
+                  </span>
+                </div>
+                <div role="cell" className="min-w-0 p-2 truncate text-xs">
+                  <span
+                    className="block truncate font-mono text-muted-foreground"
+                    title={sourceValue(source)}
+                  >
+                    {sourceValue(source)}
+                  </span>
+                </div>
+                <div role="cell" className="min-w-0 p-2 text-right text-xs">
+                  {source.kind === "secrets-store" ? (
+                    <Button variant="link" className="h-auto px-0 text-xs" asChild>
+                      <Link to="/secrets">
+                        <RiKeyLine aria-hidden="true" className="size-3.5" />
+                        Open in Secrets
+                      </Link>
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            )}
+          />
         )}
       </section>
       <section className="space-y-2" aria-label="Build arguments">

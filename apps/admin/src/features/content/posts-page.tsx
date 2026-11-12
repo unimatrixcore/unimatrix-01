@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { InstantVirtualList, useBackgroundList, usePrefetchList } from "@unimatrix/instant-list";
 import { Link } from "@tanstack/react-router";
 import {
   RiAddLine,
@@ -22,7 +22,6 @@ import {
   Card,
   CardHeader,
   CardTitle,
-  ScrollArea,
   Tabs,
   TabsList,
   TabsTrigger,
@@ -43,19 +42,13 @@ import {
   EmptyHeader,
   EmptyTitle,
   Skeleton,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
   useIsMobile,
 } from "@unimatrix/ui/editor";
 import { useMemo, useState } from "react";
 
 import { useApiClient } from "@/lib/api-client";
 
-import { adminPostsQueryOptions } from "./queries";
+import { adminPostsListOptions } from "./queries";
 import { useDeletePosts, useSetPostsState, describeAdminError } from "./mutations";
 
 const COLLECTIONS: readonly { type: ContentPostType; title: string; newLabel: string }[] = [
@@ -65,9 +58,11 @@ const COLLECTIONS: readonly { type: ContentPostType; title: string; newLabel: st
 
 export function PostsPage() {
   const client = useApiClient();
-  const { data, error, isPending } = useQuery(adminPostsQueryOptions(client));
-  const posts = useMemo(() => data?.posts ?? [], [data]);
   const [collection, setCollection] = useState<ContentPostType>("blog");
+  const list = useBackgroundList(adminPostsListOptions(client, collection));
+  const blogIntent = usePrefetchList(adminPostsListOptions(client, "blog"));
+  const projectIntent = usePrefetchList(adminPostsListOptions(client, "project"));
+  const { error, isPending, items: posts } = list;
   return (
     <Card
       role="region"
@@ -92,11 +87,11 @@ export function PostsPage() {
           variant="line"
           className="col-start-1 row-start-1 -translate-y-0.5 ml-auto w-fit min-w-0 justify-end px-3 lg:col-start-2"
         >
-          <TabsTrigger value="blog">
+          <TabsTrigger value="blog" {...blogIntent}>
             <RiArticleLine aria-hidden="true" className="size-4" />
             Blog posts
           </TabsTrigger>
-          <TabsTrigger value="project">
+          <TabsTrigger value="project" {...projectIntent}>
             <RiCodeSSlashLine aria-hidden="true" className="size-4" />
             Projects
           </TabsTrigger>
@@ -111,6 +106,9 @@ export function PostsPage() {
           >
             <PostBulkTable
               collection={item}
+              onEndReached={list.onEndReached}
+              isFetching={list.isFetching}
+              hasNextPage={list.hasNextPage}
               error={error}
               isPending={isPending}
               posts={posts.filter((post) => post.type === item.type)}
@@ -182,11 +180,17 @@ function RowActions({
 
 function PostBulkTable({
   collection,
+  onEndReached,
+  isFetching,
+  hasNextPage,
   error,
   isPending,
   posts,
 }: {
   collection: (typeof COLLECTIONS)[number];
+  onEndReached: () => void | Promise<void>;
+  isFetching: boolean;
+  hasNextPage: boolean;
   error: Error | null;
   isPending: boolean;
   posts: readonly ContentPostSummary[];
@@ -237,7 +241,7 @@ function PostBulkTable({
         </Button>
         {isMobile ? (
           <Checkbox
-            aria-label="Select all rows"
+            aria-label="Select loaded rows"
             checked={selectionState}
             disabled={isBusy}
             onCheckedChange={(checked) => {
@@ -318,71 +322,89 @@ function PostBulkTable({
           </div>
         ) : null}
       </div>
-      <ScrollArea
-        variant="overlay"
-        orientation="both"
-        className="col-start-1 row-start-3 min-h-0 lg:col-span-2 lg:row-start-2"
-        viewportProps={{ "aria-label": "Collection rows", tabIndex: 0 }}
-      >
-        <div>
-          {error !== null ? (
-            <Empty>
-              <EmptyHeader>
-                <EmptyTitle>Posts could not be loaded.</EmptyTitle>
-                <EmptyDescription>{describeAdminError(error)}</EmptyDescription>
-              </EmptyHeader>
-            </Empty>
-          ) : isPending ? (
-            <div className="grid gap-2">
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
-            </div>
-          ) : posts.length === 0 ? (
-            <Empty>
-              <EmptyHeader>
-                <EmptyTitle>Nothing here yet.</EmptyTitle>
-                <EmptyDescription>Create one to see it listed here.</EmptyDescription>
-              </EmptyHeader>
-            </Empty>
-          ) : isMobile ? (
-            <ul className="divide-y divide-border px-3">
-              {posts.map((post) => (
-                <li className="flex items-center gap-3 py-2" key={post.id}>
-                  <Checkbox
-                    aria-label={`Select ${post.title}`}
-                    disabled={isBusy}
-                    checked={selectedIds.has(post.id)}
-                    onCheckedChange={(checked) => {
-                      toggle(post.id, checked === true);
-                    }}
-                  />
+      <div className="col-start-1 row-start-3 min-h-0 lg:col-span-2 lg:row-start-2">
+        {error !== null && posts.length === 0 ? (
+          <Empty>
+            <EmptyHeader>
+              <EmptyTitle>Posts could not be loaded.</EmptyTitle>
+              <EmptyDescription>{describeAdminError(error)}</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        ) : isPending ? (
+          <div className="grid gap-2">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+        ) : posts.length === 0 ? (
+          <Empty>
+            <EmptyHeader>
+              <EmptyTitle>Nothing here yet.</EmptyTitle>
+              <EmptyDescription>Create one to see it listed here.</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        ) : isMobile ? (
+          <InstantVirtualList
+            items={posts}
+            getItemId={(post) => post.id}
+            rowHeight={64}
+            height="100%"
+            ariaLabel={collection.title}
+            onEndReached={onEndReached}
+            isFetching={isFetching}
+            hasNextPage={hasNextPage}
+            error={error}
+            onRetry={onEndReached}
+            renderItem={(post) => (
+              <div className="flex h-full items-center gap-3 px-3 py-2">
+                <Checkbox
+                  aria-label={`Select ${post.title}`}
+                  disabled={isBusy}
+                  checked={selectedIds.has(post.id)}
+                  onCheckedChange={(checked) => {
+                    toggle(post.id, checked === true);
+                  }}
+                />
 
-                  <div className="min-w-0 flex-1">
-                    <p title={post.title} className="truncate text-sm font-medium text-foreground">
-                      {post.title}
-                    </p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {post.publicationState}
-                    </p>
-                  </div>
-                  <RowActions
-                    isBusy={isBusy}
-                    onDelete={() => {
-                      setPendingDelete([post]);
-                    }}
-                    post={post}
-                  />
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <Table className="table-fixed">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-10">
+                <div className="min-w-0 flex-1">
+                  <p title={post.title} className="truncate text-sm font-medium text-foreground">
+                    {post.title}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">{post.publicationState}</p>
+                </div>
+                <RowActions
+                  isBusy={isBusy}
+                  onDelete={() => {
+                    setPendingDelete([post]);
+                  }}
+                  post={post}
+                />
+              </div>
+            )}
+          />
+        ) : (
+          <InstantVirtualList
+            items={posts}
+            getItemId={(post) => post.id}
+            rowHeight={64}
+            height="100%"
+            role="table"
+            rowRole="presentation"
+            ariaLabel={collection.title}
+            onEndReached={onEndReached}
+            isFetching={isFetching}
+            hasNextPage={hasNextPage}
+            error={error}
+            onRetry={onEndReached}
+            header={
+              <div role="rowgroup">
+                <div
+                  role="row"
+                  className="grid h-10 grid-cols-[40px_minmax(0,1fr)_96px_112px_112px] items-center border-b text-sm"
+                >
+                  <div role="columnheader" className="w-10">
                     <Checkbox
-                      aria-label="Select all rows"
+                      aria-label="Select loaded rows"
                       disabled={isBusy}
                       checked={selectionState}
                       onCheckedChange={(checked) => {
@@ -391,65 +413,66 @@ function PostBulkTable({
                         );
                       }}
                     />
-                  </TableHead>
-                  <TableHead>Title</TableHead>
-                  <TableHead className="w-24">State</TableHead>
-                  <TableHead className="w-28">Published</TableHead>
+                  </div>
+                  <div role="columnheader">Title</div>
+                  <div role="columnheader" className="w-24">
+                    State
+                  </div>
+                  <div role="columnheader" className="w-28">
+                    Published
+                  </div>
 
-                  <TableHead className="w-28">
+                  <div role="columnheader" className="w-28">
                     <span className="sr-only">Actions</span>
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {posts.map((post) => (
-                  <TableRow
-                    data-state={selectedIds.has(post.id) ? "selected" : undefined}
-                    key={post.id}
-                  >
-                    <TableCell>
-                      <Checkbox
-                        aria-label={`Select ${post.title}`}
-                        disabled={isBusy}
-                        checked={selectedIds.has(post.id)}
-                        onCheckedChange={(checked) => {
-                          toggle(post.id, checked === true);
-                        }}
-                      />
-                    </TableCell>
-                    <TableCell className="font-medium">
-                      <span className="block truncate" title={post.title}>
-                        {post.title}
-                      </span>
-                      <span
-                        className="block truncate text-xs text-muted-foreground"
-                        title={post.slug}
-                      >
-                        {post.slug}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <StateBadge post={post} />
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {formatPublishedDate(post.publishedAt) || "—"}
-                    </TableCell>
-                    <TableCell>
-                      <RowActions
-                        isBusy={isBusy}
-                        onDelete={() => {
-                          setPendingDelete([post]);
-                        }}
-                        post={post}
-                      />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </div>
-      </ScrollArea>
+                  </div>
+                </div>
+              </div>
+            }
+            renderItem={(post) => (
+              <div
+                role="row"
+                className="grid h-full grid-cols-[40px_minmax(0,1fr)_96px_112px_112px] items-center border-b text-sm hover:bg-muted/50 data-[state=selected]:bg-muted"
+                data-state={selectedIds.has(post.id) ? "selected" : undefined}
+                key={post.id}
+              >
+                <div role="cell" className="min-w-0 p-2">
+                  <Checkbox
+                    aria-label={`Select ${post.title}`}
+                    disabled={isBusy}
+                    checked={selectedIds.has(post.id)}
+                    onCheckedChange={(checked) => {
+                      toggle(post.id, checked === true);
+                    }}
+                  />
+                </div>
+                <div role="cell" className="min-w-0 p-2 font-medium">
+                  <span className="block truncate" title={post.title}>
+                    {post.title}
+                  </span>
+                  <span className="block truncate text-xs text-muted-foreground" title={post.slug}>
+                    {post.slug}
+                  </span>
+                </div>
+                <div role="cell" className="min-w-0 p-2">
+                  <StateBadge post={post} />
+                </div>
+                <div role="cell" className="min-w-0 p-2 text-muted-foreground">
+                  {formatPublishedDate(post.publishedAt) || "—"}
+                </div>
+                <div role="cell" className="min-w-0 p-2">
+                  <RowActions
+                    isBusy={isBusy}
+                    onDelete={() => {
+                      setPendingDelete([post]);
+                    }}
+                    post={post}
+                  />
+                </div>
+              </div>
+            )}
+          />
+        )}
+      </div>
 
       <AlertDialog
         onOpenChange={(open) => {

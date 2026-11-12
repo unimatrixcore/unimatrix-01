@@ -3,6 +3,7 @@
   "compilerOptions": {
     "jsx": "react-jsx",
     "paths": {
+      "@unimatrix/instant-list": ["../../packages/instant-list/src/index.ts"],
       "@unimatrix/tauri": ["../../packages/tauri/src/index.ts"],
       "@unimatrix/tauri/query": ["../../packages/tauri/src/query.ts"],
       "@unimatrix/tauri/transport": ["../../packages/tauri/src/transport.ts"],

@@ -10,6 +10,12 @@ export default defineConfig({
   resolve: {
     alias: [
       {
+        find: /^@unimatrix\/instant-list$/,
+        replacement: fileURLToPath(
+          new URL("../../packages/instant-list/src/index.ts", import.meta.url),
+        ),
+      },
+      {
         find: /^@unimatrix\/tauri\/query$/,
         replacement: fileURLToPath(new URL("../../packages/tauri/src/query.ts", import.meta.url)),
       },

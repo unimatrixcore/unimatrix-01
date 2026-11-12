@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { act } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Providers } from "@/app/providers";
 import { createAppRouter } from "@/app/router";
@@ -10,8 +10,14 @@ import { createAppQueryClient } from "@/lib/query-client";
 
 const { request } = vi.hoisted(() => ({ request: vi.fn() }));
 vi.mock("@/lib/api-client", () => ({ apiClient: { request } }));
+beforeEach(() => {
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(800);
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(480);
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(180);
+});
 afterEach(() => {
   vi.resetAllMocks();
+  vi.restoreAllMocks();
 });
 
 async function renderStatus() {

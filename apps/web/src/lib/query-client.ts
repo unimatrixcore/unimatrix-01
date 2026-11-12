@@ -1,7 +1,8 @@
-import { QueryClient } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
+import { createInstantQueryClient } from "@unimatrix/instant-list";
 
 export function createAppQueryClient(): QueryClient {
-  return new QueryClient();
+  return createInstantQueryClient();
 }
 
 export const queryClient = createAppQueryClient();

@@ -1,8 +1,11 @@
+import { usePrefetchList } from "@unimatrix/instant-list";
 import { HeadContent, Link, Outlet, createRootRouteWithContext } from "@tanstack/react-router";
 import { RiAlertLine } from "@remixicon/react";
 
 import { Badge, Button, Card } from "@unimatrix/ui/public";
 
+import { useApiClient } from "@/lib/api-client";
+import { adminPostsListOptions } from "@/features/content/queries";
 import { AppShell } from "@/app/app-shell";
 import type { AppRouterContext } from "@/app/router";
 import { RequireSignedIn } from "@/app/require-signed-in";
@@ -17,10 +20,12 @@ export const Route = createRootRouteWithContext<AppRouterContext>()({
 
 function RootComponent() {
   const { runtimeConfig } = Route.useRouteContext();
+  const client = useApiClient();
+  const contentIntent = usePrefetchList(adminPostsListOptions(client));
 
   return (
     <RequireSignedIn authAppUrl={runtimeConfig.authAppUrl} enabled={runtimeConfig.requireSignIn}>
-      <AppShell>
+      <AppShell contentIntent={contentIntent}>
         <HeadContent />
         <Outlet />
       </AppShell>

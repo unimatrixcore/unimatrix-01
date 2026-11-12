@@ -45,7 +45,7 @@ export default defineConfig({
         replacement: fileURLToPath(new URL("./node_modules/react", import.meta.url)),
       },
     ],
-    dedupe: ["react", "react-dom"],
+    dedupe: ["@tanstack/react-query", "react", "react-dom"],
   },
   test: {
     coverage: createCoverageConfig({

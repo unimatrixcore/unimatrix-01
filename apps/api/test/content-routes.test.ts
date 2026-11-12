@@ -542,3 +542,53 @@ void test("public content routes reject unknown collections and malformed slugs"
     cleanup();
   }
 });
+
+void test("public cursor boundary bounds pages and validates continuation input", async () => {
+  const { app, cleanup } = createTestApp({ withClerk: false });
+  try {
+    await app.ready();
+    for (let index = 0; index < 3; index++) {
+      await createPost(app.db, "user_admin", {
+        type: "project",
+        slug: `paged-${index}`,
+        title: `Paged ${index}`,
+        summary: "Summary",
+        body: "Body",
+        publicationState: "published",
+        featured: index !== 0,
+      });
+    }
+    const first = await app.inject({
+      method: "GET",
+      url: "/content/posts?type=project&featured=true&limit=1",
+    });
+    assert.equal(first.statusCode, 200);
+    const body = first.json<ListPostsResponse>();
+    assert.equal(body.posts.length, 1);
+    assert.equal(body.posts[0]?.featured, true);
+    assert.ok(body.nextCursor);
+    const second = await app.inject({
+      method: "GET",
+      url: `/content/posts?type=project&featured=true&limit=1&cursor=${encodeURIComponent(body.nextCursor)}`,
+    });
+    assert.equal(second.statusCode, 200);
+    assert.equal(second.json<ListPostsResponse>().nextCursor, null);
+    assert.notEqual(second.json<ListPostsResponse>().posts[0]?.id, body.posts[0]?.id);
+    for (const query of [
+      "limit=0",
+      "limit=201",
+      "limit=1.5",
+      "cursor=broken",
+      "cursor=%5B1%2C2%5D",
+    ]) {
+      const invalid = await app.inject({
+        method: "GET",
+        url: `/content/posts?type=project&${query}`,
+      });
+      assert.equal(invalid.statusCode, 400, query);
+    }
+  } finally {
+    await app.close();
+    cleanup();
+  }
+});

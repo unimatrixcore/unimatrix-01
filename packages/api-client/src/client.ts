@@ -55,7 +55,13 @@ import {
   type UserDocument,
 } from "@unimatrix/shared";
 
-import type { ApiClientConfig, ApiClientFetch, ApiClientResponse } from "./config.js";
+import type {
+  ApiClientConfig,
+  ApiClientFetch,
+  ApiClientResponse,
+  ApiClientRequestControl,
+  ApiClientRequestInit,
+} from "./config.js";
 
 /**
  * Options accepted by `request()` for a given contract. `body` is only
@@ -84,14 +90,17 @@ export interface ApiClient {
   listFiles(query: ListFilesQuery): Promise<ListFilesResponse>;
   deleteFile(body: DeleteFileBody): Promise<DeleteResult>;
   /** Published content only; safe to call unauthenticated. */
-  listPosts(query: ListPostsQuery): Promise<ListPostsResponse>;
+  listPosts(query: ListPostsQuery, control?: ApiClientRequestControl): Promise<ListPostsResponse>;
   getPost(query: GetPostQuery): Promise<ContentPost>;
   /**
    * Admin content operations. Every one of these is rejected with 403 unless
    * the configured `getAuthToken` yields a session holding the `auth` admin
    * role — the client cannot and does not check that itself.
    */
-  adminListPosts(query: AdminListPostsQuery): Promise<ListPostsResponse>;
+  adminListPosts(
+    query: AdminListPostsQuery,
+    control?: ApiClientRequestControl,
+  ): Promise<ListPostsResponse>;
   adminGetPost(query: GetPostQuery): Promise<ContentPost>;
   createPost(body: CreatePostBody): Promise<ContentPost>;
   updatePost(body: UpdatePostBody): Promise<ContentPost>;
@@ -144,6 +153,7 @@ export interface ApiClientErrorOptions {
   details?: unknown;
   requestId?: string;
   status: number;
+  retryAfterMs?: number;
 }
 
 /**
@@ -158,11 +168,13 @@ export class ApiClientError extends Error {
   readonly details?: unknown;
   readonly requestId?: string;
   readonly status: number;
+  readonly retryAfterMs?: number;
 
   constructor(message: string, options: ApiClientErrorOptions) {
     super(message);
     this.name = "ApiClientError";
     this.status = options.status;
+    if (options.retryAfterMs !== undefined) this.retryAfterMs = options.retryAfterMs;
 
     if (options.code !== undefined) {
       this.code = options.code;
@@ -266,6 +278,15 @@ async function buildErrorFromResponse(
   response: ApiClientResponse,
   contract: ApiContract,
 ): Promise<ApiClientError> {
+  const retryAfter = response.headers?.get("retry-after");
+  const retryAfterMs =
+    retryAfter == null
+      ? undefined
+      : /^\d+(\.\d+)?$/.test(retryAfter)
+        ? Number(retryAfter) * 1000
+        : Math.max(0, Date.parse(retryAfter) - Date.now());
+  const retryOptions =
+    typeof retryAfterMs === "number" && Number.isFinite(retryAfterMs) ? { retryAfterMs } : {};
   const fallbackMessage = `${contract.method} ${contract.path} failed with status ${response.status}.`;
 
   let payload: unknown;
@@ -273,11 +294,11 @@ async function buildErrorFromResponse(
   try {
     payload = await response.json();
   } catch {
-    return new ApiClientError(fallbackMessage, { status: response.status });
+    return new ApiClientError(fallbackMessage, { status: response.status, ...retryOptions });
   }
 
   if (typeof payload !== "object" || payload === null) {
-    return new ApiClientError(fallbackMessage, { status: response.status });
+    return new ApiClientError(fallbackMessage, { status: response.status, ...retryOptions });
   }
 
   const envelope = payload as ApiErrorEnvelope;
@@ -289,6 +310,7 @@ async function buildErrorFromResponse(
 
   return new ApiClientError(message, {
     status: response.status,
+    ...retryOptions,
     ...(errorInfo && typeof errorInfo.code === "string" ? { code: errorInfo.code } : {}),
     ...(typeof envelope.requestId === "string" ? { requestId: envelope.requestId } : {}),
     ...(errorInfo && "details" in errorInfo ? { details: errorInfo.details } : {}),
@@ -322,6 +344,7 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
   const request = async <TContract extends ApiContract>(
     contract: TContract,
     options?: ApiClientRequestOptions<TContract>,
+    control?: ApiClientRequestControl,
   ): Promise<ApiContractResponse<TContract>> => {
     const requestHeaders: Record<string, string> = { ...headers };
 
@@ -335,7 +358,8 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
     const query = options !== undefined && "query" in options ? options.query : undefined;
     const queryString = buildQueryString(query);
 
-    const requestInit: { body?: string; headers: Record<string, string>; method: string } = {
+    const requestInit: ApiClientRequestInit & { body?: string } = {
+      ...control,
       headers: requestHeaders,
       method: contract.method,
     };
@@ -371,11 +395,11 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
       request<typeof listFilesContract>(listFilesContract, { query }),
     deleteFile: (body: DeleteFileBody) =>
       request<typeof deleteFileContract>(deleteFileContract, { body }),
-    listPosts: (query: ListPostsQuery) =>
-      request<typeof listPostsContract>(listPostsContract, { query }),
+    listPosts: (query: ListPostsQuery, control?: ApiClientRequestControl) =>
+      request<typeof listPostsContract>(listPostsContract, { query }, control),
     getPost: (query: GetPostQuery) => request<typeof getPostContract>(getPostContract, { query }),
-    adminListPosts: (query: AdminListPostsQuery) =>
-      request<typeof adminListPostsContract>(adminListPostsContract, { query }),
+    adminListPosts: (query: AdminListPostsQuery, control?: ApiClientRequestControl) =>
+      request<typeof adminListPostsContract>(adminListPostsContract, { query }, control),
     adminGetPost: (query: GetPostQuery) =>
       request<typeof adminGetPostContract>(adminGetPostContract, { query }),
     createPost: (body: CreatePostBody) =>

@@ -40,6 +40,7 @@ import {
   getPublishedPost,
   listAssets,
   listPostsForAdmin,
+  listContentPage,
   listPublishedPosts,
   putAsset,
   setPostsState,
@@ -155,13 +156,19 @@ export const contentModule: FastifyPluginAsync = async (app) => {
       },
     },
     handler: async (request, reply) => {
-      const posts = await listPublishedPosts(app.db, request.query.type);
+      const result =
+        request.query.limit !== undefined ||
+        request.query.cursor !== undefined ||
+        request.query.featured !== undefined
+          ? await listContentPage(app.db, request.query, "public")
+          : { posts: await listPublishedPosts(app.db, request.query.type) };
+      const etag = buildEtag([buildListEtag(result.posts), JSON.stringify(result)]);
 
-      if (applyPublicCache(request, reply, buildListEtag(posts))) {
+      if (applyPublicCache(request, reply, etag)) {
         return reply;
       }
 
-      return { posts };
+      return result;
     },
   });
 
@@ -277,9 +284,10 @@ export const contentModule: FastifyPluginAsync = async (app) => {
       },
     },
     handler: async (request) => {
-      const posts = await listPostsForAdmin(app.db, request.query);
-
-      return { posts };
+      if (request.query.limit !== undefined || request.query.cursor !== undefined) {
+        return listContentPage(app.db, request.query, "admin");
+      }
+      return { posts: await listPostsForAdmin(app.db, request.query) };
     },
   });
 

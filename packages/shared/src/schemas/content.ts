@@ -124,14 +124,35 @@ export const contentPostSchema = contentPostSummarySchema.extend({
 
 export type ContentPost = z.output<typeof contentPostSchema>;
 
+const contentCursorTupleSchema = z.tuple([z.string().max(64), z.string().min(1).max(128)]);
+
+export const contentListCursorSchema = z
+  .string()
+  .max(512)
+  .refine((value) => {
+    try {
+      return contentCursorTupleSchema.safeParse(JSON.parse(value)).success;
+    } catch {
+      return false;
+    }
+  }, "Invalid content cursor");
+
+const contentPagingFields = {
+  cursor: contentListCursorSchema.optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+};
+
 export const listPostsQuerySchema = z.strictObject({
   type: contentPostTypeSchema,
+  featured: z.enum(["true", "false"]).optional(),
+  ...contentPagingFields,
 });
 
 export type ListPostsQuery = z.output<typeof listPostsQuerySchema>;
 
 export const listPostsResponseSchema = z.strictObject({
   posts: z.array(contentPostSummarySchema),
+  nextCursor: contentListCursorSchema.nullable().optional(),
 });
 
 export type ListPostsResponse = z.output<typeof listPostsResponseSchema>;
@@ -151,6 +172,7 @@ export type GetPostQuery = z.output<typeof getPostQuerySchema>;
 export const adminListPostsQuerySchema = z.strictObject({
   type: contentPostTypeSchema.optional(),
   publicationState: contentPublicationStateSchema.optional(),
+  ...contentPagingFields,
 });
 
 export type AdminListPostsQuery = z.output<typeof adminListPostsQuerySchema>;

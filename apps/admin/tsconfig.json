@@ -4,6 +4,7 @@
     "jsx": "react-jsx",
     "paths": {
       "@/*": ["./src/*"],
+      "@unimatrix/instant-list": ["../../packages/instant-list/src/index.ts"],
       "@unimatrix/api-client": ["../../packages/api-client/src/index.ts"],
       "@unimatrix/app-config": ["../../packages/app-config/src/index.ts"],
       "@unimatrix/deploy-config": ["../../packages/deploy-config/src/index.ts"],

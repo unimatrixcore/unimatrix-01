@@ -77,7 +77,7 @@ function panel(name: "Platform credentials" | "Integrations") {
 
 /** The credential row containing the name. */
 function row(name: string): HTMLElement {
-  const element = screen.getByText(name).closest("tr");
+  const element = screen.getByText(name).closest<HTMLElement>('[role="row"]');
 
   if (element === null) {
     throw new Error(`No row found for ${name}`);
@@ -122,7 +122,7 @@ describe("SecretsPage", () => {
   it("uses fixed table columns without implementation notes", async () => {
     await renderPage();
     expect(screen.queryByText(/never display a credential/u)).not.toBeInTheDocument();
-    expect(screen.getByRole("table")).toHaveClass("table-fixed");
+    expect(screen.getByRole("table")).toHaveStyle({ scrollbarGutter: "stable" });
     expect(screen.getByRole("columnheader", { name: "Credential" })).toBeInTheDocument();
   });
 
@@ -152,7 +152,9 @@ describe("SecretsPage", () => {
     const badges = screen.getAllByText("Sealed under an older key");
 
     expect(badges).toHaveLength(1);
-    expect(badges[0]?.closest("tr")).toHaveTextContent("integrations/stripe/api-key");
+    expect(badges[0]?.closest<HTMLElement>('[role="row"]')).toHaveTextContent(
+      "integrations/stripe/api-key",
+    );
   });
 
   it("offers Set value, not Rotate, for a name the store has nothing for", async () => {

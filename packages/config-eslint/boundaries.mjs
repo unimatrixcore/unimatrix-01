@@ -34,6 +34,7 @@ const ALLOWED_PACKAGE_IMPORTS = {
   // no runtime shape of its own, and this package's exported types are a real
   // (if deploy-time-only) contract each app opts into explicitly.
   "apps/web": [
+    "instant-list",
     "api-client",
     "app-config",
     "auth",
@@ -62,16 +63,34 @@ const ALLOWED_PACKAGE_IMPORTS = {
   // its own, which is the whole reason its shells take the account control as
   // a slot, and cube is the move engine and diagram geometry — no transport,
   // no content, and its own `.` entry carries no dependency at all.
-  "apps/cflop": ["chrome", "cube", "deploy-config", "e2e-helpers", "ui"],
-  "apps/status": ["api-client", "app-config", "chrome", "deploy-config", "shared", "ui"],
-  "apps/auth": ["app-config", "auth", "chrome", "deploy-config", "ui"],
+  "apps/cflop": ["instant-list", "chrome", "cube", "deploy-config", "e2e-helpers", "ui"],
+  "apps/status": [
+    "instant-list",
+    "api-client",
+    "app-config",
+    "chrome",
+    "deploy-config",
+    "shared",
+    "ui",
+  ],
+  "apps/auth": ["instant-list", "app-config", "auth", "chrome", "deploy-config", "ui"],
   // `api-client` and `shared` were added when the CMS moved onto this origin:
   // the content section calls the API through `@unimatrix/api-client` and
   // shares its request/response types with `apps/web`'s public content
   // routes through `@unimatrix/shared`.
-  "apps/admin": ["api-client", "app-config", "auth", "chrome", "deploy-config", "shared", "ui"],
+  "apps/admin": [
+    "instant-list",
+    "api-client",
+    "app-config",
+    "auth",
+    "chrome",
+    "deploy-config",
+    "shared",
+    "ui",
+  ],
   "packages/api-client": ["shared"],
   "packages/tauri": [],
+  "packages/instant-list": [],
   "packages/deploy-client": ["shared"],
   "packages/service-http": [],
   "packages/document-text": [],
@@ -129,7 +148,7 @@ function toElement(workspace) {
 function buildPolicies(desktopWorkspace) {
   const policies = { ...ALLOWED_PACKAGE_IMPORTS };
   if (desktopWorkspace && !Object.hasOwn(policies, desktopWorkspace)) {
-    policies[desktopWorkspace] = ["chrome", "tauri", "ui"];
+    policies[desktopWorkspace] = ["chrome", "instant-list", "tauri", "ui"];
   }
   return Object.entries(policies).map(([workspace, allowed]) => {
     const from = toElement(workspace);

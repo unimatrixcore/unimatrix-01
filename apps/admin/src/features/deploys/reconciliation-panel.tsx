@@ -1,3 +1,4 @@
+import { InstantVirtualList } from "@unimatrix/instant-list";
 import { Link } from "@tanstack/react-router";
 import { RiScales3Line, RiServerLine, RiTimeLine } from "@remixicon/react";
 import type { DeployReconciliationResponse, DeployDeclaration } from "@unimatrix/shared";
@@ -112,93 +113,112 @@ export function ReconciliationPanel({
       ) : null}
       {count ? (
         <div className="divide-y divide-border border-y border-border">
-          {findings.map((finding) => {
-            const source = declaration?.env.find((entry) => entry.name === finding.key)?.source;
-            const sourceLabel =
-              source?.kind === "literal"
-                ? "config literal"
-                : source?.kind === "secrets-store"
-                  ? "secrets store"
-                  : (source?.kind ?? "undeclared");
-            return (
-              <div key={finding.key} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-4">
-                <div className="min-w-0 flex-1">
-                  <p className="break-all font-mono text-xs text-foreground">{finding.key}</p>
-                  <div className="mt-1.5 flex items-center gap-2 text-xs">
-                    <span
-                      className={
-                        finding.state === "undeclared" ? "text-amber-500" : "text-destructive"
-                      }
-                    >
-                      {finding.state === "undeclared"
-                        ? "Undeclared"
-                        : finding.state === "blank"
-                          ? "Blank value"
-                          : "Missing value"}
-                    </span>
-                    <span className="text-muted-foreground">· {sourceLabel}</span>
+          <InstantVirtualList
+            items={findings}
+            getItemId={(finding) => finding.key}
+            rowHeight={88}
+            measureRows
+            height={Math.min(440, findings.length * 88)}
+            ariaLabel="Environment findings"
+            renderItem={(finding) => {
+              const source = declaration?.env.find((entry) => entry.name === finding.key)?.source;
+              const sourceLabel =
+                source?.kind === "literal"
+                  ? "config literal"
+                  : source?.kind === "secrets-store"
+                    ? "secrets store"
+                    : (source?.kind ?? "undeclared");
+              return (
+                <div key={finding.key} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-4">
+                  <div className="min-w-0 flex-1">
+                    <p className="break-all font-mono text-xs text-foreground">{finding.key}</p>
+                    <div className="mt-1.5 flex items-center gap-2 text-xs">
+                      <span
+                        className={
+                          finding.state === "undeclared" ? "text-amber-500" : "text-destructive"
+                        }
+                      >
+                        {finding.state === "undeclared"
+                          ? "Undeclared"
+                          : finding.state === "blank"
+                            ? "Blank value"
+                            : "Missing value"}
+                      </span>
+                      <span className="text-muted-foreground">· {sourceLabel}</span>
+                    </div>
                   </div>
+                  {finding.state === "undeclared" ? (
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button size="sm" variant="outline">
+                          Review
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent align="end" className="rounded-none text-xs">
+                        <p className="break-all font-mono">{finding.key}</p>
+                        <p>
+                          Keep: declare it in{" "}
+                          {declaration?.configPath ?? "the deployment configuration"}.
+                        </p>
+                        {dokployUrl ? (
+                          <a
+                            href={dokployUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="underline underline-offset-4"
+                          >
+                            Remove in Dokploy ↗
+                          </a>
+                        ) : null}
+                      </PopoverContent>
+                    </Popover>
+                  ) : source?.kind === "secrets-store" ? (
+                    <Button asChild size="sm" variant="outline">
+                      <Link to="/secrets">Open Secrets</Link>
+                    </Button>
+                  ) : declaration ? (
+                    <Button asChild size="sm" variant="outline">
+                      <a href={sourceHref(declaration.configPath)} target="_blank" rel="noreferrer">
+                        Open source ↗
+                      </a>
+                    </Button>
+                  ) : null}
                 </div>
-                {finding.state === "undeclared" ? (
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button size="sm" variant="outline">
-                        Review
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent align="end" className="rounded-none text-xs">
-                      <p className="break-all font-mono">{finding.key}</p>
-                      <p>
-                        Keep: declare it in{" "}
-                        {declaration?.configPath ?? "the deployment configuration"}.
-                      </p>
-                      {dokployUrl ? (
-                        <a
-                          href={dokployUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="underline underline-offset-4"
-                        >
-                          Remove in Dokploy ↗
-                        </a>
-                      ) : null}
-                    </PopoverContent>
-                  </Popover>
-                ) : source?.kind === "secrets-store" ? (
-                  <Button asChild size="sm" variant="outline">
-                    <Link to="/secrets">Open Secrets</Link>
-                  </Button>
-                ) : declaration ? (
-                  <Button asChild size="sm" variant="outline">
-                    <a href={sourceHref(declaration.configPath)} target="_blank" rel="noreferrer">
-                      Open source ↗
-                    </a>
-                  </Button>
+              );
+            }}
+          />
+          <InstantVirtualList
+            items={matched?.settingFindings ?? []}
+            getItemId={(finding) => finding.setting}
+            rowHeight={88}
+            measureRows
+            height={Math.min(440, (matched?.settingFindings.length ?? 0) * 88)}
+            ariaLabel="Setting findings"
+            renderItem={(finding) => (
+              <div
+                key={finding.setting}
+                className="flex flex-wrap items-center gap-x-4 gap-y-2 py-4"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="break-all font-mono text-xs">{finding.setting}</p>
+                  <p className="mt-1.5 break-all text-xs text-muted-foreground">
+                    <span className="text-destructive">Different setting</span> · declared{" "}
+                    {finding.declared} · Dokploy has {finding.actual}
+                  </p>
+                </div>
+                {declaration ? (
+                  <a
+                    href={sourceHref(declaration.configPath)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs underline underline-offset-4"
+                  >
+                    Open source ↗
+                  </a>
                 ) : null}
               </div>
-            );
-          })}
-          {matched?.settingFindings.map((finding) => (
-            <div key={finding.setting} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-4">
-              <div className="min-w-0 flex-1">
-                <p className="break-all font-mono text-xs">{finding.setting}</p>
-                <p className="mt-1.5 break-all text-xs text-muted-foreground">
-                  <span className="text-destructive">Different setting</span> · declared{" "}
-                  {finding.declared} · Dokploy has {finding.actual}
-                </p>
-              </div>
-              {declaration ? (
-                <a
-                  href={sourceHref(declaration.configPath)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-xs underline underline-offset-4"
-                >
-                  Open source ↗
-                </a>
-              ) : null}
-            </div>
-          ))}
+            )}
+          />
           {routing?.status === "drift" ? (
             <>
               {routing.missingHosts.length > 0 || routing.unexpectedHosts.length > 0 ? (
@@ -251,13 +271,23 @@ export function ReconciliationPanel({
       false) ? (
         <details className="text-xs text-muted-foreground">
           <summary className="cursor-pointer">Informational environment findings</summary>
-          {matched?.envFindings
-            .filter((finding) => finding.state === "build-arg-runtime-copy")
-            .map((finding) => (
-              <p className="py-2" key={finding.key}>
+          <InstantVirtualList
+            items={
+              matched?.envFindings.filter(
+                (finding) => finding.state === "build-arg-runtime-copy",
+              ) ?? []
+            }
+            getItemId={(finding) => finding.key}
+            rowHeight={48}
+            measureRows
+            height={192}
+            ariaLabel="Informational environment findings"
+            renderItem={(finding) => (
+              <p className="py-2">
                 <span className="font-mono">{finding.key}</span> · build argument copied to runtime
               </p>
-            ))}
+            )}
+          />
         </details>
       ) : null}
       <p className="text-xs text-muted-foreground">
