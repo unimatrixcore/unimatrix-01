@@ -1,6 +1,118 @@
 import { expect, test } from "@playwright/test";
 import { installLabFixture } from "./fixture.js";
 
+function installNavigationRegressionFixture() {
+  const previous = window.__POKER_LAB_TEST_INVOKE__!;
+  const summary = { total: 2, pending: 2, reviewed: 0, captures: 1, revision: 1 };
+  const crops = [1, 2].map((n) => ({
+    id: "seat.0.name",
+    sample_key: `pending-${n}`,
+    queue_id: n,
+    base64_image: "",
+    label: "",
+    reviewed: false,
+  }));
+  const entries = [
+    { filename: "alice.png", id: "seat.0.name", label: "Alice" },
+    { filename: "bob.png", id: "seat.0.name", label: "Bob" },
+  ];
+  const writes: Array<{ filename: string; label: string }> = [];
+  Object.assign(window, { navigationReviewWrites: writes });
+  const success = (body: unknown) => ({ status: 200, headers: {}, body });
+  const page = (items: unknown[], meta: unknown = {}) =>
+    success({ items, nextCursor: null, hasMore: false, total: items.length, meta });
+  window.__POKER_LAB_TEST_INVOKE__ = async (request) => {
+    if (request.path === "/api/initial_data") {
+      const response = (await previous(request)) as { body: Record<string, unknown> };
+      return {
+        ...response,
+        body: {
+          ...response.body,
+          session: {
+            queue_mode: "paged",
+            pool: crops,
+            frames: [],
+            queue_summary: summary,
+            review_batch: { mode: "stream", batch_id: "navigation-run", next_cursor: null },
+            review_stats: { total: 2, pending: 2, items: 0, time: 0 },
+            labelingUnlocked: true,
+          },
+          collection_page: { items: crops, next_cursor: null, summary },
+        },
+      };
+    }
+    if (request.query.background_page === "1") {
+      if (request.path === "/api/queue") return page(crops, { summary });
+      if (request.path === "/api/db_entries") {
+        const search = (request.query.search || "").toLowerCase();
+        return page(entries.filter((entry) => entry.label.toLowerCase().includes(search)));
+      }
+      if (request.path === "/api/label_history") return page([]);
+    }
+    if (request.path === "/api/model_suggestion")
+      return success({ available: false, state: "unavailable" });
+    if (request.path === "/api/review_label") {
+      const body = request.body as { filename: string; label: string };
+      writes.push({ filename: body.filename, label: body.label });
+      const entry = entries.find((item) => item.filename === body.filename);
+      if (entry) entry.label = body.label;
+      return success({ success: true, event: { id: writes.length }, summary });
+    }
+    return previous(request);
+  };
+}
+
+for (const destination of ["collection", "database"]) {
+  test(`${destination} remounts after repeated labeling round trips`, async ({ page }) => {
+    await page.addInitScript(installLabFixture);
+    await page.addInitScript(installNavigationRegressionFixture);
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.goto("/collection");
+    const cards = page.locator(
+      destination === "collection" ? "#frame-list .card" : "#db-list .card",
+    );
+    if (destination === "database") await page.locator("#nav-database").click();
+    await expect(cards.first()).toBeVisible();
+    for (let round = 0; round < 2; round++) {
+      await page.locator("#nav-labeling").click();
+      await expect(page.locator("#label-input")).toBeVisible();
+      await page.locator(destination === "collection" ? "#nav-step-prev" : "#nav-database").click();
+      await expect(cards.first()).toBeVisible();
+      await expect(cards).toHaveCount(2);
+    }
+    expect(errors).toEqual([]);
+  });
+}
+
+test("individual database selections retain metadata across search changes", async ({ page }) => {
+  await page.addInitScript(installLabFixture);
+  await page.addInitScript(installNavigationRegressionFixture);
+  await page.goto("/collection");
+  await page.locator("#nav-database").click();
+  await page.locator("#db-search").fill("Alice");
+  const alice = page.locator('#db-list .card[data-filename="alice.png"]');
+  await expect(alice).toBeVisible();
+  await alice.getByRole("checkbox").click();
+  await page.locator("#db-search").fill("Bob");
+  const bob = page.locator('#db-list .card[data-filename="bob.png"]');
+  await expect(bob).toBeVisible();
+  await bob.getByRole("checkbox").click();
+  await expect(page.locator("#btn-db-deselect-all")).toContainText("2");
+  await page.locator("#db-bulk-label-input").fill("Charlie");
+  await page.locator("#btn-db-bulk-label").click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as unknown as { navigationReviewWrites: unknown[] }).navigationReviewWrites,
+      ),
+    )
+    .toEqual([
+      { filename: "alice.png", label: "Charlie" },
+      { filename: "bob.png", label: "Charlie" },
+    ]);
+});
+
 test("collection uses the native page bridge and windows eager-loaded crops", async ({ page }) => {
   await page.addInitScript({
     content: `(${installLabFixture.toString()})(); (${(() => {

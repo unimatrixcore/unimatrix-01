@@ -6,7 +6,7 @@
       "target": "public/static/js/app.js",
       "sha256": "b236939243a91e45ea5e4612a595a519fb856e0f095df0fe74bc786ffe4a0267",
       "mode": "adapted",
-      "targetSha256": "bdc93ca7fcd9efeb452e926ee75a275c3ff89f425b8b2dae71a1421bcd55ab66"
+      "targetSha256": "2c9cd7f411893ee70ee5dc51ffbfd42f21af3d2d2a3dba51449b3b50af4f3230"
     },
     {
       "source": "static/js/lib/ai_review.js",

@@ -2547,7 +2547,8 @@ const handleBulkLabel = async (view) => {
     showLoading(true, "Updating Database...");
     for (const fn of filenames) {
       const entry = dbEntries.find(e => e.filename === fn);
-      try { if (entry) await persistEditedItem(entry, label); } catch (error) { showLoading(false); showToast(error.message, "error"); return; }
+      if (!entry) {showLoading(false);showToast("A selected crop is unavailable. Refresh the database before applying labels.", "error");return;}
+      try { await persistEditedItem(entry, label); } catch (error) { showLoading(false); showToast(error.message, "error"); return; }
       if (entry) {
         entry.label = label;
         if (label && (entry.id.includes("bank") || entry.id.includes("bet") || entry.id.includes("pot"))) {
@@ -2699,9 +2700,12 @@ function renderDatabase() {
     const epoch=datasetEpoch,datasetId=activeDatasetId, search=document.getElementById("db-search").value.trim();
     dbListEl.classList.add("instant-list-host");document.getElementById("db-pagination").classList.add("hidden");
     window.CollectorBackgroundLists.render(dbListEl,{path:"/api/db_entries",datasetId,query:{search},key:item=>item.filename,
-      card:e=>{ const card=renderCard({imageSrc:scopedImage(`/api/db_image/${encodeURIComponent(e.filename)}`),label:e.label,id:e.id,filename:e.filename,originalIdx:e.filename,isSelected:selectedFiles.has(e.filename),isBlank:e.label==='',isEditing:editingPoolIdx===e.filename,onToggle:()=>toggleDbSelection(e.filename),onEdit:()=>startEditingDbLabel(e.filename),onRemove:()=>deleteDbEntry(e.filename),removeLabel:'Remove',onSave:()=>saveDbLabel(e.filename),onKeydown:event=>handleDbEditKey(event,e.filename)});const input=card.querySelector('input.card-label');if(input){if(dbDrafts.has(e.filename)) input.value=dbDrafts.get(e.filename);input.oninput=()=>dbDrafts.set(e.filename,input.value);}return card;},
+      card:e=>{ const card=renderCard({imageSrc:scopedImage(`/api/db_image/${encodeURIComponent(e.filename)}`),label:e.label,id:e.id,filename:e.filename,originalIdx:e.filename,isSelected:selectedFiles.has(e.filename),isBlank:e.label==='',isEditing:editingPoolIdx===e.filename,onToggle:()=>toggleDbSelection(e.filename,e),onEdit:()=>startEditingDbLabel(e.filename),onRemove:()=>deleteDbEntry(e.filename),removeLabel:'Remove',onSave:()=>saveDbLabel(e.filename),onKeydown:event=>handleDbEditKey(event,e.filename)});const input=card.querySelector('input.card-label');if(input){if(dbDrafts.has(e.filename)) input.value=dbDrafts.get(e.filename);input.oninput=()=>dbDrafts.set(e.filename,input.value);}return card;},
       changed:(items,meta,loading,error,total)=>{ if(epoch!==datasetEpoch || datasetId!==activeDatasetId) return;
-        const old=new Map(dbEntries.map(item=>[item.filename,item]));dbEntries=items.map(item=>Object.assign(old.get(item.filename) || {},item));
+        const old=new Map(dbEntries.map(item=>[item.filename,item]));
+        for(const filename of selectedFiles) if(old.has(filename) && !dbSelectedMetadata.has(filename)) dbSelectedMetadata.set(filename,old.get(filename));
+        dbEntries=items.map(item=>Object.assign(old.get(item.filename) || {},item));
+        for(const item of dbEntries) if(selectedFiles.has(item.filename)) dbSelectedMetadata.set(item.filename,item);
         for(const [filename,item] of dbSelectedMetadata) if(!dbEntries.some(entry=>entry.filename===filename)) dbEntries.push(item);
         if(!search) dbTotal=total;hud.classList.toggle("hidden",!total && !search && !loading && !error);empty.classList.toggle("hidden",!!total || !!search || loading || error);
         document.getElementById("count-db").textContent=String(total);document.getElementById("btn-db-select-all").classList.toggle("hidden",!total);
@@ -2861,9 +2865,12 @@ function handleDbEditKey(event, filename) {
     event.preventDefault(); dbDrafts.delete(filename); dbSuggestionRequest++; editingPoolIdx = -1; renderDatabase();
   }
 }
-function toggleDbSelection(filename) {
-  if (selectedFiles.has(filename)) selectedFiles.delete(filename);
-  else selectedFiles.add(filename);
+function toggleDbSelection(filename, entry = dbEntries.find(item=>item.filename===filename)) {
+  if (selectedFiles.has(filename)) {selectedFiles.delete(filename);dbSelectedMetadata.delete(filename);}
+  else {
+    if(!entry) return;
+    selectedFiles.add(filename);dbSelectedMetadata.set(filename,entry);
+  }
 
   // Surgical Update
   const card = dbListEl.querySelector(`.card[data-filename="${filename}"]`);
@@ -2972,6 +2979,7 @@ const setView = (v, pushState = true) => {
   }
   if(queueMode && v==='labeling') {
     if(window.CollectorBackgroundLists && frameListEl) window.CollectorBackgroundLists.clear(frameListEl);
+    if(window.CollectorBackgroundLists && dbListEl) window.CollectorBackgroundLists.clear(dbListEl);
     window.CollectorSharedUi?.disposeMenus?.(frameListEl);
     frameListEl?.replaceChildren();collectionItems=[];
     dbListEl?.replaceChildren();sessionReviewListEl?.replaceChildren();
@@ -3001,7 +3009,8 @@ const setView = (v, pushState = true) => {
   ['nav-collection','nav-labeling','nav-session-review','nav-database'].forEach(id => { const btn = document.getElementById(id); btn.classList.remove("btn-primary"); btn.classList.add("btn-secondary"); });
 
   if (v === 'collection') {
-    if(queueMode && !collectionItems.length && queueSummary?.total && !queueLoading) void loadCollectionPage(collectionCursor).catch(error=>showToast(error.message,'error'));
+    if(queueMode && window.CollectorBackgroundLists) renderFrames();
+    else if(queueMode && !collectionItems.length && queueSummary?.total && !queueLoading) void loadCollectionPage(collectionCursor).catch(error=>showToast(error.message,'error'));
     viewCollection.classList.remove("hidden");
     document.getElementById("nav-collection").classList.add("btn-primary");
     document.getElementById("nav-collection").classList.remove("btn-secondary");
