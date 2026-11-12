@@ -194,6 +194,8 @@ export function useBackgroundList<T, Cursor>(options: BackgroundListOptions<T, C
           /* Browser telemetry remains available if native sampling fails. */
         }
       }
+      // Sibling list subscriptions must attach before inactive caches can be evicted.
+      await Promise.resolve();
       if (active) {
         const policy = getListPolicy(next);
         if (policy.gcTime <= 30_000)

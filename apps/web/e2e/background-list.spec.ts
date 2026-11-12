@@ -136,7 +136,12 @@ test("revisiting a stale capped catalog refetches its full cached pages", async 
   });
   await page.goto("/blog");
   await expect(page.getByRole("heading", { name: "Record 1", exact: true })).toBeVisible();
-  await expect.poll(() => requests.length, { timeout: 10_000 }).toBe(10);
+  await expect
+    .poll(() => ({ requests: [...requests], limits: [...limits] }), { timeout: 10_000 })
+    .toEqual({
+      requests: Array.from({ length: 10 }, (_, index) => index * 50),
+      limits: Array<number>(10).fill(50),
+    });
   await page.waitForTimeout(300);
   expect(limits).toEqual(Array<number>(10).fill(50));
   await page.clock.fastForward(5 * 60_000 + 1);
@@ -145,7 +150,12 @@ test("revisiting a stale capped catalog refetches its full cached pages", async 
   requests.length = 0;
   limits.length = 0;
   await page.locator('a[href="/blog"]').first().dispatchEvent("click");
-  await expect.poll(() => requests.length, { timeout: 10_000 }).toBe(10);
+  await expect
+    .poll(() => ({ requests: [...requests], limits: [...limits] }), { timeout: 10_000 })
+    .toEqual({
+      requests: Array.from({ length: 10 }, (_, index) => index * 50),
+      limits: Array<number>(10).fill(50),
+    });
   await page.waitForTimeout(300);
   expect(limits).toEqual(Array<number>(10).fill(50));
   expect(requests).toEqual(Array.from({ length: 10 }, (_, index) => index * 50));

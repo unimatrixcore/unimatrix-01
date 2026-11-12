@@ -578,3 +578,56 @@ it("replaces capped and demand-loaded pages at their cached sizes after invalida
   expect(result.current.pauseReason).toBe("limit");
   client.clear();
 });
+
+it("preserves prefetched sibling lists while low-memory observers mount", async () => {
+  const { backgroundListQueryOptions } = await import("../src/use-background-list");
+  vi.stubGlobal("navigator", { deviceMemory: 2 });
+  const client = createInstantQueryClient();
+  const stableWrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  );
+  const firstFetch = vi.fn(() => Promise.resolve({ items: [1], nextCursor: null }));
+  const secondFetch = vi.fn(() => Promise.resolve({ items: [2], nextCursor: null }));
+  const first = {
+    queryKey: ["low-ram-first"],
+    fetchPage: firstFetch,
+    getItemId: (item: number) => item,
+  };
+  const second = {
+    queryKey: ["low-ram-second"],
+    fetchPage: secondFetch,
+    getItemId: (item: number) => item,
+  };
+  try {
+    await client.prefetchInfiniteQuery(backgroundListQueryOptions(first));
+    await client.prefetchInfiniteQuery(backgroundListQueryOptions(second));
+    await client.prefetchInfiniteQuery(
+      backgroundListQueryOptions({
+        queryKey: ["low-ram-unused"],
+        fetchPage: () => Promise.resolve({ items: [3], nextCursor: null }),
+        getItemId: (item: number) => item,
+      }),
+    );
+    const firstQuery = client.getQueryCache().find({ queryKey: first.queryKey });
+    const secondQuery = client.getQueryCache().find({ queryKey: second.queryKey });
+    const { result, unmount } = renderHook(
+      () => ({
+        first: useBackgroundList(first),
+        second: useBackgroundList(second),
+      }),
+      { wrapper: stableWrapper },
+    );
+    await act(() => Promise.resolve());
+    expect(result.current.first.items).toEqual([1]);
+    expect(result.current.second.items).toEqual([2]);
+    expect(client.getQueryCache().find({ queryKey: first.queryKey })).toBe(firstQuery);
+    expect(client.getQueryCache().find({ queryKey: second.queryKey })).toBe(secondQuery);
+    expect(firstFetch).toHaveBeenCalledTimes(1);
+    expect(secondFetch).toHaveBeenCalledTimes(1);
+    expect(client.getQueryData(["low-ram-unused"])).toBeUndefined();
+    unmount();
+  } finally {
+    client.clear();
+    vi.unstubAllGlobals();
+  }
+});
