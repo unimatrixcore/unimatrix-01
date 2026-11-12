@@ -63,6 +63,22 @@ it("native fingerprints ignore UI, fonts, tests, docs, model helpers and Git HEA
   writeFileSync(join(repo, "apps/poker/src-tauri/src/main.rs"), "fn main() {}");
   expect(nativeFingerprint(tree)).not.toBe(before);
 });
+it("invalidates native artifacts when the embedded OCR contract changes", () => {
+  const { common, repo } = fixture();
+  const tree = discoverWorktrees(common).find((item) => item.path === repo)!;
+  const contract = join(repo, "packages/poker/ocr-contract.json");
+  mkdirSync(join(repo, "packages/poker"), { recursive: true });
+  writeFileSync(contract, JSON.stringify({ version: 1 }));
+  git(repo, "add", ".");
+  git(repo, "commit", "-m", "contract baseline");
+  const original = nativeFingerprint(tree);
+  writeFileSync(contract, JSON.stringify({ version: 2 }));
+  const changed = nativeFingerprint(tree);
+  expect(changed).not.toBe(original);
+  git(repo, "add", ".");
+  git(repo, "commit", "-m", "contract update");
+  expect(nativeFingerprint({ ...tree, head: git(repo, "rev-parse", "HEAD") })).toBe(changed);
+});
 function fakeProcess(): ChildProcess {
   return spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
 }

@@ -140,17 +140,19 @@ impl CaptureService {
     ) -> LabResult<Self> {
         fs::create_dir_all(&root)?;
         datasets::plain(&root)?;
-        for name in ["regions.json", "colors.json"] {
+        for (name, contents) in [
+            (
+                "regions.json",
+                include_bytes!("../../assets/regions.json").as_slice(),
+            ),
+            (
+                "colors.json",
+                include_bytes!("../../assets/colors.json").as_slice(),
+            ),
+        ] {
             let path = root.join(name);
             if !path.exists() {
-                fs::write(
-                    &path,
-                    fs::read(
-                        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                            .join("assets")
-                            .join(name),
-                    )?,
-                )?;
+                fs::write(&path, contents)?;
             } else {
                 datasets::plain(&path)?;
             }
@@ -897,13 +899,80 @@ pub fn handle(
                     names.push(name.into());
                 }
             }
-            let protected: HashSet<String> = super::watch::frames(ctx)?
-                .iter()
-                .filter_map(|f| f["source"].as_str().map(str::to_owned))
-                .collect();
+            let mut protected = HashSet::new();
+            let mut uncertain = false;
             let mut conn = ctx.connection()?;
             ctx.ensure_active()?;
             let tx = conn.transaction()?;
+            let has_watch: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='watch_inbox')", [], |r| r.get(0))?;
+            if has_watch {
+                let mut stmt = tx.prepare("SELECT source, payload FROM watch_inbox")?;
+                let rows = stmt.query_map([], |r| {
+                    Ok((r.get::<_, Option<String>>(0)?, r.get::<_, String>(1)?))
+                })?;
+                for row in rows {
+                    let (source, payload) = row?;
+                    match source.filter(|s| !s.is_empty()) {
+                        Some(source) => {
+                            protected.insert(source);
+                        }
+                        None => uncertain = true,
+                    }
+                    match serde_json::from_str::<Value>(&payload) {
+                        Ok(Value::Object(object)) => match object
+                            .get("source")
+                            .and_then(Value::as_str)
+                            .filter(|s| !s.is_empty())
+                        {
+                            Some(source) => {
+                                protected.insert(source.to_owned());
+                            }
+                            None => uncertain = true,
+                        },
+                        _ => uncertain = true,
+                    }
+                }
+            }
+            let has_queue: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='queue_items')", [], |r| r.get(0))?;
+            if has_queue {
+                let mut stmt =
+                    tx.prepare("SELECT source, frame_id, payload FROM queue_items WHERE active=1")?;
+                let rows = stmt.query_map([], |r| {
+                    Ok((
+                        r.get::<_, Option<String>>(0)?,
+                        r.get::<_, Option<String>>(1)?,
+                        r.get::<_, String>(2)?,
+                    ))
+                })?;
+                for row in rows {
+                    let (source, frame, payload) = row?;
+                    match source.filter(|s| !s.is_empty()) {
+                        Some(source) => {
+                            protected.insert(source);
+                        }
+                        None => uncertain = true,
+                    }
+                    if let Some(frame) = frame.filter(|s| !s.is_empty()) {
+                        protected.insert(frame);
+                    }
+                    match serde_json::from_str::<Value>(&payload) {
+                        Ok(Value::Object(object)) => {
+                            for key in ["source", "frame_id", "watch_frame_id"] {
+                                if let Some(value) = object.get(key) {
+                                    match value {
+                                        Value::String(s) if !s.is_empty() => {
+                                            protected.insert(s.clone());
+                                        }
+                                        Value::Null => {}
+                                        _ => uncertain = true,
+                                    }
+                                }
+                            }
+                        }
+                        _ => uncertain = true,
+                    }
+                }
+            }
             let mut paths = Vec::new();
             for name in &names {
                 paths.push(datasets::file(&ctx.images(), name)?);
@@ -912,7 +981,7 @@ pub fn handle(
             let unused:Vec<(i64,String)>=tx.prepare("SELECT id,filename FROM full_captures c WHERE NOT EXISTS(SELECT 1 FROM images i WHERE i.source_id=c.id)")?.query_map([],|r|Ok((r.get(0)?,r.get(1)?)))?.collect::<rusqlite::Result<_>>()?;
             let mut deleted = 0;
             for (id, name) in unused {
-                if !protected.contains(&name) {
+                if !uncertain && !protected.contains(&name) {
                     paths.push(datasets::file(&ctx.captures(), &name)?);
                     tx.execute("DELETE FROM full_captures WHERE id=?", [id])?;
                     deleted += 1;

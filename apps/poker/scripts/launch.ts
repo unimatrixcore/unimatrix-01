@@ -266,6 +266,7 @@ export function nativeFingerprint(tree: Worktree): string {
       "Cargo.toml",
       "Cargo.lock",
       "packages/poker-native",
+      "packages/poker/ocr-contract.json",
       "apps/poker/src-tauri",
     ],
     { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },

@@ -746,3 +746,70 @@ fn legacy_numeric_frame_id_keeps_source_string_identity() {
         "123"
     );
 }
+
+#[test]
+fn db_delete_preserves_active_queue_masters_and_removes_unreferenced() {
+    let f = Fixture::new(false);
+    let ctx = f.service.registry.resolve("legacy").unwrap();
+    queue::session(&ctx).unwrap();
+    let conn = ctx.connection().unwrap();
+    for name in ["active.png", "frame.png", "unused.png"] {
+        conn.execute("INSERT INTO full_captures(filename) VALUES(?)", [name])
+            .unwrap();
+        fs::write(ctx.captures().join(name), png(1)).unwrap();
+    }
+    conn.execute("INSERT INTO images(filename) VALUES('crop.png')", [])
+        .unwrap();
+    fs::write(ctx.images().join("crop.png"), png(2)).unwrap();
+    conn.execute("INSERT INTO queue_items(sample_key,frame_id,source,region_id,payload,crop,pixel_sha256,created_at) VALUES('a','frame.png','active.png','r','{\"source\":\"active.png\",\"frame_id\":\"frame.png\"}',x'00','x',0)", []).unwrap();
+    drop(conn);
+    let response = f.req("POST", "/api/db_delete", json!({"filenames":["crop.png"]}));
+    assert_eq!(response.status, 200, "{}", response.body);
+    assert!(ctx.captures().join("active.png").exists());
+    assert!(ctx.captures().join("frame.png").exists());
+    assert!(!ctx.captures().join("unused.png").exists());
+    let conn = ctx.connection().unwrap();
+    conn.execute("UPDATE queue_items SET payload='broken'", [])
+        .unwrap();
+    conn.execute(
+        "INSERT INTO full_captures(filename) VALUES('unknown.png')",
+        [],
+    )
+    .unwrap();
+    fs::write(ctx.captures().join("unknown.png"), png(3)).unwrap();
+    drop(conn);
+    assert_eq!(
+        f.req("POST", "/api/db_delete", json!({"filenames":[]}))
+            .status,
+        200
+    );
+    assert!(ctx.captures().join("unknown.png").exists());
+}
+
+#[test]
+fn fresh_private_config_uses_embedded_defaults_and_preserves_existing() {
+    let temp = TempDir::new().unwrap();
+    let config = temp.path().join("config");
+    let env = HashMap::from([(
+        "POKER_LAB_TOOLS_ROOT".into(),
+        temp.path().join("absent").display().to_string(),
+    )]);
+    let service =
+        capture::CaptureService::with_paths(config.clone(), temp.path().join("data"), env.clone())
+            .unwrap();
+    let defaults = service.config().unwrap();
+    assert!(defaults.regions.is_object());
+    assert!(defaults.colors.is_object());
+    assert!(!defaults.order.is_empty());
+    let original = b"{\"custom\":true}";
+    fs::write(config.join("regions.json"), original).unwrap();
+    capture::CaptureService::with_paths(config.clone(), temp.path().join("data"), env).unwrap();
+    assert_eq!(fs::read(config.join("regions.json")).unwrap(), original);
+    LabService::open_with_paths(
+        temp.path().join("lab-data"),
+        temp.path().join("fresh-config"),
+        temp.path().join("absent"),
+        HashMap::new(),
+    )
+    .unwrap();
+}
