@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-async function pagedBlog(page: Page, requests: number[]) {
+async function pagedBlog(page: Page, requests: number[], total = 150) {
   await page.route("**/api/content/posts?*", async (route) => {
     const params = new URL(route.request().url()).searchParams;
     const cursor = params.get("cursor");
@@ -8,7 +8,7 @@ async function pagedBlog(page: Page, requests: number[]) {
     const limit = Number(params.get("limit") ?? 50);
     requests.push(offset);
     if (offset > 0) await new Promise((resolve) => setTimeout(resolve, 150));
-    const count = Math.min(limit, 150 - offset);
+    const count = Math.min(limit, total - offset);
     const posts = Array.from({ length: count }, (_, index) => {
       const number = offset + index + 1;
       return {
@@ -31,7 +31,7 @@ async function pagedBlog(page: Page, requests: number[]) {
       json: {
         posts,
         nextCursor:
-          offset + count < 150 ? JSON.stringify(["2026-11-01", String(offset + count)]) : null,
+          offset + count < total ? JSON.stringify(["2026-11-01", String(offset + count)]) : null,
       },
     });
   });
@@ -120,4 +120,34 @@ test("a failed background page preserves rows and exposes an explicit retry", as
   await page.getByRole("button", { name: "Retry", exact: true }).click();
   await expect.poll(() => requests.length).toBe(3);
   await expect(page.getByText("Could not load more.")).toHaveCount(0);
+});
+
+test("revisiting a stale capped catalog refetches its full cached pages", async ({ page }) => {
+  const requests: number[] = [];
+  const limits: number[] = [];
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "deviceMemory", { configurable: true, value: 2 });
+  });
+  await page.clock.install();
+  await pagedBlog(page, requests, 600);
+  await page.route("**/api/content/posts?*", async (route) => {
+    limits.push(Number(new URL(route.request().url()).searchParams.get("limit")));
+    await route.fallback();
+  });
+  await page.goto("/blog");
+  await expect(page.getByRole("heading", { name: "Record 1", exact: true })).toBeVisible();
+  await expect.poll(() => requests.length, { timeout: 10_000 }).toBe(10);
+  await page.waitForTimeout(300);
+  expect(limits).toEqual(Array<number>(10).fill(50));
+  await page.clock.fastForward(5 * 60_000 + 1);
+  await page.locator('a[href="/about"]').first().dispatchEvent("click");
+  await expect(page.getByRole("heading", { name: "About", exact: true })).toBeVisible();
+  requests.length = 0;
+  limits.length = 0;
+  await page.locator('a[href="/blog"]').first().dispatchEvent("click");
+  await expect.poll(() => requests.length, { timeout: 10_000 }).toBe(10);
+  await page.waitForTimeout(300);
+  expect(limits).toEqual(Array<number>(10).fill(50));
+  expect(requests).toEqual(Array.from({ length: 10 }, (_, index) => index * 50));
+  await expect(page.getByRole("heading", { name: "Record 1", exact: true })).toBeVisible();
 });

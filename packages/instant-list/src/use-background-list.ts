@@ -78,9 +78,10 @@ export function createInstantQueryClient(): QueryClient {
 }
 export function backgroundListQueryOptions<T, Cursor>(
   options: BackgroundListOptions<T, Cursor>,
-  controls?: { isForeground: () => boolean },
+  controls?: { isForeground: () => boolean; getRemaining?: () => number },
 ) {
   const transport = resolveListTransport(options.transport);
+  let replacementPageIndex = 0;
   return infiniteQueryOptions<
     ListPage<T, Cursor>,
     Error,
@@ -91,14 +92,24 @@ export function backgroundListQueryOptions<T, Cursor>(
     queryKey: options.queryKey,
     meta: { instantList: true },
     initialPageParam: null as Cursor | null,
-    queryFn: async ({ pageParam, signal }: QueryFunctionContext<QueryKey, Cursor | null>) => {
+    queryFn: async ({
+      pageParam,
+      signal,
+      client,
+    }: QueryFunctionContext<QueryKey, Cursor | null>) => {
       const foreground = pageParam === null || controls?.isForeground() === true;
-      const fetch = () =>
-        withListRetry(options.fetchPage)({
-          cursor: pageParam as Cursor | null,
-          signal,
-          priority: foreground ? "high" : "low",
-          limit: Math.max(
+      const appending =
+        client.getQueryState(options.queryKey)?.fetchMeta?.fetchMore?.direction === "forward";
+      if (!appending && pageParam === null) replacementPageIndex = 0;
+      // Refreshed cursors can change after edits; cached allocations follow page order.
+      const replacementPage = appending
+        ? undefined
+        : client.getQueryData<InfiniteData<ListPage<T, Cursor>>>(options.queryKey)?.pages[
+            replacementPageIndex++
+          ];
+      const limit = replacementPage
+        ? Math.max(1, replacementPage.items.length)
+        : Math.max(
             1,
             Math.min(
               options.pageSize ?? (transport === "tauri" ? 250 : 100),
@@ -110,8 +121,15 @@ export function backgroundListQueryOptions<T, Cursor>(
                 },
                 transport,
               ).maxBackgroundItems,
+              appending && !foreground ? (controls?.getRemaining?.() ?? Infinity) : Infinity,
             ),
-          ),
+          );
+      const fetch = () =>
+        withListRetry(options.fetchPage)({
+          cursor: pageParam as Cursor | null,
+          signal,
+          priority: foreground ? "high" : "low",
+          limit,
         });
       const page = foreground
         ? await fetch()
@@ -198,20 +216,10 @@ export function useBackgroundList<T, Cursor>(options: BackgroundListOptions<T, C
   }, [hasMemoryReader, queryClient]);
   const policy = getListPolicy(environment, transport);
   const query = useInfiniteQuery({
-    ...backgroundListQueryOptions<T, Cursor>(
-      {
-        ...options,
-        fetchPage: (context) =>
-          options.fetchPage({
-            ...context,
-            priority: onDemand.current ? "high" : context.priority,
-            limit: onDemand.current
-              ? context.limit
-              : Math.max(1, Math.min(context.limit, remaining.current)),
-          }),
-      },
-      { isForeground: () => onDemand.current },
-    ),
+    ...backgroundListQueryOptions<T, Cursor>(options, {
+      isForeground: () => onDemand.current,
+      getRemaining: () => remaining.current,
+    }),
     gcTime: options.gcTime ?? policy.gcTime,
   });
   const items = useMemo(

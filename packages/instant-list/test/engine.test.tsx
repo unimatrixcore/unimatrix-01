@@ -517,3 +517,64 @@ it("detects Tauri while retaining an explicit HTTP override inside a WebView", a
     delete nativeWindow.__TAURI_INTERNALS__;
   }
 });
+
+it("replaces capped and demand-loaded pages at their cached sizes after invalidation", async () => {
+  const client = createInstantQueryClient();
+  const stableWrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  );
+  let revision = 0;
+  const requests: { cursor: number | null; limit: number }[] = [];
+  const fetchPage = ({ cursor, limit }: { cursor: number | null; limit: number }) => {
+    requests.push({ cursor, limit });
+    const start = cursor ?? revision;
+    return Promise.resolve({
+      items: Array.from({ length: limit }, (_, index) => ({ id: start + index, revision })),
+      nextCursor: start + limit,
+    });
+  };
+  const { result } = renderHook(
+    () =>
+      useBackgroundList({
+        queryKey: ["replacement-budget"],
+        fetchPage,
+        getItemId: (item: { id: number }) => item.id,
+        pageSize: 2,
+        maxBackgroundItems: 3,
+        backgroundDelayMs: 0,
+      }),
+    { wrapper: stableWrapper },
+  );
+  await waitFor(() => {
+    expect(result.current.pauseReason).toBe("limit");
+  });
+  expect(result.current.items.map((item) => item.id)).toEqual([0, 1, 2]);
+  requests.length = 0;
+  revision = 10;
+  await act(() => client.invalidateQueries({ queryKey: ["replacement-budget"] }));
+  expect(requests).toEqual([
+    { cursor: null, limit: 2 },
+    { cursor: 12, limit: 1 },
+  ]);
+  await waitFor(() => {
+    expect(result.current.items).toEqual([10, 11, 12].map((id) => ({ id, revision: 10 })));
+  });
+
+  await act(() => result.current.onEndReached());
+  await waitFor(() => {
+    expect(result.current.items.map((item) => item.id)).toEqual([10, 11, 12, 13, 14]);
+  });
+  requests.length = 0;
+  revision = 20;
+  await act(() => result.current.refetch());
+  expect(requests).toEqual([
+    { cursor: null, limit: 2 },
+    { cursor: 22, limit: 1 },
+    { cursor: 23, limit: 2 },
+  ]);
+  await waitFor(() => {
+    expect(result.current.items).toEqual([20, 21, 22, 23, 24].map((id) => ({ id, revision: 20 })));
+  });
+  expect(result.current.pauseReason).toBe("limit");
+  client.clear();
+});
