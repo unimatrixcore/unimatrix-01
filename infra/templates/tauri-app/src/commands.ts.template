@@ -1,0 +1,15 @@
+import { z } from "zod";
+import { createCommandClient, defineCommand } from "@unimatrix/tauri";
+import { tauriTransport } from "@unimatrix/tauri/transport";
+
+export const client = createCommandClient(tauriTransport);
+export const readCounter = defineCommand({
+  name: "read_counter",
+  input: z.null(),
+  output: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+});
+export const saveCounter = defineCommand({
+  name: "save_counter",
+  input: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  output: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+});

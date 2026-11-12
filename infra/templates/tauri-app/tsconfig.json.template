@@ -1,0 +1,14 @@
+{
+  "extends": "@unimatrix/config-typescript/vite-app.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "paths": {
+      "@unimatrix/tauri": ["../../packages/tauri/src/index.ts"],
+      "@unimatrix/tauri/query": ["../../packages/tauri/src/query.ts"],
+      "@unimatrix/tauri/transport": ["../../packages/tauri/src/transport.ts"],
+      "@unimatrix/ui/public": ["../../packages/ui/src/public.ts"]
+    },
+    "types": ["vite/client", "node"]
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"]
+}

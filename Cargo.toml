@@ -1,0 +1,4 @@
+[workspace]
+members = ["packages/desktop-runtime"]
+exclude = ["apps"]
+resolver = "2"

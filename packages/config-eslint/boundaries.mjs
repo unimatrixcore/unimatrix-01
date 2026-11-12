@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import path from "node:path";
 
 import boundaries from "eslint-plugin-boundaries";
@@ -70,6 +71,7 @@ const ALLOWED_PACKAGE_IMPORTS = {
   // routes through `@unimatrix/shared`.
   "apps/admin": ["api-client", "app-config", "auth", "chrome", "deploy-config", "shared", "ui"],
   "packages/api-client": ["shared"],
+  "packages/tauri": [],
   "packages/deploy-client": ["shared"],
   "packages/service-http": [],
   "packages/document-text": [],
@@ -124,8 +126,12 @@ function toElement(workspace) {
   return { type: group === "apps" ? "app" : "pkg", name };
 }
 
-function buildPolicies() {
-  return Object.entries(ALLOWED_PACKAGE_IMPORTS).map(([workspace, allowed]) => {
+function buildPolicies(desktopWorkspace) {
+  const policies = { ...ALLOWED_PACKAGE_IMPORTS };
+  if (desktopWorkspace && !Object.hasOwn(policies, desktopWorkspace)) {
+    policies[desktopWorkspace] = ["chrome", "tauri", "ui"];
+  }
+  return Object.entries(policies).map(([workspace, allowed]) => {
     const from = toElement(workspace);
 
     return {
@@ -154,6 +160,12 @@ function buildPolicies() {
  */
 export function createBoundariesConfig({ tsconfigRootDir }) {
   const repoRoot = path.resolve(tsconfigRootDir, "..", "..");
+  const workspace = path.relative(repoRoot, tsconfigRootDir);
+  const desktopWorkspace =
+    /^apps\/[^/]+$/u.test(workspace) &&
+    existsSync(path.join(tsconfigRootDir, "src-tauri", "tauri.conf.json"))
+      ? workspace
+      : undefined;
 
   return {
     files: ["**/*.{ts,tsx,mts,cts}"],
@@ -176,7 +188,10 @@ export function createBoundariesConfig({ tsconfigRootDir }) {
       ],
     },
     rules: {
-      "boundaries/dependencies": ["error", { default: "disallow", policies: buildPolicies() }],
+      "boundaries/dependencies": [
+        "error",
+        { default: "disallow", policies: buildPolicies(desktopWorkspace) },
+      ],
     },
   };
 }

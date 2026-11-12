@@ -93,3 +93,9 @@ apps/cflop/.generate/
 lab/prototypes/*
 !lab/prototypes/.gitkeep
 !lab/prototypes/README.md
+
+# Rust and Tauri build output
+**/target/
+**/src-tauri/gen/schemas/
+
+.orchestration/

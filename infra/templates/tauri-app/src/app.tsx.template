@@ -1,0 +1,36 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { commandMutationOptions, commandQueryOptions } from "@unimatrix/tauri/query";
+import { Button } from "@unimatrix/ui/public";
+import { client, readCounter, saveCounter } from "./commands";
+
+export function App() {
+  const queryClient = useQueryClient();
+  const options = commandQueryOptions(client, readCounter, null);
+  const counter = useQuery(options);
+  const save = useMutation({
+    ...commandMutationOptions(client, saveCounter),
+    onSuccess: (value) => queryClient.setQueryData(options.queryKey, value),
+  });
+  const error = counter.error ?? save.error;
+  return (
+    <main className="min-h-screen bg-background text-foreground p-8 font-mono">
+      <header className="mb-8 border-b pb-4">
+        <h1 className="text-xl">__NAME__</h1>
+      </header>
+      <section className="space-y-4" aria-label="Persistent counter">
+        <p>
+          Saved count: <output aria-live="polite">{counter.data ?? "…"}</output>
+        </p>
+        <Button
+          disabled={counter.data === undefined || save.isPending}
+          onClick={() => {
+            if (counter.data !== undefined) save.mutate(counter.data + 1);
+          }}
+        >
+          Increment
+        </Button>
+        {error && <p role="alert">{error instanceof Error ? error.message : String(error)}</p>}
+      </section>
+    </main>
+  );
+}
