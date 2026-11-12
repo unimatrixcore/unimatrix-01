@@ -119,6 +119,12 @@ describe("label semantics", () => {
     expect(normalizeLabel("seat.0.hand_0", "a")).toBe("A");
   });
 
+  it("rejects long invalid amount suffixes without repeated digit scanning", () => {
+    expect(completeLabel("seat.0.bet", "G " + "0".repeat(100_000) + "!")).toBeNull();
+    expect(completeLabel("split_pot", "G 2 BB S 3.5 B")).toBe("G 2 BB S 3.5 BB");
+    expect(completeLabel("seat.0.bet", "G 3.55")).toBeNull();
+  });
+
   it.each([
     ["seat.0.status", "k", [], "Check"],
     ["seat.0.status", "rai", [], "Raise"],

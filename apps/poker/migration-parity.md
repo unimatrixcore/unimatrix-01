@@ -5,10 +5,14 @@ The UI baseline is Poker main `dbfd67b6e61d2acea5ea838f2d1c0161450b6cd9`.
 completion, scoring, watch, queue, review, card, scroll, and CSS modules. The
 shared React controls resolve to the packages in this monorepo.
 
-Retained source files preserve their original bytes, including upstream
+Retained source files marked `preserved` retain their original bytes, including upstream
 whitespace. Consequently, `git diff --check` reports whitespace in those imports;
 the authored-file check passes separately. The source-hash test guards retained
-identity rather than silently reformatting the compatibility baseline.
+identity rather than silently reformatting the compatibility baseline. Adapted files
+retain their upstream source hash and record the intentional target hash separately.
+The controller autocomplete builds text nodes for typed and suggested labels so
+label markup cannot become HTML; its score renderer runs directly because the
+same render path requires that function unconditionally.
 
 `test:legacy` rebuilds these React adapters for the original JavaScript VM tests
 and runs them against the migrated controller files in a temporary fixture.

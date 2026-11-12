@@ -100,6 +100,22 @@ describe("review control adapters", () => {
     expect(preview.hidden).toBe(false);
     expect(preview.style.width).toBe("400px");
     expect(preview.style.height).toBe("200px");
+    for (const unsafe of [
+      "javascript:alert(1)",
+      "data:text/html,<script>alert(1)</script>",
+      "http://[",
+    ]) {
+      source.setAttribute("data-full-res", unsafe);
+      fireEvent.mouseMove(window, { clientX: 100, clientY: 100 });
+      expect(preview.hidden).toBe(true);
+    }
+    source.setAttribute("data-full-res", "pokerlab://localhost/api/crop/full.png");
+    fireEvent.mouseMove(window, { clientX: 100, clientY: 100 });
+    expect(preview.hidden).toBe(false);
+    expect(preview.querySelector("img")).toHaveAttribute(
+      "src",
+      "pokerlab://localhost/api/crop/full.png",
+    );
     fireEvent.keyUp(window, { key: "Shift" });
     expect(preview.hidden).toBe(true);
   });

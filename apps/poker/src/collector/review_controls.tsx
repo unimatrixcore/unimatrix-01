@@ -124,7 +124,24 @@ export function installCropPreview() {
     const desired = Math.max(80, contentWidth * 2);
     const width = Math.min(desired, availableWidth, availableHeight * ratio);
     const height = width / ratio;
-    image.src = source.getAttribute("data-full-res") || source.src;
+    let url: URL;
+    try {
+      url = new URL(source.getAttribute("data-full-res") || source.src, location.href);
+    } catch {
+      preview.hidden = true;
+      return;
+    }
+    if (
+      !["http:", "https:", "blob:", "pokerlab:", "asset:"].includes(url.protocol) &&
+      !(
+        url.protocol === "data:" &&
+        /^data:image\/(?:png|jpeg|gif|webp|bmp|svg\+xml)(?:;|,)/i.test(url.href)
+      )
+    ) {
+      preview.hidden = true;
+      return;
+    }
+    image.src = url.href;
     preview.style.width = `${width}px`;
     preview.style.height = `${height}px`;
     preview.style.left = `${Math.max(8, Math.min(pointer.clientX - width / 2, innerWidth - width - 8))}px`;

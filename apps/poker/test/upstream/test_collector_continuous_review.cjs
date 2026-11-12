@@ -4,7 +4,7 @@ const {createRequire}=require('node:module'),uiRoot=process.env.UNIMATRIX_UI_ROO
 const {JSDOM}=createRequire(path.join(uiRoot,'package.json'))('jsdom');
 const dom=new JSDOM(fs.readFileSync('dev_tools/templates/poker_lab.html','utf8'),{url:'http://localhost/collection',runScripts:'outside-only'}),{window}=dom;
 const rows=Array.from({length:250},(_,i)=>({queue_id:i+1,sample_key:'continuous:'+i,id:'seats[0].name',source:'capture.png',game_id:'#123456',image_url:'/api/queue/image/'+(i+1),reviewed:true,label:'Alice',labelTime:1000}));
-const requests=[],revoked=[];let urls=0,decoded=0,completed=0;
+const requests=[],revoked=[];let urls=0,decoded=0;
 window.URL.createObjectURL=()=>`blob:fixture-${++urls}`;window.URL.revokeObjectURL=url=>revoked.push(url);
 window.Image=class {decode(){decoded++;return Promise.resolve();}};
 const summary={total:250,pending:0,reviewed:250,revision:1};

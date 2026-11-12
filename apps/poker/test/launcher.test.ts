@@ -66,6 +66,28 @@ it("native fingerprints ignore UI, fonts, tests, docs, model helpers and Git HEA
 function fakeProcess(): ChildProcess {
   return spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
 }
+it.skipIf(process.platform !== "linux")(
+  "fingerprints ignore a replaced FIFO without blocking and track deleted files",
+  () => {
+    const { common, repo } = fixture();
+    const tree = discoverWorktrees(common).find((item) => item.path === repo)!;
+    const file = join(repo, "apps/poker/src-tauri/build.rs");
+    writeFileSync(file, "fn main() {}\n");
+    git(repo, "add", ".");
+    const original = [sourceFingerprint(tree), nativeFingerprint(tree)];
+    rmSync(file);
+    const deleted = [sourceFingerprint(tree), nativeFingerprint(tree)];
+    expect(deleted[0]).not.toBe(original[0]);
+    expect(deleted[1]).not.toBe(original[1]);
+    const result = spawnSync("mkfifo", [file], { encoding: "utf8" });
+    if (result.status !== 0) throw new Error(result.error?.message || result.stderr);
+    expect(sourceFingerprint(tree)).not.toBe(deleted[0]);
+    expect(nativeFingerprint(tree)).not.toBe(deleted[1]);
+    rmSync(file);
+    writeFileSync(file, "fn main() {}\n");
+    expect([sourceFingerprint(tree), nativeFingerprint(tree)]).toEqual(original);
+  },
+);
 it("starts from persistent verified cache without a build and keeps the native PID for UI edits until manual close", async () => {
   const { common, repo, paths } = fixture();
   const tree = discoverWorktrees(common).find((item) => item.path === repo)!;

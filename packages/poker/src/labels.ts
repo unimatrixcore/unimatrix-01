@@ -112,7 +112,7 @@ export function completeLabel(
       : undefined);
   if (match && match !== input) return match;
   if (["money", "bank", "pot", "split"].includes(category)) {
-    const withUnit = normalized.replace(/(\d+(?:\.\d)?)(?: B)?$/i, "$1 BB");
+    const withUnit = normalized.replace(/(^| )(\d+(?:\.\d)?)(?: B)?$/i, "$1$2 BB");
     if (withUnit !== normalized && validateLabel(regionId, withUnit) === null) return withUnit;
   }
   return normalized !== input ? normalized : null;

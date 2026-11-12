@@ -567,7 +567,6 @@ async function persistReview(item, label, action) {
   }
 }
 async function persistEditedItem(item, label, action = 'correct') {
-  const wasReviewed = !!item.reviewed;
   const allow_outside_contract = action !== 'accept' && !!SchemaRegistry.validateReviewed(item.id, label).outsideContract;
   const data = await (await datasetFetch('/api/review_label', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({sample_key:sampleKey(item),queue_id:item.queue_id, id:item.id, base64_image:item.base64_image, filename:item.filename, source:item.source, prediction_id:item.prediction_id || null, label, action, allow_outside_contract})})).json();
   if(queueMode) applyQueueSummary(data.summary);
@@ -787,7 +786,6 @@ function updateQueueControls() {
   if(title) title.textContent='SESSION COMPLETE';
   const nextBatch=document.getElementById('btn-next-batch');
   if(nextBatch) {
-    const remaining=Math.max(0,(queueSummary?.total || 0)-pool.length);
     nextBatch.classList.add('hidden');
     nextBatch.disabled=queueLoading || queueCommitBusy || reviewSaving || !pool.length || !pool.every(item=>item.reviewed || item.discarded);
     nextBatch.textContent='Save batch & continue';
@@ -1501,7 +1499,6 @@ function initMagnifier() {
       displayHeight = contentWidth / imgRatio;
       offsetY = (contentHeight - displayHeight) / 2;
     } else {
-      displayHeight = contentHeight;
       displayWidth = contentHeight * imgRatio;
       offsetX = (contentWidth - displayWidth) / 2;
     }
@@ -1887,7 +1884,7 @@ function renderReview() {
   const hadClockForItem = reviewClock.key === sampleKey(item);
   startReviewClock(item);
   usedAutoComplete = false;
-  if (typeof updateScoreDisplay === 'function') updateScoreDisplay();
+  updateScoreDisplay();
 
   document.getElementById("review-idx").textContent = (isContinuousReview() ? reviewBatch.legacy_offset || 0 : 0)+currentReviewIdx + 1;
   document.getElementById("count-regions").textContent = isContinuousReview() ? reviewBatch.total_at_start : pool.length;
@@ -1987,8 +1984,20 @@ function updateAutocomplete() {
       }
     }
 
-    const displayTyped = typed;
-    ghostText.innerHTML = `<span style="display:inline-block;position:relative;color:transparent;white-space:pre;vertical-align:middle">&#8203;${displayTyped}<span class="suggestion-part" style="position:absolute;left:100%;top:50%;transform:translateY(-50%);white-space:pre;text-align:left">${rem}<span class="kbd" style="font-size:9px;margin-left:8px;opacity:0.6;vertical-align:middle;position:relative;top:-1px">TAB</span></span></span>`;
+    const typedSpan = document.createElement('span');
+    typedSpan.style.cssText = 'display:inline-block;position:relative;color:transparent;white-space:pre;vertical-align:middle';
+    typedSpan.textContent = '\u200b' + typed;
+    const suggestionSpan = document.createElement('span');
+    suggestionSpan.className = 'suggestion-part';
+    suggestionSpan.style.cssText = 'position:absolute;left:100%;top:50%;transform:translateY(-50%);white-space:pre;text-align:left';
+    suggestionSpan.textContent = rem;
+    const keySpan = document.createElement('span');
+    keySpan.className = 'kbd';
+    keySpan.style.cssText = 'font-size:9px;margin-left:8px;opacity:0.6;vertical-align:middle;position:relative;top:-1px';
+    keySpan.textContent = 'TAB';
+    suggestionSpan.append(keySpan);
+    typedSpan.append(suggestionSpan);
+    ghostText.replaceChildren(typedSpan);
   } else {
     currentSuggestion = "";
     ghostText.innerHTML = "";

@@ -3,7 +3,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('nod
 const{createRequire}=require('node:module');const ui=process.env.UNIMATRIX_UI_ROOT||path.join(os.homedir(),'repositories/unimatrix-01/packages/ui');
 const{JSDOM}=createRequire(path.join(ui,'package.json'))('jsdom');
 const dom=new JSDOM(fs.readFileSync('dev_tools/templates/poker_lab.html','utf8'),{url:'http://localhost/labeling/1',runScripts:'outside-only'}),{window}=dom;
-let resolveDelete,rejectDelete,deletes=0,finished=0;const requests=[];
+let resolveDelete,rejectDelete,deletes=0;const requests=[];
 window.matchMedia=()=>({matches:true});
 window.fetch=async(url,options={})=>{requests.push({url,body:options.body&&JSON.parse(options.body)});let data;
  if(url==='/api/queue/discard'){deletes++;data=await new Promise((yes,no)=>{resolveDelete=yes;rejectDelete=no;});}

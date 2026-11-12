@@ -6,10 +6,12 @@ import baseline from "../migration-baseline.json";
 
 describe("Poker Lab migration fidelity", () => {
   it("retains the original controller, scoring, completion, watch and CSS bytes", () => {
-    for (const artifact of baseline.preserved.filter((value) => value.mode === "preserved")) {
+    for (const artifact of baseline.preserved.filter(
+      (value) => value.mode === "preserved" || value.source === "static/js/app.js",
+    )) {
       const bytes = readFileSync(resolve(import.meta.dirname, "..", artifact.target));
       expect(createHash("sha256").update(bytes).digest("hex"), artifact.target).toBe(
-        artifact.sha256,
+        artifact.mode === "preserved" ? artifact.sha256 : artifact.targetSha256,
       );
     }
   });

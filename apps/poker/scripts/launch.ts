@@ -4,7 +4,9 @@ import {
   chmodSync,
   closeSync,
   copyFileSync,
+  constants,
   existsSync,
+  fstatSync,
   mkdirSync,
   openSync,
   readSync,
@@ -186,6 +188,21 @@ export function selectWorktree(
   atomicJson(paths.preference, { selection });
   return launcherStatus(common, preferred, paths);
 }
+function fingerprintFile(path: string): Buffer | null | undefined {
+  let descriptor: number;
+  try {
+    descriptor = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ENOTDIR") return undefined;
+    throw error;
+  }
+  try {
+    return fstatSync(descriptor).isFile() ? readFileSync(descriptor) : null;
+  } finally {
+    closeSync(descriptor);
+  }
+}
 export function sourceFingerprint(tree: Worktree): string {
   const result = spawnSync(
     "git",
@@ -225,12 +242,12 @@ export function sourceFingerprint(tree: Worktree): string {
       )
     )
       continue;
-    const absolute = join(tree.path, path);
-    if (!existsSync(absolute)) {
+    const content = fingerprintFile(join(tree.path, path));
+    if (content === undefined) {
       hash.update(`${path}:deleted`);
       continue;
     }
-    if (statSync(absolute).isFile()) hash.update(path).update(readFileSync(absolute));
+    if (content !== null) hash.update(path).update(content);
   }
   return hash.digest("hex");
 }
@@ -262,10 +279,10 @@ export function nativeFingerprint(tree: Worktree): string {
       /\.(md|woff2?|ttf|otf)$/.test(path)
     )
       continue;
-    const absolute = join(tree.path, path);
+    const content = fingerprintFile(join(tree.path, path));
     hash.update(path);
-    if (!existsSync(absolute)) hash.update(":deleted");
-    else if (statSync(absolute).isFile()) hash.update(readFileSync(absolute));
+    if (content === undefined) hash.update(":deleted");
+    else if (content !== null) hash.update(content);
   }
   return hash.digest("hex");
 }

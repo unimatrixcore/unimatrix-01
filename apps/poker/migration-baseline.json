@@ -5,7 +5,8 @@
       "source": "static/js/app.js",
       "target": "public/static/js/app.js",
       "sha256": "b236939243a91e45ea5e4612a595a519fb856e0f095df0fe74bc786ffe4a0267",
-      "mode": "preserved"
+      "mode": "adapted",
+      "targetSha256": "eb54f5143e9d3398ea812a7ee1966e29d1762a5c6ab936dd3d6368967603afe3"
     },
     {
       "source": "static/js/lib/ai_review.js",
