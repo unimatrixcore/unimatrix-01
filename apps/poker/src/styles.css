@@ -13,7 +13,16 @@
 @source "../../../packages/instant-list/src/**/*.{ts,tsx}";
 @source "./collector/**/*.{ts,tsx}";
 
+body > :not(#loading-overlay) {
+  visibility: visible;
+}
+
+body.grid-backdrop {
+  isolation: isolate;
+}
+
 #frame-list.instant-list-host,
+#db-list.instant-list-host,
 #session-review-list.instant-list-host {
   display: block;
 }
@@ -35,4 +44,14 @@
 }
 #dataset-catalog-list .instant-list-host {
   display: block;
+}
+
+.collection-virtual-list [role="list"]::after {
+  content: "";
+  display: block;
+  height: var(--record-dock-space, 190px);
+}
+.collection-virtual-list [role="alert"],
+.collection-virtual-list [role="status"] {
+  bottom: var(--record-dock-space, 190px) !important;
 }

@@ -48,7 +48,13 @@ export function InstantVirtualGrid<T>({
     return result;
   }, [items, columns]);
   return (
-    <div ref={container} style={{ height: listProps.height ?? 480, minWidth: 0 }}>
+    <div
+      ref={container}
+      style={{
+        height: listProps.getScrollElement ? "auto" : (listProps.height ?? 480),
+        minWidth: 0,
+      }}
+    >
       <InstantVirtualList
         {...listProps}
         height="100%"

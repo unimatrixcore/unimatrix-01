@@ -57,13 +57,14 @@ function renderDatasetNavigator() {
   const archived = document.getElementById('dataset-archived');
   select.replaceChildren(); archived.replaceChildren();
   if(window.CollectorBackgroundLists) {
-    select.classList.add("hidden");archived.classList.add("hidden");document.getElementById("dataset-restore").classList.add("hidden");
-    const picker=document.getElementById("dataset-catalog"), host=document.getElementById("dataset-catalog-list");picker.classList.remove("hidden");
-    document.getElementById("dataset-catalog-label").textContent=datasets.find(d=>d.id===activeDatasetId)?.name || "Choose dataset";
-    window.CollectorBackgroundLists.render(host,{path:"/api/datasets",datasetId:"",query:{include_archived:"1"},height:260,rowHeight:48,minColumnWidth:1000,key:item=>item.id,
-      card:item=>{const button=document.createElement("button");button.type="button";button.className="dataset-catalog-row";button.textContent=item.name+(item.archived?" · Restore":"");
-        button.onclick=async()=>{try {if(item.archived){await datasetFetch(`/api/datasets/${encodeURIComponent(item.id)}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({archived:false})});await refreshDatasets();renderDatasetNavigator();showToast('Dataset restored.','success');}else {picker.open=false;await switchDataset(item.id);}}catch(error){reportDatasetError(error);}};return button;},
-      changed:(items)=>{const current=datasets.find(item=>item.id===activeDatasetId);datasets=[...items];if(current && !datasets.some(item=>item.id===current.id)) datasets.push(current);document.getElementById("dataset-catalog-label").textContent=datasets.find(item=>item.id===activeDatasetId)?.name || "Choose dataset";}});
+    for(const control of [select,archived]) (control.closest('[data-slot="native-select-wrapper"]') || control).classList.add("hidden");
+    document.getElementById("dataset-restore").classList.add("hidden");
+    window.CollectorSharedUi.renderDatasetPicker({
+      activeId:activeDatasetId,
+      activeName:datasets.find(item=>item.id===activeDatasetId)?.name || "Choose dataset",
+      changed:items=>{const current=datasets.find(item=>item.id===activeDatasetId);datasets=[...items];if(current && !datasets.some(item=>item.id===current.id)) datasets.push(current);},
+      select:async item=>{try {if(item.archived){await datasetFetch(`/api/datasets/${encodeURIComponent(item.id)}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({archived:false})});await refreshDatasets();renderDatasetNavigator();showToast('Dataset restored.','success');}else await switchDataset(item.id);}catch(error){reportDatasetError(error);}}
+    });
     document.getElementById('dataset-archive-empty')?.classList.add('hidden');return;
   }
   datasets.forEach(dataset => {
@@ -108,7 +109,7 @@ async function initDatasets() {
     (create.classList.contains('hidden') ? document.getElementById('dataset-rename') : create).click();
   };
   document.addEventListener('pointerdown', event => { if (!event.target.closest('#dataset-tools')) manager.open = false; });
-  document.addEventListener('keydown', event => { if (event.key === 'Escape' && manager.open) { event.stopPropagation(); manager.open = false; document.getElementById('dataset-select').focus({preventScroll:true}); } });
+  document.addEventListener('keydown', event => { if (event.key === 'Escape' && manager.open) { event.stopPropagation(); manager.open = false; (document.getElementById('dataset-catalog-label') || document.getElementById('dataset-select')).focus({preventScroll:true}); } });
   document.getElementById('dataset-select').onchange = e => switchDataset(e.target.value).catch(reportDatasetError);
   document.getElementById('dataset-create').onclick = async () => {
     const name = document.getElementById('dataset-name-input').value.trim();
@@ -156,7 +157,7 @@ async function initDatasets() {
       const data = await (await datasetFetch(`/api/initial_data?queue_mode=paged${window.CollectorBackgroundLists?'&background_lists=1':''}`)).json();
       frames = []; pool = []; usernamePool.counts.clear(); modelRequest++;
       loadDatabase(data.db || []); void refreshNames(""); await recoverSession(data.session);if(queueMode) applyCollectionPage(data.collection_page);renderFrames();
-      setView('collection'); renderDatasetNavigator();
+      setView('collection'); renderDatasetNavigator(); await waitForCurrentViewport();
     } catch (error) { reportDatasetError(error); } finally { showLoading(false); }
   };
   document.getElementById('model-use').onclick = useModelSuggestion;
@@ -322,6 +323,7 @@ function initCaptureWatch() {
       void stopAndRecoverWatch('Capture paused').catch(error => showToast(error.message,'error'));
     }
   });
+  window.leavePokerOcr = () => stopAndRecoverWatch('Collection paused');
   window.addEventListener('pagehide',() => { void stopCaptureWatch('Page closed'); });
   window.addEventListener('beforeunload',() => { void stopCaptureWatch('Page closed'); });
   renderWatchStatus({active:false,busy:false,status:'off'});
@@ -448,6 +450,7 @@ function presentModelText(text, pending = false, immediate = false) {
 }
 async function switchDataset(id) {
   if (datasetSwitching || id === activeDatasetId) return;
+  const destination = currentView === 'database' ? 'database' : 'collection';
   if(typeof resetAiReview==='function') resetAiReview();
   datasetSwitching = true;
   clearModelTextTransition();
@@ -479,7 +482,7 @@ async function switchDataset(id) {
     ['review-search','db-search','review-bulk-label-input','db-bulk-label-input'].forEach(key => document.getElementById(key).value = '');
     ['review-search-list','db-search-list','review-bulk-list','db-bulk-list','edit-datalist'].forEach(key => document.getElementById(key).replaceChildren());
     window.CollectorSharedUi?.disposeMenus?.(frameListEl);
-    if(window.CollectorBackgroundLists) window.CollectorBackgroundLists.clear(dbListEl);
+    if(window.CollectorBackgroundLists) [frameListEl, sessionReviewListEl, dbListEl].forEach(host => window.CollectorBackgroundLists.clear(host));
     frameListEl.replaceChildren(); sessionReviewListEl.replaceChildren(); dbListEl.replaceChildren();
     document.getElementById('db-statistics-dashboard').classList.add('hidden');
     setModelState('Select a crop to begin');
@@ -489,9 +492,10 @@ async function switchDataset(id) {
     loadMonitors(data.sources || data.monitors, data.settings?.last_monitor); loadDatabase(data.db || []);void refreshNames("");
     await recoverSession(data.session);
     if(queueMode) applyCollectionPage(data.collection_page);
+    if(destination === 'database') await probeDatabaseAvailability();
     renderFrames(); renderDatabase();
-    setView('collection'); renderDatasetNavigator();
-  } finally { datasetSwitching = false; isRecovering = false; showLoading(false); }
+    setView(destination); renderDatasetNavigator(); await waitForCurrentViewport();
+  } finally { datasetSwitching = false; isRecovering = false; updateStepperButtons(); showLoading(false); }
 }
 function setModelState(message, prediction = null) {
   modelPrediction = prediction;
@@ -823,14 +827,11 @@ function updateQueueControls() {
   }
 }
 function updateLabelingEntryControls() {
-  const busy = queueLoading || reviewBatchLoading || queueCommitBusy || labelingEntryBusy || reviewSaving || datasetSwitching || isRecovering;
-  const available = queueMode ? !!queueSummary?.total : frames.length > 0 || pool.length > 0;
-  const canRecover = !!(captureWatch?.isActive() || captureWatch?.isBusy() || watchNeedsRecovery);
-  const canStart = currentView === 'collection' && !reviewUnlocked && (available || canRecover);
+  const availability = workflowAvailability();
   const button = document.getElementById('btn-label-regions');
-  if (button) button.disabled = busy || !canStart;
+  if (button) button.disabled = !availability.startLabeling;
   const navigation = document.getElementById('nav-labeling');
-  if (navigation) navigation.disabled = busy || (isViewDisabled('labeling') && !canStart);
+  if (navigation) navigation.disabled = !availability.navigateLabeling;
 }
 async function beginLabeling() {
   if (queueLoading || reviewBatchLoading || queueCommitBusy || labelingEntryBusy || reviewSaving || datasetSwitching || isRecovering) return;
@@ -1176,12 +1177,6 @@ function initDom() {
   document.getElementById("btn-db-stats").onclick = toggleDbStats;
   document.getElementById("btn-db-back").onclick = toggleDbStats;
 
-  document.getElementById("btn-review-deselect-all").onclick = () => {
-    if(typeof isFullSessionReview==='function' && isFullSessionReview()) {fullSessionReview?.selected.clear();paintFullSessionReview();return;}
-    selectedPoolIndices.clear();
-    renderSessionReview();
-  };
-
   document.getElementById("btn-db-deselect-all").onclick = () => {
     selectedFiles.clear();dbSelectedMetadata.clear();
     renderDatabase();
@@ -1204,11 +1199,9 @@ function initDom() {
   document.getElementById("btn-review-select-all").onclick = () => {
     if(typeof isFullSessionReview==='function' && isFullSessionReview()) {selectFullReviewShown();return;}
     const search = document.getElementById("review-search").value.toLowerCase();
-    pool.forEach((e, idx) => {
-      if (e.id.toLowerCase().includes(search) || (e.label && e.label.toLowerCase().includes(search))) {
-        selectedPoolIndices.add(idx);
-      }
-    });
+    const applicable=pool.map((e,idx)=>({e,idx})).filter(({e})=>e.id.toLowerCase().includes(search) || (e.label && e.label.toLowerCase().includes(search)));
+    const all=applicable.length>0 && applicable.every(({idx})=>selectedPoolIndices.has(idx));
+    for(const {idx} of applicable) all ? selectedPoolIndices.delete(idx) : selectedPoolIndices.add(idx);
     renderSessionReview();
   };
 
@@ -1304,49 +1297,6 @@ function initDom() {
   document.getElementById("nav-session-review").onclick = () => setView('session-review');
   document.getElementById("nav-database").onclick = () => setView('database');
 
-  const stepPrev = document.getElementById("nav-step-prev");
-  if (stepPrev) {
-    stepPrev.onclick = () => {
-      if (currentView === 'labeling') {
-        leaveReviewClock();
-        setView('collection');
-      } else if (currentView === 'session-review') {
-        if (pool.length > 0) {
-          reviewUnlocked = false;
-          setView('labeling');
-        } else {
-          setView('collection');
-        }
-      } else if (currentView === 'database') {
-        if (!isViewDisabled('session-review')) {
-          setView('session-review');
-        } else if (!isViewDisabled('labeling')) {
-          setView('labeling');
-        } else {
-          setView('collection');
-        }
-      }
-      updateStepperButtons();
-    };
-  }
-
-  const stepNext = document.getElementById("nav-step-next");
-  if (stepNext) {
-    stepNext.onclick = () => {
-      if (currentView === 'collection') {
-        void beginLabeling();
-      } else if (currentView === 'labeling') {
-        reviewUnlocked = true;
-        setView('session-review');
-      } else if (currentView === 'session-review') {
-        if (!isViewDisabled('database')) {
-          setView('database');
-        }
-      }
-      updateStepperButtons();
-    };
-  }
-
   document.getElementById("btn-add-db").onclick = async () => {
     if(typeof fullSessionReview!=='undefined' && fullSessionReview?.mutation) return;
     if(typeof isAiReviewBusy==='function' && isAiReviewBusy()) return;
@@ -1385,7 +1335,7 @@ function initDom() {
   };
 
   window.onkeydown = (e) => {
-    if (datasetSwitching || e.defaultPrevented || document.getElementById('modal-overlay')?.classList.contains('active')) return;
+    if (window.location?.pathname === '/gameplay' || datasetSwitching || e.defaultPrevented || document.getElementById('modal-overlay')?.classList.contains('active')) return;
     if (currentView === 'collection') {
       const keys=window.CollectorSharedUi.recordingKeys;
       const command=keys.resolveKey(e,{...keys.targetContext(e.target),collection:true,
@@ -1847,7 +1797,7 @@ function renderFrames() {
     frameListEl.classList.add("instant-list-host");
     frameListEl.classList.remove("hidden");
     const epoch=datasetEpoch, datasetId=activeDatasetId;
-    window.CollectorBackgroundLists.render(frameListEl, {path:"/api/queue",datasetId,query:{order:"newest"},prefix:pending.map(frame=>({...frame,id:String(frame.id),__pending:true})),key:item=>item.__pending ? `pending:${item.id}` : collectionCropKey(item),card:createCollectionCard,changed:(items,meta,loading,error)=>{
+    window.CollectorBackgroundLists.render(frameListEl, {path:"/api/queue",datasetId,query:{order:"newest"},fillViewport:true,prefix:pending.map(frame=>({...frame,id:String(frame.id),__pending:true})),key:item=>item.__pending ? `pending:${item.id}` : collectionCropKey(item),card:createCollectionCard,changed:(items,meta,loading,error)=>{
       if(epoch!==datasetEpoch || datasetId!==activeDatasetId) return;
       collectionItems=items; if(meta?.summary) applyQueueSummary(meta.summary);
       document.getElementById("collection-placeholder").classList.toggle("hidden",items.length>0 || pending.length>0 || loading || error);
@@ -2564,11 +2514,17 @@ const handleBulkLabel = async (view) => {
 function updateReviewBulkUI() {
   const bulkControls = document.getElementById("review-bulk-controls");
   const deleteBtn = document.getElementById("btn-delete-session-selected");
-  const deselectAllBtn = document.getElementById("btn-review-deselect-all");
   const bulkInput = document.getElementById("review-bulk-label-input");
   const bulkBtn = document.getElementById("btn-review-bulk-label");
   const selectedItems=typeof isFullSessionReview==='function' && isFullSessionReview() ? fullReviewSelection() : Array.from(selectedPoolIndices).map(idx=>pool[idx]).filter(Boolean);
   const selectedCount=selectedItems.length;
+  if(typeof isFullSessionReview==='function' && isFullSessionReview() && fullSessionReview) {
+    updateReviewSelectShown(fullReviewItems().slice(0,100),item=>fullSessionReview.selected.has(sampleKey(item)),fullSessionReview.mutation);
+  } else {
+    const search=document.getElementById('review-search').value.toLowerCase();
+    const applicable=pool.map((e,originalIdx)=>({...e,originalIdx})).filter(e=>e.id.toLowerCase().includes(search) || (e.label && e.label.toLowerCase().includes(search)));
+    updateReviewSelectShown(applicable,e=>selectedPoolIndices.has(e.originalIdx));
+  }
 
   if (selectedCount > 1) {
     const commonType = getCommonRegionType(selectedItems);
@@ -2578,9 +2534,9 @@ function updateReviewBulkUI() {
   }
 
   if (selectedCount > 0) {
-    deleteBtn.classList.remove("hidden"); deselectAllBtn.classList.remove("hidden");
-    deleteBtn.textContent = "Remove " + selectedCount + " Selected"; deselectAllBtn.textContent = "Deselect " + selectedCount;
-  } else { deleteBtn.classList.add("hidden"); deselectAllBtn.classList.add("hidden"); }
+    deleteBtn.classList.remove("hidden");
+    deleteBtn.textContent = "Remove " + selectedCount + " Selected";
+  } else { deleteBtn.classList.add("hidden"); }
 
   if (bulkBtn && bulkInput) {
     bulkBtn.disabled = bulkInput.value.trim() === "" || selectedCount < 2 || !!(typeof fullSessionReview!=='undefined' && fullSessionReview?.mutation);
@@ -2607,8 +2563,7 @@ function renderSessionReview() {
   updateReviewBulkUI();
   const search = document.getElementById("review-search").value.toLowerCase();
   const filtered = pool.map((e, idx) => ({...e, originalIdx: idx})).filter(e => e.id.toLowerCase().includes(search) || (e.label && e.label.toLowerCase().includes(search)));
-  const selectAllBtn = document.getElementById("btn-review-select-all");
-  if (search.length > 0 && filtered.length > 0) selectAllBtn.classList.remove("hidden"); else selectAllBtn.classList.add("hidden");
+  updateReviewSelectShown(filtered,e=>selectedPoolIndices.has(e.originalIdx));
   const sorted = filtered.sort((a, b) => (a.discarded === b.discarded ? 0 : (a.discarded ? 1 : -1)));
   const dataList = document.getElementById("review-search-list");
   const suggestions = new Set(); pool.forEach(e => { suggestions.add(e.id); if (e.label) suggestions.add(e.label); });
@@ -2895,49 +2850,39 @@ async function deleteDbEntry(fn) {
   }
 }
 
-function isViewDisabled(v) {
-  if (v === 'collection') return labelingUnlocked || reviewUnlocked;
-  if (v === 'labeling') {
-    if (reviewUnlocked) return true;
-    return !labelingUnlocked || pool.length === 0;
-  }
-  if (v === 'session-review') {
-    return !reviewUnlocked || (pool.length === 0 && !(isContinuousReview() && streamStats?.total>0));
-  }
-  if (v === 'database') return window.CollectorBackgroundLists ? dbTotal === 0 : dbEntries.length === 0;
-  return false;
+const workflowSteps = ['collection','labeling','session-review','database'];
+function workflowAvailability() {
+  const views = {
+    collection: !labelingUnlocked && !reviewUnlocked,
+    labeling: !reviewUnlocked && labelingUnlocked && pool.length > 0,
+    'session-review': !!(reviewUnlocked && (pool.length > 0 || isContinuousReview() && streamStats?.total > 0)),
+    database: window.CollectorBackgroundLists ? dbTotal > 0 : dbEntries.length > 0,
+  };
+  const busy = queueLoading || reviewBatchLoading || queueCommitBusy || labelingEntryBusy || reviewSaving || datasetSwitching || isRecovering;
+  const available = queueMode ? !!queueSummary?.total : frames.length > 0 || pool.length > 0;
+  const canRecover = !!(captureWatch?.isActive() || captureWatch?.isBusy() || watchNeedsRecovery);
+  const canStart = currentView === 'collection' && !reviewUnlocked && (available || canRecover);
+  return {views, startLabeling:!busy && canStart, navigateLabeling:!busy && (views.labeling || canStart)};
+}
+function isViewDisabled(v) { return workflowAvailability().views[v] === false; }
+function firstEnabledWorkflow() {
+  const availability = workflowAvailability().views;
+  return workflowSteps.find(view => availability[view]);
 }
 
 function updateStepperButtons() {
   renderCapturePresentation();
   const watchStart = document.getElementById('watch-start');
   if (watchStart) watchStart.disabled = !!(captureWatch?.isBusy() || manualCaptureBusy || datasetSwitching || isRecovering || labelingUnlocked || reviewUnlocked || queueMode && queueSummary?.total >= 5000);
-  document.getElementById("nav-collection").disabled = isViewDisabled('collection');
-  document.getElementById("nav-labeling").disabled = isViewDisabled('labeling');
-  document.getElementById("nav-session-review").disabled = isViewDisabled('session-review');
-  document.getElementById("nav-database").disabled = isViewDisabled('database');
-
-  const stepPrev = document.getElementById("nav-step-prev");
-  const stepNext = document.getElementById("nav-step-next");
-  if (stepPrev) {
-    if (currentView === 'collection') {
-      stepPrev.disabled = true;
-    } else {
-      stepPrev.disabled = false;
-    }
-  }
-  if (stepNext) {
-    if (currentView === 'collection') {
-      const hasCrops = queueMode ? ((queueSummary?.total || 0) > 0 || pool.length > 0) : (frames.some(f => f.regions?.length) || pool.length > 0);
-      stepNext.disabled = !hasCrops && isViewDisabled('labeling');
-    } else if (currentView === 'labeling') {
-      const allComplete = isContinuousReview() ? !!streamStats?.complete && !reviewBatch.next_cursor : pool.length > 0 && pool.every(item => (item.label && item.label.trim() !== "") || item.reviewed || item.discarded);
-      stepNext.disabled = !allComplete && !reviewUnlocked;
-    } else if (currentView === 'session-review') {
-      stepNext.disabled = isViewDisabled('database');
-    } else if (currentView === 'database') {
-      stepNext.disabled = true;
-    }
+  const availability = workflowAvailability();
+  for (const view of workflowSteps) {
+    const button=document.getElementById(`nav-${view}`);
+    button.disabled = view === 'labeling' ? !availability.navigateLabeling : !availability.views[view];
+    const current=view===currentView && availability.views[view];
+    button.classList.toggle('btn-primary',current);
+    button.classList.toggle('btn-secondary',!current);
+    if(current) button.setAttribute('aria-current','step');
+    else button.removeAttribute('aria-current');
   }
 
   updateQueueControls();
@@ -2963,17 +2908,18 @@ const setView = (v, pushState = true) => {
     return;
   }
   if (isViewDisabled(v)) {
-    if (v !== 'collection') {
-      v = 'collection';
-      // Only toast if this was an explicit nav attempt from a user click on a nav link
-      // or button that somehow bypassed the disabled state check.
-      if (pushState && !isRecovering) showToast("Requested view is empty.", "error");
+    if (pushState && !isViewDisabled(currentView)) {
+      if (!isRecovering) showToast("Requested view is empty.", "error");
+      return;
     }
+    v = firstEnabledWorkflow();
+    if (!v) return;
   }
 
   if (currentView === 'collection' && v !== 'collection') window.CollectorSharedUi?.closeMenus?.();
   if (currentView === 'session-review' && v !== 'session-review' && typeof resetFullSessionReview === 'function') {
     resetFullSessionReview(true);
+    window.CollectorBackgroundLists?.clear(sessionReviewListEl);
     window.CollectorSharedUi?.disposeMenus?.(sessionReviewListEl);
     sessionReviewListEl?.replaceChildren();
   }
@@ -2992,7 +2938,7 @@ const setView = (v, pushState = true) => {
     if (scrollRegion) scrollRegion.scrollTop = 0;
   }
   currentView = v;
-  document.getElementById('dataset-tools').classList.toggle('hidden', v !== 'collection');
+  document.getElementById('dataset-tools').classList.toggle('hidden', v !== 'collection' && v !== 'database');
   if (v !== 'collection') document.getElementById('dataset-manager').open = false;
   const views = { 'collection': viewCollection, 'labeling': viewLabeling, 'session-review': viewSessionReview, 'database': viewDatabase };
   Object.values(views).forEach(el => { el.classList.remove("active-view"); });
@@ -3002,7 +2948,10 @@ const setView = (v, pushState = true) => {
 
   if (pushState) {
     let path = v === 'session-review' ? 'review' : v; if (v === 'labeling') path = "labeling/" + ((queueMode ? reviewBatch?.legacy_offset || 0 : 0) + currentReviewIdx + 1);
-    history.pushState({view:v,idx:v==='labeling'?currentReviewIdx:null,...(queueMode?{dataset_id:activeDatasetId,batch_id:reviewBatch?.batch_id,sample_key:pool[currentReviewIdx]?sampleKey(pool[currentReviewIdx]):null}:{})},'',"/"+path);
+    const state={view:v,idx:v==='labeling'?currentReviewIdx:null,...(queueMode?{dataset_id:activeDatasetId,batch_id:reviewBatch?.batch_id,sample_key:pool[currentReviewIdx]?sampleKey(pool[currentReviewIdx]):null}:{})};
+    if(window.location?.pathname==='/gameplay') window.pokerOcrDeferredLocation={path:"/"+path,state};
+    else history.pushState(state,'',"/"+path);
+    window.dispatchEvent?.(new Event('poker-ocr-location'));
   }
 
   if (!isRecovering) saveSessionProgress();
@@ -3078,7 +3027,51 @@ window.onpopstate = (e) => {
   }
 };
 
+let viewportReadiness = null;
+async function waitForCurrentViewport() {
+  if (!window.CollectorBackgroundLists?.waitForViewport) return;
+  viewportReadiness?.abort();
+  const owner = new AbortController(); viewportReadiness = owner;
+  try {
+    while (!owner.signal.aborted) {
+      if (window.location.pathname === '/gameplay') await new Promise(resolve => {
+        const changed = () => { if (owner.signal.aborted || window.location.pathname !== '/gameplay') { window.removeEventListener('poker-workspace-change', changed); owner.signal.removeEventListener('abort', changed); resolve(); } };
+        window.addEventListener('poker-workspace-change', changed);
+        owner.signal.addEventListener('abort', changed, {once:true});
+      });
+      if (owner.signal.aborted) return;
+      const controller = new AbortController();
+      const changed = () => { if (owner.signal.aborted || window.location.pathname === '/gameplay') controller.abort(); };
+      window.addEventListener('poker-workspace-change', changed);
+      owner.signal.addEventListener('abort', changed, {once:true});
+      const host = currentView === 'collection' ? frameListEl : currentView === 'database' ? dbListEl : currentView === 'session-review' ? sessionReviewListEl : viewLabeling;
+      let ready;
+      try { ready = !host || await window.CollectorBackgroundLists.waitForViewport(host, controller.signal); }
+      finally { window.removeEventListener('poker-workspace-change', changed); owner.signal.removeEventListener('abort', changed); }
+      if (owner.signal.aborted) return;
+      if (controller.signal.aborted) continue;
+      if (!ready) showToast('The first view is taking longer than expected. You can retry loading the list.', 'error');
+      return;
+    }
+  } finally { if (viewportReadiness === owner) viewportReadiness = null; }
+}
+
+async function probeDatabaseAvailability() {
+  if (!window.CollectorBackgroundLists) return;
+  const datasetId = activeDatasetId, controller = new AbortController();
+  let timer;
+  try {
+    const page = await Promise.race([
+      window.CollectorBackgroundLists.readPages('/api/db_entries',datasetId,{},'database',false,controller.signal),
+      new Promise((_,reject) => { timer = setTimeout(() => { controller.abort(); reject(new Error('Database availability timed out')); },3000); })
+    ]);
+    if (activeDatasetId === datasetId) dbTotal = Math.max(dbTotal,page.items.length);
+  } catch (error) { console.warn('Database availability unavailable',error); }
+  finally { clearTimeout(timer); }
+}
+
 async function init() {
+  const startupPath = window.pokerOcrStartupPath || window.location.pathname;
   initDom();
   window.CollectorScroll?.start();
   if(typeof initAiReview==='function') initAiReview();
@@ -3089,7 +3082,7 @@ async function init() {
     dbPage = Math.max(1, Number(savedDatabase.page) || 1);
     document.getElementById('db-search').value = savedDatabase.search || '';
   }
-  showLoading(true, "Initializing Engine...");
+  if (window.location.pathname !== '/gameplay') showLoading(true, "Initializing Engine...");
   try {
     let syncStatus = await (await datasetFetch("/api/sync_status")).json();
     while (syncStatus.is_syncing) { const progress = syncStatus.total > 0 ? (syncStatus.progress / syncStatus.total) * 100 : 0; updateLoadingProgress(syncStatus.current_action, progress); await new Promise(r => datasetTimeout(r, 500)); syncStatus = await (await datasetFetch("/api/sync_status")).json(); }
@@ -3102,7 +3095,7 @@ async function init() {
     loadMonitors(data.sources || data.monitors, data.settings.last_monitor); loadDatabase(data.db); void refreshNames(""); await recoverSession(data.session);
     if(queueMode) {if(savedCollection?.cursor) {collectionPrevious=Array.isArray(savedCollection.previous)?savedCollection.previous:[];await loadCollectionPage(savedCollection.cursor);}else if(data.collection_page) applyCollectionPage(data.collection_page);else await loadCollectionPage();renderFrames();}
   } catch (e) { throw new Error('Could not recover the collection: ' + e.message); }
-  let initialView = 'collection'; const path = window.location.pathname.replace(/^\/+/, '');
+  let initialView = 'collection'; const path = startupPath.replace(/^\/+/, '');
   if (path.startsWith('labeling')) {
     initialView = 'labeling';
     const parts = path.split('/');
@@ -3114,10 +3107,15 @@ async function init() {
       }
     }
   } else if (path === 'review') initialView = 'session-review'; else if (path === 'database') initialView = 'database'; else if (path === 'collection') initialView = 'collection';
-  setView(initialView, false); renderDatasetNavigator(); document.getElementById("collector-workspace").classList.add("ready"); updateStepperButtons(); history.replaceState({view:currentView,idx:currentReviewIdx,...(queueMode?{dataset_id:activeDatasetId,batch_id:reviewBatch?.batch_id,sample_key:pool[currentReviewIdx]?sampleKey(pool[currentReviewIdx]):null}:{})}, '', window.location.pathname); showLoading(false); window.CollectorScroll?.restore();
+  const requestedView = initialView;
+  await probeDatabaseAvailability();
+  if (isViewDisabled(initialView)) initialView = firstEnabledWorkflow();
+  if (!initialView) throw new Error('No workflow step is available.');
+  const initialPath = initialView === requestedView ? startupPath : initialView === 'session-review' ? '/review' : initialView === 'labeling' ? '/labeling/' + ((queueMode ? reviewBatch?.legacy_offset || 0 : 0) + currentReviewIdx + 1) : '/' + initialView;
+  setView(initialView, false); renderDatasetNavigator(); document.getElementById("collector-workspace").classList.add("ready"); updateStepperButtons(); const initialState = {view:currentView,idx:currentReviewIdx,...(queueMode?{dataset_id:activeDatasetId,batch_id:reviewBatch?.batch_id,sample_key:pool[currentReviewIdx]?sampleKey(pool[currentReviewIdx]):null}:{})}; if (window.location.pathname === startupPath && startupPath !== '/gameplay') { history.replaceState(initialState, '', initialPath); window.dispatchEvent?.(new Event('poker-ocr-location')); } else if (window.location.pathname === '/gameplay') window.pokerOcrDeferredLocation = {path:initialPath,state:initialState}; window.CollectorScroll?.restore(); await waitForCurrentViewport(); if (window.location.pathname !== '/gameplay') showLoading(false); window.pokerStartupTimedOut = false;
 }
 
-init().catch(error => { showLoading(false); showToast(error.message, "error"); });
+window.pokerOcrReady = init().catch(error => { if (window.location.pathname !== '/gameplay') showLoading(false); throw error; });
 
 async function recoverSession(d) {
   if(d?.queue_mode==='paged') {
@@ -3138,8 +3136,10 @@ async function recoverSession(d) {
     restoreReviewSessionRewards(d);quickLabels=d.quickLabels || 0;autoCompletes=d.autoCompletes || 0;isRecovering=false;
     await commitContinuousReview();return;
   }
+  labelingUnlocked = d?.labelingUnlocked === true;
+  reviewUnlocked = d?.reviewUnlocked === true;
   if (d && ((d.frames && d.frames.length) || (d.pool && d.pool.length))) {
-    const autoRestore = sessionStorage.getItem("auto_restore:" + activeDatasetId) === "true"; sessionStorage.removeItem("auto_restore:" + activeDatasetId);
+    sessionStorage.removeItem("auto_restore:" + activeDatasetId);
     frames = d.frames || []; pool = d.pool || []; gameCurrencyMap = d.gameCurrencyMap || {}; currentReviewIdx = d.currentReviewIdx || 0;
     maxReachedIdx = d.maxReachedIdx || 0;
     await warmReviewImages();
@@ -3163,15 +3163,9 @@ async function recoverSession(d) {
     renderFrames();
     isRecovering = false;
 
-    // Set workflow locks based on state
-    labelingUnlocked = d.labelingUnlocked || false;
-    reviewUnlocked = d.reviewUnlocked || false;
-
     // Safety fallback: if pool exists, labeling must be unlocked
     if (!queueMode && pool.length > 0 && !labelingUnlocked && !reviewUnlocked) labelingUnlocked = true;
 
-    if (autoRestore) showToast("Session Auto-Restored (Script Changed)", "success");
-    else showToast("Session Auto-Restored", "success");
     updateStepperButtons();
   } else { isRecovering = false; }
 }

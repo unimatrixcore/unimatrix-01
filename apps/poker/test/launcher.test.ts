@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   chooseWorktree,
+  activateExistingWindow,
   discoverWorktrees,
   launcherPaths,
   launcherStatus,
@@ -19,6 +20,136 @@ import {
 } from "../scripts/launch.js";
 
 const temporary: string[] = [];
+it("focuses only the Poker window descended from the existing launcher and reads focus back", () => {
+  const command = vi.fn((_command: string, args: string[]) => {
+    if (args[1] === "clients")
+      return JSON.stringify([
+        { class: "unimatrix-poker", pid: 30, address: "0xabc" },
+        { class: "unimatrix-poker", pid: 40, address: "0xdef" },
+        { class: "kitty", pid: 20, address: "0x123" },
+      ]);
+    if (args[1] === "activewindow") return JSON.stringify({ address: "0xabc" });
+    return "ok";
+  });
+  activateExistingWindow(10, {
+    platform: "linux",
+    env: { HYPRLAND_INSTANCE_SIGNATURE: "fixture" },
+    parentPid: (pid) =>
+      new Map([
+        [30, 20],
+        [20, 10],
+        [40, 1],
+      ]).get(pid) ?? 0,
+    command,
+  });
+  expect(command.mock.calls).toEqual([
+    ["hyprctl", ["-j", "clients"]],
+    ["hyprctl", ["dispatch", "focuswindow", "address:0xabc"]],
+    ["hyprctl", ["-j", "activewindow"]],
+  ]);
+});
+it.each([
+  ["unsupported desktop", {}, "[]", "{}"],
+  ["missing window", { HYPRLAND_INSTANCE_SIGNATURE: "fixture" }, "[]", "{}"],
+  [
+    "unowned window",
+    { HYPRLAND_INSTANCE_SIGNATURE: "fixture" },
+    '[{"class":"unimatrix-poker","pid":40,"address":"0xabc"}]',
+    "{}",
+  ],
+  ["malformed response", { HYPRLAND_INSTANCE_SIGNATURE: "fixture" }, "null", "{}"],
+  [
+    "ambiguous windows",
+    { HYPRLAND_INSTANCE_SIGNATURE: "fixture" },
+    '[{"class":"unimatrix-poker","pid":20,"address":"0xabc"},{"class":"unimatrix-poker","pid":20,"address":"0xdef"}]',
+    "{}",
+  ],
+  [
+    "focus refusal",
+    { HYPRLAND_INSTANCE_SIGNATURE: "fixture" },
+    '[{"class":"unimatrix-poker","pid":20,"address":"0xabc"}]',
+    '{"address":"0xdef"}',
+  ],
+])("reports an actionable error for %s", (_name, env, clients, active) => {
+  expect(() => {
+    activateExistingWindow(10, {
+      platform: "linux",
+      env,
+      parentPid: (pid) => (pid === 20 ? 10 : 0),
+      command: (_command, args) => (args[1] === "clients" ? clients : active),
+    });
+  }).toThrow("Open its existing workspace/window");
+});
+it("reports missing desktop commands instead of silently accepting a duplicate shortcut", () => {
+  expect(() => {
+    activateExistingWindow(10, {
+      platform: "linux",
+      env: { HYPRLAND_INSTANCE_SIGNATURE: "fixture" },
+      command: () => {
+        throw new Error("spawnSync hyprctl ENOENT");
+      },
+    });
+  }).toThrow("Open its existing workspace/window. Error: spawnSync hyprctl ENOENT");
+});
+it.each(["exit failure", "error reply"])(
+  "uses the Lua focus dispatcher after legacy %s",
+  (failure) => {
+    const command = vi.fn((_command: string, args: string[]) => {
+      if (args[1] === "clients") return '[{"class":"unimatrix-poker","pid":20,"address":"0xabc"}]';
+      if (args[0] === "dispatch") {
+        if (failure === "exit failure") throw new Error("dispatch in lua is a shorthand");
+        return "error: dispatch in lua is a shorthand";
+      }
+      if (args[1] === "activewindow") return '{"address":"0xabc"}';
+      return "ok";
+    });
+    activateExistingWindow(10, {
+      platform: "linux",
+      env: { HYPRLAND_INSTANCE_SIGNATURE: "fixture" },
+      parentPid: () => 10,
+      command,
+    });
+    expect(command).toHaveBeenCalledWith("hyprctl", [
+      "eval",
+      'hl.dispatch(hl.dsp.focus({ window = "address:0xabc" }))',
+    ]);
+  },
+);
+it("a repeated shortcut activates without taking the lock, changing selection or launching anything", async () => {
+  const { common, repo, other, paths } = fixture();
+  selectWorktree(common, repo, other, paths);
+  mkdirSync(paths.lock, { recursive: true });
+  writeFileSync(join(paths.lock, "owner.json"), JSON.stringify({ pid: process.pid }));
+  writeFileSync(paths.state, JSON.stringify({ pid: process.pid, current: { path: repo } }));
+  const before = [paths.preference, paths.state, join(paths.lock, "owner.json")].map((path) =>
+    readFileSync(path, "utf8"),
+  );
+  const activate = vi.fn();
+  const launch = vi.fn();
+  const build = vi.fn();
+  const startServer = vi.fn();
+  await supervise(common, repo, paths, { activate, launch, build, startServer });
+  expect(activate).toHaveBeenCalledExactlyOnceWith(process.pid);
+  expect(launch).not.toHaveBeenCalled();
+  expect(build).not.toHaveBeenCalled();
+  expect(startServer).not.toHaveBeenCalled();
+  expect(
+    [paths.preference, paths.state, join(paths.lock, "owner.json")].map((path) =>
+      readFileSync(path, "utf8"),
+    ),
+  ).toEqual(before);
+  await expect(
+    supervise(common, repo, paths, {
+      activate: () => {
+        throw new Error("activation unavailable");
+      },
+      launch,
+      build,
+      startServer,
+    }),
+  ).rejects.toThrow("activation unavailable");
+  expect(readFileSync(join(paths.lock, "owner.json"), "utf8")).toBe(before[2]);
+});
 afterEach(() => {
   vi.unstubAllEnvs();
   for (const path of temporary.splice(0)) rmSync(path, { recursive: true, force: true });

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import {
   backgroundListQueryOptions,
@@ -16,6 +16,7 @@ import {
   pokerLabCompletionRowSchema,
 } from "@unimatrix/shared";
 import { clearLabPageHandoff } from "./lab-page-handoff";
+import { waitForViewport } from "./viewport-ready";
 import {
   LabQueryProvider,
   labListOptions,
@@ -36,6 +37,7 @@ type Options = {
   minColumnWidth?: number;
   prefix?: Item[];
   emptyLabel?: string;
+  fillViewport?: boolean;
   changed: (
     items: readonly Item[],
     meta: unknown,
@@ -45,6 +47,7 @@ type Options = {
   ) => void;
 };
 const roots = new WeakMap<HTMLElement, Root>();
+let generation = 0;
 function optionsFor(options: Options) {
   return labListOptions({
     path: options.path,
@@ -73,17 +76,32 @@ function NativeCard({
   item,
   card,
   dispose,
+  estimatedHeight,
+  measuredHeight,
 }: {
   item: Item;
   card: Options["card"];
   dispose?: Options["dispose"];
+  estimatedHeight: number;
+  measuredHeight: { current: number | null };
 }) {
   const host = useRef<HTMLDivElement>(null);
+  const placeholderHeight = useRef(measuredHeight.current ?? estimatedHeight);
+  const ownMeasuredHeight = useRef<number | null>(null);
   useEffect(() => {
     let node: HTMLElement | undefined;
+    let frame = 0;
     const timer = setTimeout(() => {
       node = card(item);
       host.current?.replaceChildren(node);
+      host.current?.style.removeProperty("min-height");
+      frame = requestAnimationFrame(() => {
+        const height = host.current?.getBoundingClientRect().height;
+        if (height) {
+          ownMeasuredHeight.current = height;
+          measuredHeight.current = height;
+        }
+      });
       const input = node.querySelector<HTMLInputElement>("input.card-label");
       if (input) {
         input.focus({ preventScroll: true });
@@ -92,20 +110,70 @@ function NativeCard({
     }, 0);
     return () => {
       clearTimeout(timer);
+      cancelAnimationFrame(frame);
       if (node) {
+        if (host.current)
+          host.current.style.minHeight = `${ownMeasuredHeight.current ?? placeholderHeight.current}px`;
         dispose?.(item, node);
         window.CollectorSharedUi?.disposeMenus(node);
         node.remove();
       }
     };
-  }, [item, card, dispose]);
-  return <div ref={host} />;
+  }, [item, card, dispose, estimatedHeight, measuredHeight]);
+  return <div ref={host} data-native-card style={{ minHeight: placeholderHeight.current }} />;
 }
-function OcrList({ options }: { options: Options }) {
+const getWorkspaceScroller = () => document.getElementById("main-content");
+
+function useGridColumnWidth(fallback = 240) {
+  const [narrow, setNarrow] = useState(() => window.matchMedia("(max-width:760px)").matches);
+  useEffect(() => {
+    const media = window.matchMedia("(max-width:760px)");
+    const update = () => {
+      setNarrow(media.matches);
+    };
+    media.addEventListener("change", update);
+    return () => {
+      media.removeEventListener("change", update);
+    };
+  }, []);
+  return narrow && fallback === 240 ? 200 : fallback;
+}
+
+function useCollectionDockSpace(enabled: boolean) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (!enabled || !ref.current) return;
+    const node = ref.current;
+    const dock = document.getElementById("record-dock");
+    const update = () => {
+      if (dock)
+        node.style.setProperty(
+          "--record-dock-space",
+          `${Math.max(0, window.innerHeight - dock.getBoundingClientRect().top + 16)}px`,
+        );
+    };
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    if (dock) observer.observe(dock);
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    update();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [enabled]);
+  return ref;
+}
+function OcrList({ options, revision }: { options: Options; revision: number }) {
   const key = JSON.stringify([options.path, options.datasetId, options.query]);
   const listOptions = useMemo(() => optionsFor(options), [key]);
   const list = useBackgroundList(listOptions);
   const latest = useRef(options);
+  const measuredHeight = useRef<number | null>(null);
+  const collectionRef = useCollectionDockSpace(!!options.fillViewport);
+  const minColumnWidth = useGridColumnWidth(options.minColumnWidth);
   latest.current = options;
   useEffect(() => {
     latest.current.changed(
@@ -117,7 +185,15 @@ function OcrList({ options }: { options: Options }) {
     );
   }, [list.dataUpdatedAt, list.isFetching, list.isError, key]);
   return (
-    <>
+    <div
+      ref={collectionRef}
+      data-list-revision={revision}
+      data-list-state={list.isError ? "error" : list.isSuccess ? "ready" : "pending"}
+      data-list-count={list.items.length + (options.prefix?.length ?? 0)}
+      data-list-complete={!list.isPending && !list.hasNextPage}
+      data-list-paused={list.pauseReason ?? ""}
+      className={options.fillViewport ? "collection-virtual-list" : undefined}
+    >
       {options.emptyLabel && !list.isPending && !list.isError && list.items.length === 0 && (
         <p role="status">{options.emptyLabel}</p>
       )}
@@ -125,12 +201,20 @@ function OcrList({ options }: { options: Options }) {
         items={[...(options.prefix ?? []), ...list.items]}
         getItemId={options.key}
         renderItem={(item) => (
-          <NativeCard item={item} card={options.card} dispose={options.dispose} />
+          <NativeCard
+            item={item}
+            card={options.card}
+            dispose={options.dispose}
+            estimatedHeight={options.rowHeight ?? 300}
+            measuredHeight={measuredHeight}
+          />
         )}
         rowHeight={options.rowHeight ?? 300}
-        minColumnWidth={options.minColumnWidth ?? 240}
+        minColumnWidth={minColumnWidth}
         gap={12}
-        height={options.height ?? "65vh"}
+        {...(options.height === undefined
+          ? { getScrollElement: getWorkspaceScroller }
+          : { height: options.height })}
         ariaLabel="Crops"
         onEndReached={list.onEndReached}
         hasNextPage={list.hasNextPage}
@@ -140,7 +224,7 @@ function OcrList({ options }: { options: Options }) {
           await labQueryClient.resetQueries({ queryKey: listOptions.queryKey, exact: true });
         }}
       />
-    </>
+    </div>
   );
 }
 type SnapshotOptions = {
@@ -151,31 +235,55 @@ type SnapshotOptions = {
   rowHeight?: number;
   minColumnWidth?: number;
 };
-function SnapshotList({ options }: { options: SnapshotOptions }) {
+function SnapshotList({ options, revision }: { options: SnapshotOptions; revision: number }) {
+  const minColumnWidth = useGridColumnWidth(options.minColumnWidth);
+  const measuredHeight = useRef<number | null>(null);
   return (
-    <InstantVirtualGrid
-      items={options.items}
-      getItemId={options.key}
-      renderItem={(item) => <NativeCard item={item} card={options.card} />}
-      rowHeight={options.rowHeight ?? 300}
-      minColumnWidth={options.minColumnWidth ?? 240}
-      gap={12}
-      height={options.height ?? "65vh"}
-      ariaLabel="Crops"
-    />
+    <div
+      data-list-revision={revision}
+      data-list-state="ready"
+      data-list-count={options.items.length}
+      data-list-complete="true"
+    >
+      <InstantVirtualGrid
+        items={options.items}
+        getItemId={options.key}
+        renderItem={(item) => (
+          <NativeCard
+            item={item}
+            card={options.card}
+            estimatedHeight={options.rowHeight ?? 300}
+            measuredHeight={measuredHeight}
+          />
+        )}
+        rowHeight={options.rowHeight ?? 300}
+        minColumnWidth={minColumnWidth}
+        gap={12}
+        {...(options.height === undefined
+          ? { getScrollElement: getWorkspaceScroller }
+          : { height: options.height })}
+        ariaLabel="Crops"
+      />
+    </div>
   );
 }
 export function installOcrBackgroundLists() {
   window.CollectorBackgroundLists = {
     snapshot(host, options) {
+      host.dataset.listExpected = "snapshot";
+      const revision = ++generation;
+      host.dataset.listRevision = String(revision);
       let root = roots.get(host);
       if (!root) {
         root = createRoot(host);
         roots.set(host, root);
       }
-      root.render(<SnapshotList options={options} />);
+      root.render(<SnapshotList options={options} revision={revision} />);
     },
     render(host, options) {
+      host.dataset.listExpected = "query";
+      const revision = ++generation;
+      host.dataset.listRevision = String(revision);
       let root = roots.get(host);
       if (!root) {
         root = createRoot(host);
@@ -183,7 +291,7 @@ export function installOcrBackgroundLists() {
       }
       root.render(
         <LabQueryProvider>
-          <OcrList options={options} />
+          <OcrList options={options} revision={revision} />
         </LabQueryProvider>,
       );
     },
@@ -296,7 +404,7 @@ export function installOcrBackgroundLists() {
         default_dataset_id: selected.id,
       };
     },
-    async readPages(path, datasetId, query, kind, all) {
+    async readPages(path, datasetId, query, kind, all, signal = new AbortController().signal) {
       const schema =
         kind === "database"
           ? pokerLabDatabaseItemSchema
@@ -322,7 +430,7 @@ export function installOcrBackgroundLists() {
           cursor,
           limit: 500,
           priority: "high",
-          signal: new AbortController().signal,
+          signal,
         });
         items.push(...page.items);
         meta = readLabListMeta([page])?.meta;
@@ -354,7 +462,10 @@ export function installOcrBackgroundLists() {
         root.unmount();
         roots.delete(host);
       }
+      delete host.dataset.listExpected;
+      delete host.dataset.listRevision;
     },
+    waitForViewport,
   };
 }
 declare global {
@@ -378,10 +489,12 @@ declare global {
         query: Record<string, string>,
         kind: "filenames" | "names" | "datasets" | "database",
         all: boolean,
+        signal?: AbortSignal,
       ) => Promise<{ items: Record<string, unknown>[]; meta: unknown; cursor: string | null }>;
       invalidate: (path: string, datasetId: string) => Promise<void>;
       prefetch: (options: Options) => void;
       clear: (host: HTMLElement) => void;
+      waitForViewport: typeof waitForViewport;
     };
   }
 }

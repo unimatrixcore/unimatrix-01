@@ -89,8 +89,8 @@ test("preserves dataset creation and source capture errors without adding naviga
   await page.locator("#dataset-create").click();
   await expect(page.locator("#dataset-catalog-label")).toHaveText("New fixture");
   await page.locator("#dataset-catalog-label").click();
-  await expect(page.getByRole("button", { name: "New fixture", exact: true })).toBeVisible();
-  await page.locator("#dataset-catalog-label").click();
+  await expect(page.getByRole("menuitemradio", { name: "New fixture", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
   await expect(page.locator("#collector-workspace")).toHaveClass(/ready/);
   await expect(page.locator("#nav-collection")).toBeVisible();
 });
@@ -100,7 +100,7 @@ test("retains original Gameplay recording workspace and shared recording panel",
 }) => {
   await page.goto("/gameplay");
   await expect(page.locator(".gameplay-workspace")).toBeVisible();
-  await expect(page.locator(".recording-panel")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Gameplay recording controls" })).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Capture source and recording settings", exact: true }),
   ).toBeVisible();
@@ -318,7 +318,6 @@ test("review actions, shared selection and pointer-centered crop lens retain the
     review?.classList.add("active-view");
     for (const [id, text] of [
       ["btn-review-select-all", "Select shown"],
-      ["btn-review-deselect-all", "Deselect 1"],
       ["btn-delete-session-selected", "Remove 1 Selected"],
       ["btn-add-db", "Save all 1,917 crops"],
     ] as const) {
@@ -339,7 +338,7 @@ test("review actions, shared selection and pointer-centered crop lens retain the
   await expect(save).toHaveAttribute("title", "Save all 1,917 crops");
   await expect(save).toHaveCSS("font-size", "0px");
   await expect(page.getByRole("button", { name: "Select shown", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Deselect 1", exact: true })).toBeVisible();
+  await expect(page.locator("#btn-review-deselect-all")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Remove 1 Selected", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "AI review", exact: true })).toBeVisible();
   await expect(page.locator("#ai-review-button-progress")).toHaveText("Review complete");
@@ -414,4 +413,33 @@ test("gameplay shows detected suits and hides only color-confirmed inactive seat
   await page.getByRole("button", { name: "1 inactive seat" }).click();
   await expect(page.getByText("Seat 2", { exact: true })).toBeVisible();
   await page.screenshot({ path: "../../.orchestration/evidence/poker-gameplay-color-fixture.png" });
+});
+
+test("dataset controls remain reachable in the narrow toolbar", async ({ page }) => {
+  await page.setViewportSize({ width: 420, height: 760 });
+  await page.goto("/collection");
+  await expect(page.locator("#loading-overlay")).toBeHidden();
+  for (const name of [
+    "Working dataset",
+    "Create dataset",
+    "Rename dataset",
+    "Archive and restore datasets",
+  ]) {
+    const control = page.getByLabel(name, { exact: true }).locator("visible=true");
+    await expect(control).toBeVisible();
+    const box = await control.boundingBox();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(420);
+  }
+  await page.getByLabel("Working dataset", { exact: true }).locator("visible=true").click();
+  const catalogBox = await page.locator(".dataset-dropdown").boundingBox();
+  expect(catalogBox!.x).toBeGreaterThanOrEqual(0);
+  expect(catalogBox!.x + catalogBox!.width).toBeLessThanOrEqual(420);
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Rename dataset" }).click();
+  await expect(page.locator("#dataset-name-input")).toBeVisible();
+  await page.locator("#dataset-manager > summary").click();
+  await page.getByLabel("Archive and restore datasets").click();
+  await expect(page.locator("#dataset-action-title")).toHaveText("Manage datasets");
+  await page.screenshot({ path: test.info().outputPath("narrow-dataset-controls.png") });
 });

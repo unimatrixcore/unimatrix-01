@@ -4,6 +4,7 @@ import { Checkbox } from "@unimatrix/ui";
 import {
   RiCheckboxMultipleLine,
   RiCheckboxMultipleBlankLine,
+  RiCheckboxIndeterminateLine,
   RiDeleteBinLine,
   RiSave3Line,
   RiPencilLine,
@@ -13,7 +14,6 @@ import "./review_controls.css";
 
 const icons: Record<string, typeof RiSave3Line> = {
   "btn-review-select-all": RiCheckboxMultipleLine,
-  "btn-review-deselect-all": RiCheckboxMultipleBlankLine,
   "btn-delete-session-selected": RiDeleteBinLine,
   "btn-add-db": RiSave3Line,
   "btn-ai-review": RiRobot2Line,
@@ -43,10 +43,25 @@ export function decorateIconButton(button: HTMLElement, Icon: typeof RiSave3Line
   icon.className = "review-action-icon";
   icon.setAttribute("aria-hidden", "true");
   host.append(icon);
-  flushSync(() => {
-    createRoot(icon).render(<Icon size={16} />);
-  });
+  const root = createRoot(icon);
+  let renderedIcon: typeof Icon | undefined;
   const sync = () => {
+    const selection =
+      button.id === "btn-review-select-all" ? button.getAttribute("aria-pressed") : null;
+    const CurrentIcon =
+      selection === "true"
+        ? RiCheckboxMultipleLine
+        : selection === "mixed"
+          ? RiCheckboxIndeterminateLine
+          : selection === "false"
+            ? RiCheckboxMultipleBlankLine
+            : Icon;
+    if (renderedIcon !== CurrentIcon) {
+      renderedIcon = CurrentIcon;
+      flushSync(() => {
+        root.render(<CurrentIcon size={16} />);
+      });
+    }
     const label = ai ? "AI review" : button.textContent?.trim();
     if (label) {
       button.setAttribute("aria-label", label);
@@ -58,6 +73,8 @@ export function decorateIconButton(button: HTMLElement, Icon: typeof RiSave3Line
     childList: true,
     subtree: true,
     characterData: true,
+    attributes: true,
+    attributeFilter: ["aria-pressed"],
   });
 }
 

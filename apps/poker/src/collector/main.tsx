@@ -1,3 +1,4 @@
+import { renderDatasetPicker } from "./dataset_picker";
 import {
   decorateIconButton,
   enhanceCardCheckboxes,
@@ -66,6 +67,7 @@ declare global {
   interface Window {
     CollectorSharedUi: {
       enhance: typeof enhance;
+      renderDatasetPicker: typeof renderDatasetPicker;
       reviewGamification: typeof reviewGamification;
       recordingKeys: typeof recordingKeys;
       createGamificationEffects: typeof createGamificationEffects;
@@ -320,6 +322,7 @@ if (reviewHints) {
 Object.defineProperty(window, "CollectorSharedUi", {
   value: {
     enhance,
+    renderDatasetPicker,
     reviewGamification,
     recordingKeys,
     createGamificationEffects,
@@ -332,7 +335,7 @@ Object.defineProperty(window, "CollectorSharedUi", {
   configurable: true,
 });
 // Gameplay owns its React tree; native DOM replacement is only for OCR Data.
-if (window.location.pathname !== "/gameplay") {
+{
   enhance();
   installCropPreview();
   mountWorkspaceTopbar();

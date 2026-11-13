@@ -5,6 +5,8 @@ function showToast(msg, type = "error") {
 }
 
 function showLoading(show, text = "Loading...") {
+  if (show && window.pokerStartupTimedOut) return;
+  if (!show) window.pokerStartupTimedOut = false;
   const overlay = document.getElementById("loading-overlay");
   const loadingText = document.getElementById("loading-text");
   const bar = document.getElementById("loading-progress-bar");

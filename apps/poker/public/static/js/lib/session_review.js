@@ -180,6 +180,7 @@ function paintFullSessionReview() {
   const existingInput=state.editing && document.getElementById('edit-input-full-review-'+fullReviewItem(state.editing)?.queue_id);
   if(existingInput) state.drafts.set(state.editing,existingInput.value);
   const items=fullReviewItems();
+  updateReviewBulkUI();
   const keep=new Set(items.map(sampleKey)),nodes=[];
   for(const [key,entry] of state.cards) if(!keep.has(key)){entry.node.querySelector('img')?.removeAttribute('src');state.cards.delete(key);}
   const createReviewCard = item => {
@@ -187,7 +188,7 @@ function paintFullSessionReview() {
     const signature=JSON.stringify([item.label,item.reviewed,item.discarded,state.selected.has(key),state.editing===key,state.mutation]);
     if(!window.CollectorBackgroundLists && state.cards.get(key)?.signature===signature) return state.cards.get(key).node;
     state.cards.get(key)?.node.querySelector('img')?.removeAttribute('src');
-    const card=renderCard({imageSrc:cropImage(item),label:item.label,id:item.id,originalIdx:reference,historyItem:item,isSelected:state.selected.has(key),
+    const card=renderCard({imageSrc:cropImage(item),label:item.label,id:item.id,originalIdx:reference,isSelected:state.selected.has(key),
       isIgnored:item.discarded,isBlank:item.reviewed && item.label==='' && !item.discarded,isEditing:state.editing===key,
       onToggle:()=>toggleFullReviewSelection(key),onEdit:()=>startFullSessionEdit(key),onSave:()=>saveFullSessionLabel(key),
       onRemove:()=>removeFullSessionItems([item]),removeLabel:'Remove',onKeydown:event=>{
@@ -206,7 +207,7 @@ function paintFullSessionReview() {
       if(!fullReviewContextMatches(state)) return;
       state.pages=[{index:0,items}];state.loading=loading;state.error=error ? "Could not load session crops" : "";state.ready=!loading || items.length>0;
       if(meta?.review_stats) streamStats=meta.review_stats;if(meta?.summary) applyQueueSummary(meta.summary);
-      const select=document.getElementById("btn-review-select-all");if(select) {select.classList.toggle("hidden",!items.length);select.textContent="Select shown";select.disabled=state.mutation;}
+      updateReviewSelectShown(items.slice(0,100),item=>state.selected.has(sampleKey(item)),state.mutation);
       updateReviewBulkUI();
     }});
     return;
@@ -230,8 +231,7 @@ function paintFullSessionReview() {
   if(earlier){earlier.classList.toggle('hidden',!state.pages.length || first===0);earlier.disabled=state.loading || state.mutation;earlier.onclick=()=>loadFullReviewPage(first-1);}
   const nextIndex=state.pages.length ? state.pages.at(-1).index+1 : 0;
   if(more){more.classList.toggle('hidden',!state.error && !state.cursors[nextIndex]);more.disabled=state.loading || state.mutation;more.textContent=state.error?'Retry':'More crops';more.onclick=()=>loadFullReviewPage(state.error?state.retryIndex || 0:nextIndex);}
-  const select=document.getElementById('btn-review-select-all');
-  if(select){select.classList.toggle('hidden',!items.length);select.textContent='Select shown';select.title='Select these displayed crops (up to 100)';select.disabled=state.mutation;}
+  updateReviewSelectShown(items.slice(0,100),item=>state.selected.has(sampleKey(item)),state.mutation);
   const search=document.getElementById('review-search');if(search) search.placeholder='Search all session crops…';
   const commit=document.getElementById('btn-add-db');if(commit) commit.disabled=state.mutation || queueCommitBusy || reviewSaving || !!(typeof isAiReviewBusy==='function' && isAiReviewBusy());
   const options=document.getElementById('review-search-list');if(options) options.replaceChildren();
@@ -244,9 +244,29 @@ function toggleFullReviewSelection(key) {
   else {if(state.selected.size>=100){showToast('Select up to 100 crops at a time.','error');return;}state.selected.set(key,item);}
   paintFullSessionReview();
 }
+function updateReviewSelectShown(items,isSelected,disabled=false) {
+  const button=document.getElementById('btn-review-select-all');if(!button) return;
+  const selectedCount=items.filter(isSelected).length;
+  const all=items.length>0 && selectedCount===items.length;
+  button.classList.toggle('hidden',!items.length);
+  button.setAttribute('aria-pressed',all?'true':selectedCount?'mixed':'false');
+  button.textContent=all?'Deselect shown':'Select shown';
+  button.title=button.textContent;button.setAttribute('aria-label',button.textContent);
+  button.disabled=disabled;
+}
 function selectFullReviewShown() {
-  if(!fullSessionReview || fullSessionReview.mutation) return;
-  fullSessionReview.selected=new Map(fullReviewItems().slice(0,100).map(item=>[sampleKey(item),item]));paintFullSessionReview();
+  const state=fullSessionReview;if(!state || state.mutation) return;
+  const items=fullReviewItems().slice(0,100);
+  if(items.length && items.every(item=>state.selected.has(sampleKey(item)))) {
+    for(const item of items) state.selected.delete(sampleKey(item));
+  } else {
+    for(const item of items) {
+      if(state.selected.has(sampleKey(item))) continue;
+      if(state.selected.size>=100) {showToast('Select up to 100 crops at a time.','error');break;}
+      state.selected.set(sampleKey(item),item);
+    }
+  }
+  paintFullSessionReview();
 }
 function startFullSessionEdit(key) {
   const state=fullSessionReview,item=fullReviewItem(key);if(!state || state.mutation || !item) return;
