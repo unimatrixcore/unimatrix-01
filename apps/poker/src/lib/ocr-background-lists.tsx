@@ -76,17 +76,32 @@ function NativeCard({
   item,
   card,
   dispose,
+  estimatedHeight,
+  measuredHeight,
 }: {
   item: Item;
   card: Options["card"];
   dispose?: Options["dispose"];
+  estimatedHeight: number;
+  measuredHeight: { current: number | null };
 }) {
   const host = useRef<HTMLDivElement>(null);
+  const placeholderHeight = useRef(measuredHeight.current ?? estimatedHeight);
+  const ownMeasuredHeight = useRef<number | null>(null);
   useEffect(() => {
     let node: HTMLElement | undefined;
+    let frame = 0;
     const timer = setTimeout(() => {
       node = card(item);
       host.current?.replaceChildren(node);
+      host.current?.style.removeProperty("min-height");
+      frame = requestAnimationFrame(() => {
+        const height = host.current?.getBoundingClientRect().height;
+        if (height) {
+          ownMeasuredHeight.current = height;
+          measuredHeight.current = height;
+        }
+      });
       const input = node.querySelector<HTMLInputElement>("input.card-label");
       if (input) {
         input.focus({ preventScroll: true });
@@ -95,24 +110,42 @@ function NativeCard({
     }, 0);
     return () => {
       clearTimeout(timer);
+      cancelAnimationFrame(frame);
       if (node) {
+        if (host.current)
+          host.current.style.minHeight = `${ownMeasuredHeight.current ?? placeholderHeight.current}px`;
         dispose?.(item, node);
         window.CollectorSharedUi?.disposeMenus(node);
         node.remove();
       }
     };
-  }, [item, card, dispose]);
-  return <div ref={host} data-native-card />;
+  }, [item, card, dispose, estimatedHeight, measuredHeight]);
+  return <div ref={host} data-native-card style={{ minHeight: placeholderHeight.current }} />;
 }
-function useViewportHeight(enabled: boolean) {
+const getWorkspaceScroller = () => document.getElementById("main-content");
+
+function useGridColumnWidth(fallback = 240) {
+  const [narrow, setNarrow] = useState(() => window.matchMedia("(max-width:760px)").matches);
+  useEffect(() => {
+    const media = window.matchMedia("(max-width:760px)");
+    const update = () => {
+      setNarrow(media.matches);
+    };
+    media.addEventListener("change", update);
+    return () => {
+      media.removeEventListener("change", update);
+    };
+  }, []);
+  return narrow && fallback === 240 ? 200 : fallback;
+}
+
+function useCollectionDockSpace(enabled: boolean) {
   const ref = useRef<HTMLDivElement>(null);
-  const [height, setHeight] = useState(480);
   useLayoutEffect(() => {
     if (!enabled || !ref.current) return;
     const node = ref.current;
     const dock = document.getElementById("record-dock");
     const update = () => {
-      setHeight(Math.max(120, window.innerHeight - node.getBoundingClientRect().top));
       if (dock)
         node.style.setProperty(
           "--record-dock-space",
@@ -131,14 +164,16 @@ function useViewportHeight(enabled: boolean) {
       window.removeEventListener("scroll", update, true);
     };
   }, [enabled]);
-  return { ref, height };
+  return ref;
 }
 function OcrList({ options, revision }: { options: Options; revision: number }) {
   const key = JSON.stringify([options.path, options.datasetId, options.query]);
   const listOptions = useMemo(() => optionsFor(options), [key]);
   const list = useBackgroundList(listOptions);
   const latest = useRef(options);
-  const viewport = useViewportHeight(!!options.fillViewport);
+  const measuredHeight = useRef<number | null>(null);
+  const collectionRef = useCollectionDockSpace(!!options.fillViewport);
+  const minColumnWidth = useGridColumnWidth(options.minColumnWidth);
   latest.current = options;
   useEffect(() => {
     latest.current.changed(
@@ -151,10 +186,11 @@ function OcrList({ options, revision }: { options: Options; revision: number }) 
   }, [list.dataUpdatedAt, list.isFetching, list.isError, key]);
   return (
     <div
-      ref={viewport.ref}
+      ref={collectionRef}
       data-list-revision={revision}
       data-list-state={list.isError ? "error" : list.isSuccess ? "ready" : "pending"}
       data-list-count={list.items.length + (options.prefix?.length ?? 0)}
+      data-list-complete={!list.isPending && !list.hasNextPage}
       className={options.fillViewport ? "collection-virtual-list" : undefined}
     >
       {options.emptyLabel && !list.isPending && !list.isError && list.items.length === 0 && (
@@ -164,12 +200,20 @@ function OcrList({ options, revision }: { options: Options; revision: number }) 
         items={[...(options.prefix ?? []), ...list.items]}
         getItemId={options.key}
         renderItem={(item) => (
-          <NativeCard item={item} card={options.card} dispose={options.dispose} />
+          <NativeCard
+            item={item}
+            card={options.card}
+            dispose={options.dispose}
+            estimatedHeight={options.rowHeight ?? 300}
+            measuredHeight={measuredHeight}
+          />
         )}
         rowHeight={options.rowHeight ?? 300}
-        minColumnWidth={options.minColumnWidth ?? 240}
+        minColumnWidth={minColumnWidth}
         gap={12}
-        height={options.fillViewport ? viewport.height : (options.height ?? "65vh")}
+        {...(options.height === undefined
+          ? { getScrollElement: getWorkspaceScroller }
+          : { height: options.height })}
         ariaLabel="Crops"
         onEndReached={list.onEndReached}
         hasNextPage={list.hasNextPage}
@@ -191,20 +235,32 @@ type SnapshotOptions = {
   minColumnWidth?: number;
 };
 function SnapshotList({ options, revision }: { options: SnapshotOptions; revision: number }) {
+  const minColumnWidth = useGridColumnWidth(options.minColumnWidth);
+  const measuredHeight = useRef<number | null>(null);
   return (
     <div
       data-list-revision={revision}
       data-list-state="ready"
       data-list-count={options.items.length}
+      data-list-complete="true"
     >
       <InstantVirtualGrid
         items={options.items}
         getItemId={options.key}
-        renderItem={(item) => <NativeCard item={item} card={options.card} />}
+        renderItem={(item) => (
+          <NativeCard
+            item={item}
+            card={options.card}
+            estimatedHeight={options.rowHeight ?? 300}
+            measuredHeight={measuredHeight}
+          />
+        )}
         rowHeight={options.rowHeight ?? 300}
-        minColumnWidth={options.minColumnWidth ?? 240}
+        minColumnWidth={minColumnWidth}
         gap={12}
-        height={options.height ?? "65vh"}
+        {...(options.height === undefined
+          ? { getScrollElement: getWorkspaceScroller }
+          : { height: options.height })}
         ariaLabel="Crops"
       />
     </div>

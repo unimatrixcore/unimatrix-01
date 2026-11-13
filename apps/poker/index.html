@@ -67,52 +67,13 @@
             <button id="nav-database" class="step-btn btn-secondary">Database</button>
           </nav>
           <div class="stepper-panel-actions">
-            <button
-              id="nav-step-prev"
-              class="btn-secondary nav-nav-btn"
-              type="button"
-              aria-label="Previous step"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M15 18l-6-6 6-6"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-              Back
-            </button>
-            <button
-              id="nav-step-next"
-              class="btn-secondary nav-nav-btn"
-              type="button"
-              aria-label="Next step"
-            >
-              Next
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M9 18l6-6-6-6"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-            </button>
             <div id="dataset-tools" class="dataset-tools" aria-label="Dataset controls">
               <select
                 id="dataset-select"
                 aria-label="Working dataset"
                 title="Working dataset"
               ></select>
-              <details id="dataset-catalog" class="hidden">
-                <summary aria-label="Working dataset" id="dataset-catalog-label">Dataset</summary>
-                <div id="dataset-catalog-list"></div>
-              </details>
+              <div id="dataset-catalog"></div>
               <button
                 id="dataset-create-open"
                 class="dataset-icon"
@@ -565,13 +526,6 @@
                       style="height: 32px"
                     >
                       Select All
-                    </button>
-                    <button
-                      class="btn-ghost hidden"
-                      id="btn-review-deselect-all"
-                      style="height: 32px; color: var(--text-muted)"
-                    >
-                      Deselect
                     </button>
                   </div>
                   <button

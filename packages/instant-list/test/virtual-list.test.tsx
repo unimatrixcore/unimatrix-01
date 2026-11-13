@@ -177,3 +177,70 @@ it("scrolls requested stable IDs into view without resetting retained row state"
     expect(screen.getByRole("list").scrollTop).toBe(0);
   });
 });
+
+it("uses an external scroll owner with a content offset and no nested viewport", async () => {
+  geometry();
+  vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(10000);
+  const scroller = document.createElement("main");
+  document.body.append(scroller);
+  const disconnect = vi.fn();
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      constructor(private callback: ResizeObserverCallback) {}
+      observe(target: Element) {
+        this.callback(
+          [
+            {
+              target,
+              borderBoxSize: [
+                { inlineSize: 800, blockSize: target.hasAttribute("data-index") ? 80 : 400 },
+              ],
+            } as unknown as ResizeObserverEntry,
+          ],
+          this,
+        );
+      }
+      unobserve() {}
+      disconnect = disconnect;
+    },
+  );
+  const bounds = scroller.getBoundingClientRect();
+  vi.spyOn(HTMLElement.prototype, "getClientRects").mockReturnValue([
+    bounds,
+  ] as unknown as DOMRectList);
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    return { ...bounds, top: this.getAttribute("role") === "list" ? 200 : 0 };
+  });
+  const onEndReached = vi.fn();
+  const { container, unmount } = render(
+    <InstantVirtualList
+      items={[1, 2]}
+      getItemId={(item) => item}
+      renderItem={(item) => <span>{item}</span>}
+      rowHeight={40}
+      measureRows
+      getScrollElement={() => scroller}
+      onEndReached={onEndReached}
+      hasNextPage
+    />,
+    { container: scroller },
+  );
+  const list = screen.getByRole("list");
+  expect(list.style.overflow).toBe("visible");
+  expect(list.style.height).toBe("auto");
+  expect(list.hasAttribute("tabindex")).toBe(false);
+  expect((container.querySelector('[data-index="0"]') as HTMLElement).style.transform).toBe(
+    "translateY(0px)",
+  );
+  expect(onEndReached).not.toHaveBeenCalled();
+  fireEvent.scroll(scroller);
+  await waitFor(() => {
+    expect(onEndReached).toHaveBeenCalledOnce();
+  });
+  unmount();
+  expect(disconnect).toHaveBeenCalled();
+  vi.unstubAllGlobals();
+});

@@ -265,6 +265,7 @@ fn main() {
             WebviewWindowBuilder::new(app, "main", WebviewUrl::CustomProtocol(url.parse()?))
                 .data_directory(profile)
                 .title("Poker Lab")
+                .background_color(tauri::window::Color(23, 23, 23, 255))
                 .inner_size(1440.0, 960.0)
                 .min_inner_size(800.0, 600.0)
                 .resizable(true)

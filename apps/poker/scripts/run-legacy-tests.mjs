@@ -19,6 +19,19 @@ try {
   const tools = join(fixture, "dev_tools");
   mkdirSync(join(tools, "templates"), { recursive: true });
   cpSync(join(app, "public/static/js"), join(tools, "static/js"), { recursive: true });
+  const controllerPath = join(tools, "static/js/app.js");
+  const controller = readFileSync(controllerPath, "utf8");
+  const boot = controller.match(/^window\.pokerOcrReady = init\(\)\.catch\([^\n]+\);$/gm);
+  if (boot?.length !== 1) throw new Error("Expected one OCR startup boundary for legacy fixtures.");
+  // The retained VM tests suppress startup and invoke controller behaviors themselves.
+  // Keep their original suppression seam; browser tests exercise the real lifecycle.
+  writeFileSync(
+    controllerPath,
+    controller.replace(
+      boot[0],
+      'init().catch(error => { showLoading(false); showToast(error.message, "error"); });',
+    ),
+  );
   cpSync(join(app, "src/collector"), join(tools, "collector_ui"), { recursive: true });
   cpSync(join(app, "test/upstream"), join(tools, "tests"), { recursive: true });
   cpSync(join(repo, "packages/poker/ocr-contract.json"), join(tools, "ocr_contract.json"));

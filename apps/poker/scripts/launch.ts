@@ -534,7 +534,88 @@ export function nativeEnvironment(tree: Worktree, common: string): NodeJS.Proces
   delete env.POKER_LAB_BUNDLED;
   return env;
 }
+interface ActivationHooks {
+  platform: string;
+  env: NodeJS.ProcessEnv;
+  command: (command: string, args: string[]) => string;
+  parentPid: (pid: number) => number;
+}
+const activationHooks: ActivationHooks = {
+  platform: process.platform,
+  env: process.env,
+  command: (command, args) => {
+    const result = spawnSync(command, args, { encoding: "utf8", timeout: 5000 });
+    if (result.error || result.status !== 0)
+      throw new Error(
+        `${command} failed: ${result.error?.message || result.stderr || result.stdout}`,
+      );
+    return result.stdout.trim();
+  },
+  parentPid: (pid) => {
+    try {
+      const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+      return Number(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[1]);
+    } catch {
+      return 0;
+    }
+  },
+};
+export function activateExistingWindow(
+  ownerPid: number,
+  overrides: Partial<ActivationHooks> = {},
+): void {
+  const runtime = { ...activationHooks, ...overrides };
+  const help = "Poker Lab is already running. Open its existing workspace/window.";
+  if (runtime.platform !== "linux" || !runtime.env.HYPRLAND_INSTANCE_SIGNATURE)
+    throw new Error(`${help} Automatic activation requires a Hyprland desktop session.`);
+  const owned = (pid: number) => {
+    const seen = new Set<number>();
+    while (Number.isSafeInteger(pid) && pid > 1 && !seen.has(pid)) {
+      if (pid === ownerPid) return true;
+      seen.add(pid);
+      pid = runtime.parentPid(pid);
+    }
+    return false;
+  };
+  try {
+    const clients: unknown = JSON.parse(runtime.command("hyprctl", ["-j", "clients"]));
+    if (!Array.isArray(clients)) throw new Error("Invalid Hyprland window list");
+    const windows = clients.filter(
+      (client: unknown): client is { address: string; pid: number } => {
+        if (!client || typeof client !== "object") return false;
+        const value = client as Record<string, unknown>;
+        return (
+          value.class === "unimatrix-poker" &&
+          typeof value.address === "string" &&
+          /^0x[0-9a-f]+$/i.test(value.address) &&
+          typeof value.pid === "number" &&
+          owned(value.pid)
+        );
+      },
+    );
+    if (windows.length !== 1)
+      throw new Error(
+        "Cannot identify exactly one window owned by the running launcher; it may still be starting",
+      );
+    const address = windows[0]!.address;
+    try {
+      runtime.command("hyprctl", ["dispatch", "focuswindow", `address:${address}`]);
+    } catch {
+      runtime.command("hyprctl", [
+        "eval",
+        `hl.dispatch(hl.dsp.focus({ window = "address:${address}" }))`,
+      ]);
+    }
+    const active = JSON.parse(runtime.command("hyprctl", ["-j", "activewindow"])) as {
+      address?: unknown;
+    } | null;
+    if (active?.address !== address) throw new Error("Hyprland did not focus the Poker Lab window");
+  } catch (error) {
+    throw new Error(`${help} ${String(error)}`, { cause: error });
+  }
+}
 export interface SupervisorHooks {
+  activate: (ownerPid: number) => void;
   build: typeof buildNative;
   startServer: typeof startViteServer;
   stopServer: typeof stopViteServer;
@@ -543,6 +624,7 @@ export interface SupervisorHooks {
   shouldStop: () => boolean;
 }
 const defaultHooks: SupervisorHooks = {
+  activate: activateExistingWindow,
   build: buildNative,
   startServer: startViteServer,
   stopServer: stopViteServer,
@@ -589,8 +671,10 @@ export async function supervise(
     mkdirSync(paths.lock);
   } catch (error) {
     const prior = readJson(join(paths.lock, "owner.json")) as { pid?: number } | null;
-    if (prior?.pid && alive(prior.pid))
-      throw new Error("Poker Lab launcher is already running", { cause: error });
+    if (prior?.pid && alive(prior.pid)) {
+      runtime.activate(prior.pid);
+      return;
+    }
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
     if (!prior && Date.now() - statSync(paths.lock).mtimeMs < 30000)
       throw new Error("Poker Lab launcher is starting", { cause: error });
@@ -799,6 +883,11 @@ export async function main(args = process.argv.slice(2)) {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch((error: unknown) => {
     console.error(String(error));
+    if (process.platform === "linux")
+      spawnSync("notify-send", ["--urgency=critical", "Poker Lab could not open", String(error)], {
+        timeout: 5000,
+        stdio: "ignore",
+      });
     process.exitCode = 1;
   });
 }

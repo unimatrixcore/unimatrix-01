@@ -17,7 +17,12 @@ body > :not(#loading-overlay) {
   visibility: visible;
 }
 
+body.grid-backdrop {
+  isolation: isolate;
+}
+
 #frame-list.instant-list-host,
+#db-list.instant-list-host,
 #session-review-list.instant-list-host {
   display: block;
 }
@@ -46,6 +51,7 @@ body > :not(#loading-overlay) {
   display: block;
   height: var(--record-dock-space, 190px);
 }
-.collection-virtual-list [role="alert"] {
+.collection-virtual-list [role="alert"],
+.collection-virtual-list [role="status"] {
   bottom: var(--record-dock-space, 190px) !important;
 }

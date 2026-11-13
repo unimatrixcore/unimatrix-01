@@ -88,14 +88,22 @@ async function api<T>(path: string, data?: object): Promise<T> {
   return result as T;
 }
 
-export function Gameplay() {
+export function Gameplay({
+  active,
+  onLeave,
+}: {
+  active: boolean;
+  onLeave: React.MutableRefObject<() => Promise<void>>;
+}) {
   const [catalogRevision, setCatalogRevision] = useState(0);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [handPickerOpen, setHandPickerOpen] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
   const [sessionId, setSessionId] = useState("");
   const [initialFrameReady, setInitialFrameReady] = useState(false);
-  const startupFinished = useRef(false);
+  const startupFinished = useRef(window.location.pathname !== "/gameplay");
+  const activeRef = useRef(active);
+  activeRef.current = active;
   const [view, setView] = useState<View>("recording");
   const [sources, setSources] = useState<Source[]>([]);
   const [source, setSource] = useState("");
@@ -115,6 +123,7 @@ export function Gameplay() {
   const initialSelection = useRef(false);
   const running = useRef(false);
   const inflight = useRef(false);
+  const pendingCapture = useRef<Promise<void> | null>(null);
   const stopRequested = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const alive = useRef(true);
@@ -251,8 +260,9 @@ export function Gameplay() {
   }, [sessionList.items, sessionId]);
 
   useEffect(() => {
+    if (!active || startupFinished.current) return;
     const timer = setTimeout(() => {
-      if (startupFinished.current) return;
+      if (startupFinished.current || !activeRef.current) return;
       startupFinished.current = true;
       setError("Loading the first view timed out. Retry the recordings list.");
       document.getElementById("loading-overlay")?.classList.remove("active");
@@ -260,9 +270,10 @@ export function Gameplay() {
     return () => {
       clearTimeout(timer);
     };
-  }, []);
+  }, [active]);
   useEffect(() => {
     if (
+      !active ||
       startupFinished.current ||
       (!sessionList.isError &&
         (!sessionList.isSuccess ||
@@ -282,6 +293,7 @@ export function Gameplay() {
       controller.abort();
     };
   }, [
+    active,
     sessionList.isError,
     sessionList.isSuccess,
     sessionList.items.length,
@@ -337,7 +349,15 @@ export function Gameplay() {
     };
   }, [visible?.id, pageVisible]);
 
-  async function capture() {
+  function capture(): Promise<void> {
+    if (pendingCapture.current) return pendingCapture.current;
+    const pending = runCapture().finally(() => {
+      pendingCapture.current = null;
+    });
+    pendingCapture.current = pending;
+    return pending;
+  }
+  async function runCapture() {
     if (inflight.current || !source || currentSession.current?.status === "stopped") return;
     inflight.current = true;
     setBusy(true);
@@ -353,7 +373,7 @@ export function Gameplay() {
         });
         current = result.session;
         currentSession.current = current;
-        if (!alive.current || stopRequested.current) {
+        if (!alive.current) {
           await api(`/sessions/${current.id}/stop`, {});
           currentSession.current = { ...current, status: "stopped" };
           if (alive.current) {
@@ -362,6 +382,7 @@ export function Gameplay() {
           }
           return;
         }
+        if (stopRequested.current) return;
         if (alive.current) {
           setSession(current);
           setSessionId(current.id);
@@ -420,9 +441,10 @@ export function Gameplay() {
     setRecording(true);
     void capture();
   }
-  async function stop() {
+  async function stop(propagate = false) {
     pause();
     stopRequested.current = inflight.current || currentSession.current !== null;
+    await pendingCapture.current;
     const current = currentSession.current;
     if (!current || current.status === "stopped") return;
     setBusy(true);
@@ -431,15 +453,19 @@ export function Gameplay() {
       currentSession.current = result.session;
       if (alive.current) setSession(result.session);
     } catch (error) {
+      stopRequested.current = false;
       if (alive.current) setError(errorMessage(error));
+      if (propagate) throw error;
     } finally {
       if (alive.current && !inflight.current) setBusy(false);
     }
   }
+  onLeave.current = () => stop(true);
   actions.current = { capture: () => void capture(), toggle, stop: () => void stop() };
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
       if (
+        !activeRef.current ||
         event.defaultPrevented ||
         document.querySelector(
           '[data-recording-source-open="true"], [data-slot=popover-content][data-state=open]',

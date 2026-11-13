@@ -1,9 +1,14 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { installLabFixture } from "./fixture.js";
 
+async function installFixtureWith(page: Page, setup: () => void) {
+  await page.addInitScript({
+    content: `(${installLabFixture.toString()})(); (${setup.toString()})();`,
+  });
+}
+
 test("Gameplay pages eagerly, preserves its snapshot and manages catalogs", async ({ page }) => {
-  await page.addInitScript(installLabFixture);
-  await page.addInitScript(() => {
+  await installFixtureWith(page, () => {
     const previous = window.__POKER_LAB_TEST_INVOKE__!;
     let release: (() => void) | undefined;
     (window as unknown as { gameplayCaptures: number }).gameplayCaptures = 0;
@@ -230,8 +235,7 @@ test("Gameplay pages eagerly, preserves its snapshot and manages catalogs", asyn
 test("Gameplay keeps startup visible until its first recordings page resolves", async ({
   page,
 }) => {
-  await page.addInitScript(installLabFixture);
-  await page.addInitScript(() => {
+  await installFixtureWith(page, () => {
     const previous = window.__POKER_LAB_TEST_INVOKE__!;
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {

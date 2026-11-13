@@ -33,11 +33,19 @@ async function start(): Promise<void> {
   window.OCR_CONTRACT = pokerOcrContract;
   window.OCR_CONTRACT_SHA256 = pokerOcrContractSha256;
   window.SERVER_START_TIME = Date.now() / 1000;
-  await import("./collector/main.js");
   await loadScript("lib/scroll_position");
-  if (window.location.pathname !== "/gameplay") {
-    for (const module of classicScripts) await loadScript(module);
-  }
+  window.startPokerOcr = (() => {
+    let started: Promise<void> | undefined;
+    return () =>
+      (started ??= (async () => {
+        window.pokerOcrStartupPath =
+          window.location.pathname === "/gameplay" ? "/collection" : window.location.pathname;
+        for (const module of classicScripts) await loadScript(module);
+        await window.pokerOcrReady;
+      })());
+  })();
+  await import("./collector/main.js");
+  if (window.location.pathname !== "/gameplay") await window.startPokerOcr();
 }
 const startupOverlay = document.getElementById("loading-overlay");
 const startupWatchdog = window.setTimeout(() => {
@@ -66,6 +74,12 @@ if (startupOverlay)
 declare global {
   interface Window {
     pokerStartupTimedOut?: boolean;
+    startPokerOcr: () => Promise<void>;
+    pokerOcrReady?: Promise<void>;
+    pokerOcrStartupPath?: string;
+    pokerOcrDeferredLocation?: { path: string; state: unknown };
+    leavePokerOcr?: () => Promise<void>;
+    CollectorScroll?: { suspend: () => void; resume: () => void };
   }
 }
 void start().catch((error: unknown) => {
@@ -73,5 +87,11 @@ void start().catch((error: unknown) => {
   const toast = document.createElement("div");
   toast.className = "toast error";
   toast.textContent = error instanceof Error ? error.message : String(error);
+  const retry = document.createElement("button");
+  retry.textContent = "Retry";
+  retry.onclick = () => {
+    window.location.reload();
+  };
+  toast.append(" ", retry);
   document.getElementById("toast-container")?.appendChild(toast);
 });

@@ -63,31 +63,51 @@ function installNavigationRegressionFixture() {
 }
 
 for (const destination of ["collection", "database"]) {
-  test(`${destination} remounts after repeated labeling round trips`, async ({ page }) => {
-    await page.addInitScript(installLabFixture);
-    await page.addInitScript(installNavigationRegressionFixture);
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
-    await page.goto("/collection");
-    const cards = page.locator(
-      destination === "collection" ? "#frame-list .card" : "#db-list .card",
-    );
-    if (destination === "database") await page.locator("#nav-database").click();
-    await expect(cards.first()).toBeVisible();
-    for (let round = 0; round < 2; round++) {
-      await page.locator("#nav-labeling").click();
-      await expect(page.locator("#label-input")).toBeVisible();
-      await page.locator(destination === "collection" ? "#nav-step-prev" : "#nav-database").click();
+  test(
+    destination === "collection"
+      ? "locked Collection stays disabled across labeling round trips"
+      : "database remounts after repeated labeling round trips",
+    async ({ page }) => {
+      await page.addInitScript({
+        content: `(${installLabFixture.toString()})(); (${installNavigationRegressionFixture.toString()})();`,
+      });
+      const errors: string[] = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      await page.goto("/collection");
+      const cards = page.locator(
+        destination === "collection" ? "#frame-list .card" : "#db-list .card",
+      );
+      if (destination === "collection") {
+        await expect(page.locator("#label-input")).toBeVisible();
+        for (let round = 0; round < 2; round++) {
+          await expect(page.locator("#nav-collection")).toBeDisabled();
+          await page.locator("#nav-database").click();
+          await expect(page.locator("#db-list .card").first()).toBeVisible();
+          await page.locator("#nav-labeling").click();
+          await expect(page.locator("#label-input")).toBeVisible();
+        }
+        await expect(page.locator("#nav-collection")).toBeDisabled();
+        expect(errors).toEqual([]);
+        return;
+      }
+      await page.locator("#nav-database").click();
       await expect(cards.first()).toBeVisible();
-      await expect(cards).toHaveCount(2);
-    }
-    expect(errors).toEqual([]);
-  });
+      for (let round = 0; round < 2; round++) {
+        await page.locator("#nav-labeling").click();
+        await expect(page.locator("#label-input")).toBeVisible();
+        await page.locator("#nav-database").click();
+        await expect(cards.first()).toBeVisible();
+        await expect(cards).toHaveCount(2);
+      }
+      expect(errors).toEqual([]);
+    },
+  );
 }
 
 test("individual database selections retain metadata across search changes", async ({ page }) => {
-  await page.addInitScript(installLabFixture);
-  await page.addInitScript(installNavigationRegressionFixture);
+  await page.addInitScript({
+    content: `(${installLabFixture.toString()})(); (${installNavigationRegressionFixture.toString()})();`,
+  });
   await page.goto("/collection");
   await page.locator("#nav-database").click();
   await page.locator("#db-search").fill("Alice");
@@ -262,7 +282,16 @@ test("full review loads the run through the shared bridge with filters and no pa
           return {
             status: 200,
             headers: {},
-            body: { items: [], nextCursor: null, hasMore: false, total: 0, meta: {} },
+            body: {
+              items:
+                request.path === "/api/db_entries"
+                  ? [{ id: "pot", filename: "history.png", label: "G 5" }]
+                  : [],
+              nextCursor: null,
+              hasMore: false,
+              total: request.path === "/api/db_entries" ? 1 : 0,
+              meta: {},
+            },
           };
         if (
           request.query.background_page === "1" &&
@@ -383,18 +412,7 @@ test("full review loads the run through the shared bridge with filters and no pa
   await expect(page.locator(".review-page-bar")).toBeHidden();
   await expect(page.locator(".review-page-footer")).toBeHidden();
   const card = page.locator("#session-review-list .card").first();
-  await card.getByText("Review history", { exact: true }).click();
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () =>
-          (window as unknown as { fixtureHistoryCalls: string[] }).fixtureHistoryCalls.filter((x) =>
-            x.startsWith("label:"),
-          ).length,
-      ),
-    )
-    .toBeGreaterThan(2);
-  await expect(card.locator(".card-history")).toContainText("Label 0");
+  await expect(card.getByText("Review history", { exact: true })).toHaveCount(0);
   const highest = await page.evaluate(() =>
     window.CollectorBackgroundLists.historySummary("fixture", null, null, false),
   );
@@ -424,6 +442,21 @@ test("full review loads the run through the shared bridge with filters and no pa
       ),
     )
     .toBe(true);
+  expect(errors).toEqual([]);
+  await page.locator("#nav-database").click();
+  const historyCard = page.locator("#db-list .card").first();
+  await historyCard.getByText("Review history", { exact: true }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as unknown as { fixtureHistoryCalls: string[] }).fixtureHistoryCalls.filter((x) =>
+            x.startsWith("label:"),
+          ).length,
+      ),
+    )
+    .toBeGreaterThan(2);
+  await expect(historyCard.locator(".card-history")).toContainText("Label 0");
   expect(errors).toEqual([]);
 });
 
@@ -531,7 +564,7 @@ test("database selects all matching records beyond the background limit", async 
   ).toBeLessThanOrEqual(100);
   await page.locator("#nav-collection").click();
   await page.locator("#dataset-catalog-label").click();
-  await page.getByRole("button", { name: "Second dataset" }).click();
+  await page.getByRole("menuitemradio", { name: "Second dataset", exact: true }).click();
   await expect(page.locator("#dataset-catalog-label")).toHaveText("Second dataset");
   await expect
     .poll(() =>
@@ -686,7 +719,7 @@ test("catalog creates, renames, archives and restores a dataset", async ({ page 
   await page.locator("#btn-modal-confirm").click();
   await expect(page.locator("#dataset-catalog-label")).not.toHaveText("Renamed dataset");
   await page.locator("#dataset-catalog-label").click();
-  await page.getByRole("button", { name: "Renamed dataset · Restore" }).click();
+  await page.getByRole("menuitemradio", { name: "Renamed dataset · Restore", exact: true }).click();
   await expect(page.getByText("Dataset restored.")).toBeVisible();
 });
 
@@ -760,7 +793,7 @@ test("late name suggestions cannot cross a dataset switch", async ({ page }) => 
                 ],
                 queue_summary: { total: 1, pending: 1, reviewed: 0, captures: 1, revision: 1 },
                 review_batch: { mode: "stream", batch_id: "run", next_cursor: null },
-                labelingUnlocked: true,
+                labelingUnlocked: false,
               },
               collection_page: {
                 items: [],
@@ -776,7 +809,7 @@ test("late name suggestions cannot cross a dataset switch", async ({ page }) => 
   });
   await page.goto("/collection");
   await page.locator("#dataset-catalog-label").click();
-  await page.getByRole("button", { name: "Second dataset" }).click();
+  await page.getByRole("menuitemradio", { name: "Second dataset", exact: true }).click();
   await expect(page.locator("#dataset-catalog-label")).toHaveText("Second dataset");
   await page.evaluate(() => {
     (window as unknown as { releaseOldNames: () => void }).releaseOldNames();
@@ -832,11 +865,11 @@ test("restores a remembered dataset beyond the first catalog page", async ({ pag
   await page.goto("/collection");
   await expect(page.locator("#dataset-catalog-label")).toHaveText("Dataset 1099");
   await page.locator("#dataset-catalog-label").click();
-  await expect(page.locator(".dataset-catalog-row").first()).toBeVisible();
-  expect(await page.locator(".dataset-catalog-row").count()).toBeLessThan(100);
+  await expect(page.getByRole("menuitemradio").first()).toBeVisible();
+  expect(await page.getByRole("menuitemradio").count()).toBeLessThan(100);
 });
 
-test("rail prefetch survives the full navigation and is consumed once", async ({ page }) => {
+test("Gameplay rail prefetch is reused once across an in-app switch", async ({ page }) => {
   await page.addInitScript({
     content: `(${installLabFixture.toString()})(); (${(() => {
       const previous = window.__POKER_LAB_TEST_INVOKE__!;
@@ -983,7 +1016,7 @@ test("stale database continuation retries from the first page", async ({ page })
         (window as unknown as { staleDatabaseCalls: string[] }).staleDatabaseCalls.join(","),
       ),
     )
-    .toMatch(/^0,100,0/);
+    .toMatch(/^(?:0,)+100,0(?:,100)?$/);
 });
 
 test("capture presentation waits for committed virtual Collection cards", async ({ page }) => {

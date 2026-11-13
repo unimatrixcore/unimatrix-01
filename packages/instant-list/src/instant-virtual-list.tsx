@@ -1,5 +1,5 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { createInstantQueryClient } from "./use-background-list";
 
@@ -25,6 +25,7 @@ export interface InstantVirtualListProps<T> {
   header?: ReactNode;
   measureRows?: boolean;
   scrollToItemId?: string | number;
+  getScrollElement?: () => HTMLElement | null;
 }
 export function InstantVirtualList<T>({
   items,
@@ -44,12 +45,56 @@ export function InstantVirtualList<T>({
   header,
   measureRows = false,
   scrollToItemId,
+  getScrollElement,
 }: InstantVirtualListProps<T>) {
   const parent = useRef<HTMLDivElement>(null);
+  const [scrollMargin, setScrollMargin] = useState(0);
+  const [externalVisible, setExternalVisible] = useState(false);
+  useLayoutEffect(() => {
+    const node = parent.current,
+      scroller = getScrollElement?.();
+    if (!node || !scroller) return;
+    const update = () => {
+      setExternalVisible(node.getClientRects().length > 0);
+      setScrollMargin(
+        node.getBoundingClientRect().top -
+          scroller.getBoundingClientRect().top -
+          scroller.clientTop +
+          scroller.scrollTop,
+      );
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(scroller);
+    observer.observe(node);
+    for (
+      let ancestor = node.parentElement;
+      ancestor && ancestor !== scroller;
+      ancestor = ancestor.parentElement
+    ) {
+      observer.observe(ancestor);
+    }
+    return () => {
+      observer.disconnect();
+    };
+  }, [getScrollElement]);
   const [scrollIntent, setScrollIntent] = useState(false);
+  useEffect(() => {
+    const scroller = getScrollElement?.();
+    if (!scroller) return;
+    const onScroll = () => {
+      setScrollIntent(true);
+    };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      scroller.removeEventListener("scroll", onScroll);
+    };
+  }, [getScrollElement]);
   const virtualizer = useVirtualizer({
     count: items.length,
-    getScrollElement: () => parent.current,
+    enabled: !getScrollElement || externalVisible,
+    getScrollElement: getScrollElement ?? (() => parent.current),
+    scrollMargin,
     estimateSize: () => rowHeight,
     getItemKey: (index) => {
       const item = items[index];
@@ -74,11 +119,14 @@ export function InstantVirtualList<T>({
     }
   }, [scrollIntent, end, items.length, hasNextPage, isFetching, onEndReached]);
   return (
-    <div style={{ position: "relative", height, minHeight: 0 }} className={className}>
+    <div
+      style={{ position: "relative", height: getScrollElement ? "auto" : height, minHeight: 0 }}
+      className={className}
+    >
       <div
         ref={parent}
         role={role}
-        tabIndex={0}
+        tabIndex={getScrollElement ? undefined : 0}
         onScroll={() => {
           setScrollIntent(true);
         }}
@@ -90,9 +138,9 @@ export function InstantVirtualList<T>({
         }}
         aria-label={ariaLabel}
         style={{
-          height: "100%",
-          overflow: "auto",
-          scrollbarGutter: "stable",
+          height: getScrollElement ? "auto" : "100%",
+          overflow: getScrollElement ? "visible" : "auto",
+          scrollbarGutter: getScrollElement ? undefined : "stable",
           overflowAnchor: "none",
         }}
       >
@@ -118,7 +166,7 @@ export function InstantVirtualList<T>({
                   left: 0,
                   width: "100%",
                   ...(measureRows ? {} : { height: rowHeight, overflow: "hidden" }),
-                  transform: `translateY(${row.start}px)`,
+                  transform: `translateY(${row.start - scrollMargin}px)`,
                 }}
               >
                 {renderItem(item, row.index)}
@@ -128,7 +176,16 @@ export function InstantVirtualList<T>({
         </div>
       </div>
       {error !== undefined && error !== null && !isFetching && (
-        <div role="alert" style={{ position: "absolute", bottom: 4, right: 12, fontSize: 12 }}>
+        <div
+          role="alert"
+          style={{
+            position: getScrollElement ? "sticky" : "absolute",
+            bottom: 4,
+            right: 12,
+            fontSize: 12,
+            ...(getScrollElement ? { width: "fit-content", marginLeft: "auto" } : {}),
+          }}
+        >
           Could not load more.
           {onRetry && (
             <button
@@ -148,11 +205,12 @@ export function InstantVirtualList<T>({
           role="status"
           aria-live="polite"
           style={{
-            position: "absolute",
+            position: getScrollElement ? "sticky" : "absolute",
             bottom: 4,
             right: 12,
             pointerEvents: "none",
             fontSize: 12,
+            ...(getScrollElement ? { width: "fit-content", marginLeft: "auto" } : {}),
           }}
         >
           Loading more…

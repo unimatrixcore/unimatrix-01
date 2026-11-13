@@ -324,6 +324,35 @@ for (const holdDecode of [false, true]) {
   });
 }
 
+test("continuation loading feedback stays above the dock on narrow screens", async ({ page }) => {
+  await page.setViewportSize({ width: 420, height: 760 });
+  await fixture(page, "held");
+  await page.goto("/collection");
+  await page.evaluate(() => {
+    Object.assign((window as unknown as { startupFixture: object }).startupFixture, {
+      releaseFirst: true,
+      releaseImage: true,
+    });
+  });
+  await expect(page.locator("#loading-overlay")).toBeHidden();
+  const list = page.locator("#main-content");
+  const status = page.locator(".collection-virtual-list").getByRole("status");
+  await expect
+    .poll(async () => {
+      await list.evaluate((node) => {
+        node.scrollTop = node.scrollHeight;
+      });
+      return await status.count();
+    })
+    .toBe(1);
+  await expect(status).toHaveText("Loading more…");
+  await expect(status).toBeInViewport();
+  const feedback = await status.boundingBox();
+  const dock = await page.locator("#record-dock").boundingBox();
+  expect(feedback!.y + feedback!.height).toBeLessThanOrEqual(dock!.y);
+  await page.screenshot({ path: `${evidence}/continuation-status-420.png` });
+});
+
 for (const scenario of ["empty", "list-error", "initial-error"] as const) {
   test(`${scenario} startup terminates with a visible state`, async ({ page }) => {
     await fixture(page, scenario);
@@ -346,7 +375,7 @@ test("collection scrolls behind the fixed dock and its last row clears it after 
 }) => {
   await fixture(page, "populated");
   await page.goto("/collection");
-  const list = page.getByRole("list", { name: "Crops", exact: true });
+  const list = page.locator("#main-content");
   await expect(page.locator("#frame-list .collection-crop-card").first()).toBeVisible();
   await expect(page.locator("#loading-overlay")).toBeHidden();
   for (const size of [
@@ -356,6 +385,7 @@ test("collection scrolls behind the fixed dock and its last row clears it after 
   ]) {
     await page.setViewportSize(size);
     await snapshot(page, `resized-${size.width}`);
+    await expect(page.locator('#frame-list [role="list"]')).toHaveCSS("overflow-y", "visible");
     await expect
       .poll(() =>
         list.evaluate((node) => Math.abs(node.getBoundingClientRect().bottom - innerHeight)),
@@ -394,7 +424,9 @@ test("collection scrolls behind the fixed dock and its last row clears it after 
     await expect
       .poll(
         async () => {
-          await list.press("End");
+          await list.evaluate((node) => {
+            node.scrollTop = node.scrollHeight;
+          });
           await page.evaluate(
             () =>
               new Promise<void>((resolve) =>
