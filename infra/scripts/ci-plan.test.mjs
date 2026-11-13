@@ -69,6 +69,23 @@ test("backend-only changes do not install browsers or run Lighthouse", (t) => {
   assert.equal(result.browser, false);
 });
 
+test("both Poker desktop frontends request browser verification", () => {
+  const workspaces = [
+    { name: "@unimatrix/poker-app", path: "apps/poker", dependencies: [] },
+    { name: "@unimatrix/poker-assistant", path: "apps/poker-assistant", dependencies: [] },
+  ];
+  for (const workspace of workspaces) {
+    const plan = createCIPlan({ workspaces, changedPaths: [`${workspace.path}/src/main.tsx`] });
+    assert.equal(plan.browser, true);
+    assert.deepEqual(plan.lighthouse, []);
+    assert.deepEqual(plan.packages, [{ name: workspace.name, path: workspace.path }]);
+  }
+  assert.equal(
+    createCIPlan({ workspaces, changedPaths: ["packages/poker-native/src/store.rs"] }).full,
+    true,
+  );
+});
+
 test("app-local changes and home copy stay confined to their app", (t) => {
   const { plan } = fixture(t);
   assert.deepEqual(paths(plan("apps/admin/src/page.tsx")), ["apps/admin"]);

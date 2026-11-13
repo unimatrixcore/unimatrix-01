@@ -1,0 +1,29 @@
+{
+  "name": "@unimatrix/poker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Poker labeling, region adapters, session transitions, and validated native client.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./client": "./src/client.ts"
+  },
+  "scripts": {
+    "lint": "node ../../infra/scripts/run-local-workload.mjs -- eslint .",
+    "test": "node ../../infra/scripts/run-local-workload.mjs -- vitest run",
+    "typecheck": "node ../../infra/scripts/run-local-workload.mjs -- tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@unimatrix/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@unimatrix/config-eslint": "workspace:*",
+    "@unimatrix/config-typescript": "workspace:*",
+    "@unimatrix/config-vitest": "workspace:*",
+    "@vitest/coverage-v8": "^5.0.1",
+    "eslint": "^10.8.1",
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.1"
+  }
+}

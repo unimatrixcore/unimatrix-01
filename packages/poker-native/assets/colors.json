@@ -1,0 +1,19 @@
+{
+  "nameplate": "#192a35",
+  "in_turn": "#8900f2",
+  "in_turn_urgent": "#e13e5e",
+  "card_text": "#f2f2f2",
+  "dim_text": "#939393",
+  "suits": {
+    "diamonds": "#1473dd",
+    "spades": "#101010",
+    "clubs": "#00b801",
+    "hearts": "#b10d2e"
+  },
+  "dim_suits": {
+    "diamonds": "#245285",
+    "spades": "#222222",
+    "clubs": "#1c781c",
+    "hearts": "#792334"
+  }
+}

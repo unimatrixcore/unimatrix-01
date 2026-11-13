@@ -136,3 +136,44 @@ it("keeps rows visible after partial errors and offers an explicit retry overlay
   expect(screen.queryByRole("alert")).toBeNull();
   expect(screen.getByText("Existing row")).toBeDefined();
 });
+
+it("scrolls requested stable IDs into view without resetting retained row state", async () => {
+  geometry();
+  const scrollTo = vi.fn(function (this: HTMLElement, options: ScrollToOptions | number) {
+    this.scrollTop = typeof options === "number" ? options : (options.top ?? 0);
+    queueMicrotask(() => fireEvent.scroll(this));
+  });
+  Object.defineProperty(HTMLElement.prototype, "scrollTo", { configurable: true, value: scrollTo });
+  vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(4000);
+  const items = Array.from({ length: 100 }, (_, id) => ({ id: `row-${id}` }));
+  const view = (selection?: string | number, rows = items) => (
+    <InstantVirtualList
+      items={rows}
+      getItemId={(item) => item.id}
+      renderItem={(item) => <input aria-label={item.id} defaultValue={item.id} />}
+      rowHeight={40}
+      height={400}
+      {...(selection === undefined ? {} : { scrollToItemId: selection })}
+    />
+  );
+  const { rerender } = render(view());
+  scrollTo.mockClear();
+  rerender(view("row-80"));
+  await waitFor(() => {
+    expect(screen.getByRole("textbox", { name: "row-80" })).toBeDefined();
+  });
+  expect(screen.getByRole("list").scrollTop).toBeGreaterThan(0);
+  const input = screen.getByRole("textbox", { name: "row-80" });
+  fireEvent.change(input, { target: { value: "local edit" } });
+  scrollTo.mockClear();
+  rerender(view("row-80", [...items, { id: "row-100" }]));
+  expect(screen.getByRole("textbox", { name: "row-80" })).toBe(input);
+  expect((input as HTMLInputElement).value).toBe("local edit");
+  expect(scrollTo).not.toHaveBeenCalled();
+  rerender(view("missing"));
+  expect(scrollTo).not.toHaveBeenCalled();
+  rerender(view("row-0"));
+  await waitFor(() => {
+    expect(screen.getByRole("list").scrollTop).toBe(0);
+  });
+});

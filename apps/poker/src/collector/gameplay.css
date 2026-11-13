@@ -1,0 +1,5 @@
+.gameplay-workspace { max-width:var(--poker-workspace-width,1072px);width:100%;margin:0 auto;min-height:calc(100dvh - 32px);padding-bottom:210px; }
+.gameplay-error { display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;background:var(--popover);color:var(--destructive);font-size:12px;line-height:1.7;margin-bottom:16px; }
+.gameplay-frames-heading { display:flex;align-items:center;gap:12px;margin:8px 0 16px; }
+.gameplay-frames-heading h2 { font-size:13px;font-weight:500; }
+.capture-list-slot { display:contents; }

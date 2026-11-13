@@ -7,13 +7,13 @@ async function importLazyPublicMarkdown() {
 
 describe("LazyPublicMarkdown", () => {
   beforeAll(async () => {
-    await import("@unimatrix/ui/public");
+    await import("@unimatrix/ui/markdown");
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
     vi.resetModules();
-    vi.doUnmock("@unimatrix/ui/public");
+    vi.doUnmock("@unimatrix/ui/markdown");
   });
 
   it("renders markdown content when the public markdown chunk loads", async () => {
@@ -29,7 +29,7 @@ describe("LazyPublicMarkdown", () => {
   });
 
   it("renders a graceful message when the public markdown chunk fails to load", async () => {
-    vi.doMock("@unimatrix/ui/public", () => {
+    vi.doMock("@unimatrix/ui/markdown", () => {
       throw new Error("chunk unavailable");
     });
 

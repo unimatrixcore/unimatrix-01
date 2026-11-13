@@ -37,9 +37,10 @@
     "check:scratch-untracked": "node ./infra/scripts/check-scratch-not-tracked.mjs",
     "check": "node ./infra/scripts/run-local-workload.mjs -- sh -c 'pnpm format:check && pnpm deps:check && pnpm check:app-wiring && pnpm check:codex-context && pnpm check:stale-comments && pnpm check:doc-script-refs && pnpm check:deploy-config && pnpm check:runner-labels && pnpm check:ci && pnpm check:todo-citations && pnpm check:scratch-untracked && turbo run --concurrency=1 lint typecheck test && pnpm check:coverage-drift \"$@\"' --",
     "knip": "knip",
-    "verify": "node ./infra/scripts/run-local-workload.mjs -- sh -c 'pnpm format:check && pnpm deps:check && pnpm check:app-wiring && pnpm check:codex-context && pnpm check:stale-comments && pnpm check:doc-script-refs && pnpm check:deploy-config && pnpm check:runner-labels && pnpm check:ci && pnpm check:todo-citations && pnpm check:scratch-untracked && turbo run --concurrency=1 build lint typecheck test && pnpm check:coverage-drift \"$@\"' --",
+    "verify": "node ./infra/scripts/run-local-workload.mjs -- sh -c 'pnpm format:check && pnpm deps:check && pnpm check:app-wiring && pnpm check:codex-context && pnpm check:stale-comments && pnpm check:doc-script-refs && pnpm check:deploy-config && pnpm check:runner-labels && pnpm check:ci && pnpm check:todo-citations && pnpm check:scratch-untracked && turbo run --concurrency=1 build lint typecheck test && pnpm check:poker-native && pnpm check:coverage-drift \"$@\"' --",
     "create:tauri": "node ./infra/scripts/create-tauri-app.mjs",
-    "test:tauri-generator": "node ./infra/scripts/run-local-workload.mjs -- node --test ./infra/scripts/create-tauri-app.test.mjs"
+    "test:tauri-generator": "node ./infra/scripts/run-local-workload.mjs -- node --test ./infra/scripts/create-tauri-app.test.mjs",
+    "check:poker-native": "node ./infra/scripts/run-local-workload.mjs -- node ./infra/scripts/check-poker-native.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",

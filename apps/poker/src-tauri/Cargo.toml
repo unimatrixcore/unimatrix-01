@@ -1,0 +1,21 @@
+[package]
+name = "unimatrix-poker"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }
+unimatrix-desktop = { path = "../../../packages/desktop-runtime" }
+base64 = "0.22"
+libc = "0.2"
+poker-native = { path = "../../../packages/poker-native" }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

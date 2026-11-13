@@ -1,0 +1,72 @@
+// Large synthetic queue; actual collector client, no source images or dataset writes.
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path'),os=require('node:os');
+const {createRequire}=require('node:module');
+const uiRoot=process.env.UNIMATRIX_UI_ROOT||path.join(os.homedir(),'repositories/unimatrix-01/packages/ui');
+const {JSDOM}=createRequire(path.join(uiRoot,'package.json'))('jsdom');
+const dom=new JSDOM(fs.readFileSync('dev_tools/templates/poker_lab.html','utf8'),{url:'http://localhost/collection',runScripts:'outside-only',pretendToBeVisual:true}),{window}=dom;
+const rows=Array.from({length:2500},(_,i)=>({queue_id:i+1,sample_key:'synthetic:'+i,id:'seats[0].name',phash:'same-recorded-hash',source:`capture${i}.png`,frame_id:`frame${i}`,game_id:'#123456',image_url:`/api/queue/image/${i+1}`,label:'',reviewed:false,discarded:false}));
+const requests=[],summary={total:rows.length,pending:rows.length,reviewed:0,captures:rows.length,revision:1};
+window.fetch=async(url,opts={})=>{const body=opts.body && JSON.parse(opts.body);requests.push({url,body});let data;
+  if(url==='/api/queue/review/start') {const items=rows.slice(298,359);data={session:{pool:items,currentReviewIdx:50,maxReachedIdx:50,review_batch:{mode:'stream',batch_id:'run',keys:items.map(r=>r.sample_key),next_cursor:'359',legacy_offset:298,total_at_start:rows.length}},summary};}
+  else if(url.startsWith('/api/queue?')) {const u=new URL(url,'http://localhost'),start=Number(u.searchParams.get('cursor')||0),items=[...rows].reverse().slice(start,start+60);data={items,next_cursor:start+60<rows.length?String(start+60):null,summary};}
+  else if(url==='/api/save_session_progress') data={success:true};
+  else throw new Error('Unexpected synthetic request '+url);
+  return{ok:true,status:200,json:async()=>data};
+};
+window.matchMedia=()=>({matches:true});
+require('./helpers/browser.cjs')(window);window.eval(fs.readFileSync('dev_tools/static/ui/collector-ui.js','utf8'));
+const context=dom.getInternalVMContext();
+const source=fs.readFileSync('dev_tools/static/js/app.js','utf8').replace('init().catch(error => { showLoading(false); showToast(error.message, "error"); });','').replace('const setView =','let setView =');
+vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../static/js/lib/list_cards.js'),'utf8'),context);vm.runInContext(source,context);const run=s=>vm.runInContext(s,context);
+run(`activeDatasetId='synthetic';isRecovering=false;queueMode=true;
+frameListEl=document.getElementById('frame-list');labelInput=document.getElementById('label-input');
+usernamePool={getItems:()=>[],has:()=>false,add(){},counts:{clear(){}}};updateStepperButtons=()=>{};renderDatabase=()=>{};showToast=()=>{};`);
+(async()=>{try {
+  await run('loadCollectionPage()');
+  assert.equal(run('collectionItems.length'),60);
+  assert.equal(window.document.querySelectorAll('.collection-crop-card').length,60,'DOM size stays at one page for 2,500 observations');
+  assert.equal(new Set([...window.document.querySelectorAll('.collection-crop-card')].map(card=>card.dataset.sampleKey)).size,60,'same region/hash observations retain separate identities');
+  assert.equal(window.document.querySelector('img').getAttribute('src').includes('data:image'),false,'page uses lazy addressable PNGs instead of a backlog of base64');
+  assert.equal(window.document.getElementById('count-regions-pill').textContent,'2500 crops');
+  assert.equal(window.document.getElementById('collection-next').disabled,false);
+  await run("loadCollectionPage(collectionNextCursor,'next')");
+  assert.equal(run('collectionItems.length'),60);assert.equal(run('collectionPrevious.length'),1);
+  assert.equal(window.document.querySelectorAll('.collection-crop-card').length,60);
+  const batchRequests=requests.filter(r=>r.url.startsWith('/api/queue/review')).length;
+  await Promise.all([run('loadReviewBatch("300")'),run('loadReviewBatch("400")')]);
+  assert.equal(requests.filter(r=>r.url.startsWith('/api/queue/review')).length,batchRequests+1,'review batch loads serialize before mutating the server checkpoint');
+  assert.equal(run('pool.length'),61);assert.equal(run('reviewBatch.legacy_offset'),298);
+  assert.equal(run('pool[50].sample_key'),'synthetic:348','old global sample 349 is available as local 49');
+  run(`currentReviewIdx=50;sessionScore=72045;currentCombo=3;
+    reviewAwards=Object.fromEntries(Array.from({length:2500},(_,i)=>['synthetic:'+i,{points:5}]));`);
+  await run('saveSessionProgress(true)');
+  const checkpoint=requests.findLast(r=>r.url==='/api/save_session_progress').body;
+  assert.equal(checkpoint.queue_mode,'paged');assert.equal(checkpoint.pool.length,61);
+  assert.equal(checkpoint.frames.length,0);assert.equal(checkpoint.sessionScore,72045);assert.equal(checkpoint.currentCombo,3);
+  assert.equal(Object.keys(checkpoint.reviewAwards).length,61,'only active review receipts travel with the checkpoint');
+  assert.ok(checkpoint.pool.every(row=>!('base64_image' in row)&&!('prediction' in row)));
+  assert.ok(JSON.stringify(checkpoint).length<70000,'checkpoint size depends on the current batch, not backlog');
+  assert.equal(checkpoint.currentReviewIdx,50);
+  run(`applyQueueSummary({total:2600,pending:2600,reviewed:0,captures:2600,revision:2});applyQueueSummary({total:2500,pending:2500,reviewed:0,captures:2500,revision:1});`);
+  assert.equal(run('queueSummary.total'),2600,'stale responses cannot regress queue counters');
+  run(`currentView='labeling';`);
+  window.onpopstate({state:{view:'labeling',idx:90,dataset_id:'synthetic',batch_id:'old-batch',sample_key:'unrelated'}});
+  assert.equal(run('currentReviewIdx'),50,'history from a different batch cannot select a different crop');
+  assert.equal(window.history.state.sample_key,'synthetic:348');
+  run(`inputGroup=document.getElementById('input-group');ghostText=document.getElementById('ghost-text');viewLabelingStats=document.getElementById('labeling-stats-card');
+    updateScoreDisplay=()=>{};validateInput=()=>{};updateAutocomplete=()=>{};requestModelSuggestion=()=>{};
+    datasetStorage.setItem(draftKey(),JSON.stringify({idx:348,value:'Player 1'}));renderReview();`);
+  assert.equal(window.document.getElementById('label-input').value,'Player 1','legacy global-index draft follows its stable sample into the local batch');
+  window.eval(fs.readFileSync('dev_tools/static/js/lib/watch_capture.js','utf8'));
+  let admitted=0,scheduled=0;
+  const watcher=window.CollectorWatchCapture.create({getContext:()=>({dataset:'synthetic'}),canRun:()=>true,queuedCount:()=>4995,
+    open:async()=>({lease_id:'synthetic-lease',summary:{total:4995}}),scan:async()=>({added_count:5,status:'added',frames:[],summary:{total:5000}}),
+    onBatch:async()=>{admitted+=5;},close:async()=>{},schedule:()=>{scheduled++;return 1;},cancel:()=>{}});
+  await watcher.start({intervalSeconds:1,queueMode:'paged'});
+  assert.equal(admitted,5);assert.equal(watcher.isActive(),false,'recording pauses at the requested 5,000-crop cap');
+  assert.equal(watcher.getState().queued,5000);assert.equal(scheduled,0,'no next capture is scheduled when the queue reaches its cap');
+  await watcher.stop();
+  run('resetQueueState()');assert.equal(run('collectionItems.length'),0);assert.equal(run('queueSummary'),null);
+  assert.equal(window.document.getElementById('watch-queue'),null,'arbitrary collection cap is absent from recording controls');
+  console.log('PASS: 2,500-row queue has 60-card collection, 61-item rolling review, stable identities, bounded checkpoints and preserved game progress.');
+}finally{window.close();}})().catch(error=>{console.error(error);process.exitCode=1;});

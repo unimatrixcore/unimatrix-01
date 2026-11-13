@@ -1,0 +1,102 @@
+{
+  "version": 1,
+  "categories": {
+    "name": {
+      "pattern": "(?:[a-zA-Z0-9]+(?:\\.\\.\\.)?|Player [1-9]|\\*RESERVED\\*)"
+    },
+    "status": {
+      "review_pattern": "(?=[A-Za-z -]*[A-Za-z])[A-Za-z -]{1,64}",
+      "values": [
+        "Call",
+        "Fold",
+        "BB",
+        "Raise",
+        "Check",
+        "Decline Straddle",
+        "SB",
+        "Hide Winning",
+        "Hide Cards",
+        "All-In",
+        "Bet",
+        "Show Cards",
+        "Straddle"
+      ]
+    },
+    "card": {
+      "values": [
+        "A",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "J",
+        "Q",
+        "K"
+      ]
+    },
+    "dealer": {
+      "values": [
+        "D",
+        ""
+      ]
+    },
+    "bank": {
+      "pattern": "(?:[GS] [0-9]+(?:\\.[0-9])? BB|[GS] No Chips|All-In)"
+    },
+    "bet": {
+      "pattern": "[GS] [0-9]+(?:\\.[0-9])? BB"
+    },
+    "pot": {
+      "pattern": "(?:Pot: [GS] [0-9]+(?:\\.[0-9])? BB|Run It Twice pause \\([0-9]+ sec\\))"
+    },
+    "split_pot": {
+      "pattern": "(?:[GS] [0-9]+(?:\\.[0-9])? BB[ \\t\\r\\n\\f\\v]*)+"
+    },
+    "round_id": {
+      "pattern": "#[ \\t\\r\\n\\f\\v]*[0-9]{6,15}"
+    }
+  },
+  "region_rules": [
+    {
+      "category": "round_id",
+      "pattern": "round_id"
+    },
+    {
+      "category": "name",
+      "pattern": "(?:(?:seat|seats)(?:\\[[0-9]+\\]|\\.[0-9]+)?\\.)?name"
+    },
+    {
+      "category": "status",
+      "pattern": "(?:(?:seat|seats)(?:\\[[0-9]+\\]|\\.[0-9]+)?\\.)?status"
+    },
+    {
+      "category": "dealer",
+      "pattern": "(?:(?:seat|seats)(?:\\[[0-9]+\\]|\\.[0-9]+)?\\.)?dealer"
+    },
+    {
+      "category": "bank",
+      "pattern": "(?:(?:seat|seats)(?:\\[[0-9]+\\]|\\.[0-9]+)?\\.)?bank"
+    },
+    {
+      "category": "bet",
+      "pattern": "(?:(?:seat|seats)(?:\\[[0-9]+\\]|\\.[0-9]+)?\\.)?bet"
+    },
+    {
+      "category": "split_pot",
+      "pattern": "(?:split_pot|pot\\.split)"
+    },
+    {
+      "category": "pot",
+      "pattern": "pot(?:\\.main)?"
+    },
+    {
+      "category": "card",
+      "pattern": "(?:community_cards(?:\\[[0-9]+\\])+|community(?:\\[[0-9]+\\])*|community\\.card_[0-9]+|(?:(?:seat|seats)(?:\\[[0-9]+\\]|\\.[0-9]+)?\\.)?(?:cards(?:\\[[0-9]+\\])*|hand(?:_[0-9]+|(?:\\[[0-9]+\\])*)?))"
+    }
+  ]
+}

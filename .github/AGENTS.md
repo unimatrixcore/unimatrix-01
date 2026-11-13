@@ -45,7 +45,7 @@ this file holds the mechanics, each of which was learned the hard way.
   `pnpm check:ci` proves selection failures, required coverage artifacts, and
   invalidation when shared configuration sources change.
 - CI's `Images` job builds every `apps/*/Dockerfile`. The required status checks on `main` are
-  whatever GitHub’s `rules/branches/main` API reports rather than a list here. This exists because `Verify` is Vite and tsc only and never touches
+  whatever GitHub’s `rules/branches/main` API reports rather than a list here. This exists because `Verify` checks web and desktop source but never touches
   a Dockerfile, so a dependency could pass every check while making the deployable image unbuildable.
   `better-sqlite3@13` is the live example: no published prebuilds, so it falls back to `node-gyp` and
   dies on alpine. **If you add a Dockerfile, add it to the matrix and to the required checks, or it is
@@ -117,7 +117,7 @@ this file holds the mechanics, each of which was learned the hard way.
 - Each was validated by breaking it on purpose, not by watching it pass. A check that
   cannot be shown to fail is not known to work.
 - **`Verify` shellchecks every tracked `*.sh`, and nothing local does.** `pnpm check` and
-  `pnpm verify` do not run it — measured, they differ by one word and neither word is this one — so
+  `pnpm verify` do not run ShellCheck, so
   an agent can edit a script, watch the normal gate go green, and redden a required check on a lint
   it never saw. Run `shellcheck` yourself on any script you touch. It is not installed on the
   owner's machine, and `pnpm dlx shellcheck` downloads whatever ShellCheck is current — 0.11.0 as of

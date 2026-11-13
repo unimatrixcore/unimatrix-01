@@ -1,5 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 
+test.afterEach(async ({ page }) => {
+  // Asset handlers use page.request responses, which context teardown disposes.
+  await page.unrouteAll({ behavior: "wait" });
+});
+
 function markedRedirectTarget(href: string): string {
   const url = new URL(href);
   url.search = "?__cflop_migrate=1&" + url.search.slice(1);

@@ -26,25 +26,28 @@ export function createWebViteConfig(mode: string): UserConfig {
     ],
     build: {
       rolldownOptions: {
+        // The renderer has no top-level effects. Its public barrel re-export
+        // otherwise pulls the renderer into the initial bundle even when unused.
+        treeshake: {
+          moduleSideEffects: (id: string) =>
+            !/[\\/]packages[\\/]ui[\\/]src[\\/]components[\\/]public-markdown\.tsx$/u.test(id),
+        },
         output: {
-          // Rolldown emits a separate chunk for every module shared by two or
-          // more chunks. Note the top-level `minSize`/`minShareCount` keys are
-          // only fallbacks for `groups` entries — setting them alone does
-          // nothing, which is worth knowing before reaching for them.
           codeSplitting: {
+            // Shared runtime and class helpers must not be placed in the lazy
+            // renderer chunk: the initial app needs them and would preload it.
             groups: [
               {
-                name: "app",
-                // Workspace source only. Third-party chunking is left at the
-                // default: a single vendor group also swallows dependencies
-                // that only lazy routes need, which grew the eager set from
-                // 954 kB to 992 kB and gave back most of what the smaller
-                // request count won.
-                test: (id: string) => {
-                  if (/[\\/]node_modules[\\/]/u.test(id)) return false;
-
-                  return /[\\/](apps[\\/]web|packages[\\/][a-z-]+)[\\/]src[\\/]/u.test(id);
-                },
+                name: "ui-utilities",
+                test: (id: string) =>
+                  /[\\/]packages[\\/]ui[\\/]src[\\/]lib[\\/]utils\.ts$/u.test(id) ||
+                  /[\\/]node_modules[\\/](?:\.pnpm[\\/][^/\\]+[\\/]node_modules[\\/])?(?:clsx|tailwind-merge)[\\/]/u.test(
+                    id,
+                  ),
+              },
+              {
+                name: "react-runtime",
+                test: /[\\/]node_modules[\\/](?:\.pnpm[\\/][^/\\]+[\\/]node_modules[\\/])?(?:react|react-dom|scheduler)[\\/]/u,
               },
             ],
           },
@@ -117,6 +120,12 @@ export function createWebViteConfig(mode: string): UserConfig {
           find: /^@unimatrix\/chrome\/public$/,
           replacement: fileURLToPath(
             new URL("../../packages/chrome/src/public.ts", import.meta.url),
+          ),
+        },
+        {
+          find: /^@unimatrix\/ui\/markdown$/,
+          replacement: fileURLToPath(
+            new URL("../../packages/ui/src/components/public-markdown.tsx", import.meta.url),
           ),
         },
         {

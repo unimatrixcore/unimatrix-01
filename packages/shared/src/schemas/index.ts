@@ -16,3 +16,8 @@ export * from "./canvas-courses.js";
 export * from "./canvas-assignments.js";
 export * from "./canvas-agenda.js";
 export * from "./canvas-reading.js";
+export * from "./poker.js";
+export * from "./poker-lab.js";
+export * from "./poker-assistant.js";
+
+export * from "./poker-gameplay-lists.js";

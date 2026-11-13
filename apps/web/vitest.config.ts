@@ -27,6 +27,12 @@ export default defineConfig({
         replacement: fileURLToPath(new URL("../../packages/shared/src/index.ts", import.meta.url)),
       },
       {
+        find: /^@unimatrix\/ui\/markdown$/,
+        replacement: fileURLToPath(
+          new URL("../../packages/ui/src/components/public-markdown.tsx", import.meta.url),
+        ),
+      },
+      {
         find: /^@unimatrix\/ui$/,
         replacement: fileURLToPath(new URL("../../packages/ui/src/index.ts", import.meta.url)),
       },

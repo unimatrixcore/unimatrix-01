@@ -1,0 +1,38 @@
+@import "@unimatrix/ui/styles.css";
+@import "./collector/capture_empty_state.css";
+@import "./collector/form_controls.css";
+@import "./collector/gameplay.css";
+@import "./collector/gameplay_preview.css";
+@import "./collector/recording_panel.css";
+@import "./collector/workspace_topbar.css";
+@import "./collector/legacy/styles.css";
+@import "./collector/legacy/capture-animation.css";
+@import "./collector/legacy/ai-review.css";
+@source "../../../packages/ui/src/**/*.{ts,tsx}";
+@source "../../../packages/chrome/src/**/*.{ts,tsx}";
+@source "../../../packages/instant-list/src/**/*.{ts,tsx}";
+@source "./collector/**/*.{ts,tsx}";
+
+#frame-list.instant-list-host,
+#session-review-list.instant-list-host {
+  display: block;
+}
+
+#dataset-catalog {
+  position: relative;
+}
+#dataset-catalog-list {
+  position: absolute;
+  z-index: 50;
+  width: 280px;
+  background: var(--background);
+  border: 1px solid var(--border);
+}
+.dataset-catalog-row {
+  width: 100%;
+  text-align: left;
+  padding: 10px;
+}
+#dataset-catalog-list .instant-list-host {
+  display: block;
+}

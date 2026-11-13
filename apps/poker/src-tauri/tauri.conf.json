@@ -1,0 +1,28 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Poker Lab",
+  "version": "0.1.0",
+  "identifier": "dev.unimatrix.pokerlab",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build",
+    "devUrl": "http://localhost:5180/collection",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost pokerlab: http://pokerlab.localhost; img-src 'self' data: blob: pokerlab: http://pokerlab.localhost; media-src 'self' data: blob: pokerlab: http://pokerlab.localhost; style-src 'self' 'unsafe-inline'; font-src 'self' data:",
+      "capabilities": ["main"],
+      "devCsp": "default-src 'self'; script-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost pokerlab: http://pokerlab.localhost http://localhost:5180 ws://localhost:5180; img-src 'self' data: blob: pokerlab: http://pokerlab.localhost; media-src 'self' data: blob: pokerlab: http://pokerlab.localhost; style-src 'self' 'unsafe-inline'; font-src 'self' data:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": ["icons/icon.png"],
+    "resources": {
+      "../../../tools/poker/": "tools/poker/"
+    }
+  }
+}

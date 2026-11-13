@@ -285,7 +285,7 @@ describe("public UI package usage", () => {
     expect(publicShellSource).toMatch(/flex min-w-0 flex-nowrap items-center gap-1/u);
 
     expect(lazyMarkdownSource).toMatch(/lazy\(/u);
-    expect(lazyMarkdownSource).toMatch(/import\("@unimatrix\/ui\/public"\)/u);
+    expect(lazyMarkdownSource).toMatch(/import\("@unimatrix\/ui\/markdown"\)/u);
     expect(lazyMarkdownSource).toMatch(/module\.PublicMarkdown/u);
     expect(lazyMarkdownSource).toMatch(/getDerivedStateFromError/u);
     expect(lazyMarkdownSource).toMatch(/Markdown content could not be loaded right now/u);
