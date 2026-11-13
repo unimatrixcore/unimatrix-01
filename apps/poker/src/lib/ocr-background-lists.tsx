@@ -404,7 +404,7 @@ export function installOcrBackgroundLists() {
         default_dataset_id: selected.id,
       };
     },
-    async readPages(path, datasetId, query, kind, all) {
+    async readPages(path, datasetId, query, kind, all, signal = new AbortController().signal) {
       const schema =
         kind === "database"
           ? pokerLabDatabaseItemSchema
@@ -430,7 +430,7 @@ export function installOcrBackgroundLists() {
           cursor,
           limit: 500,
           priority: "high",
-          signal: new AbortController().signal,
+          signal,
         });
         items.push(...page.items);
         meta = readLabListMeta([page])?.meta;
@@ -489,6 +489,7 @@ declare global {
         query: Record<string, string>,
         kind: "filenames" | "names" | "datasets" | "database",
         all: boolean,
+        signal?: AbortSignal,
       ) => Promise<{ items: Record<string, unknown>[]; meta: unknown; cursor: string | null }>;
       invalidate: (path: string, datasetId: string) => Promise<void>;
       prefetch: (options: Options) => void;

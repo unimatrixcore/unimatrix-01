@@ -242,6 +242,7 @@ function WorkspaceShell({ host, workspace }: { host: HTMLElement; workspace: HTM
             if (cold) document.getElementById("loading-overlay")?.classList.add("active");
             ocrWatchdog.current = cold
               ? window.setTimeout(() => {
+                  if (ocrFinished.current) return;
                   window.pokerStartupTimedOut = true;
                   document.getElementById("loading-overlay")?.classList.remove("active");
                   const toast = document.createElement("div");
@@ -260,8 +261,8 @@ function WorkspaceShell({ host, workspace }: { host: HTMLElement; workspace: HTM
               .startPokerOcr()
               .then(() => {
                 ocrFinished.current = true;
-                if (ticket !== generation.current || active.current) return;
                 clearTimeout(ocrWatchdog.current);
+                if (ticket !== generation.current || active.current) return;
                 if (pop && (deferred?.state || state) && window.onpopstate)
                   window.onpopstate(
                     new PopStateEvent("popstate", { state: deferred?.state ?? state }),

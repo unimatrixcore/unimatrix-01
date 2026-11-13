@@ -19,6 +19,22 @@ function visible(element: Element): boolean {
   );
 }
 
+function listReady(host: HTMLElement): boolean {
+  if (!host.hasAttribute("data-list-expected")) return true;
+  const state = host.querySelector<HTMLElement>("[data-list-state]");
+  const cards = [...host.querySelectorAll<HTMLElement>("[data-native-card]")].filter((card) =>
+    visible(card.closest("[data-index]") ?? card),
+  );
+  return !!(
+    state &&
+    state.dataset.listRevision === host.dataset.listRevision &&
+    state.dataset.listState !== "pending" &&
+    (state.dataset.listState === "error" ||
+      state.dataset.listCount === "0" ||
+      (cards.length > 0 && cards.every((card) => card.firstElementChild)))
+  );
+}
+
 /** Wait for the first rendered viewport, independently of later background pages. */
 export async function waitForViewport(
   host: HTMLElement,
@@ -28,22 +44,10 @@ export async function waitForViewport(
   const deadline = performance.now() + timeout;
   const expectsList = host.hasAttribute("data-list-expected");
   while (!signal?.aborted && host.isConnected && performance.now() < deadline) {
-    const state = host.querySelector<HTMLElement>("[data-list-state]");
     const revision = host.dataset.listRevision;
     const expected = host.hasAttribute("data-list-expected");
     if (expectsList && !expected) return false;
-    const cards = [...host.querySelectorAll<HTMLElement>("[data-native-card]")].filter((card) =>
-      visible(card.closest("[data-index]") ?? card),
-    );
-    const ready =
-      !expected ||
-      (state &&
-        state.dataset.listRevision === host.dataset.listRevision &&
-        state.dataset.listState !== "pending" &&
-        (state.dataset.listState === "error" ||
-          state.dataset.listCount === "0" ||
-          (cards.length > 0 && cards.every((card) => card.firstElementChild))));
-    if (ready) {
+    if (listReady(host)) {
       const images = [...host.querySelectorAll("img")].filter(visible);
       if (images.every((image) => image.complete)) {
         const promises = images.map((image) => {
@@ -77,7 +81,8 @@ export async function waitForViewport(
         const now = [...host.querySelectorAll("img")].filter(visible);
         if (
           host.dataset.listRevision !== revision ||
-          state?.dataset.listRevision !== revision ||
+          (expectsList && !host.hasAttribute("data-list-expected")) ||
+          !listReady(host) ||
           now.length !== images.length ||
           now.some((image, index) => image !== images[index] || !image.complete)
         )

@@ -309,45 +309,52 @@ test("long catalog eagerly loads with bounded shared rows and keyboard reaches i
   await expect(trigger).toBeFocused();
 });
 
-test("Database failure does not block recovered Review startup", async ({ page }) => {
-  await page.addInitScript({
-    content: `(${installLabFixture.toString()})(); (${(() => {
-      const previous = window.__POKER_LAB_TEST_INVOKE__!;
-      window.__POKER_LAB_TEST_INVOKE__ = async (request) => {
-        if (request.path === "/api/db_entries") throw new Error("Database temporarily unavailable");
-        const response = (await previous(request)) as { body: Record<string, unknown> };
-        if (request.path === "/api/initial_data") {
-          response.body = {
-            ...response.body,
-            session: {
-              frames: [],
-              pool: [
-                {
-                  id: "pot",
-                  sample_key: "recovered",
-                  label: "G 10",
-                  reviewed: true,
-                  base64_image: "",
-                  image_url: "/toolbar-crop.svg",
-                },
-              ],
-              reviewUnlocked: true,
-              labelingUnlocked: true,
-            },
-          };
-        }
-        return response;
-      };
-    }).toString()})();`,
+for (const failure of ["rejected", "never-settling"]) {
+  test(`Database ${failure} probe does not block recovered Review startup`, async ({ page }) => {
+    await page.addInitScript({
+      content: `(${installLabFixture.toString()})(); (${((failure: string) => {
+        const previous = window.__POKER_LAB_TEST_INVOKE__!;
+        window.__POKER_LAB_TEST_INVOKE__ = async (request) => {
+          if (request.path === "/api/db_entries") {
+            if (failure === "never-settling") return new Promise(() => {});
+            throw new Error("Database temporarily unavailable");
+          }
+          const response = (await previous(request)) as { body: Record<string, unknown> };
+          if (request.path === "/api/initial_data") {
+            response.body = {
+              ...response.body,
+              session: {
+                frames: [],
+                pool: [
+                  {
+                    id: "pot",
+                    sample_key: "recovered",
+                    label: "G 10",
+                    reviewed: true,
+                    base64_image: "",
+                    image_url: "/toolbar-crop.svg",
+                  },
+                ],
+                reviewUnlocked: true,
+                labelingUnlocked: true,
+              },
+            };
+          }
+          return response;
+        };
+      }).toString()})(${JSON.stringify(failure)});`,
+    });
+    await page.goto("/collection");
+    await expect(page.locator("#collector-workspace")).toHaveClass(/ready/);
+    await expect(page.locator("#loading-overlay")).toBeHidden();
+    await page.evaluate(() => window.pokerOcrReady);
+    expect(await page.evaluate(() => !!window.pokerStartupTimedOut)).toBe(false);
+    await assertAccent(page, "session-review");
+    await expect(page.locator("#view-session-review .card").first()).toBeVisible();
+    await expect(page.locator("#nav-collection")).toBeDisabled();
+    await expect(page).toHaveURL(/\/review$/);
   });
-  await page.goto("/collection");
-  await expect(page.locator("#collector-workspace")).toHaveClass(/ready/);
-  await expect(page.locator("#loading-overlay")).toBeHidden();
-  await assertAccent(page, "session-review");
-  await expect(page.locator("#view-session-review .card").first()).toBeVisible();
-  await expect(page.locator("#nav-collection")).toBeDisabled();
-  await expect(page).toHaveURL(/\/review$/);
-});
+}
 
 for (const path of ["/collection", "/review"]) {
   test(`persisted Review locks select Review before first reveal from ${path} and reload`, async ({

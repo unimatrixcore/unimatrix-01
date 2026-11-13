@@ -357,7 +357,13 @@ export function Gameplay({ active, onLeave }: GameplayProps) {
     return pending;
   }
   async function runCapture() {
-    if (inflight.current || !source || currentSession.current?.status === "stopped") return;
+    if (
+      stopRequested.current ||
+      inflight.current ||
+      !source ||
+      currentSession.current?.status === "stopped"
+    )
+      return;
     inflight.current = true;
     setBusy(true);
     setError("");
@@ -431,6 +437,7 @@ export function Gameplay({ active, onLeave }: GameplayProps) {
     }
   }
   function toggle() {
+    if (stopRequested.current) return;
     if (running.current) {
       pause();
       return;

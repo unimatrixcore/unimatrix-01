@@ -492,10 +492,7 @@ async function switchDataset(id) {
     loadMonitors(data.sources || data.monitors, data.settings?.last_monitor); loadDatabase(data.db || []);void refreshNames("");
     await recoverSession(data.session);
     if(queueMode) applyCollectionPage(data.collection_page);
-    if(destination === 'database' && window.CollectorBackgroundLists) {
-      const page = await window.CollectorBackgroundLists.readPages('/api/db_entries',activeDatasetId,{},'database',false);
-      dbTotal = Math.max(dbTotal,page.items.length);
-    }
+    if(destination === 'database') await probeDatabaseAvailability();
     renderFrames(); renderDatabase();
     setView(destination); renderDatasetNavigator(); await waitForCurrentViewport();
   } finally { datasetSwitching = false; isRecovering = false; updateStepperButtons(); showLoading(false); }
@@ -3033,23 +3030,44 @@ window.onpopstate = (e) => {
 let viewportReadiness = null;
 async function waitForCurrentViewport() {
   if (!window.CollectorBackgroundLists?.waitForViewport) return;
-  while (true) {
-    if (window.location.pathname === '/gameplay') await new Promise(resolve => {
-      const changed = () => { if (window.location.pathname !== '/gameplay') { window.removeEventListener('poker-workspace-change', changed); resolve(); } };
+  viewportReadiness?.abort();
+  const owner = new AbortController(); viewportReadiness = owner;
+  try {
+    while (!owner.signal.aborted) {
+      if (window.location.pathname === '/gameplay') await new Promise(resolve => {
+        const changed = () => { if (owner.signal.aborted || window.location.pathname !== '/gameplay') { window.removeEventListener('poker-workspace-change', changed); owner.signal.removeEventListener('abort', changed); resolve(); } };
+        window.addEventListener('poker-workspace-change', changed);
+        owner.signal.addEventListener('abort', changed, {once:true});
+      });
+      if (owner.signal.aborted) return;
+      const controller = new AbortController();
+      const changed = () => { if (owner.signal.aborted || window.location.pathname === '/gameplay') controller.abort(); };
       window.addEventListener('poker-workspace-change', changed);
-    });
-    viewportReadiness?.abort();
-    const controller = new AbortController(); viewportReadiness = controller;
-    const changed = () => { if (window.location.pathname === '/gameplay') controller.abort(); };
-    window.addEventListener('poker-workspace-change', changed);
-    const host = currentView === 'collection' ? frameListEl : currentView === 'database' ? dbListEl : currentView === 'session-review' ? sessionReviewListEl : viewLabeling;
-    const ready = !host || await window.CollectorBackgroundLists.waitForViewport(host, controller.signal);
-    window.removeEventListener('poker-workspace-change', changed);
-    if (viewportReadiness === controller) viewportReadiness = null;
-    if (controller.signal.aborted) continue;
-    if (!ready) showToast('The first view is taking longer than expected. You can retry loading the list.', 'error');
-    return;
-  }
+      owner.signal.addEventListener('abort', changed, {once:true});
+      const host = currentView === 'collection' ? frameListEl : currentView === 'database' ? dbListEl : currentView === 'session-review' ? sessionReviewListEl : viewLabeling;
+      let ready;
+      try { ready = !host || await window.CollectorBackgroundLists.waitForViewport(host, controller.signal); }
+      finally { window.removeEventListener('poker-workspace-change', changed); owner.signal.removeEventListener('abort', changed); }
+      if (owner.signal.aborted) return;
+      if (controller.signal.aborted) continue;
+      if (!ready) showToast('The first view is taking longer than expected. You can retry loading the list.', 'error');
+      return;
+    }
+  } finally { if (viewportReadiness === owner) viewportReadiness = null; }
+}
+
+async function probeDatabaseAvailability() {
+  if (!window.CollectorBackgroundLists) return;
+  const datasetId = activeDatasetId, controller = new AbortController();
+  let timer;
+  try {
+    const page = await Promise.race([
+      window.CollectorBackgroundLists.readPages('/api/db_entries',datasetId,{},'database',false,controller.signal),
+      new Promise((_,reject) => { timer = setTimeout(() => { controller.abort(); reject(new Error('Database availability timed out')); },3000); })
+    ]);
+    if (activeDatasetId === datasetId) dbTotal = Math.max(dbTotal,page.items.length);
+  } catch (error) { console.warn('Database availability unavailable',error); }
+  finally { clearTimeout(timer); }
 }
 
 async function init() {
@@ -3090,12 +3108,7 @@ async function init() {
     }
   } else if (path === 'review') initialView = 'session-review'; else if (path === 'database') initialView = 'database'; else if (path === 'collection') initialView = 'collection';
   const requestedView = initialView;
-  if (window.CollectorBackgroundLists) {
-    try {
-      const page = await window.CollectorBackgroundLists.readPages('/api/db_entries',activeDatasetId,{},'database',false);
-      dbTotal = Math.max(dbTotal,page.items.length);
-    } catch (error) { console.warn('Database availability unavailable',error); }
-  }
+  await probeDatabaseAvailability();
   if (isViewDisabled(initialView)) initialView = firstEnabledWorkflow();
   if (!initialView) throw new Error('No workflow step is available.');
   const initialPath = initialView === requestedView ? startupPath : initialView === 'session-review' ? '/review' : initialView === 'labeling' ? '/labeling/' + ((queueMode ? reviewBatch?.legacy_offset || 0 : 0) + currentReviewIdx + 1) : '/' + initialView;

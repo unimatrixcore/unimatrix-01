@@ -346,6 +346,61 @@ test("failed first OCR startup offers retry", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
 });
 
+test("OCR history navigation during cold startup clears the completed watchdog", async ({
+  page,
+}) => {
+  await page.addInitScript({
+    content: `(${installLabFixture.toString()})(); (${(() => {
+      const previous = window.__POKER_LAB_TEST_INVOKE__!;
+      const gate = { requested: false, release: () => {} };
+      Object.assign(window, { startupHistoryGate: gate });
+      window.__POKER_LAB_TEST_INVOKE__ = async (request) => {
+        if (request.path === "/api/initial_data") {
+          gate.requested = true;
+          await new Promise<void>((resolve) => {
+            gate.release = resolve;
+          });
+        }
+        return previous(request);
+      };
+    }).toString()})();`,
+  });
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/gameplay");
+  await expect(page.locator("#loading-overlay")).not.toHaveClass(/active/);
+  await page.clock.install();
+  await page.evaluate(() => {
+    history.replaceState({ view: "collection" }, "", "/collection");
+    history.pushState({ view: "collection" }, "", "/collection");
+    history.pushState({ pokerGameplay: true }, "", "/gameplay");
+  });
+  await page.goBack();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as unknown as { startupHistoryGate: { requested: boolean } }).startupHistoryGate
+            .requested,
+      ),
+    )
+    .toBe(true);
+  await page.goBack();
+  await page.evaluate(() => {
+    (
+      window as unknown as { startupHistoryGate: { release: () => void } }
+    ).startupHistoryGate.release();
+  });
+  await expect(page.locator("#collector-workspace")).toHaveClass(/ready/);
+  await expect(page.locator("#loading-overlay")).not.toHaveClass(/active/);
+  await page.evaluate(() => window.startPokerOcr());
+  await page.clock.runFor(16000);
+  expect(await page.evaluate(() => !!window.pokerStartupTimedOut)).toBe(false);
+  await expect(page.getByText("The first view timed out.")).toHaveCount(0);
+  await expect(page.locator("#view-collection")).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
 test("capture shortcuts only reach the active workspace", async ({ page }) => {
   await page.addInitScript({
     content: `(${installLabFixture.toString()})(); (${(() => {

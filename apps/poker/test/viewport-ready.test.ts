@@ -17,6 +17,43 @@ afterEach(() => {
 });
 
 describe("first viewport readiness", () => {
+  it.each(["pending", "uncommitted"])(
+    "rechecks same-revision %s list state after stabilization",
+    async (transition) => {
+      vi.useFakeTimers();
+      vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
+        x: 0,
+        y: 0,
+        top: 0,
+        left: 0,
+        right: 100,
+        bottom: 100,
+        width: 100,
+        height: 100,
+        toJSON() {},
+      });
+      const host = hostWithList("ready", 0);
+      let settled = false;
+      const pending = waitForViewport(host, undefined, 1000).then((value) => {
+        settled = true;
+        return value;
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      const state = host.firstElementChild as HTMLElement;
+      state.dataset.listState = transition === "pending" ? "pending" : "ready";
+      state.dataset.listCount = "1";
+      const card = document.createElement("div");
+      card.dataset.nativeCard = "";
+      state.append(card);
+      await vi.advanceTimersByTimeAsync(30);
+      expect(settled).toBe(false);
+      state.dataset.listState = "ready";
+      card.append(document.createElement("span"));
+      await vi.advanceTimersByTimeAsync(75);
+      expect(await pending).toBe(true);
+    },
+  );
+
   it("rechecks readiness when a replacement revision commits during the wait", async () => {
     vi.useFakeTimers();
     const host = hostWithList("ready", 0);
