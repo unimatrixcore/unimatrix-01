@@ -488,6 +488,13 @@ button:not([data-slot]):focus-visible,input:not([data-slot]):focus-visible,selec
   .suggestion-actions { flex-direction:column;align-items:stretch; }
   .suggestion-actions button { width:100%; }
 }
+@media(max-width:600px) {
+  .stepper-panel-actions .dataset-tools { width:100%;flex:1 1 100%;margin-left:0; }
+  .stepper-panel-actions #dataset-catalog { min-width:0;flex:1; }
+  .stepper-panel-actions #dataset-catalog-list { right:0;max-width:calc(100vw - 96px); }
+  .stepper-panel-actions #dataset-catalog-label { display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+  .stepper-panel-actions .dataset-icon { flex-shrink:0; }
+}
 @media(max-width:420px) {
   .shortcut-row { gap:6px; }
   .shortcut-row > span { font-size:9px;gap:3px; }
@@ -500,6 +507,7 @@ button:not([data-slot]):focus-visible,input:not([data-slot]):focus-visible,selec
 .saved-model-assist > div { display:flex;flex-wrap:wrap;gap:6px; }
 /* A recording transport lives below the work, leaving the crop queue clear. */
 #view-collection { --record-dock-space:190px;padding-bottom:var(--record-dock-space);scroll-padding-bottom:var(--record-dock-space); }
+#view-collection:has(#frame-list.instant-list-host) { padding-bottom:0; }
 .collection-queuebar { display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;flex-shrink:0;padding:0 0 16px;margin-bottom:16px;border-bottom:1px solid var(--border); }
 .queue-heading { display:flex;align-items:baseline;gap:18px;min-width:0; }
 .queue-heading h2 { font-size:14px;font-weight:500; }

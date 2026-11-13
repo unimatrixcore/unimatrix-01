@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import {
   backgroundListQueryOptions,
@@ -16,6 +16,7 @@ import {
   pokerLabCompletionRowSchema,
 } from "@unimatrix/shared";
 import { clearLabPageHandoff } from "./lab-page-handoff";
+import { waitForViewport } from "./viewport-ready";
 import {
   LabQueryProvider,
   labListOptions,
@@ -36,6 +37,7 @@ type Options = {
   minColumnWidth?: number;
   prefix?: Item[];
   emptyLabel?: string;
+  fillViewport?: boolean;
   changed: (
     items: readonly Item[],
     meta: unknown,
@@ -45,6 +47,7 @@ type Options = {
   ) => void;
 };
 const roots = new WeakMap<HTMLElement, Root>();
+let generation = 0;
 function optionsFor(options: Options) {
   return labListOptions({
     path: options.path,
@@ -99,13 +102,43 @@ function NativeCard({
       }
     };
   }, [item, card, dispose]);
-  return <div ref={host} />;
+  return <div ref={host} data-native-card />;
 }
-function OcrList({ options }: { options: Options }) {
+function useViewportHeight(enabled: boolean) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState(480);
+  useLayoutEffect(() => {
+    if (!enabled || !ref.current) return;
+    const node = ref.current;
+    const dock = document.getElementById("record-dock");
+    const update = () => {
+      setHeight(Math.max(120, window.innerHeight - node.getBoundingClientRect().top));
+      if (dock)
+        node.style.setProperty(
+          "--record-dock-space",
+          `${Math.max(0, window.innerHeight - dock.getBoundingClientRect().top + 16)}px`,
+        );
+    };
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    if (dock) observer.observe(dock);
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    update();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [enabled]);
+  return { ref, height };
+}
+function OcrList({ options, revision }: { options: Options; revision: number }) {
   const key = JSON.stringify([options.path, options.datasetId, options.query]);
   const listOptions = useMemo(() => optionsFor(options), [key]);
   const list = useBackgroundList(listOptions);
   const latest = useRef(options);
+  const viewport = useViewportHeight(!!options.fillViewport);
   latest.current = options;
   useEffect(() => {
     latest.current.changed(
@@ -117,7 +150,13 @@ function OcrList({ options }: { options: Options }) {
     );
   }, [list.dataUpdatedAt, list.isFetching, list.isError, key]);
   return (
-    <>
+    <div
+      ref={viewport.ref}
+      data-list-revision={revision}
+      data-list-state={list.isError ? "error" : list.isSuccess ? "ready" : "pending"}
+      data-list-count={list.items.length + (options.prefix?.length ?? 0)}
+      className={options.fillViewport ? "collection-virtual-list" : undefined}
+    >
       {options.emptyLabel && !list.isPending && !list.isError && list.items.length === 0 && (
         <p role="status">{options.emptyLabel}</p>
       )}
@@ -130,7 +169,7 @@ function OcrList({ options }: { options: Options }) {
         rowHeight={options.rowHeight ?? 300}
         minColumnWidth={options.minColumnWidth ?? 240}
         gap={12}
-        height={options.height ?? "65vh"}
+        height={options.fillViewport ? viewport.height : (options.height ?? "65vh")}
         ariaLabel="Crops"
         onEndReached={list.onEndReached}
         hasNextPage={list.hasNextPage}
@@ -140,7 +179,7 @@ function OcrList({ options }: { options: Options }) {
           await labQueryClient.resetQueries({ queryKey: listOptions.queryKey, exact: true });
         }}
       />
-    </>
+    </div>
   );
 }
 type SnapshotOptions = {
@@ -151,31 +190,43 @@ type SnapshotOptions = {
   rowHeight?: number;
   minColumnWidth?: number;
 };
-function SnapshotList({ options }: { options: SnapshotOptions }) {
+function SnapshotList({ options, revision }: { options: SnapshotOptions; revision: number }) {
   return (
-    <InstantVirtualGrid
-      items={options.items}
-      getItemId={options.key}
-      renderItem={(item) => <NativeCard item={item} card={options.card} />}
-      rowHeight={options.rowHeight ?? 300}
-      minColumnWidth={options.minColumnWidth ?? 240}
-      gap={12}
-      height={options.height ?? "65vh"}
-      ariaLabel="Crops"
-    />
+    <div
+      data-list-revision={revision}
+      data-list-state="ready"
+      data-list-count={options.items.length}
+    >
+      <InstantVirtualGrid
+        items={options.items}
+        getItemId={options.key}
+        renderItem={(item) => <NativeCard item={item} card={options.card} />}
+        rowHeight={options.rowHeight ?? 300}
+        minColumnWidth={options.minColumnWidth ?? 240}
+        gap={12}
+        height={options.height ?? "65vh"}
+        ariaLabel="Crops"
+      />
+    </div>
   );
 }
 export function installOcrBackgroundLists() {
   window.CollectorBackgroundLists = {
     snapshot(host, options) {
+      host.dataset.listExpected = "snapshot";
+      const revision = ++generation;
+      host.dataset.listRevision = String(revision);
       let root = roots.get(host);
       if (!root) {
         root = createRoot(host);
         roots.set(host, root);
       }
-      root.render(<SnapshotList options={options} />);
+      root.render(<SnapshotList options={options} revision={revision} />);
     },
     render(host, options) {
+      host.dataset.listExpected = "query";
+      const revision = ++generation;
+      host.dataset.listRevision = String(revision);
       let root = roots.get(host);
       if (!root) {
         root = createRoot(host);
@@ -183,7 +234,7 @@ export function installOcrBackgroundLists() {
       }
       root.render(
         <LabQueryProvider>
-          <OcrList options={options} />
+          <OcrList options={options} revision={revision} />
         </LabQueryProvider>,
       );
     },
@@ -354,7 +405,10 @@ export function installOcrBackgroundLists() {
         root.unmount();
         roots.delete(host);
       }
+      delete host.dataset.listExpected;
+      delete host.dataset.listRevision;
     },
+    waitForViewport,
   };
 }
 declare global {
@@ -382,6 +436,7 @@ declare global {
       invalidate: (path: string, datasetId: string) => Promise<void>;
       prefetch: (options: Options) => void;
       clear: (host: HTMLElement) => void;
+      waitForViewport: typeof waitForViewport;
     };
   }
 }

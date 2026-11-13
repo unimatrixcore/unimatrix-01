@@ -156,7 +156,7 @@ async function initDatasets() {
       const data = await (await datasetFetch(`/api/initial_data?queue_mode=paged${window.CollectorBackgroundLists?'&background_lists=1':''}`)).json();
       frames = []; pool = []; usernamePool.counts.clear(); modelRequest++;
       loadDatabase(data.db || []); void refreshNames(""); await recoverSession(data.session);if(queueMode) applyCollectionPage(data.collection_page);renderFrames();
-      setView('collection'); renderDatasetNavigator();
+      setView('collection'); renderDatasetNavigator(); await waitForCurrentViewport();
     } catch (error) { reportDatasetError(error); } finally { showLoading(false); }
   };
   document.getElementById('model-use').onclick = useModelSuggestion;
@@ -479,7 +479,7 @@ async function switchDataset(id) {
     ['review-search','db-search','review-bulk-label-input','db-bulk-label-input'].forEach(key => document.getElementById(key).value = '');
     ['review-search-list','db-search-list','review-bulk-list','db-bulk-list','edit-datalist'].forEach(key => document.getElementById(key).replaceChildren());
     window.CollectorSharedUi?.disposeMenus?.(frameListEl);
-    if(window.CollectorBackgroundLists) window.CollectorBackgroundLists.clear(dbListEl);
+    if(window.CollectorBackgroundLists) [frameListEl, sessionReviewListEl, dbListEl].forEach(host => window.CollectorBackgroundLists.clear(host));
     frameListEl.replaceChildren(); sessionReviewListEl.replaceChildren(); dbListEl.replaceChildren();
     document.getElementById('db-statistics-dashboard').classList.add('hidden');
     setModelState('Select a crop to begin');
@@ -490,8 +490,8 @@ async function switchDataset(id) {
     await recoverSession(data.session);
     if(queueMode) applyCollectionPage(data.collection_page);
     renderFrames(); renderDatabase();
-    setView('collection'); renderDatasetNavigator();
-  } finally { datasetSwitching = false; isRecovering = false; showLoading(false); }
+    setView('collection'); renderDatasetNavigator(); await waitForCurrentViewport();
+  } finally { datasetSwitching = false; isRecovering = false; updateStepperButtons(); showLoading(false); }
 }
 function setModelState(message, prediction = null) {
   modelPrediction = prediction;
@@ -1847,7 +1847,7 @@ function renderFrames() {
     frameListEl.classList.add("instant-list-host");
     frameListEl.classList.remove("hidden");
     const epoch=datasetEpoch, datasetId=activeDatasetId;
-    window.CollectorBackgroundLists.render(frameListEl, {path:"/api/queue",datasetId,query:{order:"newest"},prefix:pending.map(frame=>({...frame,id:String(frame.id),__pending:true})),key:item=>item.__pending ? `pending:${item.id}` : collectionCropKey(item),card:createCollectionCard,changed:(items,meta,loading,error)=>{
+    window.CollectorBackgroundLists.render(frameListEl, {path:"/api/queue",datasetId,query:{order:"newest"},fillViewport:true,prefix:pending.map(frame=>({...frame,id:String(frame.id),__pending:true})),key:item=>item.__pending ? `pending:${item.id}` : collectionCropKey(item),card:createCollectionCard,changed:(items,meta,loading,error)=>{
       if(epoch!==datasetEpoch || datasetId!==activeDatasetId) return;
       collectionItems=items; if(meta?.summary) applyQueueSummary(meta.summary);
       document.getElementById("collection-placeholder").classList.toggle("hidden",items.length>0 || pending.length>0 || loading || error);
@@ -2974,6 +2974,7 @@ const setView = (v, pushState = true) => {
   if (currentView === 'collection' && v !== 'collection') window.CollectorSharedUi?.closeMenus?.();
   if (currentView === 'session-review' && v !== 'session-review' && typeof resetFullSessionReview === 'function') {
     resetFullSessionReview(true);
+    window.CollectorBackgroundLists?.clear(sessionReviewListEl);
     window.CollectorSharedUi?.disposeMenus?.(sessionReviewListEl);
     sessionReviewListEl?.replaceChildren();
   }
@@ -3078,6 +3079,16 @@ window.onpopstate = (e) => {
   }
 };
 
+let viewportReadiness = null;
+async function waitForCurrentViewport() {
+  if (!window.CollectorBackgroundLists?.waitForViewport) return;
+  viewportReadiness?.abort();
+  const controller = new AbortController(); viewportReadiness = controller;
+  const host = currentView === 'collection' ? frameListEl : currentView === 'database' ? dbListEl : currentView === 'session-review' ? sessionReviewListEl : viewLabeling;
+  if (host && !await window.CollectorBackgroundLists.waitForViewport(host, controller.signal) && !controller.signal.aborted) showToast('The first view is taking longer than expected. You can retry loading the list.', 'error');
+  if (viewportReadiness === controller) viewportReadiness = null;
+}
+
 async function init() {
   initDom();
   window.CollectorScroll?.start();
@@ -3114,7 +3125,7 @@ async function init() {
       }
     }
   } else if (path === 'review') initialView = 'session-review'; else if (path === 'database') initialView = 'database'; else if (path === 'collection') initialView = 'collection';
-  setView(initialView, false); renderDatasetNavigator(); document.getElementById("collector-workspace").classList.add("ready"); updateStepperButtons(); history.replaceState({view:currentView,idx:currentReviewIdx,...(queueMode?{dataset_id:activeDatasetId,batch_id:reviewBatch?.batch_id,sample_key:pool[currentReviewIdx]?sampleKey(pool[currentReviewIdx]):null}:{})}, '', window.location.pathname); showLoading(false); window.CollectorScroll?.restore();
+  setView(initialView, false); renderDatasetNavigator(); document.getElementById("collector-workspace").classList.add("ready"); updateStepperButtons(); history.replaceState({view:currentView,idx:currentReviewIdx,...(queueMode?{dataset_id:activeDatasetId,batch_id:reviewBatch?.batch_id,sample_key:pool[currentReviewIdx]?sampleKey(pool[currentReviewIdx]):null}:{})}, '', window.location.pathname); window.CollectorScroll?.restore(); await waitForCurrentViewport(); showLoading(false); window.pokerStartupTimedOut = false;
 }
 
 init().catch(error => { showLoading(false); showToast(error.message, "error"); });

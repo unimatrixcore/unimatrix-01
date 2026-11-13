@@ -5,6 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Poker Lab</title>
     <link rel="icon" type="image/svg+xml" href="/static/ui/poker-chip.svg" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #171717;
+        color: #eee;
+      }
+      body > :not(#loading-overlay) {
+        visibility: hidden;
+      }
+      #loading-overlay {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        background: #171717;
+        font: 13px monospace;
+      }
+    </style>
+    <link rel="stylesheet" href="/src/styles.css" />
   </head>
   <body class="grid-backdrop">
     <div id="modal-overlay">

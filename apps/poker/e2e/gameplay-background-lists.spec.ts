@@ -226,3 +226,32 @@ test("Gameplay pages eagerly, preserves its snapshot and manages catalogs", asyn
   await page.getByRole("button", { name: "Restore selected" }).click();
   await expect(page.getByRole("button", { name: "Recording session" })).toHaveText("Renamed");
 });
+
+test("Gameplay keeps startup visible until its first recordings page resolves", async ({
+  page,
+}) => {
+  await page.addInitScript(installLabFixture);
+  await page.addInitScript(() => {
+    const previous = window.__POKER_LAB_TEST_INVOKE__!;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    Object.assign(window, {
+      releaseGameplayStartup: () => {
+        release();
+      },
+    });
+    window.__POKER_LAB_TEST_INVOKE__ = async (request) => {
+      if (request.path === "/api/gameplay" && request.query.background_page === "1") await gate;
+      return previous(request);
+    };
+  });
+  await page.goto("/gameplay");
+  await expect(page.locator(".gameplay-workspace")).toBeVisible();
+  await expect(page.locator("#loading-overlay")).toBeVisible();
+  await page.evaluate(() => {
+    (window as unknown as { releaseGameplayStartup: () => void }).releaseGameplayStartup();
+  });
+  await expect(page.locator("#loading-overlay")).toBeHidden();
+});

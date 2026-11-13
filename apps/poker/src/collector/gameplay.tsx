@@ -32,6 +32,7 @@ import {
   pokerGameplayFrameSummarySchema,
 } from "@unimatrix/shared";
 import { labListOptions, readLabListMeta } from "../lib/background-lists";
+import { waitForViewport } from "../lib/viewport-ready";
 import "./gameplay.css";
 
 type Session = {
@@ -93,6 +94,8 @@ export function Gameplay() {
   const [handPickerOpen, setHandPickerOpen] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
   const [sessionId, setSessionId] = useState("");
+  const [initialFrameReady, setInitialFrameReady] = useState(false);
+  const startupFinished = useRef(false);
   const [view, setView] = useState<View>("recording");
   const [sources, setSources] = useState<Source[]>([]);
   const [source, setSource] = useState("");
@@ -247,6 +250,45 @@ export function Gameplay() {
     }
   }, [sessionList.items, sessionId]);
 
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (startupFinished.current) return;
+      startupFinished.current = true;
+      setError("Loading the first view timed out. Retry the recordings list.");
+      document.getElementById("loading-overlay")?.classList.remove("active");
+    }, 10000);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, []);
+  useEffect(() => {
+    if (
+      startupFinished.current ||
+      (!sessionList.isError &&
+        (!sessionList.isSuccess ||
+          (sessionList.items.length > 0 && (!sessionId || !initialFrameReady))))
+    )
+      return;
+    const controller = new AbortController();
+    const host = document.querySelector<HTMLElement>(".gameplay-workspace");
+    if (host)
+      void waitForViewport(host, controller.signal).then((ready) => {
+        if (controller.signal.aborted || startupFinished.current) return;
+        startupFinished.current = true;
+        if (!ready) setError("Loading the first view timed out. Retry the recordings list.");
+        document.getElementById("loading-overlay")?.classList.remove("active");
+      });
+    return () => {
+      controller.abort();
+    };
+  }, [
+    sessionList.isError,
+    sessionList.isSuccess,
+    sessionList.items.length,
+    sessionId,
+    initialFrameReady,
+  ]);
+
   // Load a saved session once. A completed capture already contains its new
   // session summary; recording must not refetch history on every frame.
   useEffect(() => {
@@ -265,6 +307,9 @@ export function Gameplay() {
       })
       .catch((error) => {
         if (!cancelled) setError(errorMessage(error));
+      })
+      .finally(() => {
+        if (!cancelled) setInitialFrameReady(true);
       });
     return () => {
       cancelled = true;

@@ -415,3 +415,32 @@ test("gameplay shows detected suits and hides only color-confirmed inactive seat
   await expect(page.getByText("Seat 2", { exact: true })).toBeVisible();
   await page.screenshot({ path: "../../.orchestration/evidence/poker-gameplay-color-fixture.png" });
 });
+
+test("dataset controls remain reachable in the narrow toolbar", async ({ page }) => {
+  await page.setViewportSize({ width: 420, height: 760 });
+  await page.goto("/collection");
+  await expect(page.locator("#loading-overlay")).toBeHidden();
+  for (const name of [
+    "Working dataset",
+    "Create dataset",
+    "Rename dataset",
+    "Archive and restore datasets",
+  ]) {
+    const control = page.getByLabel(name, { exact: true }).locator("visible=true");
+    await expect(control).toBeVisible();
+    const box = await control.boundingBox();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(420);
+  }
+  await page.getByLabel("Working dataset", { exact: true }).locator("visible=true").click();
+  const catalogBox = await page.locator("#dataset-catalog-list").boundingBox();
+  expect(catalogBox!.x).toBeGreaterThanOrEqual(0);
+  expect(catalogBox!.x + catalogBox!.width).toBeLessThanOrEqual(420);
+  await page.getByLabel("Working dataset", { exact: true }).locator("visible=true").click();
+  await page.getByRole("button", { name: "Rename dataset" }).click();
+  await expect(page.locator("#dataset-name-input")).toBeVisible();
+  await page.locator("#dataset-manager > summary").click();
+  await page.getByLabel("Archive and restore datasets").click();
+  await expect(page.locator("#dataset-action-title")).toHaveText("Manage datasets");
+  await page.screenshot({ path: test.info().outputPath("narrow-dataset-controls.png") });
+});
