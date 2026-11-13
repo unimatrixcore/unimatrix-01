@@ -30,6 +30,15 @@ export function createCflopViteConfig({
       react(),
       tailwindcss(),
     ],
+    build: {
+      rolldownOptions: {
+        // The public barrel's unused Markdown export must not initialize Prism grammars.
+        treeshake: {
+          moduleSideEffects: (id: string) =>
+            !/[\\/]packages[\\/]ui[\\/]src[\\/]components[\\/]public-markdown\.tsx$/u.test(id),
+        },
+      },
+    },
     // No proxy and no env: this app has no backend. The only reason it configures
     // a server at all is the port. Vite defaults to 5173, which `apps/web` also
     // wants, and the loser of that race silently moves to 5174 — so which app
