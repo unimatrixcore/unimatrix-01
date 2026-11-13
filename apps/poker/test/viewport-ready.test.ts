@@ -13,9 +13,32 @@ function hostWithList(state: string, count: number) {
 afterEach(() => {
   document.body.replaceChildren();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 describe("first viewport readiness", () => {
+  it("rechecks readiness when a replacement revision commits during the wait", async () => {
+    vi.useFakeTimers();
+    const host = hostWithList("ready", 0);
+    let settled = false;
+    const pending = waitForViewport(host, undefined, 1000).then((value) => {
+      settled = true;
+      return value;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    host.dataset.listRevision = "2";
+    const state = host.firstElementChild as HTMLElement;
+    state.dataset.listRevision = "2";
+    state.dataset.listState = "pending";
+    state.dataset.listCount = "1";
+    await vi.advanceTimersByTimeAsync(30);
+    expect(settled).toBe(false);
+    state.dataset.listState = "ready";
+    state.dataset.listCount = "0";
+    await vi.advanceTimersByTimeAsync(50);
+    expect(await pending).toBe(true);
+  });
+
   it("waits for the first list commit and image decode without waiting for another page", async () => {
     vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
       x: 0,

@@ -1,6 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 import { installLabFixture } from "./fixture.js";
 
+async function installFixtureWith(page: Page, setup: (argument: string) => void, argument = "") {
+  await page.addInitScript({
+    content: `(${installLabFixture.toString()})(); (${setup.toString()})(${JSON.stringify(argument)});`,
+  });
+}
+
 test.beforeEach(async ({ page }) => {
   await page.route(/\/api\/db_image\/|\/toolbar-crop\.svg/, (route) =>
     route.fulfill({
@@ -41,53 +47,56 @@ for (const step of ["collection", "labeling", "session-review", "database"]) {
   test(`${step} current workflow uses computed accent, including disabled state`, async ({
     page,
   }) => {
-    await page.addInitScript(installLabFixture);
-    await page.addInitScript((step) => {
-      const previous = window.__POKER_LAB_TEST_INVOKE__!;
-      const sample = {
-        id: "pot",
-        sample_key: "toolbar-pot",
-        label: "Pot: G 10 BB",
-        reviewed: true,
-        base64_image: "",
-        image_url: "/toolbar-crop.svg",
-      };
-      const summary = { total: 1, pending: 0, reviewed: 1, captures: 1, revision: 1 };
-      window.__POKER_LAB_TEST_INVOKE__ = async (request) => {
-        if (request.path === "/api/model_suggestion")
-          return { status: 200, headers: {}, body: { available: false, state: "unavailable" } };
-        const response = (await previous(request)) as {
-          status: number;
-          headers: Record<string, string>;
-          body: Record<string, unknown>;
+    await installFixtureWith(
+      page,
+      (step) => {
+        const previous = window.__POKER_LAB_TEST_INVOKE__!;
+        const sample = {
+          id: "pot",
+          sample_key: "toolbar-pot",
+          label: "Pot: G 10 BB",
+          reviewed: true,
+          base64_image: "",
+          image_url: "/toolbar-crop.svg",
         };
-        if (request.path === "/api/initial_data" && step !== "collection")
-          response.body = {
-            ...response.body,
-            session: {
-              frames: [],
-              pool: [sample],
-              labelingUnlocked: step === "labeling",
-              reviewUnlocked: step === "session-review",
-            },
+        const summary = { total: 1, pending: 0, reviewed: 1, captures: 1, revision: 1 };
+        window.__POKER_LAB_TEST_INVOKE__ = async (request) => {
+          if (request.path === "/api/model_suggestion")
+            return { status: 200, headers: {}, body: { available: false, state: "unavailable" } };
+          const response = (await previous(request)) as {
+            status: number;
+            headers: Record<string, string>;
+            body: Record<string, unknown>;
           };
-        if (
-          request.query.background_page === "1" &&
-          ["/api/db_entries", "/api/queue/review/items"].includes(request.path)
-        )
-          response.body = {
-            items:
-              request.path === "/api/db_entries"
-                ? [{ filename: "pot.png", id: "pot", label: "Pot: G 10 BB" }]
-                : [sample],
-            nextCursor: null,
-            hasMore: false,
-            total: 1,
-            meta: { summary },
-          };
-        return response;
-      };
-    }, step);
+          if (request.path === "/api/initial_data" && step !== "collection")
+            response.body = {
+              ...response.body,
+              session: {
+                frames: [],
+                pool: [sample],
+                labelingUnlocked: step === "labeling",
+                reviewUnlocked: step === "session-review",
+              },
+            };
+          if (
+            request.query.background_page === "1" &&
+            ["/api/db_entries", "/api/queue/review/items"].includes(request.path)
+          )
+            response.body = {
+              items:
+                request.path === "/api/db_entries"
+                  ? [{ filename: "pot.png", id: "pot", label: "Pot: G 10 BB" }]
+                  : [sample],
+              nextCursor: null,
+              hasMore: false,
+              total: 1,
+              meta: { summary },
+            };
+          return response;
+        };
+      },
+      step,
+    );
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await page.goto(step === "session-review" ? "/review" : `/${step}`);
@@ -226,8 +235,7 @@ test("shared dataset dropdown preserves keyboard selection and create, rename, a
 test("long catalog eagerly loads with bounded shared rows and keyboard reaches its end at narrow width", async ({
   page,
 }) => {
-  await page.addInitScript(installLabFixture);
-  await page.addInitScript(() => {
+  await installFixtureWith(page, () => {
     const previous = window.__POKER_LAB_TEST_INVOKE__!;
     const items = Array.from({ length: 1200 }, (_, index) => ({
       id: index === 0 ? "fixture" : `dataset-${index}`,
@@ -345,8 +353,7 @@ for (const path of ["/collection", "/review"]) {
   test(`persisted Review locks select Review before first reveal from ${path} and reload`, async ({
     page,
   }) => {
-    await page.addInitScript(installLabFixture);
-    await page.addInitScript(() => {
+    await installFixtureWith(page, () => {
       const previous = window.__POKER_LAB_TEST_INVOKE__!;
       const sample = {
         id: "pot",

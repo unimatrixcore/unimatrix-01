@@ -34,7 +34,12 @@ it("focuses only the Poker window descended from the existing launcher and reads
   activateExistingWindow(10, {
     platform: "linux",
     env: { HYPRLAND_INSTANCE_SIGNATURE: "fixture" },
-    parentPid: (pid) => ({ 30: 20, 20: 10, 40: 1 })[pid] || 0,
+    parentPid: (pid) =>
+      new Map([
+        [30, 20],
+        [20, 10],
+        [40, 1],
+      ]).get(pid) ?? 0,
     command,
   });
   expect(command.mock.calls).toEqual([
@@ -86,24 +91,30 @@ it("reports missing desktop commands instead of silently accepting a duplicate s
     });
   }).toThrow("Open its existing workspace/window. Error: spawnSync hyprctl ENOENT");
 });
-it("uses the Lua focus dispatcher when Hyprland rejects the legacy dispatcher", () => {
-  const command = vi.fn((_command: string, args: string[]) => {
-    if (args[1] === "clients") return '[{"class":"unimatrix-poker","pid":20,"address":"0xabc"}]';
-    if (args[0] === "dispatch") throw new Error("dispatch in lua is a shorthand");
-    if (args[1] === "activewindow") return '{"address":"0xabc"}';
-    return "ok";
-  });
-  activateExistingWindow(10, {
-    platform: "linux",
-    env: { HYPRLAND_INSTANCE_SIGNATURE: "fixture" },
-    parentPid: () => 10,
-    command,
-  });
-  expect(command).toHaveBeenCalledWith("hyprctl", [
-    "eval",
-    'hl.dispatch(hl.dsp.focus({ window = "address:0xabc" }))',
-  ]);
-});
+it.each(["exit failure", "error reply"])(
+  "uses the Lua focus dispatcher after legacy %s",
+  (failure) => {
+    const command = vi.fn((_command: string, args: string[]) => {
+      if (args[1] === "clients") return '[{"class":"unimatrix-poker","pid":20,"address":"0xabc"}]';
+      if (args[0] === "dispatch") {
+        if (failure === "exit failure") throw new Error("dispatch in lua is a shorthand");
+        return "error: dispatch in lua is a shorthand";
+      }
+      if (args[1] === "activewindow") return '{"address":"0xabc"}';
+      return "ok";
+    });
+    activateExistingWindow(10, {
+      platform: "linux",
+      env: { HYPRLAND_INSTANCE_SIGNATURE: "fixture" },
+      parentPid: () => 10,
+      command,
+    });
+    expect(command).toHaveBeenCalledWith("hyprctl", [
+      "eval",
+      'hl.dispatch(hl.dsp.focus({ window = "address:0xabc" }))',
+    ]);
+  },
+);
 it("a repeated shortcut activates without taking the lock, changing selection or launching anything", async () => {
   const { common, repo, other, paths } = fixture();
   selectWorktree(common, repo, other, paths);

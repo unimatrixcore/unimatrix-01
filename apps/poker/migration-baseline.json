@@ -6,7 +6,7 @@
       "target": "public/static/js/app.js",
       "sha256": "b236939243a91e45ea5e4612a595a519fb856e0f095df0fe74bc786ffe4a0267",
       "mode": "adapted",
-      "targetSha256": "c690e2864a64fed9975c058a7dea77821b94d681cfcf1159682845b3b13239b4"
+      "targetSha256": "ca75daea6db6ab70770be6f53af298125cbb6288b7801efa12ed49bf007c07e1"
     },
     {
       "source": "static/js/lib/ai_review.js",
@@ -46,14 +46,14 @@
       "target": "public/static/js/lib/scroll_position.js",
       "sha256": "7ea82f9b615c1ac4c389cda6a906d572ab3c0290e18b84a8ea6cc219606c7f01",
       "mode": "adapted",
-      "targetSha256": "1f454db877729e9f004cc0ea2e6c14ab025f161ab601e99f6843e817a5250658"
+      "targetSha256": "9a8d6ce244ba5964b9b4e2856c6d5d5497ddcac8b9e711ed1317d78948a47ece"
     },
     {
       "source": "static/js/lib/session_review.js",
       "target": "public/static/js/lib/session_review.js",
       "sha256": "3a88c777c25b632708a63daede2b7dad70820be160fc67018f2d75a841ce11ff",
       "mode": "adapted",
-      "targetSha256": "38f01bf934b8dd7644ed2b8ab278f96cd0deeb5b2f9547d6e40d67e7beb304a6"
+      "targetSha256": "26dbf38356e00bed160a24322076100b62bbe64f673019f16ed901d0577bf633"
     },
     {
       "source": "static/js/lib/stats.js",
@@ -152,7 +152,7 @@
       "target": "src/collector/gameplay.tsx",
       "sha256": "30ac4ed3bc466dfe9b99c1c269b5d257dec03771246eb20ef70868c826b8bbb0",
       "mode": "adapted",
-      "targetSha256": "9117c0463df87e6bad5f2ccb396760e704148ab6ea1a02ae52b9a1d859fc342d"
+      "targetSha256": "8fcf6aa1f0cb88c93a8c359ca4d0aa9e2494844e08e8f77658cd757af530f971"
     },
     {
       "source": "collector_ui/gameplay_preview.css",

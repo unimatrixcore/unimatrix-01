@@ -261,7 +261,8 @@ function selectFullReviewShown() {
     for(const item of items) state.selected.delete(sampleKey(item));
   } else {
     for(const item of items) {
-      if(state.selected.size>=100) break;
+      if(state.selected.has(sampleKey(item))) continue;
+      if(state.selected.size>=100) {showToast('Select up to 100 crops at a time.','error');break;}
       state.selected.set(sampleKey(item),item);
     }
   }

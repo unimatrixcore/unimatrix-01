@@ -88,13 +88,12 @@ async function api<T>(path: string, data?: object): Promise<T> {
   return result as T;
 }
 
-export function Gameplay({
-  active,
-  onLeave,
-}: {
+export interface GameplayProps {
   active: boolean;
   onLeave: React.MutableRefObject<() => Promise<void>>;
-}) {
+}
+
+export function Gameplay({ active, onLeave }: GameplayProps) {
   const [catalogRevision, setCatalogRevision] = useState(0);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [handPickerOpen, setHandPickerOpen] = useState(false);
@@ -382,12 +381,12 @@ export function Gameplay({
           }
           return;
         }
-        if (stopRequested.current) return;
         if (alive.current) {
           setSession(current);
           setSessionId(current.id);
           setCatalogRevision((value) => value + 1);
         }
+        if (stopRequested.current) return;
       }
       const result = await api<{
         frame?: Frame;

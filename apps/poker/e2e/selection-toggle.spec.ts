@@ -136,6 +136,43 @@ for (const count of [3, 120]) {
   });
 }
 
+test("Review reports its cap when a selected crop lies beyond the first hundred targets", async ({
+  page,
+}) => {
+  await page.addInitScript({
+    content: `(${installLabFixture.toString()})(); (${installSelectionFixture.toString()})(120);`,
+  });
+  await page.goto("/review");
+  await expect(page.locator("#session-review-list [data-list-count]")).toHaveAttribute(
+    "data-list-count",
+    "120",
+  );
+  await page.locator("#main-content").evaluate((node) => {
+    node.scrollTop = node.scrollHeight;
+  });
+  const outside = page.locator('[data-review-key="selection-100"]').getByRole("checkbox");
+  await outside.check();
+  const button = page.locator("#btn-review-select-all");
+  await button.click();
+  await expect(button).toHaveAttribute("aria-pressed", "mixed");
+  await expect(page.locator("#toast-container")).toContainText("Select up to 100 crops at a time.");
+  await expect(page.locator("#btn-delete-session-selected")).toHaveAccessibleName(
+    "Remove 100 Selected",
+  );
+  await button.click();
+  await expect(button).toHaveAttribute("aria-pressed", "mixed");
+  await page.locator("#main-content").evaluate((node) => {
+    node.scrollTop = node.scrollHeight;
+  });
+  await expect(outside).toBeChecked();
+  await outside.uncheck();
+  await button.click();
+  await expect(button).toHaveAttribute("aria-pressed", "true");
+  await button.click();
+  await expect(button).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator("#btn-delete-session-selected")).toBeHidden();
+});
+
 test("filtered legacy Review toggle preserves selections outside its targets", async ({ page }) => {
   await page.addInitScript({
     content: `(${installLabFixture.toString()})(); (${installSelectionFixture.toString()})(3, false);`,

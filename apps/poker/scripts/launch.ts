@@ -599,7 +599,8 @@ export function activateExistingWindow(
       );
     const address = windows[0]!.address;
     try {
-      runtime.command("hyprctl", ["dispatch", "focuswindow", `address:${address}`]);
+      if (runtime.command("hyprctl", ["dispatch", "focuswindow", `address:${address}`]) !== "ok")
+        throw new Error("Legacy focus dispatch was rejected");
     } catch {
       runtime.command("hyprctl", [
         "eval",

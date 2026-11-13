@@ -2951,7 +2951,9 @@ const setView = (v, pushState = true) => {
 
   if (pushState) {
     let path = v === 'session-review' ? 'review' : v; if (v === 'labeling') path = "labeling/" + ((queueMode ? reviewBatch?.legacy_offset || 0 : 0) + currentReviewIdx + 1);
-    history.pushState({view:v,idx:v==='labeling'?currentReviewIdx:null,...(queueMode?{dataset_id:activeDatasetId,batch_id:reviewBatch?.batch_id,sample_key:pool[currentReviewIdx]?sampleKey(pool[currentReviewIdx]):null}:{})},'',"/"+path);
+    const state={view:v,idx:v==='labeling'?currentReviewIdx:null,...(queueMode?{dataset_id:activeDatasetId,batch_id:reviewBatch?.batch_id,sample_key:pool[currentReviewIdx]?sampleKey(pool[currentReviewIdx]):null}:{})};
+    if(window.location?.pathname==='/gameplay') window.pokerOcrDeferredLocation={path:"/"+path,state};
+    else history.pushState(state,'',"/"+path);
     window.dispatchEvent?.(new Event('poker-ocr-location'));
   }
 

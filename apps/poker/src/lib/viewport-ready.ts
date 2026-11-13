@@ -29,6 +29,7 @@ export async function waitForViewport(
   const expectsList = host.hasAttribute("data-list-expected");
   while (!signal?.aborted && host.isConnected && performance.now() < deadline) {
     const state = host.querySelector<HTMLElement>("[data-list-state]");
+    const revision = host.dataset.listRevision;
     const expected = host.hasAttribute("data-list-expected");
     if (expectsList && !expected) return false;
     const cards = [...host.querySelectorAll<HTMLElement>("[data-native-card]")].filter((card) =>
@@ -75,7 +76,8 @@ export async function waitForViewport(
         await new Promise<void>((resolve) => setTimeout(resolve, 25));
         const now = [...host.querySelectorAll("img")].filter(visible);
         if (
-          state?.dataset.listRevision !== host.dataset.listRevision ||
+          host.dataset.listRevision !== revision ||
+          state?.dataset.listRevision !== revision ||
           now.length !== images.length ||
           now.some((image, index) => image !== images[index] || !image.complete)
         )

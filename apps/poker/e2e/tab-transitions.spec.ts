@@ -222,6 +222,15 @@ test("a failed stop after in-flight session creation keeps Gameplay active", asy
           gate.stopped = true;
           return { status: 500, headers: {}, body: { error: "Stop failed" } };
         }
+        if (request.path.startsWith("/api/gameplay/sessions/pending"))
+          return {
+            status: 200,
+            headers: {},
+            body:
+              request.query.background_page === "1"
+                ? { items: [], nextCursor: null, hasMore: false, total: 0, meta: {} }
+                : { frames: [] },
+          };
         return previous(request);
       };
     }).toString()})();`,
@@ -250,6 +259,73 @@ test("a failed stop after in-flight session creation keeps Gameplay active", asy
   await expect(page.locator(".gameplay-workspace")).toBeVisible();
   await expect(page).toHaveURL(/\/gameplay$/);
   await expect(page.getByText("Stop failed").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Recording session", exact: true })).toHaveText(
+    "Pending",
+  );
+  await expect(page.getByRole("radio", { name: "Frames view", exact: true })).toBeEnabled();
+});
+
+test("a dataset switch completing behind Gameplay defers its OCR location", async ({ page }) => {
+  await page.addInitScript({
+    content: `(${installLabFixture.toString()})(); (${(() => {
+      const previous = window.__POKER_LAB_TEST_INVOKE__!;
+      const gate = { requested: false, release: false };
+      Object.assign(window, { datasetGate: gate });
+      window.__POKER_LAB_TEST_INVOKE__ = async (request) => {
+        if (request.path === "/api/datasets" && request.query.background_page === "1")
+          return {
+            status: 200,
+            headers: {},
+            body: {
+              items: [
+                { id: "fixture", name: "First dataset", archived: false },
+                { id: "second", name: "Second dataset", archived: false },
+              ],
+              nextCursor: null,
+              hasMore: false,
+              total: 2,
+              meta: { default_dataset_id: "fixture" },
+            },
+          };
+        if (request.path === "/api/initial_data" && request.headers["x-dataset-id"] === "second") {
+          gate.requested = true;
+          while (!gate.release) await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        return previous(request);
+      };
+    }).toString()})();`,
+  });
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/gameplay");
+  await expect(page.locator("#loading-overlay")).not.toHaveClass(/active/);
+  await page.getByRole("link", { name: "OCR Data" }).click();
+  await expect(page.locator("#collector-workspace")).toHaveClass(/ready/);
+  await page.getByRole("button", { name: "Working dataset", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: "Second dataset", exact: true }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as unknown as { datasetGate: { requested: boolean } }).datasetGate.requested,
+      ),
+    )
+    .toBe(true);
+  await page.goBack();
+  await expect(page.locator(".gameplay-workspace")).toBeVisible();
+  await page.evaluate(() => {
+    (window as unknown as { datasetGate: { release: boolean } }).datasetGate.release = true;
+  });
+  await expect
+    .poll(() => page.evaluate(() => window.pokerOcrDeferredLocation?.path))
+    .toBe("/collection");
+  await expect(page).toHaveURL(/\/gameplay$/);
+  await expect(page.locator(".gameplay-workspace")).toBeVisible();
+  await page.getByRole("link", { name: "OCR Data" }).click();
+  await expect(page).toHaveURL(/\/collection$/);
+  await expect(page.getByRole("button", { name: "Working dataset", exact: true })).toHaveText(
+    "Second dataset",
+  );
+  expect(errors).toEqual([]);
 });
 
 test("failed first OCR startup offers retry", async ({ page }) => {

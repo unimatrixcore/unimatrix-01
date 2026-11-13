@@ -1,5 +1,52 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { installLabFixture } from "./fixture.js";
+
+async function settledMixedHeights(page: Page) {
+  let previous = "",
+    stable = 0;
+  let heights: number[] = [];
+  await expect
+    .poll(
+      async () => {
+        const result = await page.evaluate(async () => {
+          const cards = ["mixed-0", "mixed-1"].map(
+            (key) =>
+              document.querySelector<HTMLElement>(`[data-sample-key="${key}"]`)?.parentElement,
+          );
+          const ready = cards.every(
+            (card) => card && [...card.querySelectorAll("img")].every((image) => image.complete),
+          );
+          if (ready)
+            await Promise.all(
+              cards.flatMap((card) =>
+                [...card!.querySelectorAll("img")].map((image) => image.decode()),
+              ),
+            );
+          return {
+            ready,
+            heights: cards.map((card) => card?.getBoundingClientRect().height ?? 0),
+            rows: cards.map(
+              (card) => card?.closest("[data-index]")?.getBoundingClientRect().height ?? 0,
+            ),
+          };
+        });
+        const signature = JSON.stringify(result);
+        stable =
+          result.ready && result.heights.every((height) => height > 0) && signature === previous
+            ? stable + 1
+            : 0;
+        previous = signature;
+        heights = result.heights;
+        return stable >= 3;
+      },
+      { timeout: 5000, intervals: [16, 32, 64] },
+    )
+    .toBe(true);
+  const [short, tall] = heights;
+  if (short === undefined || tall === undefined)
+    throw new Error("Expected both mixed card heights");
+  return [short, tall] as const;
+}
 
 for (const view of ["collection", "database"] as const) {
   test(`${view} wheel scrolling during eager loading`, async ({ page }) => {
@@ -271,20 +318,12 @@ test("mixed collection cards retain their own height when another page arrives",
   const tall = page.locator('[data-sample-key="mixed-1"]').locator("..");
   await expect(short).toBeVisible();
   await expect(tall).toBeVisible();
-  await page.waitForTimeout(500);
-  const before = await Promise.all([
-    short.evaluate((el) => el.getBoundingClientRect().height),
-    tall.evaluate((el) => el.getBoundingClientRect().height),
-  ]);
+  const before = await settledMixedHeights(page);
   await page.evaluate(() => {
     (window as unknown as { releaseMixedPage: () => void }).releaseMixedPage();
   });
   await expect(page.locator('#frame-list [data-list-complete="true"]')).toBeAttached();
-  await page.waitForTimeout(300);
-  const after = await Promise.all([
-    short.evaluate((el) => el.getBoundingClientRect().height),
-    tall.evaluate((el) => el.getBoundingClientRect().height),
-  ]);
+  const after = await settledMixedHeights(page);
   console.log("MIXED_HEIGHTS", JSON.stringify({ before, after }));
   expect(before[0]).toBeLessThan(before[1]);
   expect(after).toEqual(before);

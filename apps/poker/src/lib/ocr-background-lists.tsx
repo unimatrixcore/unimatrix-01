@@ -191,6 +191,7 @@ function OcrList({ options, revision }: { options: Options; revision: number }) 
       data-list-state={list.isError ? "error" : list.isSuccess ? "ready" : "pending"}
       data-list-count={list.items.length + (options.prefix?.length ?? 0)}
       data-list-complete={!list.isPending && !list.hasNextPage}
+      data-list-paused={list.pauseReason ?? ""}
       className={options.fillViewport ? "collection-virtual-list" : undefined}
     >
       {options.emptyLabel && !list.isPending && !list.isError && list.items.length === 0 && (
