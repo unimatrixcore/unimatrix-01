@@ -21,12 +21,19 @@ from PIL import Image
 TOOLS = Path(__file__).resolve().parents[1]
 if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
-from lib.datasets import DatasetRegistry, safe_filename
 from lib.ocr_contract import CONTRACT, CONTRACT_SHA256, category_for_region, validate_text
+
+
+def safe_filename(name):
+    if (not isinstance(name, str) or not name or len(name.encode()) > 255 or name in ('.', '..')
+            or '/' in name or '\\' in name or any(ord(char) < 32 or 127 <= ord(char) <= 159 for char in name)):
+        raise ValueError('Invalid crop filename')
+    return name
 
 
 def discover_datasets(tool_dir=TOOLS):
     """Read the existing registry; never call its mutating list/resolve methods."""
+    from lib.datasets import DatasetRegistry
     registry = DatasetRegistry(Path(tool_dir))
     rows = json.loads(registry.path.read_text()) if registry.path.is_file() else [
         {'id': 'legacy', 'name': 'Legacy corpus', 'archived': False}]
@@ -200,8 +207,10 @@ def _current_ai_check(row, ai_items, jobs, events_by_key):
             'result': result, 'source_event_id': expected_event if candidates else None}
 
 
-def export_dataset(dataset, output):
+def export_dataset(dataset, output, progress=None, materialize_images=True):
     dataset_id = dataset['id']
+    if progress:
+        progress('reading', collection_name=dataset.get('name', dataset_id))
     if not re.fullmatch(r'legacy|[a-f0-9]{32}', dataset_id):
         raise ValueError('Invalid dataset identity')
     directory = Path(dataset['directory']).resolve()
@@ -349,7 +358,9 @@ def export_dataset(dataset, output):
                'provenance':_capture_provenance(None,key,capture_index,captures,dataset_id)}
         row['observation_timestamp'] = _timestamp(row['provenance']['source_capture_timestamp']) or _timestamp(queued.get('created_at'))
         output_rows.append((row,queued_crops[key]))
-    for row, raw in output_rows:
+    for completed, (row, raw) in enumerate(output_rows, 1):
+        if progress:
+            progress('validating', completed=completed - 1, total=len(output_rows), collection_name=dataset.get('name', dataset_id))
         row['dataset_archived'] = bool(dataset.get('archived'))
         queued = queue_by_key.get(row['sample_key'])
         row['queue_active'] = bool(queued.get('active')) if queued else None
@@ -392,10 +403,11 @@ def export_dataset(dataset, output):
                 raise ValueError('PNG bytes do not match durable review identity')
             relative = Path('images') / dataset_id / f'{image_hash}.png'
             target = output / relative
-            target.parent.mkdir(parents=True, exist_ok=True)
-            if not target.exists():
-                target.write_bytes(raw)
-                png_count += 1
+            if materialize_images:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                if not target.exists():
+                    target.write_bytes(raw)
+                    png_count += 1
             row['image'] = relative.as_posix()
             row['image_integrity_valid'] = True
         except (ValueError, OSError) as exc:
@@ -426,6 +438,8 @@ def export_dataset(dataset, output):
             row['training_eligibility_limitations'].append('latest_current_ai_review_'+row['ai_review']['state'])
         if row['removed_unsaved_queue_observation']:
             row['training_eligibility_limitations'].append('removed_unsaved_queue_observation')
+    if progress:
+        progress('validating', completed=len(output_rows), total=len(output_rows), collection_name=dataset.get('name', dataset_id))
     summary = {'dataset_id': dataset_id, 'dataset_name': dataset.get('name'),
         'source_database': str(directory / 'data.db'), 'archived': bool(dataset.get('archived')),
         'saved_image_rows': len(images), 'review_sample_rows': len(reviews),
@@ -449,7 +463,50 @@ def export_dataset(dataset, output):
     return [row for row, _ in output_rows], excluded, summary
 
 
-def deduplicate_training_rows(rows):
+def quarantine_empty_partition_aliases(rows, baseline, reservations):
+    tokens = (reservations or {}).get('tokens', {})
+    pixel_roles = defaultdict(set)
+    for row in baseline:
+        pixel_roles[(row['category'], row['pixel_sha256'])].add(row.get('pinned_split', row.get('split')))
+    captures = defaultdict(dict)
+    for row in rows:
+        p = row.get('provenance') or {}
+        capture, stamp = p.get('capture_group'), p.get('source_capture_timestamp')
+        if capture and isinstance(stamp, (int, float)) and not isinstance(stamp, bool):
+            captures[row['dataset_id']][capture] = stamp
+        if row.get('category') and row.get('pixel_sha256') and p.get('split') in ('train', 'val', 'test'):
+            pixel_roles[(row['category'], row['pixel_sha256'])].add(p['split'])
+    sessions = {}
+    for dataset, times in captures.items():
+        previous = None; anchor = None
+        for capture, stamp in sorted(times.items(), key=lambda item: (item[1], item[0])):
+            if previous is None or stamp - previous > 600_000:
+                anchor = hashlib.sha256(capture.encode()).hexdigest()[:24]
+            sessions[capture] = f'{dataset}:inferred-session-start:{anchor}'
+            previous = stamp
+    for row in rows:
+        if row.get('label') != '' or not row.get('reviewed') or not row.get('image_integrity_valid') or row.get('ai_review_blocked'):
+            continue
+        if row.get('historical_review'):
+            continue
+        p = row.get('provenance') or {}
+        key = row.get('category'), row.get('pixel_sha256')
+        prior = set(pixel_roles[key])
+        pixel_pin = tokens.get('pixel:' + '|'.join(key)) if all(key) else None
+        if pixel_pin:
+            prior.add(pixel_pin)
+        own = {p['split']} if p.get('split') in ('train', 'val', 'test') else set()
+        groups = [p.get('capture_group'), sessions.get(p.get('capture_group'))]
+        if p.get('session_id') is not None:
+            groups.append(f"{row['dataset_id']}:session:{p['session_id']}")
+        own.update(tokens['group:' + group] for group in groups if group and 'group:' + group in tokens)
+        if prior and (not own or len(prior | own) > 1):
+            row['eligible_for_training'] = False
+            row['quarantined_empty_partition_alias'] = True
+            row['training_eligibility_limitations'].append('reviewed_empty_alias_crosses_fixed_partitions')
+
+
+def deduplicate_training_rows(rows, partition_baseline=(), split_reservations=None):
     """Keep exact-pixel aliases together and pick one auditable representative.
 
     A similarity hash or a repeated label is never a deduplication identity.
@@ -468,6 +525,7 @@ def deduplicate_training_rows(rows):
                 _timestamp((row.get('review_event') or {}).get('created_at')) or -1,
                 row['dataset_id'],row['sample_key'])
 
+    quarantine_empty_partition_aliases(rows, partition_baseline, split_reservations)
     groups = defaultdict(list)
     for row in rows:
         semantic = row.get('category') or re.sub(r'\[\d+\]','[*]',row['region_id'])
@@ -488,6 +546,8 @@ def deduplicate_training_rows(rows):
     for group_id, members in sorted(groups.items()):
         node='pixels:'+group_id
         for row in members:
+            if row.get('quarantined_empty_partition_alias'):
+                continue
             capture=row['provenance'].get('capture_group')
             if capture:join(node,'capture:'+capture)
             else:root(node)
@@ -496,6 +556,8 @@ def deduplicate_training_rows(rows):
     for group_id,members in groups.items():
         component=root('pixels:'+group_id)
         for row in members:
+            if row.get('quarantined_empty_partition_alias'):
+                continue
             split=row['provenance'].get('split')
             if split:component_splits[component].add(str(split))
             capture=row['provenance'].get('capture_group')
@@ -603,7 +665,62 @@ def apply_visual_review_manifest(rows, manifest):
     return {'records':len(values),'applied':applied,'unmatched_or_stale':len(values)-applied,'decisions':dict(decisions)}
 
 
-def export_datasets(datasets, output, visual_review_manifest=None):
+def apply_audited_baseline(rows, baseline):
+    if not baseline:
+        return None
+    index = defaultdict(list)
+    for original in baseline['records']:
+        if original.get('dataset_id') == 'legacy' or any(alias.get('dataset_id') == 'legacy' for alias in original.get('aliases', [])):
+            index[(original['category'], original['pixel_sha256'], original['file_sha256'])].append(original)
+    counts = Counter()
+    for row in rows:
+        if row['dataset_id'] != 'legacy' or row['reviewed'] or row.get('ai_review_blocked') or not row['image_integrity_valid']:
+            continue
+        matches = index.get((row['category'], row['pixel_sha256'], row['image_sha256']), [])
+        if not matches:
+            continue
+        truths = {(item['label'], item['split'], item.get('optimize', True)) for item in matches}
+        permitted = {item['label'] for item in matches}
+        permitted.update(item['original_label'] for item in matches if item.get('label_corrected') and isinstance(item.get('original_label'), str))
+        if len(truths) != 1 or row['label'] not in permitted:
+            counts['conflicting_current_labels'] += 1
+            row['training_eligibility_limitations'].append('current_label_conflicts_with_audited_baseline')
+            continue
+        original = matches[0]
+        row['source_label'] = row['label']
+        row['label'] = original['label']
+        row['label_evidence'] = 'audited_baseline'
+        row['reviewed'] = True
+        row['visually_verified'] = False
+        row['historical_review'] = {
+            'manifest_sha256': baseline['manifest_sha256'], 'audit_sha256': baseline['audit_sha256'],
+            'sample_id': original['sample_id'], 'source_label_evidence': original.get('label_evidence'),
+            'split': original['split'], 'optimize': original.get('optimize', True),
+            'file_sha256': original['file_sha256'], 'pixel_sha256': original['pixel_sha256'],
+        }
+        row['provenance']['split'] = original['split']
+        row['storage_schema_valid'] = validate_text(row['category'], row['label'], allow_blank=True)
+        row['completed_schema_valid'] = validate_text(row['category'], row['label'])
+        row['is_reviewed_negative'] = row['label'] == ''
+        row['automatic_schema_valid'] = row['completed_schema_valid'] or row['is_reviewed_negative']
+        row['schema_valid'] = row['automatic_schema_valid']
+        row['needs_contract_review'] = not row['schema_valid']
+        row['eligible_for_training'] = bool(row['schema_valid'] and original.get('optimize', True)
+                                            and not row['dataset_archived'] and not row['queue_discarded']
+                                            and not row['removed_unsaved_queue_observation'])
+        row['training_eligibility_limitations'] = [reason for reason in row['training_eligibility_limitations']
+                                                  if reason not in ('collector_label_requires_review', 'outside_current_automatic_contract')]
+        if not original.get('optimize', True):
+            row['training_eligibility_limitations'].append('audited_optimization_exclusion')
+        counts['matched'] += 1
+        counts['corrected_labels'] += row['source_label'] != row['label']
+        counts['protected_holdouts'] += original['split'] != 'train'
+        counts['optimization_excluded'] += not original.get('optimize', True)
+    return {**dict(counts), 'manifest_sha256': baseline['manifest_sha256'], 'audit_sha256': baseline['audit_sha256']}
+
+
+def export_datasets(datasets, output, visual_review_manifest=None, audited_baseline=None,
+                    partition_baseline=(), split_reservations=None, progress=None, materialize_images=True):
     output = Path(output).resolve()
     for dataset in datasets:
         directory = Path(dataset['directory']).resolve()
@@ -615,11 +732,16 @@ def export_datasets(datasets, output, visual_review_manifest=None):
     rows, excluded, summaries = [], [], []
     started = datetime.now(timezone.utc).isoformat()
     for dataset in datasets:
-        samples, dropped, summary = export_dataset(dataset, output)
+        samples, dropped, summary = export_dataset(dataset, output, progress, materialize_images)
         rows.extend(samples); excluded.extend(dropped); summaries.append(summary)
+    historical_summary=apply_audited_baseline(rows,audited_baseline)
     visual_summary=apply_visual_review_manifest(rows,visual_review_manifest)
     before_dedup_counts=Counter(row['dataset_id'] for row in rows if row['eligible_for_training'])
-    candidates,superseded,conflicts=deduplicate_training_rows(rows)
+    for row in rows:
+        row['eligible_before_exact_dedup'] = row['eligible_for_training']
+    if progress:
+        progress('deduplicating')
+    candidates,superseded,conflicts=deduplicate_training_rows(rows, partition_baseline, split_reservations)
     for dataset_summary in summaries:
         dataset_summary['training_candidates_before_cross_collection_dedup']=before_dedup_counts[dataset_summary['dataset_id']]
         dataset_summary['training_candidates']=sum(row['eligible_for_training'] for row in rows if row['dataset_id']==dataset_summary['dataset_id'])
@@ -636,6 +758,7 @@ def export_datasets(datasets, output, visual_review_manifest=None):
         (output / filename).write_text(''.join(json.dumps(row, ensure_ascii=False, sort_keys=True) + '\n' for row in values))
     summary = {'snapshot_started_at_utc': started, 'snapshot_finished_at_utc': datetime.now(timezone.utc).isoformat(),
         'validation_contract': {'version': CONTRACT['version'], 'sha256': CONTRACT_SHA256},
+        'images_materialized': materialize_images,
         'source_access': 'SQLite mode=ro/query_only, consistent read transaction per dataset; no source migrations or SQL writes',
         'limitations': ['Not a split, training run, or production approval.',
                        'Human collector events and automated visual checks are separate evidence; neither is a prospective accuracy guarantee.',
@@ -654,6 +777,7 @@ def export_datasets(datasets, output, visual_review_manifest=None):
         'ai_review_blocked_samples':sum(bool(row.get('ai_review_blocked')) for row in rows),
         'quarantine_reasons':dict(Counter(item['reason'] for item in conflicts)),
         'assistant_visual_review':visual_summary,
+        'historical_audited_baseline':historical_summary,
         'datasets': summaries,
         'manifest_sha256': {name: hashlib.sha256((output / name).read_bytes()).hexdigest() for name in manifests}}
     (output / 'summary.json').write_text(json.dumps(summary, indent=2, ensure_ascii=False) + '\n')

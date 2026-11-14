@@ -123,6 +123,12 @@ def baseline_rows(manifest, root, negative_review=None):
 
 def collection_rows(export):
     export = Path(export)
+    summary = json.loads((export / 'summary.json').read_text()) if (export / 'summary.json').exists() else {}
+    metadata_only = summary.get('images_materialized') is False
+    if metadata_only:
+        for name in ('samples.jsonl', 'training_candidates.jsonl', 'exact_pixel_conflicts.jsonl'):
+            if digest((export / name).read_bytes()) != summary.get('manifest_sha256', {}).get(name):
+                raise ValueError('Verified audit snapshot metadata changed')
     candidates = read_jsonl(export / 'training_candidates.jsonl')
     inventory = read_jsonl(export / 'samples.jsonl')
     conflicts = read_jsonl(export / 'exact_pixel_conflicts.jsonl')
@@ -139,18 +145,26 @@ def collection_rows(export):
             captures[row['dataset_id']][p['capture_group']] = stamp
     inferred = {}
     for dataset, capture_times in captures.items():
-        previous = None; session = 0
+        previous = None; session = None
         for capture, stamp in sorted(capture_times.items(), key=lambda pair: (pair[1], pair[0])):
             if previous is None or stamp - previous > 600_000:
-                session += 1
-            inferred[capture] = f'{dataset}:inferred-session:{session}'
+                session = digest(capture.encode())[:24]
+            inferred[capture] = f'{dataset}:inferred-session-start:{session}'
             previous = stamp
     rows = []
     for original in candidates:
         if not original.get('eligible_for_training'):
             raise ValueError('Candidate manifest contains an ineligible row')
-        path, raw = source_bytes(export, original, 'image', 'image_sha256')
-        pixel_hash, shape = pixels(raw)
+        if metadata_only:
+            path = (export / original['image']).resolve()
+            if not path.is_relative_to(export.resolve()) or not original.get('image_integrity_valid'):
+                raise ValueError('Audit crop identity is invalid')
+            pixel_hash, shape = original['pixel_sha256'], original['image_dimensions']
+            file_hash = original['image_sha256']
+        else:
+            path, raw = source_bytes(export, original, 'image', 'image_sha256')
+            pixel_hash, shape = pixels(raw)
+            file_hash = digest(raw)
         if pixel_hash != original['pixel_sha256'] or shape != original['image_dimensions']:
             raise ValueError('Candidate decoded-pixel identity changed')
         p = original.get('provenance') or {}
@@ -169,7 +183,7 @@ def collection_rows(export):
         if known - {'train', 'val', 'test', 'holdout', 'challenge'}:
             raise ValueError('Unrecognized named-data split annotation')
         rows.append({**deepcopy(original), 'sample_id': 'named:' + original['dataset_id'] + ':' + original['sample_key'],
-                     'origin': 'named', 'source_image': str(path), 'file_sha256': digest(raw),
+                     'origin': 'named', 'source_image': str(path), 'file_sha256': file_hash,
                      'groups': sorted(set(groups)), 'known_splits': sorted(known),
                      'fresh_session_groups': sorted(session_groups), 'optimize': True})
     return rows, blocked, {'inventory_rows': len(inventory), 'export_conflict_groups': len(conflicts),
@@ -460,8 +474,9 @@ def write_contact_sheet(output, rows, name):
     return {'path':name,'examples':len(examples),'scope':'Sampled inspection aid; not full visual verification'}
 
 
-def write_recipe(output, rows, template, checkpoint, dictionary, *, name_only, epochs, batch_size, seed):
-    output.mkdir(parents=True, exist_ok=True)
+def write_recipe(output, rows, template, checkpoint, dictionary, *, name_only, epochs, batch_size, seed, materialize=True):
+    if materialize:
+        output.mkdir(parents=True, exist_ok=True)
     config = yaml.safe_load(Path(template).read_text())
     checkpoint = Path(checkpoint).resolve()
     if not checkpoint.is_file() or not Path(dictionary).is_file():
@@ -478,6 +493,7 @@ def write_recipe(output, rows, template, checkpoint, dictionary, *, name_only, e
         if not validate_text(row['category'], row['label'], allow_blank=True):
             raise ValueError('Prepared label is outside the current storage contract')
     config['Global'].update(epoch_num=epochs, pretrained_model=str(checkpoint), checkpoints=None, seed=seed,
+        use_gpu=True, distributed=False,
         save_model_dir=str(output / 'checkpoints'), save_inference_dir=str(output / 'export'),
         character_dict_path=str(Path(dictionary).resolve()), eval_batch_step=[0, max(1, math.ceil(sum(r['split']=='train' and r['optimize'] for r in selected)/batch_size))])
     config['Optimizer']['lr']['learning_rate'] = 1e-5
@@ -490,15 +506,17 @@ def write_recipe(output, rows, template, checkpoint, dictionary, *, name_only, e
         if split == 'train':
             random.Random(seed).shuffle(part)
         label_file = output / (split + '.txt')
-        label_file.write_text(''.join(str(output.parent / r['image_path']) + '\t' + r['label'] + '\n' for r in part))
+        if materialize:
+            label_file.write_text(''.join(str(output.parent / r['image_path']) + '\t' + r['label'] + '\n' for r in part))
         config[key]['dataset'].update(data_dir=str(output.parent), label_file_list=[str(label_file)], ratio_list=[1.0])
         transforms = config[key]['dataset']['transforms']
         if any(next(iter(t)) not in {'DecodeImage','CollectorCTCLabelEncode','RecResizeImg','KeepKeys'} for t in transforms):
             raise ValueError('Template contains an unreviewed augmentation or label transform')
         config[key]['loader'].update(shuffle=split == 'train', batch_size_per_card=batch_size, drop_last=False)
-    (output / 'test.txt').write_text(''.join(str(output.parent / r['image_path']) + '\t' + r['label'] + '\n' for r in selected if r['split'] == 'test'))
-    (output / 'train.yml').write_text(yaml.safe_dump(config, sort_keys=False))
-    write_jsonl(output / 'manifest.jsonl', selected)
+    if materialize:
+        (output / 'test.txt').write_text(''.join(str(output.parent / r['image_path']) + '\t' + r['label'] + '\n' for r in selected if r['split'] == 'test'))
+        (output / 'train.yml').write_text(yaml.safe_dump(config, sort_keys=False))
+        write_jsonl(output / 'manifest.jsonl', selected)
     return {'counts': dict(Counter(r['split'] for r in selected)), 'optimized_counts': dict(Counter(r['split'] for r in selected if r['optimize'])),
             'starting_checkpoint': str(checkpoint), 'starting_checkpoint_sha256': digest(checkpoint.read_bytes()),
             'template_sha256': digest(Path(template).read_bytes()), 'global_shuffle': True,

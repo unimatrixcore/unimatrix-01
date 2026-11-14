@@ -1,4 +1,6 @@
-//! Dataset-local audited visual review. Only explicit start/resume can spend API usage.
+//! Dataset-local visual review with app-wide OpenAI settings. Only explicit start/resume spends API usage.
+#[path = "ai_review/credentials.rs"]
+mod credentials;
 #[path = "ai_review/grid.rs"]
 mod grid;
 #[path = "ai_review/protocol.rs"]
@@ -13,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
     collections::{BTreeMap, HashSet},
+    path::PathBuf,
     sync::{Arc, Mutex},
 };
 const ACTIVE: &[&str] = &["queued", "running"];
@@ -81,6 +84,7 @@ struct Config {
     key: Option<String>,
     model: String,
     running: HashSet<(String, String)>,
+    storage_error: Option<String>,
 }
 type Transport = dyn Fn(Value, &str) -> LabResult<Value> + Send + Sync;
 struct Inner {
@@ -89,35 +93,76 @@ struct Inner {
     initialized: Mutex<HashSet<String>>,
     transport: Arc<Transport>,
     background: bool,
+    credentials: Option<credentials::CredentialStore>,
 }
 #[derive(Clone)]
 pub struct AiReviewManager {
     inner: Arc<Inner>,
 }
 impl AiReviewManager {
-    pub fn new(registry: Arc<DatasetRegistry>, _model: Arc<ModelRuntime>) -> LabResult<Self> {
-        Ok(Self::with_transport(
+    pub fn new(
+        registry: Arc<DatasetRegistry>,
+        _model: Arc<ModelRuntime>,
+        config_root: PathBuf,
+    ) -> LabResult<Self> {
+        Ok(Self::with_storage(
             registry,
             Arc::new(protocol::request),
             true,
+            Some(credentials::CredentialStore::new(config_root)),
         ))
     }
+    #[cfg(test)]
     fn with_transport(
         registry: Arc<DatasetRegistry>,
         transport: Arc<Transport>,
         background: bool,
     ) -> Self {
+        Self::with_storage(registry, transport, background, None)
+    }
+    fn with_storage(
+        registry: Arc<DatasetRegistry>,
+        transport: Arc<Transport>,
+        background: bool,
+        storage: Option<credentials::CredentialStore>,
+    ) -> Self {
+        let mut config = Config {
+            key: None,
+            model: "gpt-4.1".into(),
+            running: HashSet::new(),
+            storage_error: None,
+        };
+        if let Some(storage) = &storage {
+            match storage.load().and_then(|saved| {
+                if let Some(saved) = saved {
+                    Self::validate_model(&saved.model)?;
+                    Ok(Some(credentials::SavedSettings {
+                        api_key: Self::validate_key(saved.api_key.as_deref().unwrap_or(""))?,
+                        model: saved.model,
+                    }))
+                } else {
+                    Ok(None)
+                }
+            }) {
+                Ok(Some(saved)) => {
+                    config.key = saved.api_key;
+                    config.model = saved.model;
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    config.storage_error =
+                        Some(format!("{}; save AI review settings again", error.message));
+                }
+            }
+        }
         Self {
             inner: Arc::new(Inner {
                 registry,
-                config: Mutex::new(Config {
-                    key: None,
-                    model: "gpt-4.1".into(),
-                    running: HashSet::new(),
-                }),
+                config: Mutex::new(config),
                 initialized: Mutex::new(HashSet::new()),
                 transport,
                 background,
+                credentials: storage,
             }),
         }
     }
@@ -135,7 +180,22 @@ impl AiReviewManager {
         ctx.connection()?.execute_batch("CREATE TABLE IF NOT EXISTS ai_review_jobs(id TEXT PRIMARY KEY,dataset_id TEXT NOT NULL,run_id TEXT NOT NULL,state TEXT NOT NULL,model TEXT NOT NULL,batch_size INTEGER NOT NULL,auto_correct INTEGER NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,error TEXT NOT NULL DEFAULT '',usage TEXT NOT NULL DEFAULT '{}');
 CREATE TABLE IF NOT EXISTS ai_review_items(job_id TEXT NOT NULL,ordinal INTEGER NOT NULL,batch_index INTEGER NOT NULL,queue_id INTEGER NOT NULL,sample_key TEXT NOT NULL,region_id TEXT NOT NULL,group_name TEXT NOT NULL,prior_label TEXT NOT NULL,prior_prediction_id TEXT,pixel_sha256 TEXT NOT NULL,prior_event_id INTEGER NOT NULL,state TEXT NOT NULL DEFAULT 'pending',result TEXT,PRIMARY KEY(job_id,ordinal),UNIQUE(job_id,sample_key));
 CREATE TABLE IF NOT EXISTS ai_review_batches(job_id TEXT NOT NULL,batch_index INTEGER NOT NULL,grid BLOB,blind_grid BLOB,response TEXT,verification TEXT,PRIMARY KEY(job_id,batch_index));
+CREATE TABLE IF NOT EXISTS ai_review_attempts(id INTEGER PRIMARY KEY,job_id TEXT NOT NULL,batch_index INTEGER NOT NULL,phase TEXT NOT NULL,attempt INTEGER NOT NULL,created_at INTEGER NOT NULL,response_id TEXT,model TEXT,usage TEXT NOT NULL,error TEXT NOT NULL,repairs TEXT NOT NULL,diagnostics TEXT NOT NULL);
 UPDATE ai_review_jobs SET state='interrupted',error='Collector restarted. Resume to continue.' WHERE state IN ('running','queued');")?;
+        {
+            let mut conn = ctx.connection()?;
+            let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+            let columns: Vec<String> = tx
+                .prepare("PRAGMA table_info(ai_review_attempts)")?
+                .query_map([], |row| row.get(1))?
+                .collect::<rusqlite::Result<_>>()?;
+            for (name, default) in [("repairs", "[]"), ("diagnostics", "{}")] {
+                if !columns.iter().any(|column| column == name) {
+                    tx.execute_batch(&format!("ALTER TABLE ai_review_attempts ADD COLUMN {name} TEXT NOT NULL DEFAULT '{default}'"))?;
+                }
+            }
+            tx.commit()?;
+        }
         initialized.insert(ctx.id.clone());
         Ok(())
     }
@@ -145,6 +205,9 @@ UPDATE ai_review_jobs SET state='interrupted',error='Collector restarted. Resume
             .config
             .lock()
             .map_err(|_| conflict("AI configuration lock poisoned"))?;
+        if let Some(error) = &c.storage_error {
+            return Err(super::unavailable(error.clone()));
+        }
         Ok(
             json!({"configured":c.key.as_ref().is_some_and(|k|!k.is_empty())||std::env::var("OPENAI_API_KEY").is_ok_and(|k|!k.is_empty()),"model":c.model,"batch_size":12,"max_batch_size":24}),
         )
@@ -158,34 +221,78 @@ UPDATE ai_review_jobs SET state='interrupted',error='Collector restarted. Resume
         }
         Ok(())
     }
-    pub fn configure(&self, data: &Value) -> LabResult<Value> {
-        super::object(data)?;
+    fn validate_key(key: &str) -> LabResult<Option<String>> {
+        if key.chars().count() > 1000
+            || key
+                .chars()
+                .any(|value| value.is_whitespace() || value.is_control())
         {
-            let mut c = self
-                .inner
-                .config
-                .lock()
-                .map_err(|_| conflict("AI configuration lock poisoned"))?;
-            if let Some(value) = data.get("api_key").filter(|v| !v.is_null()) {
-                let key = value
-                    .as_str()
-                    .filter(|k| k.chars().count() <= 1000 && !k.chars().any(char::is_whitespace))
-                    .ok_or_else(|| bad("API key must be a single token"))?;
-                c.key = if key.is_empty() {
-                    None
-                } else {
-                    Some(key.into())
-                };
-            }
-            if let Some(value) = data.get("model").filter(|v| !v.is_null()) {
+            return Err(bad("API key must be a single token"));
+        }
+        Ok(if key.is_empty() {
+            None
+        } else {
+            Some(key.into())
+        })
+    }
+    pub fn configure(&self, data: &Value) -> LabResult<Value> {
+        let object = super::object(data)?;
+        if object
+            .keys()
+            .any(|key| !["api_key", "model"].contains(&key.as_str()))
+        {
+            return Err(bad("Unknown AI review settings"));
+        }
+        let key = data
+            .get("api_key")
+            .filter(|value| !value.is_null())
+            .map(|value| {
+                Self::validate_key(
+                    value
+                        .as_str()
+                        .ok_or_else(|| bad("API key must be a single token"))?,
+                )
+            })
+            .transpose()?;
+        let model = data
+            .get("model")
+            .filter(|value| !value.is_null())
+            .map(|value| {
                 let model = value
                     .as_str()
                     .ok_or_else(|| bad("Invalid OpenAI model name"))?;
                 Self::validate_model(model)?;
-                c.model = model.into();
+                Ok::<_, super::LabError>(model.to_owned())
+            })
+            .transpose()?;
+        {
+            let mut config = self
+                .inner
+                .config
+                .lock()
+                .map_err(|_| conflict("AI configuration lock poisoned"))?;
+            let saved = credentials::SavedSettings {
+                api_key: key.unwrap_or_else(|| config.key.clone()),
+                model: model.unwrap_or_else(|| config.model.clone()),
+            };
+            if let Some(storage) = &self.inner.credentials {
+                storage.save(&saved)?;
             }
+            config.key = saved.api_key;
+            config.model = saved.model;
+            config.storage_error = None;
         }
         self.config()
+    }
+    pub fn handle_configuration(&self, request: &LabRequest) -> Option<LabResult<LabResponse>> {
+        if request.path != "/api/ai-review/config" {
+            return None;
+        }
+        Some(match request.method.as_str() {
+            "GET" => self.config().map(LabResponse::ok),
+            "POST" => self.configure(&request.body).map(LabResponse::ok),
+            _ => Err(super::not_found("Unknown AI review configuration route")),
+        })
     }
     fn job(conn: &Connection, ctx: &DatasetContext, id: &str) -> LabResult<Value> {
         if id.len() != 32
@@ -548,8 +655,6 @@ UPDATE ai_review_jobs SET state='interrupted',error='Collector restarted. Resume
                 .split('/')
                 .collect();
             let mut response = match (request.method.as_str(), parts.as_slice()) {
-                ("GET", ["config"]) => LabResponse::ok(self.config()?),
-                ("POST", ["config"]) => LabResponse::ok(self.configure(&request.body)?),
                 ("GET", ["jobs"]) => {
                     LabResponse::ok(json!({"job":self.status(ctx,None,request.query("run_id"))?}))
                 }
@@ -612,26 +717,122 @@ UPDATE ai_review_jobs SET state='interrupted',error='Collector restarted. Resume
             .or_else(|| std::env::var("OPENAI_API_KEY").ok())
             .filter(|k| !k.is_empty())
             .ok_or_else(|| bad("OpenAI API key is no longer configured."))?;
-        let response = (self.inner.transport)(protocol::payload(model, png, items, blind), &key)?;
-        if !self.still_running(ctx, id)? {
-            return Ok(None);
-        }
-        let mut parsed = serde_json::to_value(protocol::parse(&response, items)?)?;
-        let mut identity = serde_json::Map::new();
-        for field in ["id", "model"] {
-            if let Some(value) = response[field].as_str() {
-                identity.insert(
-                    field.into(),
-                    json!(value.chars().take(200).collect::<String>()),
-                );
+        let mut feedback = None;
+        for attempt in 0..3 {
+            if !self.still_running(ctx, id)? {
+                return Ok(None);
+            }
+            {
+                let _operation = ctx.lock_operation()?;
+                let conn = ctx.connection()?;
+                let job = Self::job(&conn, ctx, id)?;
+                if !ACTIVE.contains(&job["state"].as_str().unwrap_or("")) {
+                    return Ok(None);
+                }
+                self.active_run(&conn, ctx, job["run_id"].as_str().unwrap())?;
+            }
+            let mut payload = protocol::payload(model, png, items, blind);
+            if let Some(error) = &feedback {
+                if let Some(prompt) = payload["input"][0]["content"][0]["text"].as_str() {
+                    payload["input"][0]["content"][0]["text"]=json!(format!("{prompt}\nYour previous response failed validation: {error} Return the complete corrected JSON with exactly the requested IDs. Preserve the image transcription; do not invent missing text. Text must be at most 200 characters, reason at most 1000; clear requires nonempty text and blank requires empty text."));
+                }
+            }
+            let response = match (self.inner.transport)(payload, &key) {
+                Ok(response) => response,
+                Err(error) => {
+                    self.record_attempt(
+                        ctx,
+                        id,
+                        items,
+                        blind,
+                        attempt,
+                        None,
+                        Some(&error.message),
+                        &[],
+                    )?;
+                    if !protocol::retryable_transport(&error.message) || attempt == 2 {
+                        return Err(error);
+                    }
+                    if !self.retry_pause(ctx, id, attempt)? {
+                        return Ok(None);
+                    }
+                    continue;
+                }
+            };
+            let (response, repairs) = protocol::repair_format(&response);
+            let parsed = protocol::parse(&response, items);
+            self.record_attempt(
+                ctx,
+                id,
+                items,
+                blind,
+                attempt,
+                Some(&response),
+                parsed.as_ref().err().map(|error| error.message.as_str()),
+                &repairs,
+            )?;
+            if !self.still_running(ctx, id)? {
+                return Ok(None);
+            }
+            match parsed {
+                Ok(readings) => {
+                    let mut parsed = serde_json::to_value(readings)?;
+                    let mut identity = serde_json::Map::new();
+                    for field in ["id", "model"] {
+                        if let Some(value) = response[field].as_str() {
+                            identity.insert(
+                                field.into(),
+                                json!(value.chars().take(200).collect::<String>()),
+                            );
+                        }
+                    }
+                    parsed
+                        .as_object_mut()
+                        .unwrap()
+                        .insert("_response".into(), Value::Object(identity));
+                    parsed["_response"]["format_repairs"] = json!(repairs);
+                    return Ok(Some(parsed));
+                }
+                Err(error) => {
+                    if error.message == "OpenAI declined this batch. No labels were changed."
+                        || attempt == 2
+                    {
+                        return Err(error);
+                    }
+                    feedback = Some(error.message);
+                    if !self.retry_pause(ctx, id, attempt)? {
+                        return Ok(None);
+                    }
+                }
             }
         }
-        parsed
-            .as_object_mut()
-            .unwrap()
-            .insert("_response".into(), Value::Object(identity));
-        let conn = ctx.connection()?;
-        let job = Self::job(&conn, ctx, id)?;
+        unreachable!()
+    }
+    fn retry_pause(&self, ctx: &DatasetContext, id: &str, attempt: usize) -> LabResult<bool> {
+        for _ in 0..(20 << attempt) {
+            if !self.still_running(ctx, id)? {
+                return Ok(false);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        self.still_running(ctx, id)
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn record_attempt(
+        &self,
+        ctx: &DatasetContext,
+        id: &str,
+        items: &[Item],
+        blind: bool,
+        attempt: usize,
+        response: Option<&Value>,
+        error: Option<&str>,
+        repairs: &[&str],
+    ) -> LabResult<()> {
+        let mut conn = ctx.connection()?;
+        let tx = conn.transaction()?;
+        let response = response.cloned().unwrap_or(Value::Null);
+        let job = Self::job(&tx, ctx, id)?;
         let mut usage: Value = serde_json::from_str(job["usage"].as_str().unwrap())?;
         for field in ["input_tokens", "output_tokens", "total_tokens"] {
             if let Some(value) = response["usage"][field].as_u64() {
@@ -639,18 +840,22 @@ UPDATE ai_review_jobs SET state='interrupted',error='Collector restarted. Resume
             }
         }
         usage["requests"] = json!(usage["requests"].as_u64().unwrap_or(0).saturating_add(1));
-        conn.execute(
-            "UPDATE ai_review_jobs SET usage=? WHERE id=?",
-            params![usage.to_string(), id],
+        tx.execute("INSERT INTO ai_review_attempts(job_id,batch_index,phase,attempt,created_at,response_id,model,usage,error,repairs,diagnostics) VALUES(?,?,?,?,?,?,?,?,?,?,?)",params![id,items.first().map(|item|item.batch_index).unwrap_or(0),if blind {"verification"}else{"review"},(attempt+1) as i64,now_ms(),response["id"].as_str().map(|v|v.chars().take(200).collect::<String>()),response["model"].as_str().map(|v|v.chars().take(200).collect::<String>()),response["usage"].to_string(),error.unwrap_or("").chars().take(400).collect::<String>(),serde_json::to_string(repairs)?,protocol::diagnostics(&response).to_string()])?;
+        tx.execute(
+            "UPDATE ai_review_jobs SET usage=?,updated_at=? WHERE id=?",
+            params![usage.to_string(), now_ms(), id],
         )?;
-        Ok(Some(parsed))
+        tx.commit()?;
+        Ok(())
     }
     fn run_job(&self, ctx: &Arc<DatasetContext>, id: &str) {
         if let Err(error) = self.run_inner(ctx, id) {
-            let message = if error.status == 400 {
-                error.message
-            } else {
+            let message = if error.status == 409 {
                 "Review stopped because its dataset, run, or source changed. Resume after checking the session.".into()
+            } else if error.status >= 500 {
+                format!("AI review stopped because of a local processing or storage error: {}. Resume to retry.",error.message)
+            } else {
+                error.message
             };
             if let Ok(conn) = ctx.connection() {
                 let _=conn.execute("UPDATE ai_review_jobs SET state='failed',error=?,updated_at=? WHERE id=? AND state IN ('running','queued')",params![message.chars().take(400).collect::<String>(),now_ms(),id]);
@@ -972,6 +1177,203 @@ mod tests {
         }
     }
     #[test]
+    fn old_attempt_audit_table_migrates_before_resume_and_preserves_history() {
+        let f = Fixture::new("Alice", "clear");
+        let id = f.seed("Alice");
+        f.manager.cancel(&f.ctx, &id).unwrap();
+        {
+            let conn = f.ctx.connection().unwrap();
+            conn.execute_batch("DROP TABLE ai_review_attempts; CREATE TABLE ai_review_attempts(id INTEGER PRIMARY KEY,job_id TEXT NOT NULL,batch_index INTEGER NOT NULL,phase TEXT NOT NULL,attempt INTEGER NOT NULL,created_at INTEGER NOT NULL,response_id TEXT,model TEXT,usage TEXT NOT NULL,error TEXT NOT NULL);").unwrap();
+            conn.execute("INSERT INTO ai_review_attempts(job_id,batch_index,phase,attempt,created_at,usage,error) VALUES(?,0,'review',1,0,'{}','historical failure')",[&id]).unwrap();
+        }
+        let restarted = AiReviewManager::with_transport(
+            f.manager.inner.registry.clone(),
+            f.manager.inner.transport.clone(),
+            false,
+        );
+        restarted.ensure(&f.ctx).unwrap();
+        restarted.ensure(&f.ctx).unwrap();
+        restarted.configure(&json!({"api_key":"key"})).unwrap();
+        restarted.resume(&f.ctx, &id).unwrap();
+        restarted.run_job(&f.ctx, &id);
+        assert_eq!(
+            restarted.status(&f.ctx, Some(&id), None).unwrap()["state"],
+            "completed"
+        );
+        let conn = f.ctx.connection().unwrap();
+        let attempts = rows(
+            &conn,
+            "SELECT repairs,diagnostics,error FROM ai_review_attempts WHERE job_id=? ORDER BY id",
+            [&id],
+        )
+        .unwrap();
+        assert_eq!(attempts.len(), 2);
+        assert_eq!(attempts[0]["error"], "historical failure");
+        assert_eq!(attempts[0]["repairs"], "[]");
+        assert_eq!(attempts[0]["diagnostics"], "{}");
+        assert_eq!(attempts[1]["error"], "");
+        assert_ne!(attempts[1]["diagnostics"], "{}");
+    }
+    #[test]
+    fn internal_audit_error_is_not_reported_as_changed_source() {
+        let f = Fixture::new("Alice", "clear");
+        let id = f.seed("Alice");
+        f.ctx.connection().unwrap().execute_batch("CREATE TRIGGER fixture_audit_failure BEFORE INSERT ON ai_review_attempts BEGIN SELECT RAISE(ABORT,'fixture audit storage failure'); END;").unwrap();
+        f.manager.run_job(&f.ctx, &id);
+        let job = f.manager.status(&f.ctx, Some(&id), None).unwrap();
+        assert_eq!(job["state"], "failed");
+        assert!(job["error"]
+            .as_str()
+            .unwrap()
+            .contains("fixture audit storage failure"));
+        assert!(!job["error"].as_str().unwrap().contains("source changed"));
+        assert_eq!(job["checked"], 0);
+    }
+    #[test]
+    fn malformed_transcription_retries_with_feedback_and_audits_all_usage() {
+        let f = Fixture::new("Alice", "clear");
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counter = calls.clone();
+        let transport = Arc::new(move |payload: Value, _: &str| {
+            let attempt = counter.fetch_add(1, Ordering::SeqCst);
+            if attempt > 0 {
+                assert!(payload["input"][0]["content"][0]["text"]
+                    .as_str()
+                    .unwrap()
+                    .contains("clear crops must have nonempty text"));
+            }
+            Ok(
+                json!({"id":format!("attempt-{attempt}"),"usage":{"input_tokens":3,"output_tokens":2,"total_tokens":5},"output_text":json!({"items":[{"id":"0","text":if attempt==0 {""}else{"Alice"},"clarity":"clear","reason":"Pixels"}]}).to_string()}),
+            )
+        });
+        let manager =
+            AiReviewManager::with_transport(f.manager.inner.registry.clone(), transport, false);
+        manager.ensure(&f.ctx).unwrap();
+        manager.configure(&json!({"api_key":"key"})).unwrap();
+        let id = f.seed("Alice");
+        manager.run_job(&f.ctx, &id);
+        let job = manager.status(&f.ctx, Some(&id), None).unwrap();
+        assert_eq!(job["state"], "completed");
+        assert_eq!(job["checked"], 1);
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        assert_eq!(job["usage"]["requests"], 2);
+        assert_eq!(job["usage"]["total_tokens"], 10);
+        let conn = f.ctx.connection().unwrap();
+        let attempts = rows(
+            &conn,
+            "SELECT * FROM ai_review_attempts WHERE job_id=? ORDER BY id",
+            [&id],
+        )
+        .unwrap();
+        assert_eq!(attempts.len(), 2);
+        assert!(attempts[0]["error"]
+            .as_str()
+            .unwrap()
+            .contains("nonempty text"));
+        assert_eq!(attempts[1]["error"], "");
+        assert!(!attempts[0]["diagnostics"]
+            .as_str()
+            .unwrap()
+            .contains("Alice"));
+    }
+    #[test]
+    fn malformed_transcription_exhaustion_preserves_labels_and_partial_batch() {
+        let f = Fixture::new("", "clear");
+        let id = f.seed("Alice");
+        f.manager.run_job(&f.ctx, &id);
+        let job = f.manager.status(&f.ctx, Some(&id), None).unwrap();
+        assert_eq!(job["state"], "failed");
+        assert_eq!(job["checked"], 0);
+        assert_eq!(job["usage"]["requests"], 3);
+        assert_eq!(f.calls.load(Ordering::SeqCst), 3);
+        let conn = f.ctx.connection().unwrap();
+        assert_eq!(
+            conn.query_row("SELECT label FROM queue_items", [], |r| r
+                .get::<_, String>(0))
+                .unwrap(),
+            "Alice"
+        );
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM label_review_events", [], |r| r
+                .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM ai_review_batches WHERE response IS NOT NULL",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+            0
+        );
+    }
+    #[test]
+    fn repairs_only_unambiguous_format_without_another_provider_request() {
+        for form in ["fence", "envelope", "array"] {
+            let f = Fixture::new("Alice", "clear");
+            let calls = Arc::new(AtomicUsize::new(0));
+            let counter = calls.clone();
+            let text =
+                json!({"items":[{"id":"0","text":"Alice","clarity":"clear","reason":"Pixels"}]});
+            let output = match form {
+                "fence" => format!("```json\n{text}\n```"),
+                "envelope" => json!({"result":text}).to_string(),
+                _ => text["items"].to_string(),
+            };
+            let transport = Arc::new(move |_: Value, _: &str| {
+                counter.fetch_add(1, Ordering::SeqCst);
+                Ok(json!({"output_text":output}))
+            });
+            let manager =
+                AiReviewManager::with_transport(f.manager.inner.registry.clone(), transport, false);
+            manager.ensure(&f.ctx).unwrap();
+            manager.configure(&json!({"api_key":"key"})).unwrap();
+            let id = f.seed("Alice");
+            manager.run_job(&f.ctx, &id);
+            assert_eq!(
+                manager.status(&f.ctx, Some(&id), None).unwrap()["state"],
+                "completed"
+            );
+            assert_eq!(calls.load(Ordering::SeqCst), 1);
+            let repairs: String = f
+                .ctx
+                .connection()
+                .unwrap()
+                .query_row("SELECT repairs FROM ai_review_attempts", [], |r| r.get(0))
+                .unwrap();
+            assert_ne!(repairs, "[]");
+        }
+    }
+    #[test]
+    fn authentication_and_refusal_fail_without_automatic_retry() {
+        for refusal in [false, true] {
+            let f = Fixture::new("Alice", "clear");
+            let calls = Arc::new(AtomicUsize::new(0));
+            let counter = calls.clone();
+            let transport = Arc::new(move |_: Value, _: &str| {
+                counter.fetch_add(1, Ordering::SeqCst);
+                if refusal {
+                    Ok(json!({"output":[{"content":[{"type":"refusal"}]}]}))
+                } else {
+                    Err(bad("OpenAI rejected the API key or model access."))
+                }
+            });
+            let manager =
+                AiReviewManager::with_transport(f.manager.inner.registry.clone(), transport, false);
+            manager.ensure(&f.ctx).unwrap();
+            manager.configure(&json!({"api_key":"key"})).unwrap();
+            let id = f.seed("Alice");
+            manager.run_job(&f.ctx, &id);
+            assert_eq!(
+                manager.status(&f.ctx, Some(&id), None).unwrap()["state"],
+                "failed"
+            );
+            assert_eq!(calls.load(Ordering::SeqCst), 1);
+        }
+    }
+    #[test]
     fn explicit_start_snapshot_and_independent_correction_are_audited() {
         let f = Fixture::new("Alice", "clear");
         assert_eq!(f.calls.load(Ordering::SeqCst), 0);
@@ -1089,13 +1491,36 @@ mod tests {
             std::slice::from_ref(&item)
         )
         .is_err());
-        assert!(protocol::parse(&response(json!([valid])), &[item]).is_ok());
+        assert!(protocol::parse(&response(json!([valid])), std::slice::from_ref(&item)).is_ok());
+        for malformed in [
+            json!({"items":[{"id":"other","text":"Away","clarity":"clear","reason":"Pixels"}]}),
+            json!({"items":[{"id":"7","text":123,"clarity":"clear","reason":"Pixels"}]}),
+            json!({"items":[{"id":"7","text":"Away","clarity":"blank","reason":"Pixels"}]}),
+        ] {
+            let wrapped = json!({"output_text":format!("```json\n{malformed}\n```")});
+            let (repaired, _) = protocol::repair_format(&wrapped);
+            assert!(protocol::parse(&repaired, std::slice::from_ref(&item)).is_err());
+        }
+        let exact =
+            json!({"items":[{"id":"7","text":" Away ","clarity":"clear","reason":"Pixels"}]});
+        let (repaired, _) =
+            protocol::repair_format(&json!({"output_text":format!("```json\n{exact}\n```")}));
+        assert_eq!(
+            protocol::parse(&repaired, &[item]).unwrap()["7"]["text"],
+            " Away "
+        );
     }
     #[test]
-    fn key_remains_memory_only_and_invalid_configuration_fails() {
+    fn key_is_not_exposed_in_responses_or_job_records_and_invalid_configuration_fails() {
         let f = Fixture::new("Alice", "clear");
         assert!(f.manager.configure(&json!({"api_key":"bad key"})).is_err());
         assert!(f.manager.configure(&json!({"model":"../model"})).is_err());
+        let original = f.manager.inner.config.lock().unwrap().key.clone();
+        assert!(f
+            .manager
+            .configure(&json!({"api_key":"replacement-fixture-key","model":"../invalid"}))
+            .is_err());
+        assert_eq!(f.manager.inner.config.lock().unwrap().key, original);
         assert!(!f
             .manager
             .config()
@@ -1237,7 +1662,7 @@ mod tests {
         assert_eq!(job["state"], "completed");
         assert_eq!(job["corrected"], 1);
         assert_eq!(count.load(Ordering::SeqCst), 3);
-        assert_eq!(job["usage"]["requests"], 2);
+        assert_eq!(job["usage"]["requests"], 3);
         assert_eq!(job["recent"][0]["first_response"]["id"], "response-0");
         assert_eq!(
             job["recent"][0]["verification_response"]["id"],
@@ -1408,6 +1833,29 @@ mod tests {
             f.manager.status(&f.ctx, Some(&id), None).unwrap()["corrected"],
             1
         );
+    }
+    #[test]
+    fn cancelled_call_waiting_for_dataset_operation_does_not_spend() {
+        use std::{sync::mpsc, time::Duration};
+        let f = Fixture::new("Alice", "clear");
+        let id = f.seed("A1ice");
+        let operation = f.ctx.lock_operation().unwrap();
+        let manager = f.manager.clone();
+        let ctx = f.ctx.clone();
+        let worker_id = id.clone();
+        let (entered, waiting) = mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            entered.send(()).unwrap();
+            manager.call(&ctx, &worker_id, "fixture", &[], &[], false)
+        });
+        waiting.recv_timeout(Duration::from_secs(1)).unwrap();
+        std::thread::sleep(Duration::from_millis(30));
+        assert!(!worker.is_finished());
+        assert_eq!(f.calls.load(Ordering::SeqCst), 0);
+        f.manager.cancel(&f.ctx, &id).unwrap();
+        drop(operation);
+        assert!(worker.join().unwrap().unwrap().is_none());
+        assert_eq!(f.calls.load(Ordering::SeqCst), 0);
     }
     #[test]
     fn background_application_waits_for_dataset_edit_and_detects_its_conflict() {

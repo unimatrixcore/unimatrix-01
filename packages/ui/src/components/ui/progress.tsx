@@ -12,6 +12,7 @@ function Progress({
 }: React.ComponentProps<typeof ProgressPrimitive.Root>) {
   return (
     <ProgressPrimitive.Root
+      value={value ?? null}
       data-slot="progress"
       className={cn(
         "relative flex h-1.5 w-full items-center overflow-x-hidden rounded-full bg-muted",

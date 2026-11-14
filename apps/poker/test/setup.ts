@@ -38,6 +38,7 @@ vi.stubGlobal("IntersectionObserver", IntersectionObserverStub);
 HTMLElement.prototype.scrollIntoView = () => {};
 vi.stubGlobal("PointerEvent", MouseEvent);
 HTMLElement.prototype.setPointerCapture = () => {};
+HTMLElement.prototype.hasPointerCapture = () => false;
 HTMLElement.prototype.releasePointerCapture = () => {};
 SVGElement.prototype.setPointerCapture = () => {};
 SVGElement.prototype.releasePointerCapture = () => {};

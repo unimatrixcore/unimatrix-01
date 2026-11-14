@@ -2,7 +2,7 @@ import contract from "../ocr-contract.json" with { type: "json" };
 
 export const pokerOcrContract = contract;
 export const pokerOcrContractSha256 =
-  "199f3970150c4d84e4510e47e91e22556c1fbd07e60b013ceac45055b2bdf7d0";
+  "1b8d39e829724c061055fe173c0ad0a1e023f8f4b7f6349ea89921074b8559bf";
 export type PokerOcrCategory = keyof typeof contract.categories;
 const rules = contract.region_rules.map((rule) => ({
   category: rule.category as PokerOcrCategory,

@@ -6,14 +6,16 @@
       "target": "public/static/js/app.js",
       "sha256": "b236939243a91e45ea5e4612a595a519fb856e0f095df0fe74bc786ffe4a0267",
       "mode": "adapted",
-      "targetSha256": "f11bf7e16739b5b5be538858806af490da5259fdfbfdbb387fff08211a56e85d"
+      "targetSha256": "2e1c0739ca75305e7797d8ef56b8438313675930c5996c01b264c3de5fa7c458",
+      "adaptation": "Reconnect collection recording to its existing lease after reload; reject stale reconnects, contain storage failures, revoke abandoned leases on explicit stop/navigation, and preserve capture intervals and attached leases across reload."
     },
     {
       "source": "static/js/lib/ai_review.js",
       "target": "public/static/js/lib/ai_review.js",
       "sha256": "e99c552ce15953624a0a4e52187e80ef9b53656741cc934ba50eda44002b0d07",
       "mode": "adapted",
-      "targetSha256": "5db53ba7d6b62130847a424d5350a549e352520072d524208385d365b797f618"
+      "targetSha256": "9884814b2a86d9eed2dd4537f5c5f367bffb6f94e518e347e86adf38459ba933",
+      "adaptation": "Read global OpenAI settings and apply only the latest configuration response; show review grids directly and restore panel visibility without starting provider work."
     },
     {
       "source": "static/js/lib/capture_animation.js",
@@ -46,7 +48,8 @@
       "target": "public/static/js/lib/scroll_position.js",
       "sha256": "7ea82f9b615c1ac4c389cda6a906d572ab3c0290e18b84a8ea6cc219606c7f01",
       "mode": "adapted",
-      "targetSha256": "9a8d6ce244ba5964b9b4e2856c6d5d5497ddcac8b9e711ed1317d78948a47ece"
+      "targetSha256": "071c0c5c5615fb354c1ad60b7cb5bb82cf72ef34b555015c38d02b5d7d965374",
+      "adaptation": "Preserve the current OCR page and viewport across rendering and reload; mirror the same bounded page snapshot in durable browser storage for native restarts."
     },
     {
       "source": "static/js/lib/session_review.js",
@@ -79,13 +82,17 @@
       "source": "static/js/lib/watch_capture.js",
       "target": "public/static/js/lib/watch_capture.js",
       "sha256": "0c6b7e030b1c8fb494d7b6aac8aed05f43ead3287ac67c2e3ec2a71ef5fbc90b",
-      "mode": "preserved"
+      "mode": "adapted",
+      "targetSha256": "809eb2bc5f898037c893ded3edc9ad97d66a94934555f5d40c80c46666d490e3",
+      "adaptation": "Detach page timers without closing attached native leases; close late unattached opens and resume an existing lease with unchanged settings."
     },
     {
       "source": "static/css/ai-review.css",
       "target": "src/collector/legacy/ai-review.css",
       "sha256": "d9daa4f72198b92ea9a21b1379f5c48ac8b40495cc0602c6c786e4f5f6c6c266",
-      "mode": "preserved"
+      "mode": "adapted",
+      "targetSha256": "343963803aee86d06bf123ae3573e7ec10e075bd438bd967e3eb03cbddd6f128",
+      "adaptation": "Keep review progress, batch size and grid visible while global app Settings owns OpenAI configuration; remove disclosure and instructional-copy layout."
     },
     {
       "source": "static/css/capture-animation.css",
@@ -152,7 +159,8 @@
       "target": "src/collector/gameplay.tsx",
       "sha256": "30ac4ed3bc466dfe9b99c1c269b5d257dec03771246eb20ef70868c826b8bbb0",
       "mode": "adapted",
-      "targetSha256": "8794f75f9230c175c367943f9803bef1bc83f4199538798a87de013d777a09a2"
+      "targetSha256": "0b4c627f4ad14cead3562f6c9e25ca4c01eea1fc7d5b12bd8f49e4d93ad5682d",
+      "adaptation": "Restore recording sessions across reload while rejecting stale reconnection results after selection changes; preserve explicit pause/stop/navigation and saved recording, view, and hand."
     },
     {
       "source": "collector_ui/gameplay_preview.css",
@@ -206,7 +214,8 @@
       "target": "src/collector/tool_shell.tsx",
       "sha256": "2db9a3d8406c578cb684b10cb213addd8c7d609f3ccd4dd6dc115a843d14729e",
       "mode": "adapted",
-      "targetSha256": "58767d94ec78defd3b38fe226a3e9c2d767e56e63b2459c4c0caf0bddf7fda84"
+      "targetSha256": "275c63ced5649c56cc23db50e5d009402ec165a0db34c2e1f4c8d5176d50028d",
+      "adaptation": "Preserve native workspaces and recording lifecycle across navigation; keep the original footer layout for global Settings and retain each workspace viewport across native restarts."
     },
     {
       "source": "collector_ui/workspace_topbar.css",

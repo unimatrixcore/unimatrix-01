@@ -166,9 +166,66 @@ async function initDatasets() {
   document.getElementById('label-save').onclick = saveCurrentAndNext;
 }
 let captureWatch = null, manualCaptureBusy = false, watchNeedsRecovery = false, capturePresentationGeneration = 0;
+const WATCH_RECONNECT_KEY = 'poker:collection-recording';
+const WATCH_INTERVAL_KEY = 'poker:capture-interval-seconds';
+let captureReconnectGeneration = 0, collectorProtectionGeneration = 0, pendingCaptureReconnect = null;
+function forgetCaptureWatch(expected = null) {
+  try {
+    if (expected) {const saved=JSON.parse(window.sessionStorage?.getItem(WATCH_RECONNECT_KEY) || 'null');if(saved?.lease!==expected.lease || saved?.datasetId!==expected.context.datasetId)return;}
+    window.sessionStorage?.removeItem(WATCH_RECONNECT_KEY);
+  } catch {}
+}
+function closePendingCaptureReconnect(pending) {
+  pending.cancelled = true;
+  if (pending.closed) return Promise.resolve();
+  if (pending.closing) return pending.closing;
+  pending.closing = (async () => {
+    const response = await datasetFetch('/api/watch/stop',{method:'POST',datasetId:pending.context.datasetId,keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify({lease_id:pending.lease})});
+    if (!response.ok) throw new Error('Could not stop the saved collection recording. Retry Stop.');
+    pending.closed = true;
+    if (pendingCaptureReconnect === pending) pendingCaptureReconnect = null;
+    forgetCaptureWatch(pending);
+    void Promise.resolve(pending.protection).catch(()=>{}).then(async()=>{
+      if (pending.claim !== collectorProtectionGeneration) return;
+      await window.pokerSetLauncherRecording?.('collector',false);
+      if (pending.claim === collectorProtectionGeneration) collectorProtectionGeneration++;
+    }).catch(error=>showToast(error.message,'error'));
+  })().catch(error=>{pending.closing=null;throw error;});
+  return pending.closing;
+}
+function rememberCaptureWatch(status) {
+  try {
+    if (status.active && status.lease) {
+      if (pendingCaptureReconnect?.lease === status.lease && pendingCaptureReconnect.context.datasetId === status.context.datasetId) pendingCaptureReconnect = null;
+      window.sessionStorage?.setItem(WATCH_RECONNECT_KEY,JSON.stringify({lease:status.lease,datasetId:status.context.datasetId,monitor:status.context.monitor,settings:status.settings}));
+    } else if (!status.active && !pendingCaptureReconnect) forgetCaptureWatch();
+  } catch {}
+  renderWatchStatus(status);
+}
+async function reconnectCaptureWatch() {
+  if (pendingCaptureReconnect) return;
+  const token = ++captureReconnectGeneration;
+  let saved;
+  try {saved=JSON.parse(window.sessionStorage?.getItem(WATCH_RECONNECT_KEY) || 'null');} catch {forgetCaptureWatch();return;}
+  if (!saved || window.location.pathname !== '/collection' || saved.datasetId !== activeDatasetId) return;
+  if (!Array.from(monitorSelect.options).some(option=>option.value===saved.monitor)) {forgetCaptureWatch();return;}
+  monitorSelect.value=saved.monitor;
+  document.getElementById('watch-interval').value=String(saved.settings.intervalSeconds);
+  watchNeedsRecovery=true;
+  const captured = captureContext(), claim = ++collectorProtectionGeneration;
+  const pending = pendingCaptureReconnect = {lease:saved.lease,context:captured,claim,closed:false,closing:null,protection:null};
+  pending.protection = Promise.resolve(window.pokerSetLauncherRecording?.('collector',true));
+  await pending.protection;
+  if (token !== captureReconnectGeneration || !canWatchCapture(captured)) {
+    if (!pending.cancelled) await closePendingCaptureReconnect(pending);
+    else if (pending.closing) await pending.closing;
+    return;
+  }
+  await captureWatch.start(saved.settings,saved.lease);
+}
 function captureContext() { return {datasetId:activeDatasetId,epoch:datasetEpoch,monitor:monitorSelect?.value}; }
 function captureContextMatches(value) { return value.datasetId === activeDatasetId && value.epoch === datasetEpoch && value.monitor === monitorSelect?.value && !datasetSwitching; }
-function canWatchCapture(value) { return captureContextMatches(value) && currentView === 'collection' && !manualCaptureBusy && !isRecovering && !labelingUnlocked && !reviewUnlocked && !!value.monitor; }
+function canWatchCapture(value) { return window.location.pathname === '/collection' && captureContextMatches(value) && currentView === 'collection' && !manualCaptureBusy && !isRecovering && !labelingUnlocked && !reviewUnlocked && !!value.monitor; }
 function queuedCropCount() {
   if(queueMode) return queueSummary?.total || 0;
   const keys = new Set(pool.map(item => `${item.id}:${item.phash || sampleKey(item)}`));
@@ -184,11 +241,14 @@ function mergeWatchFrames(incoming, render = true) {
   if (render) renderFrames();
 }
 async function stopCaptureWatch(reason = 'Stopped') {
+  captureReconnectGeneration++;
   capturePresentationGeneration++;
   window.CollectorCaptureAnimation?.cancel();
-  if (!captureWatch) return;
-  await captureWatch.stop(reason);
-  await captureWatch.whenIdle();
+  const pending = pendingCaptureReconnect;
+  const stopped = captureWatch?.stop(reason);
+  if (pending) await closePendingCaptureReconnect(pending);
+  await stopped;
+  await captureWatch?.whenIdle();
 }
 async function stopAndRecoverWatch(reason = 'Stopped') {
   const captured = captureContext(), recover = watchNeedsRecovery || captureWatch?.isActive() || captureWatch?.isBusy();
@@ -242,6 +302,11 @@ function setRecordingSettingsOpen(open) {
 }
 function initCaptureToolbar() {
   const settings=document.getElementById('watch-settings'),toggle=settings?.querySelector?.('[data-recording-source-trigger], summary');
+  const interval=document.getElementById('watch-interval');
+  try {
+    const saved=window.localStorage?.getItem(WATCH_INTERVAL_KEY);
+    if (['1','2','5'].includes(saved)) interval.value=saved;
+  } catch {}
   document.getElementById('capture-once').onclick=captureFrame;
   const refresh=document.getElementById('capture-sources-refresh');
   if (refresh) refresh.onclick=() => refreshCaptureSources().catch(error => showToast(error.message,'error'));
@@ -250,7 +315,10 @@ function initCaptureToolbar() {
     if (text) text.textContent=`Every ${document.getElementById('watch-interval').value}s · Saved as you capture`;
     renderCapturePresentation();
   };
-  for (const id of ['watch-interval']) document.getElementById(id).onchange=summary;
+  interval.onchange=() => {
+    try { if (['1','2','5'].includes(interval.value)) window.localStorage?.setItem(WATCH_INTERVAL_KEY,interval.value); } catch {}
+    summary();
+  };
   document.getElementById('collection-previous').onclick=()=>loadCollectionPage(collectionPrevious.at(-1),'previous').catch(error=>showToast(error.message,'error'));
   document.getElementById('collection-next').onclick=()=>loadCollectionPage(collectionNextCursor,'next').catch(error=>showToast(error.message,'error'));
   document.getElementById('btn-next-batch').onclick=()=>commitQueueBatch(true);
@@ -271,16 +339,32 @@ function initCaptureToolbar() {
 }
 function initCaptureWatch() {
   initCaptureToolbar();
+  window.addEventListener('poker-recording-protection-unavailable',()=>showToast('Restart Poker Lab after recording to enable restart protection.','info'));
   captureWatch = window.CollectorWatchCapture.create({
-    getContext:captureContext,canRun:canWatchCapture,queuedCount:queuedCropCount,onStatus:renderWatchStatus,
+    getContext:captureContext,canRun:canWatchCapture,queuedCount:queuedCropCount,onStatus:rememberCaptureWatch,
     open:async (settings,captured) => {
       watchNeedsRecovery = true;
       await saveSessionProgress(true);
       if (!canWatchCapture(captured)) throw new Error('Collection changed before watch started');
-      return (await datasetFetch('/api/watch/start',{method:'POST',datasetId:captured.datasetId,headers:{'Content-Type':'application/json'},body:JSON.stringify({monitor:captured.monitor,interval_seconds:settings.intervalSeconds,queue_mode:'paged'})})).json();
+      const claim = ++collectorProtectionGeneration;
+      await window.pokerSetLauncherRecording?.('collector',true);
+      try {
+        const opened = await (await datasetFetch('/api/watch/start',{method:'POST',datasetId:captured.datasetId,headers:{'Content-Type':'application/json'},body:JSON.stringify({monitor:captured.monitor,interval_seconds:settings.intervalSeconds,queue_mode:'paged'})})).json();
+        if (!opened.lease_id) throw new Error('Watch lease was not created');
+        return opened;
+      } catch (error) {
+        if (claim === collectorProtectionGeneration) {
+          try {await window.pokerSetLauncherRecording?.('collector',false);} catch {}
+        }
+        throw error;
+      }
     },
     scan:async (lease,captured) => (await datasetFetch('/api/watch/tick',{method:'POST',datasetId:captured.datasetId,headers:{'Content-Type':'application/json'},body:JSON.stringify({lease_id:lease})})).json(),
-    close:async (lease,captured) => datasetFetch('/api/watch/stop',{method:'POST',datasetId:captured.datasetId,keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify({lease_id:lease})}),
+    close:async (lease,captured) => {
+      const result=await datasetFetch('/api/watch/stop',{method:'POST',datasetId:captured.datasetId,keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify({lease_id:lease})});
+      if(result.ok) {collectorProtectionGeneration++;await window.pokerSetLauncherRecording?.('collector',false);}
+      return result;
+    },
     onBatch:async (result,captured,isCurrent) => {
       if (!isCurrent()) return;
       if(queueMode) {
@@ -308,7 +392,11 @@ function initCaptureWatch() {
       await saveSessionProgress(true);
     }
   });
-  document.getElementById('watch-start').onclick = () => {
+  document.getElementById('watch-start').onclick = async () => {
+    captureReconnectGeneration++;
+    if (pendingCaptureReconnect) {
+      try {await closePendingCaptureReconnect(pendingCaptureReconnect);} catch(error) {showToast(error.message,'error');return;}
+    }
     setRecordingSettingsOpen(false);
     watchNeedsRecovery = true;
     captureWatch.start({intervalSeconds:Number(document.getElementById('watch-interval').value),queueMode:'paged'}).catch(error => renderWatchStatus({active:false,busy:false,status:'error',message:error.message}));
@@ -319,13 +407,13 @@ function initCaptureWatch() {
       window.CollectorSharedUi?.closeMenus?.();
       capturePresentationGeneration++;
       window.CollectorCaptureAnimation?.cancel();
-    } else if (watchNeedsRecovery && !captureWatch?.isActive() && !captureWatch?.isBusy()) {
+    } else if (watchNeedsRecovery && !window.sessionStorage?.getItem(WATCH_RECONNECT_KEY) && !captureWatch?.isActive() && !captureWatch?.isBusy()) {
       void stopAndRecoverWatch('Capture paused').catch(error => showToast(error.message,'error'));
     }
   });
   window.leavePokerOcr = () => stopAndRecoverWatch('Collection paused');
-  window.addEventListener('pagehide',() => { void stopCaptureWatch('Page closed'); });
-  window.addEventListener('beforeunload',() => { void stopCaptureWatch('Page closed'); });
+  window.addEventListener('pagehide',() => { captureWatch?.detach(); });
+  window.addEventListener('pageshow',event => { if(event.persisted) void reconnectCaptureWatch().catch(error=>showToast(error.message,'error')); });
   renderWatchStatus({active:false,busy:false,status:'off'});
 }
 
@@ -1335,7 +1423,7 @@ function initDom() {
   };
 
   window.onkeydown = (e) => {
-    if (window.location?.pathname === '/gameplay' || datasetSwitching || e.defaultPrevented || document.getElementById('modal-overlay')?.classList.contains('active')) return;
+    if (['/gameplay', '/training'].includes(window.location?.pathname) || datasetSwitching || e.defaultPrevented || document.getElementById('modal-overlay')?.classList.contains('active')) return;
     if (currentView === 'collection') {
       const keys=window.CollectorSharedUi.recordingKeys;
       const command=keys.resolveKey(e,{...keys.targetContext(e.target),collection:true,
@@ -2949,7 +3037,7 @@ const setView = (v, pushState = true) => {
   if (pushState) {
     let path = v === 'session-review' ? 'review' : v; if (v === 'labeling') path = "labeling/" + ((queueMode ? reviewBatch?.legacy_offset || 0 : 0) + currentReviewIdx + 1);
     const state={view:v,idx:v==='labeling'?currentReviewIdx:null,...(queueMode?{dataset_id:activeDatasetId,batch_id:reviewBatch?.batch_id,sample_key:pool[currentReviewIdx]?sampleKey(pool[currentReviewIdx]):null}:{})};
-    if(window.location?.pathname==='/gameplay') window.pokerOcrDeferredLocation={path:"/"+path,state};
+    if(['/gameplay', '/training'].includes(window.location?.pathname)) window.pokerOcrDeferredLocation={path:"/"+path,state};
     else history.pushState(state,'',"/"+path);
     window.dispatchEvent?.(new Event('poker-ocr-location'));
   }
@@ -3034,14 +3122,14 @@ async function waitForCurrentViewport() {
   const owner = new AbortController(); viewportReadiness = owner;
   try {
     while (!owner.signal.aborted) {
-      if (window.location.pathname === '/gameplay') await new Promise(resolve => {
-        const changed = () => { if (owner.signal.aborted || window.location.pathname !== '/gameplay') { window.removeEventListener('poker-workspace-change', changed); owner.signal.removeEventListener('abort', changed); resolve(); } };
+      if (['/gameplay', '/training'].includes(window.location?.pathname)) await new Promise(resolve => {
+        const changed = () => { if (owner.signal.aborted || !['/gameplay', '/training'].includes(window.location?.pathname)) { window.removeEventListener('poker-workspace-change', changed); owner.signal.removeEventListener('abort', changed); resolve(); } };
         window.addEventListener('poker-workspace-change', changed);
         owner.signal.addEventListener('abort', changed, {once:true});
       });
       if (owner.signal.aborted) return;
       const controller = new AbortController();
-      const changed = () => { if (owner.signal.aborted || window.location.pathname === '/gameplay') controller.abort(); };
+      const changed = () => { if (owner.signal.aborted || ['/gameplay', '/training'].includes(window.location?.pathname)) controller.abort(); };
       window.addEventListener('poker-workspace-change', changed);
       owner.signal.addEventListener('abort', changed, {once:true});
       const host = currentView === 'collection' ? frameListEl : currentView === 'database' ? dbListEl : currentView === 'session-review' ? sessionReviewListEl : viewLabeling;
@@ -3082,7 +3170,7 @@ async function init() {
     dbPage = Math.max(1, Number(savedDatabase.page) || 1);
     document.getElementById('db-search').value = savedDatabase.search || '';
   }
-  if (window.location.pathname !== '/gameplay') showLoading(true, "Initializing Engine...");
+  if (!['/gameplay', '/training'].includes(window.location?.pathname)) showLoading(true, "Initializing Engine...");
   try {
     let syncStatus = await (await datasetFetch("/api/sync_status")).json();
     while (syncStatus.is_syncing) { const progress = syncStatus.total > 0 ? (syncStatus.progress / syncStatus.total) * 100 : 0; updateLoadingProgress(syncStatus.current_action, progress); await new Promise(r => datasetTimeout(r, 500)); syncStatus = await (await datasetFetch("/api/sync_status")).json(); }
@@ -3112,10 +3200,11 @@ async function init() {
   if (isViewDisabled(initialView)) initialView = firstEnabledWorkflow();
   if (!initialView) throw new Error('No workflow step is available.');
   const initialPath = initialView === requestedView ? startupPath : initialView === 'session-review' ? '/review' : initialView === 'labeling' ? '/labeling/' + ((queueMode ? reviewBatch?.legacy_offset || 0 : 0) + currentReviewIdx + 1) : '/' + initialView;
-  setView(initialView, false); renderDatasetNavigator(); document.getElementById("collector-workspace").classList.add("ready"); updateStepperButtons(); const initialState = {view:currentView,idx:currentReviewIdx,...(queueMode?{dataset_id:activeDatasetId,batch_id:reviewBatch?.batch_id,sample_key:pool[currentReviewIdx]?sampleKey(pool[currentReviewIdx]):null}:{})}; if (window.location.pathname === startupPath && startupPath !== '/gameplay') { history.replaceState(initialState, '', initialPath); window.dispatchEvent?.(new Event('poker-ocr-location')); } else if (window.location.pathname === '/gameplay') window.pokerOcrDeferredLocation = {path:initialPath,state:initialState}; window.CollectorScroll?.restore(); await waitForCurrentViewport(); if (window.location.pathname !== '/gameplay') showLoading(false); window.pokerStartupTimedOut = false;
+  setView(initialView, false); renderDatasetNavigator(); document.getElementById("collector-workspace").classList.add("ready"); updateStepperButtons(); const initialState = {view:currentView,idx:currentReviewIdx,...(queueMode?{dataset_id:activeDatasetId,batch_id:reviewBatch?.batch_id,sample_key:pool[currentReviewIdx]?sampleKey(pool[currentReviewIdx]):null}:{})}; if (window.location.pathname === startupPath && startupPath !== '/gameplay') { history.replaceState(initialState, '', initialPath); window.dispatchEvent?.(new Event('poker-ocr-location')); } else if (['/gameplay', '/training'].includes(window.location?.pathname)) window.pokerOcrDeferredLocation = {path:initialPath,state:initialState}; window.CollectorScroll?.restore(); await waitForCurrentViewport(); if (!['/gameplay', '/training'].includes(window.location?.pathname)) showLoading(false); window.pokerStartupTimedOut = false;
+  await reconnectCaptureWatch();
 }
 
-window.pokerOcrReady = init().catch(error => { if (window.location.pathname !== '/gameplay') showLoading(false); throw error; });
+window.pokerOcrReady = init().catch(error => { if (!['/gameplay', '/training'].includes(window.location?.pathname)) showLoading(false); throw error; });
 
 async function recoverSession(d) {
   if(d?.queue_mode==='paged') {

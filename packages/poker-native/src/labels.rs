@@ -134,6 +134,7 @@ mod tests {
             ("bank", "S No Chips"),
             ("seat.0.status", "Fold"),
             ("status", "Hide Cards"),
+            ("seat.0.status", "Away"),
             ("community.card_1", "A"),
             ("seats[0].cards[1]", "10"),
         ] {

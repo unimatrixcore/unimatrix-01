@@ -6,16 +6,16 @@
   function create(options) {
     const schedule = options.schedule || ((callback, delay) => global.setTimeout(callback, delay));
     const cancel = options.cancel || (timer => global.clearTimeout(timer));
-    let active = false, busy = false, generation = 0, timer = null, lease = null, context = null;
+    let active = false, busy = false, detached = false, generation = 0, timer = null, lease = null, context = null;
     let added = 0, queued = 0, settings = null, release = Promise.resolve();
     let lastStatus = 'off', lastMessage = '';
     let idleWaiters = [];
     function idle() { const waiters=idleWaiters;idleWaiters=[];for(const resolve of waiters) resolve(); }
     function whenIdle() { return busy ? new Promise(resolve => idleWaiters.push(resolve)) : Promise.resolve(); }
     function snapshot(status, message) {
-      return {active,busy,status,message,added,queued,settings:settings && {...settings}};
+      return {active,busy,status,message,added,queued,lease,context,settings:settings && {...settings}};
     }
-    function publish(status = lastStatus, message) { if (message === undefined) message = status === lastStatus ? lastMessage : ''; lastStatus = status; lastMessage = message; options.onStatus?.(snapshot(status,message)); }
+    function publish(status = lastStatus, message) { if (detached) return; if (message === undefined) message = status === lastStatus ? lastMessage : ''; lastStatus = status; lastMessage = message; options.onStatus?.(snapshot(status,message)); }
     function valid(token, capturedContext) {
       if (active && token === generation && !options.canRun(capturedContext)) stop('Collection changed');
       return active && token === generation;
@@ -60,20 +60,25 @@
         if (valid(token,capturedContext)) { stop(`Watch stopped: ${error.message}`); publish('error',error.message); }
       } finally { busy = false; idle(); if (!active) publish(); }
     }
-    async function start(config) {
+    function detach() {
+      detached = true; active = false; generation++;
+      if (timer !== null) { cancel(timer); timer = null; }
+    }
+    async function start(config, existingLease = null) {
       if (active || busy) return false;
       for (const key of Object.keys(CHOICES)) if (!CHOICES[key].includes(config[key])) throw new Error(`Unsupported watch setting: ${key}`);
       const capturedContext = options.getContext();
       if (!options.canRun(capturedContext)) return false;
+      const startingGeneration = generation;
       await release;
       // Waiting for a previous lease close cannot authorize a changed context.
-      if (active || busy || !options.canRun(capturedContext)) return false;
+      if (startingGeneration !== generation || active || busy || !options.canRun(capturedContext)) return false;
       settings = {...config,queueLimit:config.queueMode==='paged' ? 5000 : config.queueLimit}; context = capturedContext; added = 0; queued = options.queuedCount?.() || 0;
       if (Number.isFinite(settings.queueLimit) && queued >= settings.queueLimit) { publish('stopped','Queue full'); return false; }
       const token = ++generation;
-      active = true; busy = true; publish('starting');
+      detached = false; active = true; busy = true; publish('starting');
       try {
-        const opened = await options.open(settings,capturedContext);
+        const opened = existingLease ? {lease_id:existingLease} : await options.open(settings,capturedContext);
         if (!valid(token,capturedContext)) {
           if (opened.lease_id) await Promise.resolve(options.close(opened.lease_id,capturedContext)).catch(() => {});
           return false;
@@ -81,6 +86,7 @@
         if (!opened.lease_id) throw new Error('Watch lease was not created');
         lease = opened.lease_id;
         queued = opened.summary?.total ?? opened.queued_count ?? queued;
+        publish('recording');
       } catch (error) {
         if (valid(token,capturedContext)) { stop(`Watch stopped: ${error.message}`); publish('error',error.message); }
         return false;
@@ -89,7 +95,7 @@
       await tick(token,capturedContext);
       return true;
     }
-    return Object.freeze({start,stop,isActive:() => active,isBusy:() => busy,whenIdle,getState:() => snapshot(lastStatus,lastMessage),recordQueued:count => { if (Number.isInteger(count) && count >= 0) { queued=count;publish(); } }});
+    return Object.freeze({start,stop,detach,isActive:() => active,isBusy:() => busy,whenIdle,getState:() => snapshot(lastStatus,lastMessage),recordQueued:count => { if (Number.isInteger(count) && count >= 0) { queued=count;publish(); } }});
   }
   global.CollectorWatchCapture = Object.freeze({create,choices:CHOICES});
 })(typeof window === 'undefined' ? globalThis : window);

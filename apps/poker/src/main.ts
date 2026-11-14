@@ -1,6 +1,8 @@
 import { pokerOcrContract, pokerOcrContractSha256 } from "@unimatrix/poker";
 import { installLabTransport } from "./lib/native-transport.js";
 import { installOcrBackgroundLists } from "./lib/ocr-background-lists";
+import { setLauncherRecording } from "./lib/launcher.js";
+import { restoreWorkspaceLocation } from "./lib/workspace-state.js";
 
 const classicScripts = [
   "lib/utils",
@@ -28,6 +30,8 @@ function loadScript(name: string): Promise<void> {
   });
 }
 async function start(): Promise<void> {
+  restoreWorkspaceLocation();
+  window.pokerSetLauncherRecording = setLauncherRecording;
   installLabTransport();
   installOcrBackgroundLists();
   window.OCR_CONTRACT = pokerOcrContract;
@@ -38,14 +42,15 @@ async function start(): Promise<void> {
     let started: Promise<void> | undefined;
     return () =>
       (started ??= (async () => {
-        window.pokerOcrStartupPath =
-          window.location.pathname === "/gameplay" ? "/collection" : window.location.pathname;
+        window.pokerOcrStartupPath = ["/gameplay", "/training"].includes(window.location.pathname)
+          ? "/collection"
+          : window.location.pathname;
         for (const module of classicScripts) await loadScript(module);
         await window.pokerOcrReady;
       })());
   })();
   await import("./collector/main.js");
-  if (window.location.pathname !== "/gameplay") await window.startPokerOcr();
+  if (!["/gameplay", "/training"].includes(window.location.pathname)) await window.startPokerOcr();
 }
 const startupOverlay = document.getElementById("loading-overlay");
 const startupWatchdog = window.setTimeout(() => {

@@ -30,6 +30,7 @@ vm.runInContext(fs.readFileSync('dev_tools/static/js/lib/schemas.js','utf8'),san
 const run = code => vm.runInContext(code,sandbox);
 assert.equal(run(`Schemas.STATUS.validate('Fold').isValid`),true);
 assert.equal(run(`Schemas.STATUS.validate('Hide Cards').isValid`),true);
+assert.equal(run(`Schemas.STATUS.validate('Away').isValid`),true);
 assert.equal(run(`Schemas.STATUS.isPartial('Hide C')`),true);
 assert.equal(run(`Schemas.STATUS.isPartial('Fo')`),true);
 for (const text of ['fold','Folded','F0ld']) assert.equal(run(`Schemas.STATUS.validate(${JSON.stringify(text)}).isValid`),false);
@@ -282,6 +283,21 @@ function reset(key='sample-a', prediction={id:'prediction-a',text:'Alice',raw_te
   await late;
   assert.equal(run('dbEntries[0].prediction'),undefined,'late DB suggestion cannot bind to another dataset');
   assert.equal(run('dbEntries[0].label'),'OtherDataset');
+
+  reset('away-contract-refresh',{id:'old-away',text:'Away',raw_text:'Away',category:'status',schema_valid:false});
+  run("pool[0].id='seats[1].status';labelInput.value='';");
+  const beforeAway=calls.filter(call=>call.url==='/api/review_label').length;
+  await run('acceptModelSuggestion()');
+  assert.equal(calls.filter(call=>call.url==='/api/review_label').length,beforeAway,'stale invalid predictions are not accepted');
+  network=async(url)=>url==='/api/model_suggestion' ? {prediction:{id:'current-away',text:'Away',raw_text:'Away',category:'status',schema_valid:true}} : {event:{id:'away-review',outside_contract:0,schema_valid:1},success:true};
+  await run('requestModelSuggestion(pool[0])');
+  sandbox.window.onkeydown(key(false));
+  await new Promise(resolve=>setImmediate(resolve));
+  const away=JSON.parse(calls.findLast(call=>call.url==='/api/review_label').opts.body);
+  assert.equal(away.label,'Away');assert.equal(away.action,'accept');
+  assert.equal(away.allow_outside_contract,false);assert.equal(away.prediction_id,'current-away');
+  assert.equal(run('pool[0].label'),'Away');
+  assert.equal(run('pool[0].review_event.outside_contract'),0);
 
   // A new status can be retained as human truth, without enabling model acceptance.
   reset('novel-status',{id:'novel-prediction',text:'New Table Status',raw_text:'New Table Status',category:'status',schema_valid:false});

@@ -5,6 +5,12 @@ use poker_native::lab::{LabRequest, LabResponse, LabService};
 use std::{path::PathBuf, sync::Arc};
 use tauri::{http, Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
+const NATIVE_BUILD_STAMP: &str = concat!(
+    "POKER_LAB_NATIVE_SOURCE_FP:v1:",
+    env!("POKER_LAB_NATIVE_SOURCE_FP"),
+    ":END"
+);
+
 #[cfg(unix)]
 static EXIT_REQUESTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -21,6 +27,17 @@ fn local_navigation(url: &tauri::Url) -> bool {
             && url.scheme() == "http"
             && url.host_str() == Some("localhost")
             && url.port() == Some(5180))
+}
+
+fn local_asset_path(path: &str) -> &str {
+    if matches!(
+        path,
+        "/" | "/collection" | "/gameplay" | "/training" | "/review" | "/statistics"
+    ) {
+        "/index.html"
+    } else {
+        path
+    }
 }
 
 #[derive(serde::Serialize)]
@@ -100,6 +117,20 @@ async fn launcher_request(
         {
             vec!["--select".to_owned(), value]
         }
+        ("recording", Some(value))
+            if matches!(
+                value.as_str(),
+                "gameplay:on" | "gameplay:off" | "collector:on" | "collector:off"
+            ) =>
+        {
+            let (role, active) = value.split_once(':').unwrap();
+            vec![
+                "--recording".to_owned(),
+                std::process::id().to_string(),
+                role.to_owned(),
+                active.to_owned(),
+            ]
+        }
         _ => return Err("Invalid launcher request".into()),
     };
     let required_path = |name: &str| -> Result<PathBuf, String> {
@@ -111,6 +142,15 @@ async fn launcher_request(
         }
         Ok(path)
     };
+    if operation == "recording"
+        && launcher_unconfigured([
+            std::env::var_os("POKER_LAB_LAUNCHER_NODE"),
+            std::env::var_os("POKER_LAB_LAUNCHER_PATH"),
+            std::env::var_os("POKER_LAB_GIT_DIR"),
+        ])
+    {
+        return Ok(serde_json::json!({"ok":true,"protection":"unconfigured"}));
+    }
     let node = required_path("POKER_LAB_LAUNCHER_NODE")?;
     let script = required_path("POKER_LAB_LAUNCHER_PATH")?;
     let git_dir = required_path("POKER_LAB_GIT_DIR")?;
@@ -133,6 +173,10 @@ async fn launcher_request(
     })
     .await
     .map_err(|error| error.to_string())?
+}
+
+fn launcher_unconfigured(values: [Option<std::ffi::OsString>; 3]) -> bool {
+    values.iter().all(Option::is_none)
 }
 
 fn media_request(request: &http::Request<Vec<u8>>) -> LabRequest {
@@ -189,6 +233,10 @@ fn failure(status: u16, message: &str) -> http::Response<Vec<u8>> {
 }
 
 fn main() {
+    if std::env::args().any(|arg| arg == "--native-build-info") {
+        println!("{NATIVE_BUILD_STAMP}");
+        return;
+    }
     #[cfg(unix)]
     for signal in [libc::SIGINT, libc::SIGTERM] {
         // The handler only stores an atomic flag; all Tauri work stays outside the signal handler.
@@ -211,13 +259,7 @@ fn main() {
                     media_response(service.request(media_request(&request)))
                         .unwrap_or_else(|error| failure(500, &error))
                 } else {
-                    let asset_path = if path == "/"
-                        || ["/collection", "/gameplay", "/review", "/statistics"].contains(&path)
-                    {
-                        "/index.html"
-                    } else {
-                        path
-                    };
+                    let asset_path = local_asset_path(path);
                     match handle.asset_resolver().get(asset_path.to_owned()) {
                         Some(asset) => {
                             let mut builder = http::Response::builder()
@@ -255,7 +297,7 @@ fn main() {
             let page = if std::env::args().any(|arg| arg == "--regions") {
                 "regions.html"
             } else {
-                "collection"
+                ""
             };
             let url = if cfg!(debug_assertions) && std::env::var_os("POKER_LAB_BUNDLED").is_none() {
                 format!("http://localhost:5180/{page}")
@@ -305,6 +347,38 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recording_without_a_supervisor_is_distinct_from_partial_configuration() {
+        assert!(launcher_unconfigured([None, None, None]));
+        for index in 0..3 {
+            let mut values = [None, None, None];
+            values[index] = Some("/configured".into());
+            assert!(!launcher_unconfigured(values));
+        }
+        assert!(!launcher_unconfigured([
+            Some("".into()),
+            Some("/script".into()),
+            Some("/git".into()),
+        ]));
+    }
+
+    #[test]
+    fn root_and_workspace_routes_serve_the_same_bootstrap_asset() {
+        for path in [
+            "/",
+            "/index.html",
+            "/collection",
+            "/gameplay",
+            "/training",
+            "/review",
+            "/statistics",
+        ] {
+            assert_eq!(local_asset_path(path), "/index.html");
+        }
+        assert_eq!(local_asset_path("/regions.html"), "/regions.html");
+        assert_eq!(local_asset_path("/assets/app.js"), "/assets/app.js");
+    }
 
     #[test]
     fn only_local_origins_are_trusted() {

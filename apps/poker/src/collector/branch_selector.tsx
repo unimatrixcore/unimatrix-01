@@ -1,19 +1,9 @@
 import { useEffect, useState } from "react";
-import { RiGitBranchLine } from "@remixicon/react";
-import {
-  Button,
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-} from "@unimatrix/ui";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@unimatrix/ui";
 import type { PokerLauncherStatus } from "@unimatrix/shared";
 import { launcherRequest } from "../lib/launcher.js";
 
-export function BranchSelector({ collapsed }: { collapsed: boolean }) {
+export function BranchSelector() {
   const [status, setStatus] = useState<PokerLauncherStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -47,51 +37,38 @@ export function BranchSelector({ collapsed }: { collapsed: boolean }) {
       : status.worktrees.find((tree) => tree.id === status.selection)?.branch ||
         "Work branch unavailable";
   return (
-    <div data-poker-branch-control className={collapsed ? "w-9" : "w-full min-w-0 pr-2"}>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size={collapsed ? "icon" : "sm"}
-            className={collapsed ? "size-9" : "w-full justify-start"}
-            aria-label="Work branch"
-            title={tooltip}
-            disabled={!status || pending}
-          >
-            <RiGitBranchLine className="size-4 shrink-0" aria-hidden="true" />
-            {!collapsed && <span className="truncate">{selectedLabel}</span>}
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent side="right" align="end" className="max-w-96">
-          <DropdownMenuLabel>Work branch</DropdownMenuLabel>
-          <DropdownMenuRadioGroup
-            value={status?.selection || "latest"}
-            onValueChange={(selection) => {
-              setPending(true);
-              void launcherRequest("select", selection)
-                .then((next) => {
-                  setStatus(next);
-                  setError(next.error || null);
-                })
-                .catch((failure: unknown) => {
-                  setError(String(failure));
-                })
-                .finally(() => {
-                  setPending(false);
-                });
-            }}
-          >
-            <DropdownMenuRadioItem value="latest">Latest commit</DropdownMenuRadioItem>
-            <DropdownMenuSeparator />
-            {status?.worktrees.map((tree) => (
-              <DropdownMenuRadioItem key={tree.id} value={tree.id} title={tree.path}>
-                {tree.branch}
-              </DropdownMenuRadioItem>
-            ))}
-          </DropdownMenuRadioGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
-      {error && !collapsed && (
+    <div data-poker-branch-control className="w-full min-w-0">
+      <Select
+        value={status?.selection || "latest"}
+        disabled={!status || pending}
+        onValueChange={(selection) => {
+          setPending(true);
+          void launcherRequest("select", selection)
+            .then((next) => {
+              setStatus(next);
+              setError(next.error || null);
+            })
+            .catch((reason: unknown) => {
+              setError(String(reason));
+            })
+            .finally(() => {
+              setPending(false);
+            });
+        }}
+      >
+        <SelectTrigger aria-label="Checkout" title={tooltip}>
+          <SelectValue>{selectedLabel}</SelectValue>
+        </SelectTrigger>
+        <SelectContent position="popper" align="start" className="app-settings-select-menu">
+          <SelectItem value="latest">Latest commit</SelectItem>
+          {status?.worktrees.map((tree) => (
+            <SelectItem key={tree.id} value={tree.id} title={tree.path}>
+              {tree.branch}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {error && (
         <div className="text-xs text-destructive" role="status">
           {error}
         </div>

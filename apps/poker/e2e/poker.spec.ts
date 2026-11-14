@@ -1,38 +1,216 @@
 import { expect, test } from "@playwright/test";
 import { installLabFixture } from "./fixture.js";
 
-test.beforeEach(async ({ page }) => {
-  await page.addInitScript(installLabFixture);
+function installSettingsFixture() {
+  const previous = window.__POKER_LAB_TEST_INVOKE__;
+  let model = "gpt-4.1";
+  let activeId = "baseline",
+    activationAttempts = 0;
+  const activeRelease = () => ({
+    configured: true,
+    id: activeId,
+    display_name: activeId === "baseline" ? "Original release" : "Version 5",
+    general_sha256: (activeId === "baseline" ? "a" : "c").repeat(64),
+    names_sha256: (activeId === "baseline" ? "b" : "d").repeat(64),
+    path: "/private/models/runtime",
+  });
+  window.__POKER_LAB_TEST_INVOKE__ = async (request) => {
+    if (request.path === "/api/ai-review/config") {
+      if (
+        request.method === "POST" &&
+        request.body &&
+        typeof request.body === "object" &&
+        "model" in request.body
+      )
+        model = String(request.body.model);
+      return { status: 200, headers: {}, body: { configured: true, model } };
+    }
+    if (request.path === "/api/training/versions")
+      return {
+        status: 200,
+        headers: {},
+        body: {
+          active_release: activeRelease(),
+          versions: [
+            {
+              id: "baseline",
+              display_name: "Original release",
+              created_at: 0,
+              active: activeId === "baseline",
+              eligible: true,
+              regressions: 0,
+              improved: 0,
+              benchmark: {
+                exact_match: 0.98,
+                cer: 0.02,
+                p95_ms: 10,
+                samples: 100,
+                processing_errors: 0,
+              },
+            },
+            {
+              id: "candidate",
+              display_name: "Version 5",
+              created_at: 10,
+              active: activeId === "candidate",
+              eligible: true,
+              regressions: 2,
+              improved: 4,
+              benchmark: {
+                exact_match: 0.99,
+                cer: 0.01,
+                p95_ms: 10,
+                samples: 100,
+                baseline_exact_match: 0.98,
+                processing_errors: 0,
+              },
+            },
+          ],
+        },
+      };
+    if (request.path === "/api/training/activate") {
+      if (
+        !request.body ||
+        typeof request.body !== "object" ||
+        !("acknowledge_regressions" in request.body) ||
+        request.body.acknowledge_regressions !== true
+      )
+        return { status: 400, headers: {}, body: { error: "Regression acknowledgement missing" } };
+      activationAttempts++;
+      if (activationAttempts === 1)
+        return { status: 500, headers: {}, body: { error: "Candidate failed to warm" } };
+      activeId = "candidate";
+      return { status: 200, headers: {}, body: { active_release: activeRelease() } };
+    }
+    return previous!(request);
+  };
+}
+
+test.beforeEach(async ({ page }, info) => {
+  if (info.title.startsWith("Settings preserves")) {
+    await page.addInitScript({
+      content: `(${installLabFixture.toString()})();(${installSettingsFixture.toString()})();`,
+    });
+  } else await page.addInitScript(installLabFixture);
 });
 
-test("work branch selector defaults to latest and preserves the active branch until replacement", async ({
+test("Settings preserves the checkout footer and provides global configuration", async ({
   page,
 }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/collection");
-  const selector = page.getByRole("button", { name: "Work branch", exact: true });
-  await expect(selector).toHaveAttribute("title", "work/current");
-  await expect(selector).toHaveText("");
-  await selector.click();
+
+  const settings = page.getByRole("button", { name: "Settings", exact: true });
+  const wrapper = page.locator("[data-poker-settings-control]");
+  await expect(settings).toHaveAttribute("title", "Settings");
+  await expect(settings).toHaveText("");
+  await expect(wrapper).toHaveClass("w-9");
+  const collapsed = await settings.boundingBox();
+  const rail = page.getByRole("navigation", { name: "Sections", exact: true });
+  const firstLink = await rail.getByRole("link").first().boundingBox();
+  expect(collapsed?.width).toBe(36);
+  expect(collapsed?.height).toBe(36);
+  expect(
+    Math.abs(collapsed!.x + collapsed!.width / 2 - (firstLink!.x + firstLink!.width / 2)),
+  ).toBeLessThanOrEqual(1);
+  await page.screenshot({ path: test.info().outputPath("settings-footer-collapsed.png") });
+  await settings.click();
+  const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator("details")).toHaveCount(0);
+  await expect(dialog.getByLabel("API key", { exact: true })).toHaveAttribute(
+    "placeholder",
+    "Saved key",
+  );
+  await expect(dialog.getByLabel("API key", { exact: true })).toHaveValue("");
+  await expect(dialog.getByText("a".repeat(12), { exact: true })).toHaveAttribute(
+    "title",
+    "a".repeat(64),
+  );
+  await expect(dialog).not.toContainText("/private/models/runtime");
+  await dialog.getByLabel("Model", { exact: true }).fill("gpt-4.1-mini");
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(dialog.getByRole("status")).toHaveText("Saved");
+  await expect(dialog.getByText("98.00% exact · 100 samples", { exact: true })).toBeVisible();
+  const checkoutPicker = dialog.getByRole("combobox", { name: "Checkout", exact: true });
+  const versionPicker = dialog.getByRole("combobox", { name: "Version", exact: true });
+  const appearance = (element: HTMLElement | SVGElement) => {
+    const style = getComputedStyle(element);
+    return {
+      height: style.height,
+      border: style.borderTopWidth,
+      borderColor: style.borderTopColor,
+      radius: style.borderRadius,
+      font: style.fontSize,
+    };
+  };
+  expect(await checkoutPicker.evaluate(appearance)).toEqual(
+    await versionPicker.evaluate(appearance),
+  );
+  await expect(checkoutPicker).toHaveAttribute("data-slot", "select-trigger");
+  await expect(versionPicker).toHaveAttribute("data-slot", "select-trigger");
+  await page.screenshot({ path: test.info().outputPath("settings-picker-consistency.png") });
+  await expect(dialog.getByRole("button", { name: "Use version", exact: true })).toBeDisabled();
+  await dialog.getByRole("combobox", { name: "Version", exact: true }).click();
+  await page.getByRole("option", { name: "Version 5", exact: true }).click();
   await expect(
-    page.getByRole("menuitemradio", { name: "Latest commit", exact: true }),
-  ).toHaveAttribute("aria-checked", "true");
-  await page.screenshot({ path: "../../.orchestration/evidence/poker-branch-menu-collapsed.png" });
-  await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "Expand sections", exact: true }).click();
-  await expect(selector).toHaveText("Latest commit");
+    dialog.getByText("2 regressions · 4 improvements vs original", { exact: true }),
+  ).toBeVisible();
+  await expect(dialog.getByText("99.00% exact · 100 samples", { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "Use version", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toHaveText("Candidate failed to warm");
+  await expect(dialog.getByRole("button", { name: "Use version", exact: true })).toBeEnabled();
+  await expect(dialog.getByText("a".repeat(12), { exact: true })).toBeVisible();
+  await expect(dialog.getByRole("combobox", { name: "Version", exact: true })).toHaveText(
+    "Version 5",
+  );
+  await page.screenshot({ path: test.info().outputPath("settings-activation-failed.png") });
+  await dialog.getByRole("button", { name: "Use version", exact: true }).click();
+  await expect(dialog.getByText("c".repeat(12), { exact: true })).toBeVisible();
+  await expect(dialog.getByText("d".repeat(12), { exact: true })).toBeVisible();
+  await expect(dialog.locator(".app-settings-release")).toHaveText("Version 5");
+  await expect(dialog.getByRole("button", { name: "Use version", exact: true })).toBeDisabled();
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await page.screenshot({ path: test.info().outputPath("settings-version-active.png") });
+  const selector = dialog.getByRole("combobox", { name: "Checkout", exact: true });
+  await expect(selector).toHaveAttribute("title", "work/current");
   await selector.click();
-  await page.screenshot({ path: "../../.orchestration/evidence/poker-branch-menu-expanded.png" });
-  await page.getByRole("menuitemradio", { name: "work/other", exact: true }).click();
+  await expect(page.getByRole("option", { name: "Latest commit", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await page.getByRole("option", { name: "work/other", exact: true }).click();
   await expect(selector).toHaveText("work/other");
   await expect(selector).toHaveAttribute("title", "work/current → work/other");
-  await page.setViewportSize({ width: 760, height: 700 });
-  await expect(selector).toBeVisible();
-  await selector.click();
-  await page.getByRole("menuitemradio", { name: "Latest commit", exact: true }).click();
-  await expect(selector).toHaveText("Latest commit");
+  await page.screenshot({ path: test.info().outputPath("settings-dialog.png") });
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(settings).toBeFocused();
+  await expect(page.locator('[data-slot="dialog-overlay"]')).toHaveCount(0);
+  await page.getByRole("button", { name: "Expand sections", exact: true }).click();
+  await expect(settings).toHaveText("Settings");
+  await expect(wrapper).toHaveClass("w-full min-w-0 pr-2");
+  await expect(settings).toHaveClass(/w-full justify-start/);
+  await expect
+    .poll(async () =>
+      settings.locator("span").evaluate((element) => element.scrollWidth <= element.clientWidth),
+    )
+    .toBe(true);
+  await page.screenshot({ path: test.info().outputPath("settings-footer-expanded.png") });
+  await settings.click();
+  await expect(dialog.getByLabel("Model", { exact: true })).toHaveValue("gpt-4.1-mini");
+  await page.setViewportSize({ width: 420, height: 700 });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveCSS("width", "388px");
+  const bounds = await dialog.boundingBox();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(420);
+  await page.screenshot({ path: test.info().outputPath("settings-dialog-narrow.png") });
+  await page.keyboard.press("Escape");
+  expect(errors).toEqual([]);
 });
 
-test("preserves the original poker chip, two-section rail, four-step workflow and recording controls", async ({
+test("preserves the poker chip, three-section rail, four-step workflow and recording controls", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -49,7 +227,7 @@ test("preserves the original poker chip, two-section rail, four-step workflow an
   ).toHaveText(["Collection", "Labeling", "Review", "Database"]);
   await page.getByRole("button", { name: "Expand sections", exact: true }).click();
   const rail = page.getByRole("navigation", { name: "Sections", exact: true });
-  await expect(rail.getByRole("link")).toHaveText(["OCR Data", "Gameplay"]);
+  await expect(rail.getByRole("link")).toHaveText(["OCR Data", "Gameplay", "OCR Training"]);
   await expect(page.locator('img[src="/static/ui/poker-chip.svg"]').first()).toHaveAttribute(
     "src",
     "/static/ui/poker-chip.svg",

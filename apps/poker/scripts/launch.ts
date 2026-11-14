@@ -155,6 +155,37 @@ function alive(pid: number) {
     return false;
   }
 }
+type RecordingRole = "gameplay" | "collector";
+function processToken(pid: number): string {
+  const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+  return stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19]!;
+}
+function recordingPath(paths: LauncherPaths, pid: number, role: RecordingRole): string {
+  return join(paths.cache, "recording", `${pid}-${role}.json`);
+}
+export function setRecordingIntent(
+  pid: number,
+  role: RecordingRole,
+  active: boolean,
+  paths = launcherPaths(),
+): void {
+  if (!Number.isSafeInteger(pid) || pid < 2 || !["gameplay", "collector"].includes(role))
+    throw new Error("Invalid recording intent");
+  const path = recordingPath(paths, pid, role);
+  if (active) atomicJson(path, { token: processToken(pid) });
+  else rmSync(path, { force: true });
+}
+export function recordingActive(pid: number, paths = launcherPaths()): boolean {
+  const token = processToken(pid);
+  return (["gameplay", "collector"] as const).some((role) => {
+    const claim = readJson(recordingPath(paths, pid, role)) as { token?: unknown } | null;
+    return claim?.token === token;
+  });
+}
+function clearRecording(pid: number, paths: LauncherPaths): void {
+  for (const role of ["gameplay", "collector"] as const)
+    rmSync(recordingPath(paths, pid, role), { force: true });
+}
 function activeState(paths: LauncherPaths): ActiveState | null {
   const state = readJson(paths.state) as ActiveState | null;
   return state && Number.isInteger(state.pid) && alive(state.pid) ? state : null;
@@ -294,6 +325,21 @@ export interface NativeArtifact {
   binary: string;
   sha256: string;
 }
+export function nativeBinaryFingerprint(bytes: Buffer): string | null {
+  const prefix = Buffer.from("POKER_LAB_NATIVE_SOURCE_FP:v1:");
+  let offset = 0;
+  const found = new Set<string>();
+  while ((offset = bytes.indexOf(prefix, offset)) !== -1) {
+    offset += prefix.length;
+    const value = bytes.subarray(offset, offset + 64).toString("ascii");
+    if (
+      /^[a-f0-9]{64}$/.test(value) &&
+      bytes.subarray(offset + 64, offset + 68).toString("ascii") === ":END"
+    )
+      found.add(value);
+  }
+  return found.size === 1 ? [...found][0]! : null;
+}
 function nativeCacheDirectory(tree: Worktree, paths: LauncherPaths) {
   return join(
     paths.cache,
@@ -333,12 +379,21 @@ export function seedNativeCache(
   paths = launcherPaths(),
   fingerprint = nativeFingerprint(tree),
 ): NativeArtifact {
+  if (
+    fingerprint !== nativeFingerprint(tree) ||
+    nativeBinaryFingerprint(readFileSync(binary)) !== fingerprint
+  )
+    throw new Error(
+      "Native binary provenance does not match the current source; rebuild Poker Lab before caching it",
+    );
   const directory = nativeCacheDirectory(tree, paths);
   const output = join(directory, randomUUID(), "unimatrix-poker");
   mkdirSync(dirname(output), { recursive: true, mode: 0o700 });
   try {
     copyFileSync(binary, output);
     stripRuntimeDebugInfo(output);
+    if (nativeBinaryFingerprint(readFileSync(output)) !== fingerprint)
+      throw new Error("Staged native binary lost its verified source fingerprint");
     chmodSync(output, 0o700);
     const artifact: NativeArtifact = {
       mode: "vite-dev",
@@ -368,7 +423,12 @@ export function readNativeCache(tree: Worktree, paths = launcherPaths()): Native
     !existsSync(value.binary)
   )
     return null;
-  if (createHash("sha256").update(readFileSync(value.binary)).digest("hex") !== value.sha256)
+  const bytes = readFileSync(value.binary);
+  if (
+    value.fingerprint !== nativeFingerprint(tree) ||
+    nativeBinaryFingerprint(bytes) !== value.fingerprint ||
+    createHash("sha256").update(bytes).digest("hex") !== value.sha256
+  )
     return null;
   return value as NativeArtifact;
 }
@@ -414,7 +474,10 @@ export async function buildNative(
   signal?: AbortSignal,
 ): Promise<NativeArtifact> {
   const fingerprint = nativeFingerprint(tree);
-  const target = resolve(process.env.CARGO_TARGET_DIR || join(paths.cache, "native-target"));
+  const target = join(
+    resolve(process.env.CARGO_TARGET_DIR || join(paths.cache, "native-target")),
+    createHash("sha256").update(tree.id).digest("hex").slice(0, 24),
+  );
   await run(
     process.execPath,
     [
@@ -429,7 +492,7 @@ export async function buildNative(
       "--no-default-features",
     ],
     tree.path,
-    { ...process.env, CARGO_TARGET_DIR: target },
+    { ...process.env, CARGO_TARGET_DIR: target, POKER_LAB_NATIVE_SOURCE_FP: fingerprint },
     signal,
   );
   if (signal?.aborted) throw new Error("Native build cancelled");
@@ -560,6 +623,210 @@ const activationHooks: ActivationHooks = {
     }
   },
 };
+export interface WindowPlacement {
+  workspace: string;
+  monitor: number;
+  floating: boolean;
+  at: [number, number];
+  size: [number, number];
+  fullscreen: number;
+  fullscreenClient: number;
+  focusAddress: string | null;
+}
+interface PlacementHooks extends ActivationHooks {
+  wait: () => Promise<void>;
+}
+const placementHooks: PlacementHooks = {
+  ...activationHooks,
+  wait: () => new Promise((done) => setTimeout(done, 100)),
+};
+function ownedClient(ownerPid: number, runtime: ActivationHooks): Record<string, unknown> | null {
+  const clients: unknown = JSON.parse(runtime.command("hyprctl", ["-j", "clients"]));
+  if (!Array.isArray(clients)) throw new Error("Invalid Hyprland window list");
+  const matches = clients.filter((value: unknown): value is Record<string, unknown> => {
+    if (!value || typeof value !== "object") return false;
+    const client = value as Record<string, unknown>;
+    if (
+      client.class !== "unimatrix-poker" ||
+      typeof client.address !== "string" ||
+      !/^0x[0-9a-f]+$/i.test(client.address)
+    )
+      return false;
+    let pid = client.pid;
+    const seen = new Set<number>();
+    while (typeof pid === "number" && Number.isSafeInteger(pid) && pid > 1 && !seen.has(pid)) {
+      if (pid === ownerPid) return true;
+      seen.add(pid);
+      pid = runtime.parentPid(pid);
+    }
+    return false;
+  });
+  if (matches.length > 1) throw new Error("Cannot restore an ambiguous Poker Lab window");
+  return matches[0] || null;
+}
+function focusedAddress(runtime: ActivationHooks): string | null {
+  const value: unknown = JSON.parse(runtime.command("hyprctl", ["-j", "activewindow"]));
+  if (
+    value &&
+    typeof value === "object" &&
+    "address" in value &&
+    typeof value.address === "string" &&
+    /^0x[0-9a-f]+$/i.test(value.address)
+  )
+    return value.address;
+  return null;
+}
+export function captureWindowPlacement(
+  ownerPid: number,
+  overrides: Partial<PlacementHooks> = {},
+): WindowPlacement | null {
+  const runtime = { ...placementHooks, ...overrides };
+  if (runtime.platform !== "linux" || !runtime.env.HYPRLAND_INSTANCE_SIGNATURE) return null;
+  const client = ownedClient(ownerPid, runtime);
+  if (!client) throw new Error("Waiting for the owned Poker Lab window before replacing it");
+  const workspace = client.workspace as { id?: unknown; name?: unknown } | null;
+  if (
+    !workspace ||
+    !Number.isSafeInteger(workspace.id) ||
+    typeof workspace.name !== "string" ||
+    [...workspace.name].some((character) => character.charCodeAt(0) < 32)
+  )
+    throw new Error("Cannot read Poker Lab's workspace");
+  const pair = (value: unknown): value is [number, number] =>
+    Array.isArray(value) &&
+    value.length === 2 &&
+    value.every(
+      (n: unknown) => typeof n === "number" && Number.isSafeInteger(n) && Math.abs(n) <= 1000000,
+    );
+  if (
+    !Number.isSafeInteger(client.monitor) ||
+    typeof client.floating !== "boolean" ||
+    !pair(client.at) ||
+    !pair(client.size) ||
+    client.size.some((n) => n <= 0) ||
+    ![0, 1, 2, 3].includes(Number(client.fullscreen))
+  )
+    throw new Error("Cannot read Poker Lab's window placement");
+  const focus = focusedAddress(runtime);
+  return {
+    workspace: workspace.name.startsWith("special:")
+      ? workspace.name
+      : /^\d+$/.test(workspace.name)
+        ? String(workspace.id)
+        : `name:${workspace.name}`,
+    monitor: Number(client.monitor),
+    floating: client.floating,
+    at: client.at,
+    size: client.size,
+    fullscreen: Number(client.fullscreen),
+    fullscreenClient: [0, 1, 2, 3].includes(Number(client.fullscreenClient))
+      ? Number(client.fullscreenClient)
+      : Number(client.fullscreen),
+    focusAddress: focus === client.address ? null : focus,
+  };
+}
+function placementDispatch(runtime: ActivationHooks, legacy: string[], lua: string): void {
+  try {
+    if (runtime.command("hyprctl", ["dispatch", ...legacy]) === "ok") return;
+  } catch {
+    /* The Lua dispatcher replaced legacy dispatchers. */
+  }
+  runtime.command("hyprctl", ["eval", `hl.dispatch(${lua})`]);
+}
+export async function restoreWindowPlacement(
+  ownerPid: number,
+  placement: WindowPlacement | null,
+  overrides: Partial<PlacementHooks> = {},
+): Promise<void> {
+  const runtime = { ...placementHooks, ...overrides };
+  if (runtime.platform !== "linux" || !runtime.env.HYPRLAND_INSTANCE_SIGNATURE) return;
+  let focus = placement?.focusAddress ?? null;
+  for (let attempt = 0; attempt < 80; attempt++) {
+    const client = ownedClient(ownerPid, runtime);
+    const active = focusedAddress(runtime);
+    if (!client) {
+      if (active) focus = active;
+      await runtime.wait();
+      continue;
+    }
+    const address = String(client.address),
+      target = `address:${address}`,
+      window = JSON.stringify(target);
+    if (!placement) {
+      placementDispatch(
+        runtime,
+        ["settiled", target],
+        `hl.dsp.window.float({ action = "disable", window = ${window} })`,
+      );
+      if (ownedClient(ownerPid, runtime)?.floating !== false)
+        throw new Error("Poker Lab did not enter tiled mode");
+      return;
+    }
+    if (active && active !== address) focus = active;
+    runtime.command("hyprctl", [
+      "eval",
+      `hl.dispatch(hl.dsp.window.move({ monitor = ${JSON.stringify(String(placement.monitor))}, follow = false, window = ${window} }))`,
+    ]);
+    placementDispatch(
+      runtime,
+      ["movetoworkspacesilent", `${placement.workspace},${target}`],
+      `hl.dsp.window.move({ workspace = ${JSON.stringify(placement.workspace)}, follow = false, window = ${window} })`,
+    );
+    placementDispatch(
+      runtime,
+      [placement.floating ? "setfloating" : "settiled", target],
+      `hl.dsp.window.float({ action = ${JSON.stringify(placement.floating ? "enable" : "disable")}, window = ${window} })`,
+    );
+    if (placement.floating) {
+      placementDispatch(
+        runtime,
+        ["resizewindowpixel", `exact ${placement.size[0]} ${placement.size[1]},${target}`],
+        `hl.dsp.window.resize({ x = ${placement.size[0]}, y = ${placement.size[1]}, relative = false, window = ${window} })`,
+      );
+      placementDispatch(
+        runtime,
+        ["movewindowpixel", `exact ${placement.at[0]} ${placement.at[1]},${target}`],
+        `hl.dsp.window.move({ x = ${placement.at[0]}, y = ${placement.at[1]}, relative = false, window = ${window} })`,
+      );
+    }
+    runtime.command("hyprctl", [
+      "eval",
+      `hl.dispatch(hl.dsp.window.fullscreen_state({ internal = ${placement.fullscreen}, client = ${placement.fullscreenClient}, action = "set", window = ${window} }))`,
+    ]);
+    if (focus && focusedAddress(runtime) === address)
+      placementDispatch(
+        runtime,
+        ["focuswindow", `address:${focus}`],
+        `hl.dsp.focus({ window = ${JSON.stringify(`address:${focus}`)} })`,
+      );
+    const restored = ownedClient(ownerPid, runtime);
+    const actualWorkspace = restored?.workspace as { id?: number; name?: string } | undefined;
+    const workspaceMatches = placement.workspace.startsWith("name:")
+      ? actualWorkspace?.name === placement.workspace.slice(5)
+      : placement.workspace.startsWith("special:")
+        ? actualWorkspace?.name === placement.workspace
+        : String(actualWorkspace?.id) === placement.workspace;
+    if (
+      !restored ||
+      !workspaceMatches ||
+      restored.monitor !== placement.monitor ||
+      restored.floating !== placement.floating ||
+      Number(restored.fullscreen) !== placement.fullscreen
+    )
+      throw new Error("Poker Lab window placement readback differs from its saved placement");
+    if (
+      placement.floating &&
+      placement.fullscreen === 0 &&
+      (JSON.stringify(restored.at) !== JSON.stringify(placement.at) ||
+        JSON.stringify(restored.size) !== JSON.stringify(placement.size))
+    )
+      throw new Error("Poker Lab floating geometry was not restored");
+    if (focus && focusedAddress(runtime) === address)
+      throw new Error("Poker Lab replacement could not preserve desktop focus");
+    return;
+  }
+  throw new Error("Poker Lab replacement window did not appear for placement restoration");
+}
 export function activateExistingWindow(
   ownerPid: number,
   overrides: Partial<ActivationHooks> = {},
@@ -616,7 +883,10 @@ export function activateExistingWindow(
   }
 }
 export interface SupervisorHooks {
+  capturePlacement: typeof captureWindowPlacement;
+  restorePlacement: typeof restoreWindowPlacement;
   activate: (ownerPid: number) => void;
+  notify: (message: string) => void;
   build: typeof buildNative;
   startServer: typeof startViteServer;
   stopServer: typeof stopViteServer;
@@ -625,7 +895,12 @@ export interface SupervisorHooks {
   shouldStop: () => boolean;
 }
 const defaultHooks: SupervisorHooks = {
+  capturePlacement: captureWindowPlacement,
+  restorePlacement: restoreWindowPlacement,
   activate: activateExistingWindow,
+  notify: (message) => {
+    spawnSync("notify-send", ["Poker Lab", message], { timeout: 5000, stdio: "ignore" });
+  },
   build: buildNative,
   startServer: startViteServer,
   stopServer: stopViteServer,
@@ -673,6 +948,10 @@ export async function supervise(
   } catch (error) {
     const prior = readJson(join(paths.lock, "owner.json")) as { pid?: number } | null;
     if (prior?.pid && alive(prior.pid)) {
+      const state = activeState(paths);
+      if (state?.pid === prior.pid && !state.current) {
+        return;
+      }
       runtime.activate(prior.pid);
       return;
     }
@@ -684,6 +963,8 @@ export async function supervise(
   }
   atomicJson(join(paths.lock, "owner.json"), { pid: process.pid });
   let child: ChildProcess | null = null;
+  const isRecording = () => Boolean(child?.pid && recordingActive(child.pid, paths));
+  const capturePlacement = () => (child?.pid ? runtime.capturePlacement(child.pid) : null);
   let server: DevServer | null = null;
   let current: Worktree | null = null;
   const active: { artifact: NativeArtifact | null } = { artifact: null };
@@ -708,6 +989,7 @@ export async function supervise(
     current = tree;
     active.artifact = entry;
     launched.once("exit", () => {
+      if (launched.pid) clearRecording(launched.pid, paths);
       if (child === launched) {
         manualClose = true;
         current = null;
@@ -726,6 +1008,26 @@ export async function supervise(
       }
     });
     publish();
+    return launched;
+  };
+  const launchRestored = async (
+    tree: Worktree,
+    entry: NativeArtifact,
+    placement: WindowPlacement | null,
+  ) => {
+    const launched = launch(tree, entry);
+    if (launched.pid) {
+      try {
+        await runtime.restorePlacement(
+          launched.pid,
+          placement ? { ...placement, floating: false } : null,
+        );
+      } catch (error) {
+        publish(
+          `Poker Lab reopened, but its window placement could not be restored: ${String(error)}`,
+        );
+      }
+    }
   };
   const stopApp = async () => {
     if (child) {
@@ -751,6 +1053,11 @@ export async function supervise(
           preferenceVersion = version;
         }
         if (!child || current?.id !== desired.id) {
+          if (isRecording()) {
+            publish("Checkout change queued until recording stops");
+            await runtime.pause();
+            continue;
+          }
           if (pending) {
             pending.controller.abort();
             await pending.promise;
@@ -767,8 +1074,19 @@ export async function supervise(
             }
           }
           if (stopping || manualClose || runtime.shouldStop()) break;
+          if (isRecording()) {
+            publish("Checkout change queued until recording stops");
+            await runtime.pause();
+            continue;
+          }
           const previous = current,
             previousArtifact = active.artifact;
+          const placement = capturePlacement();
+          if (isRecording()) {
+            publish("Checkout change queued until recording stops");
+            await runtime.pause();
+            continue;
+          }
           await stopApp();
           if (server) {
             await runtime.stopServer(server);
@@ -776,18 +1094,28 @@ export async function supervise(
           }
           try {
             server = await runtime.startServer(desired);
-            launch(desired, ready);
+            await launchRestored(desired, ready, placement);
           } catch (error) {
             if (previous && previousArtifact) {
               server = await runtime.startServer(previous);
-              launch(previous, previousArtifact);
+              await launchRestored(previous, previousArtifact, placement);
             }
             throw error;
           }
         } else {
           current = desired;
           if (pending?.done) {
-            const completed = pending;
+            if (
+              isRecording() &&
+              pending.artifact &&
+              pending.tree.id === current.id &&
+              nativeFingerprint(current) === pending.fingerprint
+            ) {
+              publish("Native update ready; waiting for recording to stop");
+              await runtime.pause();
+              continue;
+            }
+            const completed: PendingBuild = pending;
             pending = null;
             if (completed.error) publish(String(completed.error));
             else if (
@@ -795,8 +1123,22 @@ export async function supervise(
               completed.tree.id === current.id &&
               nativeFingerprint(current) === completed.fingerprint
             ) {
+              let placement: WindowPlacement | null;
+              try {
+                placement = capturePlacement();
+              } catch (error) {
+                pending = completed;
+                throw error;
+              }
+              if (isRecording()) {
+                pending = completed;
+                publish("Native update ready; waiting for recording to stop");
+                await runtime.pause();
+                continue;
+              }
               await stopApp();
-              if (!stopping && !manualClose) launch(current, completed.artifact);
+              if (!stopping && !manualClose)
+                await launchRestored(current, completed.artifact, placement);
             }
           }
         }
@@ -872,7 +1214,15 @@ export async function main(args = process.argv.slice(2)) {
     console.log(JSON.stringify(launcherStatus(common, preferred)));
   else if (rest.length === 2 && rest[0] === "--select" && rest[1])
     console.log(JSON.stringify(selectWorktree(common, preferred, rest[1])));
-  else if (rest.length === 2 && rest[0] === "--seed-native" && rest[1] && isAbsolute(rest[1])) {
+  else if (
+    rest.length === 4 &&
+    rest[0] === "--recording" &&
+    (rest[2] === "gameplay" || rest[2] === "collector") &&
+    (rest[3] === "on" || rest[3] === "off")
+  ) {
+    setRecordingIntent(Number(rest[1]), rest[2], rest[3] === "on");
+    console.log(JSON.stringify({ ok: true }));
+  } else if (rest.length === 2 && rest[0] === "--seed-native" && rest[1] && isAbsolute(rest[1])) {
     const tree = chooseWorktree(common, trees, selectionAt(launcherPaths()), preferred);
     console.log(JSON.stringify(seedNativeCache(tree, rest[1])));
   } else if (!rest.length) await supervise(common, preferred);
@@ -884,7 +1234,12 @@ export async function main(args = process.argv.slice(2)) {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch((error: unknown) => {
     console.error(String(error));
-    if (process.platform === "linux")
+    if (
+      process.platform === "linux" &&
+      !process.argv.some((arg) =>
+        ["--status", "--select", "--recording", "--seed-native"].includes(arg),
+      )
+    )
       spawnSync("notify-send", ["--urgency=critical", "Poker Lab could not open", String(error)], {
         timeout: 5000,
         stdio: "ignore",

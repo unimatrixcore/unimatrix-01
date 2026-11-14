@@ -19,7 +19,8 @@
         "All-In",
         "Bet",
         "Show Cards",
-        "Straddle"
+        "Straddle",
+        "Away"
       ]
     },
     "card": {

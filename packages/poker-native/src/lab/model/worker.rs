@@ -46,6 +46,14 @@ impl Ocr {
     pub fn runtime_state(&self) -> Arc<AtomicU8> {
         self.runtime_state.clone()
     }
+    pub(super) fn start(&mut self) -> Result<(), String> {
+        self.ensure_started()
+    }
+    pub(super) fn share_signals(&mut self, cancelled: Arc<AtomicBool>, state: Arc<AtomicU8>) {
+        self.cancelled = cancelled;
+        self.runtime_state = state;
+        self.runtime_state.store(2, Ordering::Release);
+    }
 
     fn setting(&self, key: &str, fallback: String) -> String {
         self.environment

@@ -17,7 +17,14 @@ import {
 } from "@tanstack/react-router";
 import { ToolShell } from "@unimatrix/chrome/tool";
 import { Gameplay } from "./gameplay";
-import { BranchSelector } from "./branch_selector";
+import { OcrTraining } from "./ocr_training";
+import { GraduationCap } from "lucide-react";
+import { AppSettings } from "./app_settings";
+import {
+  readWorkspaceState,
+  rememberWorkspaceScroll,
+  restoreWorkspaceScroll,
+} from "../lib/workspace-state";
 
 function OcrIcon({ className }: { className?: string | undefined }) {
   return (
@@ -156,24 +163,58 @@ function RailPrefetch({ host, gameplay }: { host: HTMLElement; gameplay: boolean
   return null;
 }
 
+type Workspace = "ocr" | "gameplay" | "training";
+const workspaceAt = (): Workspace =>
+  window.location.pathname === "/gameplay"
+    ? "gameplay"
+    : window.location.pathname === "/training"
+      ? "training"
+      : "ocr";
+
 function WorkspaceShell({ host, workspace }: { host: HTMLElement; workspace: HTMLElement }) {
-  const [gameplay, setGameplay] = useState(window.location.pathname === "/gameplay");
+  const [current, setCurrent] = useState<Workspace>(workspaceAt);
+  const gameplay = current === "gameplay";
+  const [trainingVisited, setTrainingVisited] = useState(current === "training");
   const [gameplayVisited, setGameplayVisited] = useState(gameplay);
-  const active = useRef(gameplay);
+  const active = useRef(current);
   const leavingGameplay = useRef<() => Promise<void>>(async () => {});
   const ocrLocation = useRef({
-    path: gameplay ? "/collection" : window.location.pathname,
+    path:
+      current !== "ocr" ? readWorkspaceState().ocrPath || "/collection" : window.location.pathname,
     state: history.state as unknown,
   });
   const transition = useRef(Promise.resolve());
   const generation = useRef(0);
   const committed = useRef({ path: window.location.pathname, state: history.state as unknown });
-  const gameplayScroll = useRef({ top: 0, left: 0 });
+  const gameplayScroll = useRef(readWorkspaceState().scroll?.gameplay || { top: 0, left: 0 });
+  const trainingScroll = useRef(readWorkspaceState().scroll?.training || { top: 0, left: 0 });
+  const restoringScroll = useRef(false);
   const ocrFinished = useRef(false);
   const ocrWatchdog = useRef<number | undefined>(undefined);
 
   useEffect(() => {
-    if (!active.current)
+    const region = document.getElementById("main-content");
+    let cancelScrollRestore = () => {};
+    const restoreScroll = (next: "gameplay" | "training") => {
+      if (!region) return;
+      cancelScrollRestore();
+      const point = next === "gameplay" ? gameplayScroll.current : trainingScroll.current;
+      restoringScroll.current = true;
+      cancelScrollRestore = restoreWorkspaceScroll(region, point, () => {
+        restoringScroll.current = false;
+      });
+    };
+    const saveScroll = () => {
+      if (!region || restoringScroll.current || active.current === "ocr") return;
+      const point = { top: region.scrollTop, left: region.scrollLeft };
+      if (active.current === "gameplay") gameplayScroll.current = point;
+      else trainingScroll.current = point;
+      rememberWorkspaceScroll(active.current, point);
+    };
+    region?.addEventListener("scroll", saveScroll, { passive: true });
+    window.addEventListener("pagehide", saveScroll);
+    if (active.current !== "ocr") restoreScroll(active.current);
+    if (active.current === "ocr")
       queueMicrotask(() => {
         void window
           .startPokerOcr()
@@ -182,15 +223,15 @@ function WorkspaceShell({ host, workspace }: { host: HTMLElement; workspace: HTM
           })
           .catch(() => {});
       });
-    const switchTo = (next: boolean, pop = false, state?: unknown) => {
+    const switchTo = (next: Workspace, pop = false, state?: unknown) => {
       const ticket = ++generation.current;
       const destination = pop ? { path: window.location.pathname, state } : null;
       transition.current = transition.current
         .then(async () => {
           if (ticket !== generation.current) return;
           if (active.current === next) return;
-          if (active.current) await leavingGameplay.current();
-          else {
+          if (active.current === "gameplay") await leavingGameplay.current();
+          else if (active.current === "ocr") {
             if (!pop)
               ocrLocation.current = {
                 path: window.location.pathname,
@@ -199,22 +240,37 @@ function WorkspaceShell({ host, workspace }: { host: HTMLElement; workspace: HTM
             await window.leavePokerOcr?.();
           }
           if (ticket !== generation.current) return;
-          const deferred = next ? undefined : window.pokerOcrDeferredLocation;
+          const deferred = next !== "ocr" ? undefined : window.pokerOcrDeferredLocation;
           if (deferred) {
             ocrLocation.current = deferred;
             delete window.pokerOcrDeferredLocation;
           }
           const region = document.getElementById("main-content");
+          const wasRestoringScroll = restoringScroll.current;
+          cancelScrollRestore();
           clearLabPageHandoff();
-          if (next) {
+          if (next !== "ocr") {
             clearTimeout(ocrWatchdog.current);
             document.getElementById("loading-overlay")?.classList.remove("active");
             window.CollectorScroll?.suspend();
-          } else if (region)
-            gameplayScroll.current = { top: region.scrollTop, left: region.scrollLeft };
+          }
+          if (active.current === "gameplay" && region && !wasRestoringScroll)
+            rememberWorkspaceScroll(
+              "gameplay",
+              (gameplayScroll.current = { top: region.scrollTop, left: region.scrollLeft }),
+            );
+          if (active.current === "training" && region && !wasRestoringScroll)
+            rememberWorkspaceScroll(
+              "training",
+              (trainingScroll.current = { top: region.scrollTop, left: region.scrollLeft }),
+            );
           if (!pop) {
-            const path = next ? "/gameplay" : ocrLocation.current.path;
-            history.pushState(next ? { pokerGameplay: true } : ocrLocation.current.state, "", path);
+            const path = next === "ocr" ? ocrLocation.current.path : `/${next}`;
+            history.pushState(
+              next !== "ocr" ? { pokerWorkspace: next } : ocrLocation.current.state,
+              "",
+              path,
+            );
           } else if (deferred) {
             history.replaceState(deferred.state, "", deferred.path);
           }
@@ -225,19 +281,21 @@ function WorkspaceShell({ host, workspace }: { host: HTMLElement; workspace: HTM
             };
           active.current = next;
           flushSync(() => {
-            if (next) setGameplayVisited(true);
-            setGameplay(next);
+            if (next === "gameplay") setGameplayVisited(true);
+            if (next === "training") setTrainingVisited(true);
+            setCurrent(next);
           });
           window.dispatchEvent(new Event("poker-workspace-change"));
-          if (next && region) {
-            region.scrollTop = gameplayScroll.current.top;
-            region.scrollLeft = gameplayScroll.current.left;
-          } else window.CollectorScroll?.resume();
+          if (next === "gameplay" && region) {
+            restoreScroll("gameplay");
+          } else if (next === "training" && region) {
+            restoreScroll("training");
+          } else if (next === "ocr") window.CollectorScroll?.resume();
           if (region) {
             region.tabIndex = -1;
             region.focus({ preventScroll: true });
           }
-          if (!next) {
+          if (next === "ocr") {
             const cold = !ocrFinished.current;
             if (cold) document.getElementById("loading-overlay")?.classList.add("active");
             ocrWatchdog.current = cold
@@ -262,7 +320,7 @@ function WorkspaceShell({ host, workspace }: { host: HTMLElement; workspace: HTM
               .then(() => {
                 ocrFinished.current = true;
                 clearTimeout(ocrWatchdog.current);
-                if (ticket !== generation.current || active.current) return;
+                if (ticket !== generation.current || active.current !== "ocr") return;
                 if (pop && (deferred?.state || state) && window.onpopstate)
                   window.onpopstate(
                     new PopStateEvent("popstate", { state: deferred?.state ?? state }),
@@ -270,7 +328,7 @@ function WorkspaceShell({ host, workspace }: { host: HTMLElement; workspace: HTM
               })
               .catch((error: unknown) => {
                 clearTimeout(ocrWatchdog.current);
-                if (ticket !== generation.current || active.current) return;
+                if (ticket !== generation.current || active.current !== "ocr") return;
                 document.getElementById("loading-overlay")?.classList.remove("active");
                 const toast = document.createElement("div");
                 toast.className = "toast error";
@@ -292,7 +350,7 @@ function WorkspaceShell({ host, workspace }: { host: HTMLElement; workspace: HTM
           const toast = document.createElement("div");
           toast.className = "toast error";
           toast.textContent = error instanceof Error ? error.message : String(error);
-          if (!next && active.current === next) {
+          if (next === "ocr" && active.current === next) {
             document.getElementById("loading-overlay")?.classList.remove("active");
             const retry = document.createElement("button");
             retry.textContent = "Retry";
@@ -317,18 +375,19 @@ function WorkspaceShell({ host, workspace }: { host: HTMLElement; workspace: HTM
       )
         return;
       const path = new URL(link.href, window.location.href).pathname;
-      if (path !== "/gameplay" && path !== "/collection") return;
-      if ((path === "/gameplay") === active.current) return;
+      if (!["/gameplay", "/collection", "/training"].includes(path)) return;
+      const next = path === "/gameplay" ? "gameplay" : path === "/training" ? "training" : "ocr";
+      if (next === active.current) return;
       event.preventDefault();
       event.stopPropagation();
-      switchTo(path === "/gameplay");
+      switchTo(next);
     };
     const popstate = (event: PopStateEvent) => {
-      const next = window.location.pathname === "/gameplay";
+      const next = workspaceAt();
       if (next === active.current) {
         ++generation.current;
         committed.current = { path: window.location.pathname, state: event.state as unknown };
-        if (!next)
+        if (next === "ocr")
           queueMicrotask(() => {
             ocrLocation.current = {
               path: window.location.pathname,
@@ -341,7 +400,7 @@ function WorkspaceShell({ host, workspace }: { host: HTMLElement; workspace: HTM
       switchTo(next, true, event.state as unknown);
     };
     const ocrLocationChanged = () => {
-      if (!active.current)
+      if (active.current === "ocr")
         committed.current = ocrLocation.current = {
           path: window.location.pathname,
           state: history.state as unknown,
@@ -351,6 +410,9 @@ function WorkspaceShell({ host, workspace }: { host: HTMLElement; workspace: HTM
     window.addEventListener("popstate", popstate, true);
     window.addEventListener("poker-ocr-location", ocrLocationChanged);
     return () => {
+      cancelScrollRestore();
+      region?.removeEventListener("scroll", saveScroll);
+      window.removeEventListener("pagehide", saveScroll);
       host.removeEventListener("click", click, true);
       window.removeEventListener("popstate", popstate, true);
       window.removeEventListener("poker-ocr-location", ocrLocationChanged);
@@ -364,20 +426,29 @@ function WorkspaceShell({ host, workspace }: { host: HTMLElement; workspace: HTM
           className="collector-shell"
           homeLabel="Poker Lab"
           logoSrc="/static/ui/poker-chip.svg"
-          accountControl={({ collapsed }) => <BranchSelector collapsed={collapsed} />}
+          accountControl={({ collapsed }) => <AppSettings collapsed={collapsed} />}
           sections={[
-            { label: "OCR Data", to: "/collection", active: !gameplay, icon: OcrIcon },
+            { label: "OCR Data", to: "/collection", active: current === "ocr", icon: OcrIcon },
             { label: "Gameplay", to: "/gameplay", active: gameplay, icon: GameplayIcon },
+            {
+              label: "OCR Training",
+              to: "/training",
+              active: current === "training",
+              icon: GraduationCap,
+            },
           ]}
           showFooter={false}
           scroll="section"
           width="wide"
         >
-          <div style={{ display: gameplay ? "none" : undefined }}>
+          <div style={{ display: current === "ocr" ? undefined : "none" }}>
             <NativeWorkspace element={workspace} />
           </div>
           <div style={{ display: gameplay ? undefined : "none" }}>
             {gameplayVisited && <Gameplay active={gameplay} onLeave={leavingGameplay} />}
+          </div>
+          <div style={{ display: current === "training" ? undefined : "none" }}>
+            {trainingVisited && <OcrTraining active={current === "training"} />}
           </div>
         </ToolShell>
       </RouterContextProvider>
