@@ -550,6 +550,30 @@ test("resumes a failed model version without creating another training run", asy
   ).toHaveCount(1);
 });
 
+test("a single resumable version still allows a new training selection", async ({ page }) => {
+  await page.addInitScript(() => {
+    (window as unknown as { trainingFixture: { mode: string } }).trainingFixture.mode = "failed";
+  });
+  await page.goto("/training");
+  await expect(page.getByRole("button", { name: "Resume training", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "New training", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "New training", exact: true })).toBeVisible();
+  await openCollections(page);
+  await page.getByRole("menuitemcheckbox", { name: "Evening tables" }).click();
+  await page.getByRole("menuitemcheckbox", { name: "Weekend session" }).click();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "Start training", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Start training", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Version 1", exact: true })).toBeVisible();
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { trainingFixture: { submissions: unknown[] } }).trainingFixture
+          .submissions,
+    ),
+  ).toEqual([{ collections: ["second"], epochs: 6 }]);
+});
+
 test("Names explains that it is waiting for the shared base model", async ({ page }) => {
   await page.addInitScript(() => {
     Object.assign(

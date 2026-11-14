@@ -31,6 +31,9 @@ if '-c' in rest:
     if declared!=args.name_high_resolution:
         raise ValueError('Name resolution flag must match the recorded training/export configuration')
 source=args.source.resolve();sys.path.insert(0,str(source))
+if args.mode == 'train':
+    from checkpoint_resume import install_checkpoint_receipts
+    install_checkpoint_receipts()
 if install_tensor_float_compatibility():
     print('PADDLE SCALAR COMPATIBILITY: single-element float uses Tensor.item(); AMP loss scaling unchanged',flush=True)
 if args.resume_state:

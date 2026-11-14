@@ -104,6 +104,7 @@ function fixture(initialRuns: unknown[] = [], initialAnalyses: Record<string, un
     holdCondition: "",
     releaseCondition: false,
     failResume: false,
+    detailsFailures: 0,
     blocked: false,
     unknown: false,
     hold: false,
@@ -270,6 +271,10 @@ function fixture(initialRuns: unknown[] = [], initialAnalyses: Record<string, un
           ],
         },
       });
+    if (control.detailsFailures > 0) {
+      control.detailsFailures--;
+      return new Response(JSON.stringify({ error: "Temporary details failure" }), { status: 503 });
+    }
     const condition = new URL(path, "http://localhost").searchParams.get("condition") ?? "identity";
     while (control.holdCondition === condition && !control.releaseCondition)
       await new Promise((resolve) => setTimeout(resolve, 10));
@@ -645,6 +650,48 @@ it("keeps the failed version selected and retryable when resume is rejected", as
   fireEvent.click(screen.getByRole("button", { name: "Resume training" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Checkpoint could not be reopened");
   expect(screen.getByRole("button", { name: "Resume training" })).toBeEnabled();
+});
+
+it("can start fresh with different collections when its only version is resumable", async () => {
+  const { calls } = fixture([
+    { ...run, status: "interrupted", stage: "Stopped", can_resume: true },
+  ]);
+  renderTraining();
+  const resume = await screen.findByRole("button", { name: "Resume training" });
+  await waitFor(() => expect(resume).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: "New training" }));
+  expect(screen.queryByRole("button", { name: "Resume training" })).toBeNull();
+  expect(screen.getByRole("heading", { name: "New training" })).toBeTruthy();
+  const collection = screen.getByRole("menuitemcheckbox", { name: "Collection two" });
+  expect(collection).toBeEnabled();
+  fireEvent.click(collection);
+  await waitFor(() => expect(screen.getByRole("button", { name: "Start training" })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: "Start training" }));
+  await screen.findByRole("heading", { name: "Version 1" });
+  const submission = calls.find(
+    (call) => call.path === "/api/training" && call.options?.method === "POST",
+  );
+  const body = submission?.options?.body;
+  if (typeof body !== "string") throw new Error("Missing training request body");
+  expect(JSON.parse(body)).toEqual({
+    collections: ["one", "two"],
+    epochs: 6,
+  });
+  expect(calls.some((call) => call.path.endsWith("/resume"))).toBe(false);
+});
+
+it("recovers live details polling after a transient failure without changing runs", async () => {
+  const { control, calls } = fixture([{ ...run, status: "training", stage: "Training" }]);
+  control.detailsFailures = 1;
+  renderTraining();
+  expect(await screen.findByText("Temporary details failure")).toBeTruthy();
+  await waitFor(
+    () => {
+      expect(screen.queryByText("Temporary details failure")).toBeNull();
+      expect(calls.filter((call) => call.path === "/api/training/opaque-id")).toHaveLength(2);
+    },
+    { timeout: 3500 },
+  );
 });
 
 it("restores collections and the default recipe after remount without automatically starting training", async () => {

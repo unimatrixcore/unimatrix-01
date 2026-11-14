@@ -168,25 +168,64 @@ async function initDatasets() {
 let captureWatch = null, manualCaptureBusy = false, watchNeedsRecovery = false, capturePresentationGeneration = 0;
 const WATCH_RECONNECT_KEY = 'poker:collection-recording';
 const WATCH_INTERVAL_KEY = 'poker:capture-interval-seconds';
+let captureReconnectGeneration = 0, collectorProtectionGeneration = 0, pendingCaptureReconnect = null;
+function forgetCaptureWatch(expected = null) {
+  try {
+    if (expected) {const saved=JSON.parse(window.sessionStorage?.getItem(WATCH_RECONNECT_KEY) || 'null');if(saved?.lease!==expected.lease || saved?.datasetId!==expected.context.datasetId)return;}
+    window.sessionStorage?.removeItem(WATCH_RECONNECT_KEY);
+  } catch {}
+}
+function closePendingCaptureReconnect(pending) {
+  pending.cancelled = true;
+  if (pending.closed) return Promise.resolve();
+  if (pending.closing) return pending.closing;
+  pending.closing = (async () => {
+    const response = await datasetFetch('/api/watch/stop',{method:'POST',datasetId:pending.context.datasetId,keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify({lease_id:pending.lease})});
+    if (!response.ok) throw new Error('Could not stop the saved collection recording. Retry Stop.');
+    pending.closed = true;
+    if (pendingCaptureReconnect === pending) pendingCaptureReconnect = null;
+    forgetCaptureWatch(pending);
+    void Promise.resolve(pending.protection).catch(()=>{}).then(async()=>{
+      if (pending.claim !== collectorProtectionGeneration) return;
+      await window.pokerSetLauncherRecording?.('collector',false);
+      if (pending.claim === collectorProtectionGeneration) collectorProtectionGeneration++;
+    }).catch(error=>showToast(error.message,'error'));
+  })().catch(error=>{pending.closing=null;throw error;});
+  return pending.closing;
+}
 function rememberCaptureWatch(status) {
-  if (status.active && status.lease) window.sessionStorage?.setItem(WATCH_RECONNECT_KEY,JSON.stringify({lease:status.lease,datasetId:status.context.datasetId,monitor:status.context.monitor,settings:status.settings}));
-  else if (!status.active) window.sessionStorage?.removeItem(WATCH_RECONNECT_KEY);
+  try {
+    if (status.active && status.lease) {
+      if (pendingCaptureReconnect?.lease === status.lease && pendingCaptureReconnect.context.datasetId === status.context.datasetId) pendingCaptureReconnect = null;
+      window.sessionStorage?.setItem(WATCH_RECONNECT_KEY,JSON.stringify({lease:status.lease,datasetId:status.context.datasetId,monitor:status.context.monitor,settings:status.settings}));
+    } else if (!status.active && !pendingCaptureReconnect) forgetCaptureWatch();
+  } catch {}
   renderWatchStatus(status);
 }
 async function reconnectCaptureWatch() {
+  if (pendingCaptureReconnect) return;
+  const token = ++captureReconnectGeneration;
   let saved;
-  try {saved=JSON.parse(window.sessionStorage?.getItem(WATCH_RECONNECT_KEY) || 'null');} catch {window.sessionStorage?.removeItem(WATCH_RECONNECT_KEY);return;}
+  try {saved=JSON.parse(window.sessionStorage?.getItem(WATCH_RECONNECT_KEY) || 'null');} catch {forgetCaptureWatch();return;}
   if (!saved || window.location.pathname !== '/collection' || saved.datasetId !== activeDatasetId) return;
-  if (!Array.from(monitorSelect.options).some(option=>option.value===saved.monitor)) {window.sessionStorage?.removeItem(WATCH_RECONNECT_KEY);return;}
+  if (!Array.from(monitorSelect.options).some(option=>option.value===saved.monitor)) {forgetCaptureWatch();return;}
   monitorSelect.value=saved.monitor;
   document.getElementById('watch-interval').value=String(saved.settings.intervalSeconds);
   watchNeedsRecovery=true;
-  await window.pokerSetLauncherRecording?.('collector',true);
+  const captured = captureContext(), claim = ++collectorProtectionGeneration;
+  const pending = pendingCaptureReconnect = {lease:saved.lease,context:captured,claim,closed:false,closing:null,protection:null};
+  pending.protection = Promise.resolve(window.pokerSetLauncherRecording?.('collector',true));
+  await pending.protection;
+  if (token !== captureReconnectGeneration || !canWatchCapture(captured)) {
+    if (!pending.cancelled) await closePendingCaptureReconnect(pending);
+    else if (pending.closing) await pending.closing;
+    return;
+  }
   await captureWatch.start(saved.settings,saved.lease);
 }
 function captureContext() { return {datasetId:activeDatasetId,epoch:datasetEpoch,monitor:monitorSelect?.value}; }
 function captureContextMatches(value) { return value.datasetId === activeDatasetId && value.epoch === datasetEpoch && value.monitor === monitorSelect?.value && !datasetSwitching; }
-function canWatchCapture(value) { return captureContextMatches(value) && currentView === 'collection' && !manualCaptureBusy && !isRecovering && !labelingUnlocked && !reviewUnlocked && !!value.monitor; }
+function canWatchCapture(value) { return window.location.pathname === '/collection' && captureContextMatches(value) && currentView === 'collection' && !manualCaptureBusy && !isRecovering && !labelingUnlocked && !reviewUnlocked && !!value.monitor; }
 function queuedCropCount() {
   if(queueMode) return queueSummary?.total || 0;
   const keys = new Set(pool.map(item => `${item.id}:${item.phash || sampleKey(item)}`));
@@ -202,11 +241,14 @@ function mergeWatchFrames(incoming, render = true) {
   if (render) renderFrames();
 }
 async function stopCaptureWatch(reason = 'Stopped') {
+  captureReconnectGeneration++;
   capturePresentationGeneration++;
   window.CollectorCaptureAnimation?.cancel();
-  if (!captureWatch) return;
-  await captureWatch.stop(reason);
-  await captureWatch.whenIdle();
+  const pending = pendingCaptureReconnect;
+  const stopped = captureWatch?.stop(reason);
+  if (pending) await closePendingCaptureReconnect(pending);
+  await stopped;
+  await captureWatch?.whenIdle();
 }
 async function stopAndRecoverWatch(reason = 'Stopped') {
   const captured = captureContext(), recover = watchNeedsRecovery || captureWatch?.isActive() || captureWatch?.isBusy();
@@ -304,13 +346,23 @@ function initCaptureWatch() {
       watchNeedsRecovery = true;
       await saveSessionProgress(true);
       if (!canWatchCapture(captured)) throw new Error('Collection changed before watch started');
+      const claim = ++collectorProtectionGeneration;
       await window.pokerSetLauncherRecording?.('collector',true);
-      return (await datasetFetch('/api/watch/start',{method:'POST',datasetId:captured.datasetId,headers:{'Content-Type':'application/json'},body:JSON.stringify({monitor:captured.monitor,interval_seconds:settings.intervalSeconds,queue_mode:'paged'})})).json();
+      try {
+        const opened = await (await datasetFetch('/api/watch/start',{method:'POST',datasetId:captured.datasetId,headers:{'Content-Type':'application/json'},body:JSON.stringify({monitor:captured.monitor,interval_seconds:settings.intervalSeconds,queue_mode:'paged'})})).json();
+        if (!opened.lease_id) throw new Error('Watch lease was not created');
+        return opened;
+      } catch (error) {
+        if (claim === collectorProtectionGeneration) {
+          try {await window.pokerSetLauncherRecording?.('collector',false);} catch {}
+        }
+        throw error;
+      }
     },
     scan:async (lease,captured) => (await datasetFetch('/api/watch/tick',{method:'POST',datasetId:captured.datasetId,headers:{'Content-Type':'application/json'},body:JSON.stringify({lease_id:lease})})).json(),
     close:async (lease,captured) => {
       const result=await datasetFetch('/api/watch/stop',{method:'POST',datasetId:captured.datasetId,keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify({lease_id:lease})});
-      if(result.ok) await window.pokerSetLauncherRecording?.('collector',false);
+      if(result.ok) {collectorProtectionGeneration++;await window.pokerSetLauncherRecording?.('collector',false);}
       return result;
     },
     onBatch:async (result,captured,isCurrent) => {
@@ -340,7 +392,11 @@ function initCaptureWatch() {
       await saveSessionProgress(true);
     }
   });
-  document.getElementById('watch-start').onclick = () => {
+  document.getElementById('watch-start').onclick = async () => {
+    captureReconnectGeneration++;
+    if (pendingCaptureReconnect) {
+      try {await closePendingCaptureReconnect(pendingCaptureReconnect);} catch(error) {showToast(error.message,'error');return;}
+    }
     setRecordingSettingsOpen(false);
     watchNeedsRecovery = true;
     captureWatch.start({intervalSeconds:Number(document.getElementById('watch-interval').value),queueMode:'paged'}).catch(error => renderWatchStatus({active:false,busy:false,status:'error',message:error.message}));

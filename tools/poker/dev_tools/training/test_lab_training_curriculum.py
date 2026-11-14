@@ -221,6 +221,51 @@ class CurriculumTests(unittest.TestCase):
             self.assertEqual([stage['id'] for stage in result['stages']], ['base', 'general'])
             self.assertEqual(set(result['roles']), {'general'})
 
+    def test_fixed_controls_use_audited_parents_without_adding_unselected_real_rows(self):
+        for names_requested in (False, True):
+            with self.subTest(names_requested=names_requested), tempfile.TemporaryDirectory() as temporary:
+                fixture = self.fixture(temporary)
+                bundle, records, resources, *_ = fixture
+                resources['control_parent_provenance'] = [dict(row, control_parent_roles=['train'])
+                                                           for row in records]
+                if names_requested:
+                    row = records[0]
+                    _, raw = self.image(70, patterned=True)
+                    path, sha, pixels = curriculum.materialize(bundle, raw)
+                    row.update(sample_id='fresh-name', label='Fresh', aliases=[], image_path=path,
+                               source_image=str(bundle / path), file_sha256=sha, pixel_sha256=pixels)
+                else:
+                    records.remove(records[0])
+                    resources['roles'] = ['general']
+                result = self.build(fixture)
+                general = curriculum.read_rows(bundle / 'general/manifest.jsonl')
+                self.assertFalse(any(row.get('parent_sample_id') == 'real' for row in general))
+                self.assertEqual(sum(row['sample_id'].startswith('curriculum:gray:') for row in general), 2)
+                self.assertEqual(sum(row['sample_id'].startswith('curriculum:raw:') for row in general), 4)
+                proof = result['audit']['asset_provenance']
+                self.assertEqual(proof['parent_admission_scope'], 'audited_global_partition')
+                self.assertEqual(proof['historical_glyph_parent_ids'], ['1'])
+                self.assertEqual(proof['parent_admission'][0]['partition_roles'], ['train'])
+                if names_requested:
+                    final = curriculum.read_rows(bundle / 'names/manifest.jsonl')
+                    self.assertEqual(sum(row['sample_id'].startswith('curriculum:raw:') for row in final), 2)
+
+    def test_parent_admission_rejects_heldouts_blocks_exclusions_and_changed_pixels(self):
+        for mutation in ('heldout', 'blocked', 'excluded', 'label', 'hash'):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as temporary:
+                fixture = self.fixture(temporary)
+                _, records, resources, *_ = fixture
+                parents = [dict(row, control_parent_roles=[row['split']]) for row in records]
+                resources['control_parent_provenance'] = parents
+                parent = parents[0]
+                if mutation == 'heldout': parent['control_parent_roles'] = ['train', 'test']
+                elif mutation == 'blocked': parent['control_parent_roles'] = ['train', 'challenge']
+                elif mutation == 'excluded': parent['optimize'] = False
+                elif mutation == 'label': parent['label'] = 'Changed'
+                elif mutation == 'hash': parent['file_sha256'] = '0' * 64
+                with self.assertRaisesRegex(ValueError, 'glyph parent'):
+                    self.build(fixture)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -539,6 +539,11 @@ def _run_stage_workers(jobs, workers, run, update):
     logs = []
     try:
         for job in jobs:
+            owner_path = run / 'stage-owners.json'
+            owners = json.loads(owner_path.read_text()) if owner_path.is_file() else {}
+            for identity in job['stages']:
+                owners[identity] = {'host': REMOTE_HOST if job['remote'] else 'local'}
+            atomic_json(owner_path, owners)
             job = {**job, 'offset': job['log'].stat().st_size if job['log'].is_file() else 0}
             stream = job['log'].open('ab')
             logs.append(stream)
@@ -703,9 +708,28 @@ def resume_curriculum(prepared, run, update):
     curriculum = validate_curriculum(bundle)
     names = [stage for stage in curriculum['stages'] if stage['role'] == 'names']
     remote = json.loads((run / 'hosts.json').read_text()) if names else None
-    if names and any(not completed_stage(bundle, stage) for stage in names):
+    pending = [stage for stage in names if not completed_stage(bundle, stage)]
+    owners_path = run / 'stage-owners.json'
+    owners = json.loads(owners_path.read_text()) if owners_path.is_file() else {}
+    workers_path = run / 'workers.json'
+    workers = json.loads(workers_path.read_text()) if workers_path.is_file() else json.loads((run / 'run.json').read_text()).get('workers', [])
+    previous = next((worker for worker in workers if worker.get('role') == 'names'), {})
+    if any(previous.get('stage_id') == stage['id'] and previous.get('host')
+           and owners.get(stage['id'], {}).get('host') not in (None, previous['host']) for stage in pending):
+        raise ValueError('The Names attempt host records disagree; start a new training version')
+    hosts = {owners.get(stage['id'], {}).get('host') for stage in pending}
+    hosts.discard(None)
+    if not hosts and previous.get('host'):
+        hosts.add(previous['host'])
+    unstarted = (owners_path.is_file() and not hosts
+                 and not any(any((stage_directory(bundle, stage) / 'checkpoints').glob('*')) for stage in pending))
+    if pending and not unstarted and (len(hosts) != 1 or not hosts <= {'local', REMOTE_HOST}):
+        raise ValueError('The interrupted Names worker host is unknown; start a new training version')
+    if pending and hosts == {'local'} and any(stage['id'] != 'names' for stage in pending):
+        raise ValueError('Only the final Names refinement can recover from a local attempt')
+    if pending and hosts == {REMOTE_HOST} and (owners or previous.get('state') != 'waiting'):
         target = Path(remote['root']) / 'lab-runs' / run.name / 'bundle'
-        _fetch_remote_stages(bundle, target, names, run)
+        _fetch_remote_stages(bundle, target, pending, run)
     prepared['resuming'] = True
     train_curriculum(prepared, remote, run, update)
 
@@ -1235,6 +1259,26 @@ def finalize_version(prepared, run, update, baseline_pins, frozen_tools, request
            finished_at=int(time.time() * 1000))
 
 
+def validated_baseline_pins(prepared, run):
+    from checkpoint_resume import digest
+    pins = prepared.get('baseline_pins')
+    if not isinstance(pins, dict) or set(pins) != {'general', 'names'}:
+        raise ValueError('Original baseline pins are unavailable for this legacy run; start a new training version')
+    for role in ('general', 'names'):
+        expected = pins[role]
+        if (not isinstance(expected, dict) or set(expected) != {'model.onnx', 'characters.json'}
+                or any(not isinstance(value, str) or not re.fullmatch('[a-f0-9]{64}', value) for value in expected.values())):
+            raise ValueError('Original baseline pins are invalid; start a new training version')
+        directory = Path(prepared['baseline_' + role + '_model'])
+        if directory.resolve() != run.resolve() / 'baseline' / role or directory.is_symlink():
+            raise ValueError('The frozen baseline does not belong to this version')
+        for name, recorded in expected.items():
+            path = directory / name
+            if path.is_symlink() or not path.is_file() or digest(path) != recorded:
+                raise ValueError('The frozen baseline changed; this run cannot be resumed')
+    return pins
+
+
 def supervise(request):
     global TOOLS
     run = Path(request['run_dir']).resolve()
@@ -1269,6 +1313,7 @@ def supervise(request):
         from lab_training_data import analyze, discover, prepare, prepared_analysis
         if resuming:
             prepared = json.loads((run / 'prepared.json').read_text())
+            pins = validated_baseline_pins(prepared, run)
             update(stage='Checking the local GPU before recovery', error=None)
             command([prepared['python'], '-c', GPU_PROBE], run / 'local-gpu.log', timeout=60)
             prepared['local_gpu'] = json.loads(tail(run / 'local-gpu.log').splitlines()[-1])
@@ -1279,8 +1324,7 @@ def supervise(request):
                     destination = attempt_root / 'previous-finalization' / candidate_path.relative_to(run)
                     destination.parent.mkdir(parents=True, exist_ok=True)
                     shutil.move(str(candidate_path), str(destination))
-            pins = {role: {name: hashlib.sha256((Path(prepared['baseline_' + role + '_model']) / name).read_bytes()).hexdigest()
-                           for name in ('model.onnx', 'characters.json')} for role in ('general', 'names')}
+            validated_baseline_pins(prepared, run)
             finalize_version(prepared, run, update, pins, frozen_tools, request)
             return
         if request.get('mode') == 'analyze':
@@ -1313,7 +1357,9 @@ def supervise(request):
                    for name, expected in baseline_pins[role].items()):
                 raise ValueError('Active models changed during preparation; start a new training run')
             prepared['baseline_' + role + '_model'] = str(destination)
+        prepared['baseline_pins'] = baseline_pins
         atomic_json(run / 'prepared.json', prepared)
+        atomic_json(run / 'stage-owners.json', {})
         update(summary=prepared['summary'])
         remote = None
         if 'names' in prepared.get('roles', ['general', 'names']):

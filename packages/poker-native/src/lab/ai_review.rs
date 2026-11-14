@@ -726,6 +726,9 @@ UPDATE ai_review_jobs SET state='interrupted',error='Collector restarted. Resume
                 let _operation = ctx.lock_operation()?;
                 let conn = ctx.connection()?;
                 let job = Self::job(&conn, ctx, id)?;
+                if !ACTIVE.contains(&job["state"].as_str().unwrap_or("")) {
+                    return Ok(None);
+                }
                 self.active_run(&conn, ctx, job["run_id"].as_str().unwrap())?;
             }
             let mut payload = protocol::payload(model, png, items, blind);
@@ -1830,6 +1833,29 @@ mod tests {
             f.manager.status(&f.ctx, Some(&id), None).unwrap()["corrected"],
             1
         );
+    }
+    #[test]
+    fn cancelled_call_waiting_for_dataset_operation_does_not_spend() {
+        use std::{sync::mpsc, time::Duration};
+        let f = Fixture::new("Alice", "clear");
+        let id = f.seed("A1ice");
+        let operation = f.ctx.lock_operation().unwrap();
+        let manager = f.manager.clone();
+        let ctx = f.ctx.clone();
+        let worker_id = id.clone();
+        let (entered, waiting) = mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            entered.send(()).unwrap();
+            manager.call(&ctx, &worker_id, "fixture", &[], &[], false)
+        });
+        waiting.recv_timeout(Duration::from_secs(1)).unwrap();
+        std::thread::sleep(Duration::from_millis(30));
+        assert!(!worker.is_finished());
+        assert_eq!(f.calls.load(Ordering::SeqCst), 0);
+        f.manager.cancel(&f.ctx, &id).unwrap();
+        drop(operation);
+        assert!(worker.join().unwrap().unwrap().is_none());
+        assert_eq!(f.calls.load(Ordering::SeqCst), 0);
     }
     #[test]
     fn background_application_waits_for_dataset_edit_and_detects_its_conflict() {

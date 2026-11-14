@@ -49,3 +49,43 @@ it("allows only the exact old-native unsupported operation with one compatibilit
   native.invoke.mockRejectedValue("Other launcher failure");
   await expect(setLauncherRecording("gameplay", true)).rejects.toBe("Other launcher failure");
 });
+
+it("allows an explicitly unconfigured supervisor but rejects configured protection failures", async () => {
+  native.enabled = true;
+  native.invoke.mockResolvedValueOnce({ ok: true, protection: "unconfigured" });
+  await expect(setLauncherRecording("gameplay", true)).resolves.toBeUndefined();
+  native.invoke.mockRejectedValueOnce("POKER_LAB_LAUNCHER_PATH is unavailable");
+  await expect(setLauncherRecording("gameplay", true)).rejects.toBe(
+    "POKER_LAB_LAUNCHER_PATH is unavailable",
+  );
+});
+
+it("serializes each role without blocking the other role or poisoning its queue after failure", async () => {
+  native.enabled = true;
+  let release!: () => void;
+  native.invoke.mockImplementation((_command, args: { selection: string }) =>
+    args.selection === "gameplay:off"
+      ? new Promise<void>((resolve) => {
+          release = resolve;
+        }).then(() => ({ ok: true }))
+      : Promise.resolve({ ok: true }),
+  );
+  const off = setLauncherRecording("gameplay", false);
+  await vi.waitFor(() => {
+    expect(native.invoke).toHaveBeenCalledTimes(1);
+  });
+  const on = setLauncherRecording("gameplay", true);
+  await setLauncherRecording("collector", true);
+  expect(
+    native.invoke.mock.calls.map((call) => (call[1] as { selection: string }).selection),
+  ).toEqual(["gameplay:off", "collector:on"]);
+  release();
+  await Promise.all([off, on]);
+  expect(
+    native.invoke.mock.calls.map((call) => (call[1] as { selection: string }).selection),
+  ).toEqual(["gameplay:off", "collector:on", "gameplay:on"]);
+  native.invoke.mockRejectedValueOnce(new Error("failed update"));
+  await expect(setLauncherRecording("collector", false)).rejects.toThrow("failed update");
+  native.invoke.mockResolvedValueOnce({ ok: true });
+  await expect(setLauncherRecording("collector", true)).resolves.toBeUndefined();
+});

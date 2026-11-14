@@ -449,9 +449,10 @@ it("invalidates native artifacts when the embedded OCR contract changes", () => 
 function fakeProcess(): ChildProcess {
   return spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
 }
-it.each(["rebuild", "checkout", "checkout-build"])(
+it.each(["rebuild", "checkout", "checkout-build", "rebuild-placement-failure"])(
   "defers %s until every recording source explicitly stops",
   async (mode) => {
+    const rebuild = mode.startsWith("rebuild");
     const { common, repo, other, paths } = fixture();
     const trees = discoverWorktrees(common);
     const tree = trees.find((item) => item.path === repo)!;
@@ -495,7 +496,11 @@ it.each(["rebuild", "checkout", "checkout-build"])(
       fullscreenClient: 0,
       focusAddress: null,
     };
-    const capturePlacement = vi.fn(() => placement);
+    const capturePlacement = vi.fn(() => {
+      if (mode === "rebuild-placement-failure" && capturePlacement.mock.calls.length === 1)
+        throw new Error("Window placement temporarily unavailable");
+      return placement;
+    });
     const restorePlacement = vi.fn(() => Promise.resolve());
     let ticks = 0;
     await supervise(common, repo, paths, {
@@ -507,7 +512,7 @@ it.each(["rebuild", "checkout", "checkout-build"])(
       stopServer: async ({ child }) => {
         await stopChild(child);
       },
-      shouldStop: () => ticks >= 7,
+      shouldStop: () => ticks >= (mode === "rebuild-placement-failure" ? 9 : 7),
       pause: async () => {
         ticks++;
         const original = apps[0]!;
@@ -516,7 +521,7 @@ it.each(["rebuild", "checkout", "checkout-build"])(
             setRecordingIntent(original.pid!, "gameplay", true, paths);
             setRecordingIntent(original.pid!, "collector", true, paths);
           }
-          if (mode !== "rebuild") selectWorktree(common, repo, other, paths);
+          if (!rebuild) selectWorktree(common, repo, other, paths);
           else {
             mkdirSync(join(repo, "apps/poker/src-tauri/src"));
             writeFileSync(join(repo, "apps/poker/src-tauri/src/main.rs"), "changed Rust");
@@ -535,8 +540,9 @@ it.each(["rebuild", "checkout", "checkout-build"])(
     });
     expect(launch).toHaveBeenCalledTimes(2);
     expect(build).toHaveBeenCalledTimes(mode === "checkout" ? 0 : 1);
-    expect(startServer).toHaveBeenCalledTimes(mode === "rebuild" ? 1 : 2);
-    expect(capturePlacement).toHaveBeenCalledExactlyOnceWith(apps[0]!.pid);
+    expect(startServer).toHaveBeenCalledTimes(rebuild ? 1 : 2);
+    expect(capturePlacement).toHaveBeenCalledTimes(mode === "rebuild-placement-failure" ? 2 : 1);
+    expect(capturePlacement).toHaveBeenCalledWith(apps[0]!.pid);
     expect(restorePlacement).toHaveBeenCalledTimes(2);
     expect(restorePlacement).toHaveBeenNthCalledWith(1, apps[0]!.pid, null);
     expect(restorePlacement).toHaveBeenNthCalledWith(2, apps[1]!.pid, {

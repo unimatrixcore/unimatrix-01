@@ -3,6 +3,7 @@ use serde_json::{json, Value};
 use std::{
     collections::{BTreeMap, HashMap},
     fs,
+    io::Write,
     path::{Path, PathBuf},
     time::{Duration, Instant},
 };
@@ -33,29 +34,34 @@ fn fixture(root: &Path, configured: bool) -> LabService {
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             fs::write(path, b"fixture").unwrap();
         }
-        fs::write(
-            tools.join("dev_tools/training/lab_training_job.py"),
-            r#"import argparse, json, os, signal, time
+        let script = r#"import argparse, json, os, signal, time
 from pathlib import Path
 p = argparse.ArgumentParser()
 p.add_argument('--request')
 a = p.parse_args()
 root = Path(a.request).parent
 value = json.loads((root / 'run.json').read_text())
-value.update(pid=os.getpid(), status='training', stage='Fixture running')
 temp = root / 'fixture-status.tmp'
-temp.write_text(json.dumps(value))
-temp.replace(root / 'run.json')
 def stop(signum, frame):
     value.update(status='interrupted', stage='Stopped')
     temp.write_text(json.dumps(value))
     temp.replace(root / 'run.json')
     raise SystemExit(0)
 signal.signal(signal.SIGTERM, stop)
+value.update(pid=os.getpid(), status='training', stage='Fixture running')
+temp.write_text(json.dumps(value))
+temp.replace(root / 'run.json')
 time.sleep(60)
-"#,
-        )
-        .unwrap();
+"#;
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(tools.join("dev_tools/training/lab_training_job.py"))
+        {
+            Ok(mut file) => file.write_all(script.as_bytes()).unwrap(),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => panic!("Cannot create supervisor fixture: {error}"),
+        }
     }
     LabService::open_with_environment(
         root.join("data"),
@@ -736,16 +742,24 @@ fn analysis_can_report_missing_baseline_and_dead_probe_pid_does_not_block_refres
 
 #[test]
 fn resume_preserves_version_and_completed_work_and_archives_prior_attempt() {
+    use sha2::Digest;
     let root = tempfile::tempdir().unwrap();
     let service = fixture(root.path(), true);
     let id = "5".repeat(32);
     let dir = write_run(root.path(), &id, "failed", 1, None);
     fs::create_dir(dir.join("bundle")).unwrap();
-    atomic_json(
-        &dir.join("prepared.json"),
-        &json!({"bundle":dir.join("bundle")}),
-    )
-    .unwrap();
+    let mut prepared = json!({"bundle":dir.join("bundle"),"baseline_pins":{}});
+    for role in ["general", "names"] {
+        let baseline = dir.join("baseline").join(role);
+        fs::create_dir_all(&baseline).unwrap();
+        for name in ["model.onnx", "characters.json"] {
+            fs::write(baseline.join(name), b"fixture").unwrap();
+            prepared["baseline_pins"][role][name] =
+                json!(format!("{:x}", sha2::Sha256::digest(b"fixture")));
+        }
+        prepared[format!("baseline_{role}_model")] = json!(baseline);
+    }
+    atomic_json(&dir.join("prepared.json"), &prepared).unwrap();
     atomic_json(
         &dir.join("bundle/audit.json"),
         &json!({"training_ready":true}),

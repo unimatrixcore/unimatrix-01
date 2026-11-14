@@ -64,16 +64,17 @@ function scheduleAiReviewPoll(state) {
   state.timer = setTimeout(() => {state.timer=null;void pollAiReview(state);},1500);
 }
 async function loadAiReviewConfig(state) {
+  const sequence = state.configSequence = (state.configSequence || 0) + 1;
   try {
     const response = await fetch('/api/ai-review/config',{signal:state.controller.signal});
     const config = await response.json();
-    if (!aiReviewMatches(state)) return;
+    if (!aiReviewMatches(state) || sequence !== state.configSequence) return;
     if (!response.ok || config.success === false) throw new Error(config.error || 'Could not load OpenAI settings.');
     if (typeof config.configured !== 'boolean' || typeof config.model !== 'string') throw new Error('Invalid OpenAI settings response.');
     state.config = config;state.configError='';
     paintAiReview();
   } catch (error) {
-    if (aiReviewMatches(state) && error.name !== 'AbortError') {state.configError=error.message;paintAiReview();}
+    if (aiReviewMatches(state) && sequence === state.configSequence && error.name !== 'AbortError') {state.configError=error.message;paintAiReview();}
   }
 }
 async function applyAiReviewJob(state,job) {

@@ -142,6 +142,15 @@ async fn launcher_request(
         }
         Ok(path)
     };
+    if operation == "recording"
+        && launcher_unconfigured([
+            std::env::var_os("POKER_LAB_LAUNCHER_NODE"),
+            std::env::var_os("POKER_LAB_LAUNCHER_PATH"),
+            std::env::var_os("POKER_LAB_GIT_DIR"),
+        ])
+    {
+        return Ok(serde_json::json!({"ok":true,"protection":"unconfigured"}));
+    }
     let node = required_path("POKER_LAB_LAUNCHER_NODE")?;
     let script = required_path("POKER_LAB_LAUNCHER_PATH")?;
     let git_dir = required_path("POKER_LAB_GIT_DIR")?;
@@ -164,6 +173,10 @@ async fn launcher_request(
     })
     .await
     .map_err(|error| error.to_string())?
+}
+
+fn launcher_unconfigured(values: [Option<std::ffi::OsString>; 3]) -> bool {
+    values.iter().all(Option::is_none)
 }
 
 fn media_request(request: &http::Request<Vec<u8>>) -> LabRequest {
@@ -334,6 +347,21 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recording_without_a_supervisor_is_distinct_from_partial_configuration() {
+        assert!(launcher_unconfigured([None, None, None]));
+        for index in 0..3 {
+            let mut values = [None, None, None];
+            values[index] = Some("/configured".into());
+            assert!(!launcher_unconfigured(values));
+        }
+        assert!(!launcher_unconfigured([
+            Some("".into()),
+            Some("/script".into()),
+            Some("/git".into()),
+        ]));
+    }
 
     #[test]
     fn root_and_workspace_routes_serve_the_same_bootstrap_asset() {

@@ -14,7 +14,10 @@ export function readWorkspaceState(): PokerWorkspaceState {
 export function rememberWorkspaceState(patch: Partial<PokerWorkspaceState>): void {
   try {
     const result = pokerWorkspaceStateSchema.safeParse({ ...readWorkspaceState(), ...patch });
-    if (result.success) localStorage.setItem(key, JSON.stringify(result.data));
+    if (result.success) {
+      const serialized = JSON.stringify(result.data);
+      if (serialized.length <= 4096) localStorage.setItem(key, serialized);
+    }
   } catch {
     /* Preferences do not block the workspace when storage is unavailable. */
   }

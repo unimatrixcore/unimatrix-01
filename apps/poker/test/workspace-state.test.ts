@@ -75,6 +75,19 @@ it("rejects corrupted, oversized, invalid-path and invalid-scroll preferences", 
   }).not.toThrow();
 });
 
+it("preserves readable preferences when a valid patch exceeds the serialized size limit", () => {
+  rememberWorkspaceState({ path: "/training" });
+  const before = localStorage.getItem("poker-lab:workspace:v1");
+  rememberWorkspaceState({
+    trainingSelection: {
+      collections: Array.from({ length: 20 }, (_, index) => `${index}-${"x".repeat(240)}`),
+      epochs: 6,
+    },
+  });
+  expect(localStorage.getItem("poker-lab:workspace:v1")).toBe(before);
+  expect(readWorkspaceState()).toEqual({ path: "/training" });
+});
+
 it("records only committed route events and the final page-hide location", () => {
   history.replaceState(null, "", "/gameplay");
   const dispose = restoreWorkspaceLocation();

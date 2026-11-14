@@ -142,3 +142,131 @@ test("collection reload retains its lease, source and interval, while navigation
     .click();
   await expect.poll(() => requests.filter((r) => r.path.endsWith("/stop")).length).toBe(1);
 });
+
+for (const delayed of ["session", "launcher"] as const) {
+  test(`gameplay ignores a saved-session reconnect superseded during ${delayed} lookup`, async ({
+    page,
+  }) => {
+    await page.addInitScript(installLabFixture);
+    await page.addInitScript(() => {
+      const original = window.__POKER_LAB_TEST_INVOKE__!;
+      const gate = {
+        releaseSession: false,
+        requested: false,
+        releaseLauncher: false,
+        protected: false,
+        oldCaptures: 0,
+        newCaptures: 0,
+      };
+      Object.assign(window, { reconnectGate: gate });
+      const session = {
+        id: "old-recording",
+        name: "Old recording",
+        source: "TEST-1",
+        interval_ms: 1000,
+        status: "ready",
+        created_at: "2026-11-13T00:00:00Z",
+        frame_count: 0,
+        hand_count: 0,
+      };
+      const ok = (body: unknown) => ({ status: 200, headers: {}, body });
+      sessionStorage.setItem("poker:gameplay-recording", session.id);
+      window.__POKER_LAB_TEST_INVOKE__ = async (request) => {
+        if (request.path === "/api/gameplay/sessions/old-recording") {
+          gate.requested = true;
+          while (!gate.releaseSession) await new Promise((resolve) => setTimeout(resolve, 10));
+          return ok({ session });
+        }
+        if (request.path === "/api/gameplay/sessions/old-recording/capture") {
+          gate.oldCaptures++;
+          return ok({ skipped: true });
+        }
+        if (request.path === "/api/gameplay/sessions" && request.method === "POST")
+          return ok({ session: { ...session, id: "new-recording", name: "New chosen recording" } });
+        if (request.path === "/api/gameplay/sessions/new-recording/capture") {
+          gate.newCaptures++;
+          return ok({ skipped: true });
+        }
+        return original(request);
+      };
+    });
+    await page.goto("/gameplay");
+    await expect(page.locator("#loading-overlay")).not.toHaveClass(/active/);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (window as unknown as { reconnectGate: { requested: boolean } }).reconnectGate
+              .requested,
+        ),
+      )
+      .toBe(true);
+    if (delayed === "launcher") {
+      await page.evaluate(() => {
+        const host = window as unknown as {
+          isTauri: boolean;
+          __TAURI_INTERNALS__: {
+            invoke: (command: string, args: { selection?: string }) => Promise<unknown>;
+          };
+          reconnectGate: { releaseSession: boolean; protected: boolean; releaseLauncher: boolean };
+        };
+        host.isTauri = true;
+        host.__TAURI_INTERNALS__ = {
+          invoke: async (_command, args) => {
+            if (args.selection === "gameplay:on" && !host.reconnectGate.protected) {
+              host.reconnectGate.protected = true;
+              while (!host.reconnectGate.releaseLauncher)
+                await new Promise((resolve) => setTimeout(resolve, 10));
+            }
+            return { ok: true };
+          },
+        };
+        host.reconnectGate.releaseSession = true;
+      });
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              (window as unknown as { reconnectGate: { protected: boolean } }).reconnectGate
+                .protected,
+          ),
+        )
+        .toBe(true);
+    }
+    await page.getByRole("button", { name: "Recording session", exact: true }).click();
+    await page
+      .locator('[data-slot="popover-content"]')
+      .getByRole("button", { name: "New recording", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Record", exact: true }).click();
+    await page.evaluate(() => {
+      const gate = (
+        window as unknown as {
+          reconnectGate: { releaseSession: boolean; releaseLauncher: boolean };
+        }
+      ).reconnectGate;
+      gate.releaseSession = true;
+      gate.releaseLauncher = true;
+    });
+    await expect(page.getByRole("button", { name: "Recording session", exact: true })).toHaveText(
+      "New chosen recording",
+    );
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (window as unknown as { reconnectGate: { newCaptures: number } }).reconnectGate
+              .newCaptures,
+        ),
+      )
+      .toBeGreaterThan(0);
+    expect(
+      await page.evaluate(
+        () =>
+          (window as unknown as { reconnectGate: { oldCaptures: number } }).reconnectGate
+            .oldCaptures,
+      ),
+    ).toBe(0);
+    await expect(page.getByRole("button", { name: "Pause", exact: true })).toBeVisible();
+  });
+}

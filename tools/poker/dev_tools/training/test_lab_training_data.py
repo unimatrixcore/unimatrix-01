@@ -31,9 +31,9 @@ class PreparationTest(unittest.TestCase):
                                         return_value=(defaultdict(set), {'collections': {}}))
         self.reservation_policy.start()
         self.addCleanup(self.reservation_policy.stop)
-        curriculum = patch('lab_training_data.build_curriculum', return_value={'stages': [], 'audit': {}, 'roles': {}})
-        curriculum.start()
-        self.addCleanup(curriculum.stop)
+        self.curriculum_policy = patch('lab_training_data.build_curriculum', return_value={'stages': [], 'audit': {}, 'roles': {}})
+        self.curriculum_policy.start()
+        self.addCleanup(self.curriculum_policy.stop)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
@@ -333,6 +333,89 @@ class PreparationTest(unittest.TestCase):
         self.assertEqual(result['roles'], ['general'])
         audit = json.loads((Path(result['bundle']) / 'audit.json').read_text())
         self.assertEqual(audit['roles'], ['general'])
+
+    def curriculum_assets(self, *, names=False):
+        import shutil
+        import lab_training_curriculum as curriculum
+        from test_lab_training_curriculum import CurriculumTests
+        scratch = self.root / 'curriculum-assets'
+        scratch.mkdir()
+        fixture = CurriculumTests().fixture(scratch)
+        shutil.copytree(fixture[2]['training_root'], self.training, dirs_exist_ok=True)
+        baseline = self.training / 'named-continuation/final'
+        rows = read_jsonl(baseline / 'manifest.jsonl')
+        parent = next(row for row in rows if row['sample_id'] == 'unused')
+        parent['sample_id'] = '1'
+        stress = self.training / 'stress-database'
+        parent_raw = (baseline / parent['image_path']).read_bytes()
+        (stress / 'images/1.png').write_bytes(parent_raw)
+        write_jsonl(stress / 'manifest.jsonl', [{
+            'sample_id': '1', 'split': 'train', 'category': 'name', 'label': parent['label'],
+            'image_path': 'images/1.png', 'file_sha256': digest(parent_raw),
+        }])
+        if names:
+            prototype = next(row for row in rows if row.get('constructed_control'))
+            rows = [row for row in rows if not row.get('constructed_control')]
+            for split, count, offset in [('train', 600, 1), ('val', 128, 1000)]:
+                for index in range(count):
+                    color = ((index + offset) // 255, (index + offset) % 255, 77)
+                    raw = png(color)
+                    pixel, shape = pixels(raw)
+                    relative = 'images/' + digest(raw) + '.png'
+                    (baseline / relative).write_bytes(raw)
+                    identity = f'blank:{split}:{index}'
+                    rows.append({**prototype, 'sample_id': identity, 'split': split,
+                                 'groups': [identity], 'image_path': relative, 'file_sha256': digest(raw),
+                                 'pixel_sha256': pixel, 'image_dimensions': shape})
+        write_jsonl(baseline / 'manifest.jsonl', rows)
+        pins = {relative: digest((self.training / relative).read_bytes()) for relative in curriculum.ASSET_PINS}
+        self.curriculum_policy.stop()
+        return curriculum, pins, fixture[-1], parent
+
+    def test_preparation_builds_bank_only_and_fresh_name_curricula_without_selected_glyph_parents(self):
+        # The actual curriculum builder consumes the proof exported by preparation.
+        curriculum, pins, gray_hash, _ = self.curriculum_assets(names=True)
+        bank = self.collection('a' * 32, [('S 2 BB', png('yellow'), 1790000000000, True, 'seats[0].bank')])
+        fresh = self.collection('b' * 32, [('Alpha', png('purple'), 1790000000001)])
+        with patch.object(curriculum, 'ASSET_PINS', pins), patch.object(curriculum, 'GRAY_IMAGES_SHA256', gray_hash), \
+                patch.object(curriculum, 'RAW_COUNT', 4), patch.object(curriculum, 'GRAY_COUNT', 2), patch.object(curriculum, 'FINAL_RAW_COUNT', 2):
+            for collection in (bank, fresh):
+                request = self.request([collection])
+                request['run_dir'] = str(self.root / ('bank-run' if collection is bank else 'name-run'))
+                result = prepare(request)
+                bundle = Path(result['bundle'])
+                audit = json.loads((bundle / 'audit.json').read_text())
+                self.assertEqual(audit['curriculum']['asset_provenance']['historical_glyph_parent_ids'], ['1'])
+                general = read_jsonl(bundle / 'general/manifest.jsonl')
+                self.assertEqual(sum(row['sample_id'].startswith('curriculum:raw:') for row in general), 4)
+                self.assertFalse(any(row.get('parent_sample_id') == 'baseline:1' for row in general))
+                self.assertEqual(result['roles'], ['general'] if collection is bank else ['general', 'names'])
+                if collection is fresh:
+                    final = read_jsonl(bundle / 'names/manifest.jsonl')
+                    self.assertEqual(sum(row['sample_id'].startswith('curriculum:raw:') for row in final), 2)
+
+    def test_preparation_rejects_control_parent_connected_to_global_holdout_or_blocked_pixels(self):
+        curriculum, pins, gray_hash, parent = self.curriculum_assets()
+        bank = self.collection('a' * 32, [('S 2 BB', png('yellow'), 1790000000000, True, 'seats[0].bank')])
+        pixel = 'pixel:name|' + parent['pixel_sha256']
+        for case, token, assigned in [('holdout', pixel, {'test'}), ('blocked', pixel, {'challenge'}),
+                                      ('capture-bridge', 'group:' + parent['groups'][0], {'train', 'test'})]:
+            roles = defaultdict(set, {token: assigned})
+            with self.subTest(case=case), patch('lab_training_data._reserve_catalog', return_value=(roles, {})), \
+                    patch.object(curriculum, 'ASSET_PINS', pins), patch.object(curriculum, 'GRAY_IMAGES_SHA256', gray_hash), \
+                    patch.object(curriculum, 'RAW_COUNT', 4), patch.object(curriculum, 'GRAY_COUNT', 2), patch.object(curriculum, 'FINAL_RAW_COUNT', 2):
+                with self.assertRaisesRegex(ValueError, 'glyph parent'):
+                    request = self.request([bank])
+                    request['run_dir'] = str(self.root / ('rejected-' + case))
+                    prepare(request)
+
+    def test_progress_names_follow_utf16_schema_limit_without_splitting_characters(self):
+        progress = DataProgress(self.root)
+        for name in ('x' * 101, '😀' * 51, 'x' + '😀' * 50):
+            progress('reading', collection_name=name, completed=1, total=1)
+            saved = json.loads((self.root / 'data-progress.json').read_text())['collection_name']
+            self.assertLessEqual(len(saved.encode('utf-16-le')), 200)
+            self.assertTrue(name.startswith(saved))
 
     def test_active_model_release_override_uses_runtime_layout_and_hashes(self):
         import shutil

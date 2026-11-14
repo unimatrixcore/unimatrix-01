@@ -82,7 +82,7 @@ def baseline_ids(row):
     return result
 
 
-def frozen_controls(root, records, images):
+def frozen_controls(root, records, images, parent_records=None):
     for relative, expected in ASSET_PINS.items():
         path = root / relative
         if not path.is_file() or digest(path.read_bytes()) != expected:
@@ -104,13 +104,15 @@ def frozen_controls(root, records, images):
         raise ValueError('Vetted historical grayscale control images changed')
     source = {str(row['sample_id']): row for row in read_rows(root / 'stress-database/manifest.jsonl')}
     selected = defaultdict(list)
-    for row in records:
-        if row['split'] == 'train' and row.get('optimize', True) and not control(row):
+    for row in records if parent_records is None else parent_records:
+        if (row['split'] == 'train' and row.get('optimize', True) and not control(row)
+                and set(row.get('control_parent_roles', ['train'])) == {'train'}):
             for identity in baseline_ids(row):
                 selected[identity].append(row)
     used_sources = {str(identity) for row in raw for identity in row.get('glyph_sources', [])}
     used_sources |= {str(glyph['sample_id']) for row in gray for glyph in row.get('glyphs', [])}
-    for identity in used_sources:
+    parent_proof = []
+    for identity in sorted(used_sources):
         parent = source.get(identity)
         if not parent or parent['split'] != 'train' or parent['category'] != 'name' or not parent.get('optimize', True):
             raise ValueError('Historical glyph parent is not an approved training name')
@@ -118,9 +120,28 @@ def frozen_controls(root, records, images):
         if digest(original) != parent['file_sha256']:
             raise ValueError('Historical glyph parent pixels changed')
         pixels = pixel_hash(encoded_image(original))
-        if not any(row['label'] == parent['label'] and pixel_hash(images[row['sample_id']]) == pixels
-                   for row in selected[identity]):
-            raise ValueError(f'Historical glyph parent {identity} is not among the selected optimized training pixels')
+        matches = []
+        for row in selected[identity]:
+            if row['label'] != parent['label']:
+                continue
+            if parent_records is None:
+                image = images[row['sample_id']]
+            else:
+                parent_raw = Path(row['source_image']).read_bytes()
+                if digest(parent_raw) != row['file_sha256']:
+                    raise ValueError('Historical glyph parent admission pixels changed')
+                image = encoded_image(parent_raw)
+                if pixel_hash(image) != row['pixel_sha256']:
+                    raise ValueError('Historical glyph parent admission decoded pixels changed')
+            if pixel_hash(image) == pixels:
+                matches.append(row)
+        if not matches:
+            raise ValueError(f'Historical glyph parent {identity} is not among the selected optimized training pixels or audited train-only parent proof')
+        parent_proof.append({'baseline_sample_id': identity, 'label': parent['label'],
+                             'pixel_sha256': pixels, 'historical_file_sha256': parent['file_sha256'],
+                             'admitted_sample_ids': sorted(row['sample_id'] for row in matches),
+                             'admitted_file_sha256': sorted({row['file_sha256'] for row in matches}),
+                             'partition_roles': ['train'], 'optimized': True})
     heldout = {row['label'] for row in records if row['split'] != 'train'}
     heldout |= {row['label'] for row in read_rows(root / 'novel-name-challenge/manifest.jsonl')}
     controls = {'raw': [], 'gray': []}
@@ -155,7 +176,9 @@ def frozen_controls(root, records, images):
     return controls, {'asset_sha256': dict(ASSET_PINS), 'gray_images_sha256': GRAY_IMAGES_SHA256,
                       'reviewed_glyphs': 12, 'reviewed_full_render_examples': len(review.get('reviewed_first_render_ids', [])),
                       'historical_glyph_parent_ids': sorted(used_sources), 'raw_count': len(raw),
-                      'gray_count': len(gray), 'final_raw_count': len(chosen)}
+                      'gray_count': len(gray), 'final_raw_count': len(chosen),
+                      'parent_admission_scope': 'audited_global_partition' if parent_records is not None else 'selected_training_rows',
+                      'parent_admission': parent_proof}
 
 
 def original_variants(root):
@@ -298,7 +321,7 @@ def build_curriculum(bundle, records, resources, epochs):
         if row.get('pixel_sha256') and pixel_hash(image) != row['pixel_sha256']:
             raise ValueError('Frozen source pixels changed')
         images[row['sample_id']] = image
-    controls, asset_audit = frozen_controls(root, records, images)
+    controls, asset_audit = frozen_controls(root, records, images, resources.get('control_parent_provenance'))
     for family in ('raw', 'gray'):
         for row in controls[family]:
             raw = row.pop('_raw')

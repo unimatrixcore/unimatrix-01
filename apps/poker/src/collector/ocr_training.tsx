@@ -554,6 +554,7 @@ export function OcrTraining({ active }: { active: boolean }) {
   const [revision, setRevision] = useState(0);
   const [evidenceCondition, setEvidenceCondition] = useState("identity");
   const [selectedRun, setSelectedRun] = useState(() => readWorkspaceState().trainingRun || "");
+  const [newTraining, setNewTraining] = useState(false);
   useEffect(() => {
     if (selectedRun) rememberWorkspaceState({ trainingRun: selectedRun });
   }, [selectedRun]);
@@ -613,7 +614,9 @@ export function OcrTraining({ active }: { active: boolean }) {
     !busy
   );
   const inspectedRun =
-    state?.runs.find((run) => run.id === selectedRun) ?? activeRun ?? state?.runs[0];
+    newTraining && !activeRun
+      ? undefined
+      : (state?.runs.find((run) => run.id === selectedRun) ?? activeRun ?? state?.runs[0]);
   const resumable =
     !!inspectedRun?.can_resume && ["failed", "interrupted"].includes(inspectedRun.status);
   const resumeReady = resumable && !busy && gpuReadyFor(inspectedRun?.analysis?.names);
@@ -749,13 +752,20 @@ export function OcrTraining({ active }: { active: boolean }) {
         );
         if (!disposed) {
           setDetails(next);
+          setDetailsError("");
           if (running(next.run))
             timer = setTimeout(() => {
               void load();
             }, 2000);
         }
       } catch (cause) {
-        if (!disposed) setDetailsError(message(cause));
+        if (!disposed) {
+          setDetailsError(message(cause));
+          if (running(inspectedRun))
+            timer = setTimeout(() => {
+              void load();
+            }, 2000);
+        }
       }
     };
     void load();
@@ -783,6 +793,7 @@ export function OcrTraining({ active }: { active: boolean }) {
             : prior,
         );
         setSelectedRun(result.run.id);
+        setNewTraining(false);
         setRevision((value) => value + 1);
       }
     } catch (cause) {
@@ -869,16 +880,30 @@ export function OcrTraining({ active }: { active: boolean }) {
           {stopping ? "Stopping…" : "Stop"}
         </Button>
       ) : resumable ? (
-        <Button
-          size="sm"
-          disabled={!resumeReady}
-          onClick={() => {
-            void resume();
-          }}
-        >
-          <Play size={13} />
-          {resuming ? "Resuming…" : "Resume training"}
-        </Button>
+        <>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() => {
+              setSelected([...displayedSelection]);
+              setNewTraining(true);
+              setSelectedRun("");
+            }}
+          >
+            New training
+          </Button>
+          <Button
+            size="sm"
+            disabled={!resumeReady}
+            onClick={() => {
+              void resume();
+            }}
+          >
+            <Play size={13} />
+            {resuming ? "Resuming…" : "Resume training"}
+          </Button>
+        </>
       ) : (
         <Button
           size="sm"
@@ -1059,6 +1084,7 @@ export function OcrTraining({ active }: { active: boolean }) {
                         className="training-version"
                         aria-pressed={run.id === inspectedRun?.id}
                         onClick={() => {
+                          setNewTraining(false);
                           setSelectedRun(run.id);
                         }}
                       >
@@ -1094,7 +1120,7 @@ export function OcrTraining({ active }: { active: boolean }) {
                   onEvidenceConditionChange={setEvidenceCondition}
                 />
               ) : (
-                <div className="training-inspector" />
+                <div className="training-inspector">{newTraining && <h2>New training</h2>}</div>
               )}
             </>
           }

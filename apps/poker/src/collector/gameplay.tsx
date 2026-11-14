@@ -257,15 +257,25 @@ export function Gameplay({ active, onLeave }: GameplayProps) {
       clearTimeout(timer.current);
     };
     const saved = sessionStorage.getItem(RECORDING_KEY);
+    const selectionEpoch = acceptedEpoch.current;
+    const currentSelection = () =>
+      alive.current &&
+      activeRef.current &&
+      !stopRequested.current &&
+      selectionEpoch === acceptedEpoch.current;
     reconnecting.current = !!saved && window.location.pathname === "/gameplay";
     if (reconnecting.current && saved) {
       void api<{ session: Session }>(`/sessions/${encodeURIComponent(saved)}`)
         .then(async ({ session: value }) => {
-          if (!alive.current || !activeRef.current || stopRequested.current) return;
+          if (!currentSelection()) return;
           const restored = parseSession(value);
-          ++recordingClaim.current;
+          const claim = ++recordingClaim.current;
           if (restored.status !== "stopped") await setLauncherRecording("gameplay", true);
-          if (!alive.current || !activeRef.current || stopRequested.current) return;
+          if (!currentSelection()) {
+            if (claim === recordingClaim.current && restored.status !== "stopped")
+              await setLauncherRecording("gameplay", false);
+            return;
+          }
           selectSession(restored.id, restored, true);
           setName(restored.name);
           if (restored.status !== "stopped") {
@@ -279,7 +289,7 @@ export function Gameplay({ active, onLeave }: GameplayProps) {
           }
         })
         .catch((error) => {
-          if (alive.current) {
+          if (currentSelection()) {
             sessionStorage.removeItem(RECORDING_KEY);
             setError(errorMessage(error));
           }
@@ -434,6 +444,7 @@ export function Gameplay({ active, onLeave }: GameplayProps) {
     )
       return;
     inflight.current = true;
+    ++acceptedEpoch.current;
     setBusy(true);
     setError("");
     setSkipReason("");
@@ -519,6 +530,7 @@ export function Gameplay({ active, onLeave }: GameplayProps) {
       return;
     }
     if (!source || inflight.current || currentSession.current?.status === "stopped") return;
+    ++acceptedEpoch.current;
     const claim = ++recordingClaim.current;
     setBusy(true);
     try {

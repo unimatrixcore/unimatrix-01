@@ -26,11 +26,25 @@ export async function launcherRequest(
 }
 
 let warnedUnsupportedRecording = false;
-export async function setLauncherRecording(
+const recordingUpdates = new Map<"gameplay" | "collector", Promise<void>>();
+export function setLauncherRecording(
   role: "gameplay" | "collector",
   active: boolean,
 ): Promise<void> {
-  if (!isTauri()) return;
+  if (!isTauri()) return Promise.resolve();
+  const update = (recordingUpdates.get(role) ?? Promise.resolve())
+    .catch(() => {})
+    .then(() => updateLauncherRecording(role, active));
+  recordingUpdates.set(role, update);
+  void update
+    .finally(() => {
+      if (recordingUpdates.get(role) === update) recordingUpdates.delete(role);
+    })
+    .catch(() => {});
+  return update;
+}
+
+async function updateLauncherRecording(role: "gameplay" | "collector", active: boolean) {
   let response: unknown;
   try {
     response = await invoke("launcher_request", {
@@ -46,6 +60,15 @@ export async function setLauncherRecording(
     }
     return;
   }
+  if (
+    response &&
+    typeof response === "object" &&
+    "ok" in response &&
+    response.ok === true &&
+    "protection" in response &&
+    response.protection === "unconfigured"
+  )
+    return;
   if (!response || typeof response !== "object" || !("ok" in response) || response.ok !== true)
     throw new Error("Cannot update recording protection");
 }

@@ -69,9 +69,10 @@
       for (const key of Object.keys(CHOICES)) if (!CHOICES[key].includes(config[key])) throw new Error(`Unsupported watch setting: ${key}`);
       const capturedContext = options.getContext();
       if (!options.canRun(capturedContext)) return false;
+      const startingGeneration = generation;
       await release;
       // Waiting for a previous lease close cannot authorize a changed context.
-      if (active || busy || !options.canRun(capturedContext)) return false;
+      if (startingGeneration !== generation || active || busy || !options.canRun(capturedContext)) return false;
       settings = {...config,queueLimit:config.queueMode==='paged' ? 5000 : config.queueLimit}; context = capturedContext; added = 0; queued = options.queuedCount?.() || 0;
       if (Number.isFinite(settings.queueLimit) && queued >= settings.queueLimit) { publish('stopped','Queue full'); return false; }
       const token = ++generation;
@@ -79,7 +80,7 @@
       try {
         const opened = existingLease ? {lease_id:existingLease} : await options.open(settings,capturedContext);
         if (!valid(token,capturedContext)) {
-          if (!detached && opened.lease_id) await Promise.resolve(options.close(opened.lease_id,capturedContext)).catch(() => {});
+          if (opened.lease_id) await Promise.resolve(options.close(opened.lease_id,capturedContext)).catch(() => {});
           return false;
         }
         if (!opened.lease_id) throw new Error('Watch lease was not created');

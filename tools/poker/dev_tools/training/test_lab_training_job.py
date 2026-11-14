@@ -302,6 +302,8 @@ class TrainingJobTests(unittest.TestCase):
             self.assertIn('portable/model.onnx', version['artifacts']['names'])
             self.assertEqual((baseline / 'names/model.onnx').read_bytes(), b'active weights')
             self.assertEqual((run / 'baseline/names/model.onnx').read_bytes(), b'active weights')
+            frozen = json.loads((run / 'prepared.json').read_text())
+            self.assertEqual(frozen['baseline_pins']['names']['model.onnx'], job.file_sha(run / 'baseline/names/model.onnx'))
 
     def test_gpu_failure_is_persisted_without_preparing_or_training(self):
         with tempfile.TemporaryDirectory() as temporary:

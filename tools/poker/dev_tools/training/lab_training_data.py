@@ -29,7 +29,7 @@ class DataProgress:
 
     def __call__(self, stage, **fields):
         if 'collection_name' in fields:
-            fields['collection_name'] = fields['collection_name'][:100]
+            fields['collection_name'] = fields['collection_name'].encode('utf-16-le')[:200].decode('utf-16-le', errors='ignore')
         value = {'stage': stage, **fields}
         now = time.monotonic()
         if (self.previous and self.previous.get('stage') == stage
@@ -522,6 +522,11 @@ def _prepare(request, export=None, materialize_training=True):
                 quarantine.extend({'sample_id': alias['sample_id'], 'reason': 'audited_semantic_name_exclusion'}
                                   for alias in row['aliases'] if alias['sample_id'] in selected_ids)
     quarantine.extend(unsupported)
+    control_parent_provenance = [
+        dict(row, control_parent_roles=sorted({row['split']} | set().union(
+            *(reservation_roles[token] for token in _reservation_tokens(row)))))
+        for row in records
+    ]
     records = [row for row in records if row['split'] != 'train' or row.get('inherited_control')
                or any(alias['sample_id'] in selected_ids for alias in row['aliases'])]
     selected_train = [row for row in records if row['split'] == 'train'
@@ -619,7 +624,8 @@ def _prepare(request, export=None, materialize_training=True):
     write_jsonl(bundle / 'quarantined.jsonl', quarantine)
     write_jsonl(bundle / 'superseded.jsonl', superseded)
     curriculum = build_curriculum(bundle, records, {**config, 'training_root': Path(request['training_root']),
-                                                   'roles': roles}, epochs)
+                                                   'roles': roles,
+                                                   'control_parent_provenance': control_parent_provenance}, epochs)
     audit['curriculum'] = curriculum['audit']
     audit.update(curriculum['roles'])
     audit['manifest_sha256'] = digest((bundle / 'manifest.jsonl').read_bytes())

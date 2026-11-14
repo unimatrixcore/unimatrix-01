@@ -1123,7 +1123,13 @@ export async function supervise(
               completed.tree.id === current.id &&
               nativeFingerprint(current) === completed.fingerprint
             ) {
-              const placement = capturePlacement();
+              let placement: WindowPlacement | null;
+              try {
+                placement = capturePlacement();
+              } catch (error) {
+                pending = completed;
+                throw error;
+              }
               if (isRecording()) {
                 pending = completed;
                 publish("Native update ready; waiting for recording to stop");

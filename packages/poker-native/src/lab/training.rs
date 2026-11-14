@@ -61,7 +61,7 @@ fn data_progress(dir: &Path) -> Option<Value> {
         || value
             .collection_name
             .as_ref()
-            .is_some_and(|name| name.chars().count() > 100)
+            .is_some_and(|name| name.encode_utf16().count() > 100)
     {
         return None;
     }
@@ -955,7 +955,123 @@ fn resume_ready(directory: &Path, run: &Value) -> bool {
             return false;
         }
     }
-    directory.join("prepared.json").is_file() && directory.join("bundle/audit.json").is_file()
+    let stages = directory.join("bundle/stages");
+    if stages.exists() && datasets::plain(&stages).is_err() {
+        return false;
+    }
+    let Ok(Some(prepared)) = read_optional_json(&directory.join("prepared.json"), 1_048_576) else {
+        return false;
+    };
+    let Some(pins) = prepared["baseline_pins"].as_object() else {
+        return false;
+    };
+    if pins.len() != 2 || datasets::plain(&directory.join("baseline")).is_err() {
+        return false;
+    }
+    for role in ["general", "names"] {
+        let baseline = directory.join("baseline").join(role);
+        let Some(hashes) = pins.get(role).and_then(Value::as_object) else {
+            return false;
+        };
+        if hashes.len() != 2
+            || prepared[format!("baseline_{role}_model")].as_str() != baseline.to_str()
+            || datasets::plain(&baseline).is_err()
+        {
+            return false;
+        }
+        for name in ["model.onnx", "characters.json"] {
+            let path = baseline.join(name);
+            if !hashes.get(name).is_some_and(checkpoint_hash_shape)
+                || !path.is_file()
+                || datasets::plain(&path).is_err()
+            {
+                return false;
+            }
+        }
+    }
+    ["general", "names", "stages/base", "stages/names-base"]
+        .iter()
+        .all(|stage| checkpoint_resume_available(&directory.join("bundle").join(stage)))
+}
+
+fn checkpoint_hash_shape(value: &Value) -> bool {
+    value.as_str().is_some_and(|value| {
+        value.len() == 64
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    })
+}
+
+fn checkpoint_resume_available(stage: &Path) -> bool {
+    if !stage.exists() {
+        return true;
+    }
+    if datasets::plain(stage).is_err() {
+        return false;
+    }
+    let Ok(status) = read_optional_json(&stage.join("training-status.json"), 1_048_576) else {
+        return false;
+    };
+    if let Some(status) = status {
+        if status["state"] == "completed" {
+            let selected = stage.join("checkpoints/best_accuracy.pdparams");
+            return selected.is_file() && datasets::plain(&selected).is_ok();
+        }
+    }
+    let checkpoints = stage.join("checkpoints");
+    if !checkpoints.exists() {
+        return true;
+    }
+    if datasets::plain(&checkpoints).is_err() {
+        return false;
+    }
+    let Ok(entries) = fs::read_dir(&checkpoints) else {
+        return false;
+    };
+    let Ok(entries) = entries.take(1025).collect::<std::io::Result<Vec<_>>>() else {
+        return false;
+    };
+    if entries.len() > 1024 {
+        return false;
+    }
+    let mut artifacts = false;
+    let mut receipted = false;
+    for entry in entries {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            return false;
+        };
+        artifacts |= [".states", ".pdparams", ".pdopt"]
+            .iter()
+            .any(|suffix| name.ends_with(suffix));
+        let Some(prefix) = name.strip_suffix(".resume.json") else {
+            continue;
+        };
+        if prefix != "latest"
+            && !prefix
+                .strip_prefix("iter_epoch_")
+                .is_some_and(|epoch| epoch.parse::<u64>().is_ok())
+        {
+            continue;
+        }
+        let Ok(Some(receipt)) = read_optional_json(&entry.path(), 16_384) else {
+            continue;
+        };
+        if receipt["version"] != 1
+            || receipt["epoch"].as_u64().is_none()
+            || receipt["global_step"].as_u64().is_none()
+        {
+            continue;
+        }
+        receipted |= [".pdparams", ".pdopt", ".states"].iter().all(|suffix| {
+            let path = checkpoints.join(format!("{prefix}{suffix}"));
+            checkpoint_hash_shape(&receipt["sha256"][*suffix])
+                && path.is_file()
+                && datasets::plain(&path).is_ok()
+        });
+    }
+    !artifacts || receipted
 }
 
 fn collection_revision(directory: &Path) -> LabResult<String> {
@@ -1020,6 +1136,77 @@ use std::os::unix::ffi::OsStrExt;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn preparation_names_obey_the_frontend_utf16_boundary() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("data-progress.json");
+        datasets::atomic_json(
+            &path,
+            &json!({"stage":"reading","collection_name":"😀".repeat(50)}),
+        )
+        .unwrap();
+        assert!(data_progress(root.path()).is_some());
+        datasets::atomic_json(
+            &path,
+            &json!({"stage":"reading","collection_name":"😀".repeat(51)}),
+        )
+        .unwrap();
+        assert!(data_progress(root.path()).is_none());
+    }
+
+    #[test]
+    fn resume_admission_requires_original_baseline_pins_and_completed_save_receipts() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path();
+        fs::create_dir_all(directory.join("bundle")).unwrap();
+        fs::write(directory.join("bundle/audit.json"), "{}").unwrap();
+        let run = json!({"kind":"training","status":"interrupted"});
+        datasets::atomic_json(&directory.join("prepared.json"), &json!({})).unwrap();
+        assert!(!resume_ready(directory, &run));
+        let mut prepared = json!({"baseline_pins":{}});
+        for role in ["general", "names"] {
+            let path = directory.join("baseline").join(role);
+            fs::create_dir_all(&path).unwrap();
+            prepared[format!("baseline_{role}_model")] = json!(path);
+            prepared["baseline_pins"][role] =
+                json!({"model.onnx":"a".repeat(64),"characters.json":"b".repeat(64)});
+            fs::write(path.join("model.onnx"), "model").unwrap();
+            fs::write(path.join("characters.json"), "[]").unwrap();
+        }
+        datasets::atomic_json(&directory.join("prepared.json"), &prepared).unwrap();
+        assert!(resume_ready(directory, &run));
+        let stage = directory.join("bundle/general");
+        let checkpoints = stage.join("checkpoints");
+        fs::create_dir_all(&checkpoints).unwrap();
+        for suffix in [".pdparams", ".pdopt", ".states"] {
+            fs::write(checkpoints.join(format!("latest{suffix}")), "interrupted").unwrap();
+        }
+        assert!(!resume_ready(directory, &run));
+        let mut receipt = json!({"version":1,"epoch":2,"global_step":100,"sha256":{}});
+        for suffix in [".pdparams", ".pdopt", ".states"] {
+            receipt["sha256"][suffix] = json!("c".repeat(64));
+        }
+        datasets::atomic_json(&checkpoints.join("latest.resume.json"), &receipt).unwrap();
+        assert!(resume_ready(directory, &run));
+        receipt["epoch"] = json!(true);
+        datasets::atomic_json(&checkpoints.join("latest.resume.json"), &receipt).unwrap();
+        assert!(!resume_ready(directory, &run));
+        datasets::atomic_json(
+            &stage.join("training-status.json"),
+            &json!({"state":"completed"}),
+        )
+        .unwrap();
+        fs::write(
+            checkpoints.join("best_accuracy.pdparams"),
+            "verified later by worker",
+        )
+        .unwrap();
+        assert!(resume_ready(directory, &run));
+        prepared["baseline_pins"]["names"] = json!({});
+        datasets::atomic_json(&directory.join("prepared.json"), &prepared).unwrap();
+        assert!(!resume_ready(directory, &run));
+    }
 
     #[test]
     fn readiness_tokens_are_stable_and_track_helper_and_collection_changes() {

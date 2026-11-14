@@ -2,19 +2,20 @@ import type { ReactNode } from "react";
 import { RiArrowDownSLine } from "@remixicon/react";
 import { Card, CardContent, Button } from "@unimatrix/ui/editor";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent } from "@unimatrix/ui/public";
+export type TrainingSetupPanelProps = {
+  choices: ReactNode;
+  controls: ReactNode;
+  compute: ReactNode;
+  selectedCount: number;
+  counts: ReactNode;
+};
 export function TrainingSetupPanel({
   choices,
   controls,
   compute,
   selectedCount,
   counts,
-}: {
-  choices: ReactNode;
-  controls: ReactNode;
-  compute: ReactNode;
-  selectedCount: number;
-  counts: ReactNode;
-}) {
+}: TrainingSetupPanelProps) {
   return (
     <Card className="training-setup-panel" size="sm">
       <CardContent>
