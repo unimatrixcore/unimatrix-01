@@ -22,6 +22,7 @@ def main():
     parser.add_argument('--role', choices=['general', 'names'], required=True)
     parser.add_argument('--source', type=Path, required=True)
     parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument('--resume', action='store_true')
     args = parser.parse_args()
     root = args.bundle.resolve()
     audit_path, config_path = root/'audit.json', root/args.role/'train.yml'
@@ -29,6 +30,8 @@ def main():
     config = yaml.safe_load(config_path.read_text())
     if audit.get('training_ready') is not True or (root/'DO_NOT_TRAIN').exists():
         raise ValueError('The dataset audit does not authorize training')
+    if config['Global'].get('use_gpu') is not True or config['Global'].get('distributed') is not False:
+        raise ValueError('Training requires a single GPU per model job; CPU or distributed recipes are not accepted')
     checkpoint = Path(config['Global']['pretrained_model'])
     if sha(checkpoint) != audit[args.role]['starting_checkpoint_sha256']:
         raise ValueError('Starting checkpoint differs from the audited model')
@@ -62,17 +65,34 @@ def main():
         lists[split], counts[split], blank_counts[split] = sha(path), len(lines), blanks
     if args.role == 'names' and not blank_counts['train']:
         raise ValueError('Name continuation must retain audited blank training targets')
+    resume = None
+    if args.resume:
+        from checkpoint_resume import select_checkpoint
+        prior_path = root/args.role/'training-status.json'
+        prior = json.loads(prior_path.read_text()) if prior_path.is_file() else None
+        if prior and (prior.get('audit_sha256') != sha(audit_path)
+                      or prior.get('config_sha256') != sha(config_path)
+                      or prior.get('lists_sha256') != lists):
+            raise ValueError('Audited recipes or label lists changed since the previous attempt')
+        resume = select_checkpoint(root, args.role, config['Global']['epoch_num'])
     command = [sys.executable, str(Path(__file__).with_name('run_negative_ocr.py')),
                '--source', str(args.source.resolve()), '--mode', 'train']
     if args.role == 'names':
         command.append('--name-high-resolution')
     command += ['-c', str(config_path)]
+    if resume:
+        command += ['--resume-state', resume['prefix'] + '.states', '-o', 'Global.checkpoints=' + resume['prefix']]
     status = {'role': args.role, 'audit_sha256': sha(audit_path), 'config_sha256': sha(config_path),
               'checkpoint_sha256': sha(checkpoint), 'lists_sha256': lists, 'counts': counts,
-              'blank_counts': blank_counts, 'command': command, 'runtime_model_replaced': False}
+              'blank_counts': blank_counts, 'command': command, 'runtime_model_replaced': False,
+              'resume': resume}
     if args.dry_run:
         print(json.dumps(status, indent=2)); return
     path = root/args.role/'training-status.json'
+    if path.is_file():
+        history = root/args.role/'attempts'
+        history.mkdir(exist_ok=True)
+        (history/(str(time.time_ns())+'.json')).write_bytes(path.read_bytes())
     def save():
         temp = path.with_suffix('.tmp'); temp.write_text(json.dumps(status, indent=2)); temp.replace(path)
     status.update(state='running', started_at=time.time(), supervisor_pid=os.getpid()); save()

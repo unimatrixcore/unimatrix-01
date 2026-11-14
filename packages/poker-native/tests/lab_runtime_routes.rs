@@ -81,7 +81,7 @@ fn ai_success_and_early_errors_are_private_and_never_echo_credentials() {
     let root = tempfile::tempdir().unwrap();
     let service = service(root.path(), HashMap::new());
     let missing = request(&service, "GET", "/api/ai-review/config", Value::Null, false);
-    assert_eq!(missing.status, 400);
+    assert_eq!(missing.status, 200);
     assert_eq!(missing.headers["Cache-Control"], "private, no-store");
     let invalid = request(
         &service,

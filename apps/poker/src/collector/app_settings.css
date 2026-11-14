@@ -1,0 +1,25 @@
+.poker-app-settings { border-radius:0;gap:20px;width:min(560px,calc(100vw - 32px));max-width:560px;max-height:calc(100dvh - 32px);overflow:auto;font-family:var(--font-mono); }
+.poker-app-settings h2 { font-size:15px;font-weight:600; }
+.poker-app-settings h3 { margin:0 0 10px;font-size:12px;font-weight:600; }
+.poker-app-settings section + section { padding-top:16px;border-top:1px solid var(--border); }
+.app-settings-checkout { display:grid;grid-template-columns:90px minmax(0,1fr);align-items:center;gap:12px; }
+.app-settings-checkout h3 { margin:0; }
+.poker-app-settings form { display:grid;grid-template-columns:90px minmax(0,1fr);align-items:center;gap:10px 12px; }
+.poker-app-settings label,.poker-app-settings dt { font-size:11px;color:var(--muted-foreground); }
+.poker-app-settings input { border-radius:0; }
+.app-settings-save { grid-column:2;display:flex;justify-content:space-between;align-items:center;gap:12px; }
+.app-settings-save span,.poker-app-settings section > span { font-size:11px;color:var(--muted-foreground); }
+.poker-app-settings .app-settings-error { grid-column:1/-1;margin:0;color:var(--destructive);font-size:11px;overflow-wrap:anywhere; }
+.app-settings-release { overflow-wrap:anywhere;font-size:11px;margin-bottom:10px;color:var(--muted-foreground); }
+.poker-app-settings dl { display:grid;gap:10px;margin:0; }
+.poker-app-settings dl > div { display:grid;grid-template-columns:90px minmax(0,1fr);gap:12px; }
+.poker-app-settings dd { margin:0;font-size:10px;overflow-wrap:anywhere; }
+.app-settings-version { display:grid;grid-template-columns:90px minmax(0,1fr);gap:10px 12px;align-items:center;margin-top:16px; }
+.app-settings-version-picker { display:flex;gap:8px;align-items:center;min-width:0; }
+.poker-app-settings [data-slot=select-trigger] { width:100%;min-width:0;border-radius:0;font-size:11px; }
+.app-settings-version-picker [data-slot=select-trigger] { flex:1; }
+.app-settings-version-picker > button:not([data-slot=select-trigger]) { flex-shrink:0; }
+.app-settings-select-menu { border-radius:0;min-width:var(--radix-select-trigger-width);font-family:var(--font-mono); }
+.app-settings-select-menu [data-slot=select-item] { border-radius:0;font-size:11px; }
+.app-settings-version-status { grid-column:2;font-size:10px;line-height:1.7;color:var(--muted-foreground); }
+@media(max-width:420px) { .poker-app-settings { padding:20px; }.poker-app-settings form,.app-settings-checkout,.app-settings-version,.poker-app-settings dl > div { grid-template-columns:70px minmax(0,1fr);gap:10px; } }

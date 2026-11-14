@@ -7,6 +7,82 @@ use std::{
     time::Duration,
 };
 pub type Readings = BTreeMap<String, Value>;
+fn output_text(response: &Value) -> Option<String> {
+    if let Some(text) = response["output_text"].as_str() {
+        return Some(text.into());
+    }
+    let mut text = String::new();
+    for output in response["output"].as_array()? {
+        for content in output["content"].as_array().into_iter().flatten() {
+            if content["type"] == "refusal" {
+                return None;
+            }
+            if content["type"] == "output_text" {
+                text.push_str(content["text"].as_str().unwrap_or(""));
+            }
+        }
+    }
+    Some(text)
+}
+pub(super) fn repair_format(response: &Value) -> (Value, Vec<&'static str>) {
+    let Some(original) = output_text(response) else {
+        return (response.clone(), vec![]);
+    };
+    let mut text = original.trim().to_owned();
+    let mut repairs = Vec::new();
+    if let Some(stripped) = text.strip_prefix('\u{feff}') {
+        text = stripped.trim().into();
+        repairs.push("leading_bom");
+    }
+    if let Some(body) = text
+        .strip_prefix("```json")
+        .or_else(|| text.strip_prefix("```"))
+    {
+        if let Some(body) = body.strip_suffix("```") {
+            text = body.trim().into();
+            repairs.push("json_code_fence");
+        }
+    }
+    let Ok(mut value) = serde_json::from_str::<Value>(&text) else {
+        return (response.clone(), vec![]);
+    };
+    if value.is_array() {
+        value = json!({"items":value});
+        repairs.push("items_array");
+    } else if let Some(object) = value.as_object().filter(|object| object.len() == 1) {
+        for wrapper in ["result", "review"] {
+            if let Some(inner) = object.get(wrapper).filter(|inner| inner.is_object()) {
+                value = inner.clone();
+                repairs.push("single_result_envelope");
+                break;
+            }
+        }
+    }
+    if repairs.is_empty() {
+        return (response.clone(), repairs);
+    }
+    let mut repaired = response.clone();
+    if let Some(object) = repaired.as_object_mut() {
+        object.insert("output_text".into(), json!(value.to_string()));
+    }
+    (repaired, repairs)
+}
+pub(super) fn diagnostics(response: &Value) -> Value {
+    fn kind(value: &Value) -> &'static str {
+        match value {
+            Value::Null => "null",
+            Value::Bool(_) => "boolean",
+            Value::Number(_) => "number",
+            Value::String(_) => "string",
+            Value::Array(_) => "array",
+            Value::Object(_) => "object",
+        }
+    }
+    let text = output_text(response).unwrap_or_default();
+    let parsed = serde_json::from_str::<Value>(&text).ok();
+    let rows = parsed.as_ref().and_then(|v| v["items"].as_array());
+    json!({"output_chars":text.chars().count(),"json_valid":parsed.is_some(),"items_type":parsed.as_ref().map(|v|kind(&v["items"])),"items":rows.map(|rows|rows.iter().take(100).enumerate().map(|(index,row)|json!({"index":index,"id_type":kind(&row["id"]),"text_type":kind(&row["text"]),"text_chars":row["text"].as_str().map(|v|v.chars().count()),"clarity":row["clarity"].as_str().filter(|v|["clear","blank","uncertain"].contains(v)).unwrap_or("invalid"),"reason_type":kind(&row["reason"]),"reason_chars":row["reason"].as_str().map(|v|v.chars().count())})).collect::<Vec<_>>())})
+}
 pub fn payload(model: &str, png: &[u8], items: &[Item], blind: bool) -> Value {
     let task = if blind {
         "Independently transcribe each crop. No expected labels are provided. "
@@ -24,7 +100,7 @@ pub fn request(payload: Value, key: &str) -> LabResult<Value> {
         .map_err(|_| {
             bad("OpenAI could not be reached or returned invalid JSON. Resume to retry.")
         })?;
-    for attempt in 0..3 {
+    {
         let response = client
             .post("https://api.openai.com/v1/responses")
             .bearer_auth(key)
@@ -35,10 +111,6 @@ pub fn request(payload: Value, key: &str) -> LabResult<Value> {
             })?;
         let code = response.status().as_u16();
         if !response.status().is_success() {
-            if (code == 429 || (500..=599).contains(&code)) && attempt < 2 {
-                std::thread::sleep(Duration::from_secs(1 << attempt));
-                continue;
-            }
             return Err(bad(if code == 401 || code == 403 {
                 "OpenAI rejected the API key or model access.".into()
             } else {
@@ -55,15 +127,32 @@ pub fn request(payload: Value, key: &str) -> LabResult<Value> {
         if bytes.len() > 8_000_000 {
             return Err(bad("OpenAI returned an oversized response."));
         }
-        return serde_json::from_slice(&bytes).map_err(|_| {
+        serde_json::from_slice(&bytes).map_err(|_| {
             bad("OpenAI could not be reached or returned invalid JSON. Resume to retry.")
-        });
+        })
     }
-    Err(bad(
-        "OpenAI could not be reached or returned invalid JSON. Resume to retry.",
-    ))
+}
+
+pub(super) fn retryable_transport(message: &str) -> bool {
+    message == "OpenAI could not be reached or returned invalid JSON. Resume to retry."
+        || message == "OpenAI request failed (HTTP 429)."
+        || (500..=599).any(|code| message == format!("OpenAI request failed (HTTP {code})."))
 }
 pub fn parse(response: &Value, items: &[Item]) -> LabResult<Readings> {
+    if response["output"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .any(|output| {
+            output["content"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .any(|content| content["type"] == "refusal")
+        })
+    {
+        return Err(bad("OpenAI declined this batch. No labels were changed."));
+    }
     if !response.is_object()
         || response
             .get("status")
@@ -123,16 +212,28 @@ pub fn parse(response: &Value, items: &[Item]) -> LabResult<Readings> {
         let text = object["text"]
             .as_str()
             .filter(|t| t.chars().count() <= 200)
-            .ok_or_else(|| bad("OpenAI returned an invalid transcription."))?;
+            .ok_or_else(|| bad("OpenAI returned an invalid transcription: text must be a string of at most 200 characters."))?;
         let clarity = object["clarity"].as_str().unwrap_or("");
         if object["reason"]
             .as_str()
             .is_none_or(|s| s.chars().count() > 1000)
-            || !["clear", "blank", "uncertain"].contains(&clarity)
-            || (clarity == "blank" && !text.is_empty())
-            || (clarity == "clear" && text.is_empty())
         {
-            return Err(bad("OpenAI returned an invalid transcription."));
+            return Err(bad("OpenAI returned an invalid transcription: reason must be a string of at most 1000 characters."));
+        }
+        if !["clear", "blank", "uncertain"].contains(&clarity) {
+            return Err(bad(
+                "OpenAI returned an invalid transcription: unsupported clarity value.",
+            ));
+        }
+        if clarity == "blank" && !text.is_empty() {
+            return Err(bad(
+                "OpenAI returned an invalid transcription: blank crops must have empty text.",
+            ));
+        }
+        if clarity == "clear" && text.is_empty() {
+            return Err(bad(
+                "OpenAI returned an invalid transcription: clear crops must have nonempty text.",
+            ));
         }
         found.insert(key.into(), row.clone());
     }

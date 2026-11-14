@@ -15,32 +15,29 @@ const status = {
 afterEach(() => {
   vi.mocked(launcherRequest).mockReset();
 });
-it("renders the active checkout separately from the requested branch and collapses to its icon", async () => {
+it("renders the active checkout separately from the requested branch using the shared picker", async () => {
   vi.mocked(launcherRequest).mockResolvedValue(status);
-  const { rerender } = render(<BranchSelector collapsed={false} />);
+  render(<BranchSelector />);
   await waitFor(() => {
-    expect(screen.getByRole("button", { name: "Work branch" })).toBeEnabled();
+    expect(screen.getByRole("combobox", { name: "Checkout" })).toBeEnabled();
   });
   expect(screen.queryByLabelText("Active work branch")).not.toBeInTheDocument();
-  const trigger = screen.getByRole("button", { name: "Work branch" });
-  fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
-  await screen.findByRole("menuitemradio", { name: "Latest commit" });
+  const trigger = screen.getByRole("combobox", { name: "Checkout" });
+  fireEvent.keyDown(trigger, { key: "ArrowDown" });
+  await screen.findByRole("option", { name: "Latest commit" });
   vi.mocked(launcherRequest).mockResolvedValue({ ...status, selection: other.id, desired: other });
-  fireEvent.click(screen.getByRole("menuitemradio", { name: "work/other" }));
+  fireEvent.click(screen.getByRole("option", { name: "work/other" }));
   await waitFor(() => {
     expect(trigger).toHaveTextContent("work/other");
   });
   expect(launcherRequest).toHaveBeenLastCalledWith("select", "/other");
   expect(trigger).toHaveAttribute("title", "work/current → work/other");
-  rerender(<BranchSelector collapsed />);
-  expect(trigger).toHaveTextContent("");
-  expect(screen.queryByLabelText("Active work branch")).not.toBeInTheDocument();
 });
 it("makes launcher failures visible without enabling a disconnected control", async () => {
   vi.mocked(launcherRequest).mockRejectedValue(new Error("Launcher unavailable"));
-  render(<BranchSelector collapsed={false} />);
+  render(<BranchSelector />);
   await waitFor(() => {
     expect(screen.getByRole("status")).toHaveTextContent("Launcher unavailable");
   });
-  expect(screen.getByRole("button", { name: "Work branch" })).toBeDisabled();
+  expect(screen.getByRole("combobox", { name: "Checkout" })).toBeDisabled();
 });

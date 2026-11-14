@@ -41,7 +41,7 @@ try {
   await new Promise(resolve => window.setTimeout(resolve, 0));
   assert.equal(toggle.getAttribute('aria-expanded'), 'true');
   assert.ok(document.querySelector('#main-content').parentElement.inert || document.querySelector('[inert]'));
-  assert.deepEqual([...document.querySelectorAll('nav[aria-label="Sections"] a')].map(a => a.textContent), ['OCR Data', 'Gameplay']);
+  assert.deepEqual([...document.querySelectorAll('nav[aria-label="Sections"] a')].map(a => a.textContent), ['OCR Data', 'Gameplay', 'OCR Training']);
   document.querySelector('nav[aria-label="Sections"] a').click();
   await new Promise(resolve => window.setTimeout(resolve, 0));
   assert.equal(toggle.getAttribute('aria-expanded'), 'false');

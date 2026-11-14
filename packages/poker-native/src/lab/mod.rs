@@ -11,6 +11,7 @@ pub mod migration;
 pub mod model;
 pub mod queue;
 pub mod review;
+pub mod training;
 pub mod watch;
 
 #[derive(Debug)]
@@ -172,6 +173,7 @@ pub struct LabService {
     pub ai_review: Arc<ai_review::AiReviewManager>,
     pub gameplay: Arc<gameplay::GameplayService>,
     pub capture: Arc<capture::CaptureService>,
+    pub training: training::TrainingManager,
     pub watch: watch::WatchCoordinator,
     pub started: f64,
 }
@@ -455,23 +457,50 @@ impl LabService {
         tools_root: PathBuf,
         environment: std::collections::HashMap<String, String>,
     ) -> LabResult<Self> {
+        crate::storage_paths::ensure_directory(&config_root)?;
         let registry = Arc::new(datasets::DatasetRegistry::new(
             root.join("collector_datasets"),
         )?);
-        let model = Arc::new(model::ModelRuntime::with_environment(
-            tools_root.clone(),
-            environment.clone(),
-        )?);
+        let selection =
+            training::releases::selected_release(&config_root, &root.join("ocr-training"));
+        let mut model_environment = environment.clone();
+        model_environment
+            .entry("OCR_MODEL_RELEASE".into())
+            .or_insert_with(|| {
+                root.join("ocr-training/release-candidate")
+                    .to_string_lossy()
+                    .into_owned()
+            });
+        if let Ok(Some(release)) = &selection {
+            model_environment.insert(
+                "OCR_MODEL_RELEASE".into(),
+                release.to_string_lossy().into_owned(),
+            );
+        }
+        let mut model =
+            model::ModelRuntime::with_environment(tools_root.clone(), model_environment)?;
+        if let Err(error) = selection {
+            model.set_configuration_error(error.message);
+        }
+        let model = Arc::new(model);
         let ai_review = Arc::new(ai_review::AiReviewManager::new(
             registry.clone(),
             model.clone(),
+            config_root.clone(),
         )?);
         let gameplay = Arc::new(gameplay::GameplayService::with_environment(
             root.join("gameplay_recordings"),
-            tools_root,
+            tools_root.clone(),
             config_root.clone(),
             environment.clone(),
         )?);
+        let training = training::TrainingManager::new(
+            root.clone(),
+            tools_root,
+            registry.clone(),
+            environment.clone(),
+        )?
+        .with_runtime(model.clone(), config_root.clone());
         let capture = Arc::new(capture::CaptureService::with_paths(
             config_root,
             root.join("screenshots"),
@@ -483,6 +512,7 @@ impl LabService {
             ai_review,
             gameplay,
             capture,
+            training,
             watch: watch::WatchCoordinator::default(),
             started: now_ms() as f64 / 1000.0,
         })
@@ -513,10 +543,16 @@ impl LabService {
         {
             return Err(bad("Invalid local API request"));
         }
+        if let Some(response) = self.ai_review.handle_configuration(request) {
+            return response;
+        }
         if request.path.starts_with("/api/editor/") {
             return capture::editor(self, request);
         }
         if let Some(response) = self.gameplay.handle(self, request) {
+            return response;
+        }
+        if let Some(response) = self.training.handle(request) {
             return response;
         }
         if request.path == "/api/uptime" && request.method == "GET" {

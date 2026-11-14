@@ -36,6 +36,9 @@ const completion: PokerGameCompletion = {
 describe("current Poker Lab contract", () => {
   it("keeps the contract identity tied to its original bytes", () => {
     expect(
+      readFileSync(new URL("../../../tools/poker/dev_tools/ocr_contract.json", import.meta.url)),
+    ).toEqual(readFileSync(new URL("../ocr-contract.json", import.meta.url)));
+    expect(
       createHash("sha256")
         .update(readFileSync(new URL("../ocr-contract.json", import.meta.url)))
         .digest("hex"),
@@ -48,6 +51,8 @@ describe("current Poker Lab contract", () => {
     ["name", "Player 10", false],
     ["status", "Fold", true],
     ["status", "Hide Cards", true],
+    ["status", "Away", true],
+    ["status", "away", false],
     ["status", "fold", false],
     ["bank", "G No Chips", true],
     ["bank", "S No Chips", true],

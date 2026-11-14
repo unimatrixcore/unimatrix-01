@@ -149,3 +149,5 @@ export type { ScrollAreaProps, ScrollAreaViewportProps } from "./components/ui/s
 
 export { ActionTooltip } from "./components/ui/action-tooltip.js";
 export type { ActionTooltipProps } from "./components/ui/action-tooltip.js";
+
+export { Progress } from "./components/ui/progress.js";

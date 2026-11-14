@@ -42,6 +42,39 @@ fn frame(count: usize) -> Value {
     json!({"id":"manual:frame","source":"frame.png","game_id":"# 123456","regions":(0..count).map(|i|json!({"id":"seat.0.name","source":"frame.png","sample_key":format!("sample-{i:04}"),"phash":"00".repeat(32),"base64_image":STANDARD.encode(png(10)),"label":"","rect":{"x":0,"y":0,"w":2,"h":2}})).collect::<Vec<_>>()})
 }
 #[test]
+fn away_status_uses_normal_acceptance_and_rejects_old_contract_suggestions() {
+    let (_temp, ctx) = context();
+    let sample = input("away-status", "seats[1].status", 10);
+    let fresh = review::prediction(
+        &ctx,
+        &sample,
+        json!({"text":"Away","raw_text":"Away","schema_valid":false}),
+    )
+    .unwrap();
+    assert_eq!(fresh["text"], "Away");
+    assert_eq!(fresh["schema_valid"], true);
+    let mut stale = fresh.clone();
+    stale["schema_valid"] = json!(false);
+    stale["validation_contract"] = json!({"version":1,"sha256":"199f3970150c4d84e4510e47e91e22556c1fbd07e60b013ceac45055b2bdf7d0"});
+    ctx.connection().unwrap().execute("INSERT INTO model_predictions(id,sample_key,region_id,pixel_sha256,dataset_id,created_at,payload) VALUES(?,?,?,?,?,?,?)",rusqlite::params!["stale-away",sample.key,sample.region_id,fresh["pixel_sha256"].as_str().unwrap(),ctx.id,1,serde_json::to_string(&stale).unwrap()]).unwrap();
+    let rejected =
+        review::review(&ctx, &sample, "Away", "accepted", Some("stale-away"), false).unwrap_err();
+    assert!(rejected.message.contains("validation policy changed"));
+    let accepted = review::review(
+        &ctx,
+        &sample,
+        "Away",
+        "accepted",
+        fresh["id"].as_str(),
+        false,
+    )
+    .unwrap();
+    assert_eq!(accepted["label"], "Away");
+    assert_eq!(accepted["action"], "accepted");
+    assert_eq!(accepted["outside_contract"], 0);
+}
+
+#[test]
 fn immutable_predictions_reviews_bind_pixels_dataset_region_and_contract() {
     let (_temp, ctx) = context();
     let sample = input("obs", "seat.0.name", 10);

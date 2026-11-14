@@ -21,3 +21,6 @@ export * from "./poker-lab.js";
 export * from "./poker-assistant.js";
 
 export * from "./poker-gameplay-lists.js";
+export * from "./poker-training.js";
+
+export * from "./poker-workspace.js";

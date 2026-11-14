@@ -16,14 +16,20 @@ use std::{
 struct State {
     ocr: worker::Ocr,
 }
+struct Configuration {
+    release: PathBuf,
+    selection_error: Option<String>,
+}
 pub struct ModelRuntime {
     state: Mutex<State>,
+    configuration: Mutex<Configuration>,
     cancelled: Arc<AtomicBool>,
     runtime_state: Arc<AtomicU8>,
     error: Mutex<Option<String>>,
     device: String,
     python: PathBuf,
-    release: PathBuf,
+    tools_root: PathBuf,
+    environment: HashMap<String, String>,
     config_error: Option<String>,
 }
 impl ModelRuntime {
@@ -65,12 +71,17 @@ impl ModelRuntime {
         let runtime_state = ocr.runtime_state();
         Ok(Self {
             state: Mutex::new(State { ocr }),
+            configuration: Mutex::new(Configuration {
+                release,
+                selection_error: None,
+            }),
             cancelled,
             runtime_state,
             error: Mutex::new(None),
             device,
             python,
-            release,
+            tools_root,
+            environment,
             config_error,
         })
     }
@@ -78,6 +89,8 @@ impl ModelRuntime {
         if let Some(error) = &self.config_error {
             return Err(unavailable(error.clone()));
         }
+        let configured =
+            self.python.is_file() && self.release_path()?.join("freeze.json").is_file();
         let running = match self.state.try_lock() {
             Ok(mut state) => {
                 state.ocr.is_running() && self.runtime_state.load(Ordering::Acquire) == 2
@@ -93,8 +106,77 @@ impl ModelRuntime {
             .map_err(|_| unavailable("Model error lock poisoned"))?
             .clone();
         Ok(
-            json!({"state":if running{"ready"}else if error.is_some(){"error"}else{"idle"},"device":self.device,"error":error,"configured":self.python.is_file()&&self.release.join("freeze.json").is_file()}),
+            json!({"state":if running{"ready"}else if error.is_some(){"error"}else{"idle"},"device":self.device,"error":error,"configured":configured}),
         )
+    }
+    pub(crate) fn release_path(&self) -> LabResult<PathBuf> {
+        let state = self
+            .configuration
+            .lock()
+            .map_err(|_| unavailable("Model lock poisoned"))?;
+        if let Some(error) = &state.selection_error {
+            return Err(unavailable(error.clone()));
+        }
+        Ok(state.release.clone())
+    }
+    pub(crate) fn set_configuration_error(&mut self, error: String) {
+        if let Ok(state) = self.configuration.get_mut() {
+            state.selection_error = Some(error);
+        }
+    }
+    pub(crate) fn activate_release(
+        &self,
+        release: PathBuf,
+        persist: impl FnOnce() -> LabResult<()>,
+    ) -> LabResult<()> {
+        if let Some(error) = &self.config_error {
+            return Err(unavailable(error.clone()));
+        }
+        let mut environment = self.environment.clone();
+        environment.insert(
+            "OCR_MODEL_RELEASE".into(),
+            release.to_string_lossy().into_owned(),
+        );
+        let mut candidate = worker::Ocr::new(&self.tools_root, &environment);
+        candidate.start().map_err(unavailable)?;
+        let mut bytes = std::io::Cursor::new(Vec::new());
+        let image = image::RgbImage::from_fn(32, 32, |x, y| {
+            image::Rgb([(x * 7) as u8, (y * 7) as u8, 100])
+        });
+        image::DynamicImage::ImageRgb8(image)
+            .write_to(&mut bytes, image::ImageFormat::Png)
+            .map_err(|_| unavailable("Cannot prepare OCR activation check"))?;
+        candidate
+            .predict_many(vec![
+                (bytes.get_ref().clone(), "pot".into()),
+                (bytes.into_inner(), "seats[0].name".into()),
+            ])
+            .map_err(unavailable)?;
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| unavailable("Model lock poisoned"))?;
+        let mut error = self
+            .error
+            .lock()
+            .map_err(|_| unavailable("Model error lock poisoned"))?;
+        let mut configuration = self
+            .configuration
+            .lock()
+            .map_err(|_| unavailable("Model configuration lock poisoned"))?;
+        if self.cancelled.load(Ordering::Acquire) {
+            return Err(unavailable("OCR is shutting down"));
+        }
+        persist()?;
+        state.ocr.stop();
+        state.ocr = candidate;
+        state
+            .ocr
+            .share_signals(self.cancelled.clone(), self.runtime_state.clone());
+        configuration.release = release;
+        configuration.selection_error = None;
+        *error = None;
+        Ok(())
     }
     pub fn predict(&self, png: &[u8], region: &str) -> LabResult<Value> {
         if png.is_empty() || png.len() > 16 * 1024 * 1024 {
@@ -111,6 +193,7 @@ impl ModelRuntime {
         if let Some(error) = &self.config_error {
             return Err(unavailable(error.clone()));
         }
+        self.release_path()?;
         if crops.is_empty() || crops.len() > 192 {
             return Err(bad("Expected 1..192 crops"));
         }

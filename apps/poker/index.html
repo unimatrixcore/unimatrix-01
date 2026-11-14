@@ -600,10 +600,6 @@
                 <div class="ai-review-heading">
                   <div>
                     <h2 id="ai-review-heading">A second look</h2>
-                    <p>
-                      All crops in this review session. Grouped by region, with common mistakes
-                      checked first.
-                    </p>
                   </div>
                   <button
                     id="ai-review-close"
@@ -615,42 +611,19 @@
                   </button>
                 </div>
                 <div class="ai-review-controls">
-                  <details id="ai-review-settings">
-                    <summary>
-                      OpenAI settings <span id="ai-review-connection">Checking connection…</span>
-                    </summary>
-                    <div class="ai-review-settings-grid">
-                      <label
-                        >API key<input
-                          id="ai-review-api-key"
-                          type="password"
-                          autocomplete="off"
-                          spellcheck="false"
-                          placeholder="sk-…"
-                          aria-describedby="ai-review-key-note" /></label
-                      ><label
-                        >Model<input
-                          id="ai-review-model"
-                          type="text"
-                          value="gpt-4.1"
-                          autocomplete="off"
-                          spellcheck="false"
-                          maxlength="100" /></label
-                      ><label
-                        >Crops per grid<input
-                          id="ai-review-batch-size"
-                          type="number"
-                          min="1"
-                          max="24"
-                          step="1"
-                          value="12" /></label
-                      ><button id="ai-review-save-settings" class="btn-secondary" type="button">
-                        Save settings</button
-                      ><small id="ai-review-key-note"
-                        >Key stays in server memory. Never saved with your dataset.</small
-                      >
-                    </div>
-                  </details>
+                  <span id="ai-review-connection" role="status">Checking connection…</span>
+                  <button id="ai-review-open-settings" class="btn-secondary hidden" type="button">
+                    Open settings
+                  </button>
+                  <label class="ai-review-batch-size"
+                    >Crops per grid<input
+                      id="ai-review-batch-size"
+                      type="number"
+                      min="1"
+                      max="24"
+                      step="1"
+                      value="12"
+                  /></label>
                   <label class="ai-review-auto"
                     ><input id="ai-review-auto-correct" type="checkbox" checked />Autocorrect
                     verified misses</label
@@ -667,10 +640,6 @@
                     </button>
                   </div>
                 </div>
-                <p class="ai-review-disclosure">
-                  Sends crop-and-label grids to OpenAI. Corrections need a second read without the
-                  label; uncertain reads stay flagged.
-                </p>
                 <div id="ai-review-job" class="hidden">
                   <div class="ai-review-progress-heading">
                     <span id="ai-review-status" role="status" aria-live="polite">Ready</span
@@ -687,8 +656,7 @@
                     ><span><strong id="ai-review-flagged">0</strong> flagged</span
                     ><span id="ai-review-region"></span>
                   </div>
-                  <details id="ai-review-grid-details" class="ai-review-grid-details">
-                    <summary>Current batch grid</summary>
+                  <div id="ai-review-grid-details" class="ai-review-grid-details">
                     <figure>
                       <img
                         id="ai-review-grid"
@@ -697,7 +665,7 @@
                       />
                       <figcaption id="ai-review-grid-caption"></figcaption>
                     </figure>
-                  </details>
+                  </div>
                   <ol
                     id="ai-review-changes"
                     class="ai-review-changes"

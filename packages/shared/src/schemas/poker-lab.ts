@@ -1,6 +1,14 @@
 import { z } from "zod";
 import { pokerRectSchema } from "./poker.js";
 
+export const pokerAiReviewConfigSchema = z.object({
+  configured: z.boolean(),
+  model: z.string().min(1),
+  batch_size: z.number().int().positive().optional(),
+  max_batch_size: z.number().int().positive().optional(),
+});
+export type PokerAiReviewConfig = z.infer<typeof pokerAiReviewConfigSchema>;
+
 export const pokerRegionEditorSchema = z.object({
   regions: z.record(
     z.string(),

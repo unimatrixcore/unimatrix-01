@@ -33,7 +33,9 @@ import {
 } from "@unimatrix/shared";
 import { labListOptions, readLabListMeta } from "../lib/background-lists";
 import { waitForViewport } from "../lib/viewport-ready";
+import { setLauncherRecording } from "../lib/launcher";
 import "./gameplay.css";
+import { readWorkspaceState, rememberWorkspaceState } from "../lib/workspace-state";
 
 type Session = {
   id: string;
@@ -62,6 +64,7 @@ const parseFrame = (value: unknown): Frame => pokerGameplayFrameSummarySchema.pa
 const parseSession = (value: unknown): Session => pokerGameplaySessionSchema.parse(value);
 const sessionKey = (item: Session) => item.id;
 const PREVIEW_INTERVAL_MS = 2000;
+const RECORDING_KEY = "poker:gameplay-recording";
 const time = (value: string) =>
   new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -94,6 +97,7 @@ export interface GameplayProps {
 }
 
 export function Gameplay({ active, onLeave }: GameplayProps) {
+  const savedPlace = useRef(readWorkspaceState().gameplay);
   const [catalogRevision, setCatalogRevision] = useState(0);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [handPickerOpen, setHandPickerOpen] = useState(false);
@@ -103,7 +107,7 @@ export function Gameplay({ active, onLeave }: GameplayProps) {
   const startupFinished = useRef(window.location.pathname !== "/gameplay");
   const activeRef = useRef(active);
   activeRef.current = active;
-  const [view, setView] = useState<View>("recording");
+  const [view, setView] = useState<View>(savedPlace.current?.view || "recording");
   const [sources, setSources] = useState<Source[]>([]);
   const [source, setSource] = useState("");
   const [name, setName] = useState("");
@@ -120,6 +124,8 @@ export function Gameplay({ active, onLeave }: GameplayProps) {
   const [revision, setRevision] = useState(0);
   const [pageVisible, setPageVisible] = useState(!document.hidden);
   const initialSelection = useRef(false);
+  const reconnecting = useRef(false);
+  const recordingClaim = useRef(0);
   const running = useRef(false);
   const inflight = useRef(false);
   const pendingCapture = useRef<Promise<void> | null>(null);
@@ -176,11 +182,22 @@ export function Gameplay({ active, onLeave }: GameplayProps) {
   const frames = frameList.items;
   const total = readLabListMeta(frameList.data?.pages ?? [])?.total ?? frames.length;
 
-  function pause() {
+  function pause(releaseClaim = true) {
+    sessionStorage.removeItem(RECORDING_KEY);
     running.current = false;
     clearTimeout(timer.current);
     setRecording(false);
     if (latest.current) setLatestFrame(latest.current);
+    if (releaseClaim) {
+      const claim = ++recordingClaim.current;
+      void Promise.resolve(pendingCapture.current)
+        .then(async () => {
+          if (claim === recordingClaim.current) await setLauncherRecording("gameplay", false);
+        })
+        .catch((error) => {
+          if (alive.current) setError(errorMessage(error));
+        });
+    }
   }
   useEffect(() => {
     const visibility = () => {
@@ -197,8 +214,12 @@ export function Gameplay({ active, onLeave }: GameplayProps) {
       document.removeEventListener("visibilitychange", visibility);
     };
   }, []);
-  function selectSession(id: string, selected = sessionList.items.find((item) => item.id === id)) {
-    pause();
+  function selectSession(
+    id: string,
+    selected = sessionList.items.find((item) => item.id === id),
+    reconnect = false,
+  ) {
+    pause(!reconnect);
     stopRequested.current = false;
     ++acceptedEpoch.current;
     currentSession.current = selected || null;
@@ -231,32 +252,80 @@ export function Gameplay({ active, onLeave }: GameplayProps) {
   useEffect(() => {
     alive.current = true;
     void refreshSources();
-    const leave = () => {
+    const detach = () => {
       running.current = false;
-      stopRequested.current = true;
       clearTimeout(timer.current);
-      const current = currentSession.current;
-      if (current && current.status !== "stopped")
-        navigator.sendBeacon(
-          `/api/gameplay/sessions/${current.id}/stop`,
-          new Blob(["{}"], { type: "application/json" }),
-        );
     };
-    window.addEventListener("pagehide", leave);
+    const saved = sessionStorage.getItem(RECORDING_KEY);
+    reconnecting.current = !!saved && window.location.pathname === "/gameplay";
+    if (reconnecting.current && saved) {
+      void api<{ session: Session }>(`/sessions/${encodeURIComponent(saved)}`)
+        .then(async ({ session: value }) => {
+          if (!alive.current || !activeRef.current || stopRequested.current) return;
+          const restored = parseSession(value);
+          ++recordingClaim.current;
+          if (restored.status !== "stopped") await setLauncherRecording("gameplay", true);
+          if (!alive.current || !activeRef.current || stopRequested.current) return;
+          selectSession(restored.id, restored, true);
+          setName(restored.name);
+          if (restored.status !== "stopped") {
+            sessionStorage.setItem(RECORDING_KEY, restored.id);
+            running.current = true;
+            setRecording(true);
+            clearTimeout(timer.current);
+            timer.current = setTimeout(() => {
+              actions.current.capture();
+            }, restored.interval_ms);
+          }
+        })
+        .catch((error) => {
+          if (alive.current) {
+            sessionStorage.removeItem(RECORDING_KEY);
+            setError(errorMessage(error));
+          }
+        })
+        .finally(() => {
+          reconnecting.current = false;
+        });
+    }
+    window.addEventListener("pagehide", detach);
     return () => {
       alive.current = false;
-      leave();
-      window.removeEventListener("pagehide", leave);
+      detach();
+      window.removeEventListener("pagehide", detach);
     };
   }, []);
 
   useEffect(() => {
-    if (!initialSelection.current && sessionList.isSuccess) {
+    if (!initialSelection.current && !reconnecting.current && sessionList.isSuccess) {
       initialSelection.current = true;
-      if (!currentSession.current && sessionList.items[0])
-        selectSession(sessionList.items[0].id, sessionList.items[0]);
+      if (!currentSession.current) {
+        const selectionEpoch = acceptedEpoch.current;
+        const restore = (selected: Session | undefined) => {
+          if (!alive.current || !selected || selectionEpoch !== acceptedEpoch.current) return;
+          selectSession(selected.id, selected);
+          if (selected.id === savedPlace.current?.sessionId) setHand(savedPlace.current.hand);
+        };
+        const saved = savedPlace.current;
+        const selected = sessionList.items.find((item) => item.id === saved?.sessionId);
+        if (selected || !saved?.sessionId) restore(selected || sessionList.items[0]);
+        else
+          void api<{ session: Session }>(`/sessions/${encodeURIComponent(saved.sessionId)}`)
+            .then(({ session: restored }) => {
+              restore(parseSession(restored));
+            })
+            .catch(() => {
+              restore(sessionList.items[0]);
+            });
+      }
     }
   }, [sessionList.items, sessionId]);
+  useEffect(() => {
+    if (sessionId)
+      rememberWorkspaceState({
+        gameplay: { sessionId, view, ...(hand !== undefined ? { hand } : {}) },
+      });
+  }, [sessionId, view, hand]);
 
   useEffect(() => {
     if (!active || startupFinished.current) return;
@@ -378,13 +447,17 @@ export function Gameplay({ active, onLeave }: GameplayProps) {
         });
         current = result.session;
         currentSession.current = current;
-        if (!alive.current) {
+        if (!alive.current && stopRequested.current) {
           await api(`/sessions/${current.id}/stop`, {});
           currentSession.current = { ...current, status: "stopped" };
           if (alive.current) {
             setSession(currentSession.current);
             setSessionId(current.id);
           }
+          return;
+        }
+        if (!alive.current) {
+          sessionStorage.setItem(RECORDING_KEY, current.id);
           return;
         }
         if (alive.current) {
@@ -394,6 +467,7 @@ export function Gameplay({ active, onLeave }: GameplayProps) {
         }
         if (stopRequested.current) return;
       }
+      if (running.current) sessionStorage.setItem(RECORDING_KEY, current.id);
       const result = await api<{
         frame?: Frame;
         session?: Session;
@@ -428,36 +502,66 @@ export function Gameplay({ active, onLeave }: GameplayProps) {
       inflight.current = false;
       if (alive.current) {
         setBusy(false);
-        if (running.current)
+        if (running.current) {
+          clearTimeout(timer.current);
           timer.current = setTimeout(
             () => void capture(),
             currentSession.current?.interval_ms || interval,
           );
+        }
       }
     }
   }
-  function toggle() {
+  async function toggle() {
     if (stopRequested.current) return;
     if (running.current) {
       pause();
       return;
     }
     if (!source || inflight.current || currentSession.current?.status === "stopped") return;
+    const claim = ++recordingClaim.current;
+    setBusy(true);
+    try {
+      await setLauncherRecording("gameplay", true);
+    } catch (error) {
+      setError(errorMessage(error));
+      setBusy(false);
+      return;
+    }
+    setBusy(false);
+    if (
+      !alive.current ||
+      !activeRef.current ||
+      stopRequested.current ||
+      claim !== recordingClaim.current
+    )
+      return;
     running.current = true;
     setRecording(true);
     void capture();
   }
   async function stop(propagate = false) {
-    pause();
-    stopRequested.current = inflight.current || currentSession.current !== null;
+    const reconnectId = reconnecting.current ? sessionStorage.getItem(RECORDING_KEY) : null;
+    ++recordingClaim.current;
+    pause(false);
+    stopRequested.current = !!reconnectId || inflight.current || currentSession.current !== null;
     await pendingCapture.current;
     const current = currentSession.current;
-    if (!current || current.status === "stopped") return;
+    if (!current && reconnectId) {
+      await api(`/sessions/${encodeURIComponent(reconnectId)}/stop`, {});
+      await setLauncherRecording("gameplay", false);
+      return;
+    }
+    if (!current || current.status === "stopped") {
+      await setLauncherRecording("gameplay", false);
+      return;
+    }
     setBusy(true);
     try {
       const result = await api<{ session: Session }>(`/sessions/${current.id}/stop`, {});
       currentSession.current = result.session;
       if (alive.current) setSession(result.session);
+      await setLauncherRecording("gameplay", false);
     } catch (error) {
       stopRequested.current = false;
       if (alive.current) setError(errorMessage(error));
@@ -467,7 +571,11 @@ export function Gameplay({ active, onLeave }: GameplayProps) {
     }
   }
   onLeave.current = () => stop(true);
-  actions.current = { capture: () => void capture(), toggle, stop: () => void stop() };
+  actions.current = {
+    capture: () => void capture(),
+    toggle: () => void toggle(),
+    stop: () => void stop(),
+  };
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
       if (
@@ -967,7 +1075,10 @@ export function Gameplay({ active, onLeave }: GameplayProps) {
         }
         record={
           <div className="record-toggle-slot">
-            <Button disabled={!source || stopped || (busy && !recording)} onClick={toggle}>
+            <Button
+              disabled={!source || stopped || (busy && !recording)}
+              onClick={() => void toggle()}
+            >
               {recording ? <Pause size={16} /> : <Circle size={16} />}{" "}
               {recording ? "Pause" : "Record"}
             </Button>

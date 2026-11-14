@@ -9,6 +9,10 @@ from pathlib import Path
 
 import yaml
 
+from tensor_scalar_compatibility import install_tensor_float_compatibility
+from restore_training_state import install_resume_state
+from dataset_seed_policy import install_dataset_rng_seed
+
 p=argparse.ArgumentParser()
 p.add_argument('--source',type=Path,required=True)
 p.add_argument('--mode',choices=['train','export','eval'],required=True)
@@ -18,6 +22,7 @@ p.add_argument('--retention-weight',type=float,default=1.0)
 p.add_argument('--retention-eligible-manifest',type=Path)
 p.add_argument('--retention-report',type=Path)
 p.add_argument('--name-high-resolution',action='store_true')
+p.add_argument('--resume-state',type=Path)
 args,rest=p.parse_known_args()
 config=None
 if '-c' in rest:
@@ -26,9 +31,17 @@ if '-c' in rest:
     if declared!=args.name_high_resolution:
         raise ValueError('Name resolution flag must match the recorded training/export configuration')
 source=args.source.resolve();sys.path.insert(0,str(source))
+if install_tensor_float_compatibility():
+    print('PADDLE SCALAR COMPATIBILITY: single-element float uses Tensor.item(); AMP loss scaling unchanged',flush=True)
+if args.resume_state:
+    if args.mode != 'train':
+        raise ValueError('Checkpoint resume metadata is only supported for training')
+    install_resume_state(args.resume_state)
 from compact_ocr_policy import install_policy
 from negative_ctc_policy import install_negative_encoder
 install_policy(1);install_negative_encoder()
+if install_dataset_rng_seed():
+    print('DATA ORDER: Global.seed controls initial dataset shuffling; augmentation epoch unchanged',flush=True)
 if args.name_high_resolution:
     from name_resolution_policy import install_name_resolution
     install_name_resolution()

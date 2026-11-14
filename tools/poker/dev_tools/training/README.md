@@ -90,6 +90,35 @@ development, so none of this is prospective acceptance evidence.
 
 ## Train with real blank targets
 
+The OCR Training tab starts each version from the same original pretrained
+initialization. `lab_training_data.discover()` verifies the official source,
+the lossless tensor and character-column mapping, and the mapped checkpoint
+against `production-clean-start/provenance.json` under the training artifact
+root. Earlier poker fine-tunes are never selected as starting weights. The
+active frozen release supplies the benchmark baseline. Each version records
+its starting lineage and dataset audit hash.
+
+`lab_training_curriculum.py` builds the recovered training schedule: shared
+general adaptation, separate general and high-resolution name branches, then
+real-name reweighting. It preserves audited glyph controls, train-only crop
+variations, and hash-bound semantic exclusions. The epoch setting controls the
+final name-refinement phase; prerequisite phases use the recovered schedule.
+Validation and test images are never augmented into training. Stage receipts
+bind the configuration, inputs, implementation and actual checkpoint dependency
+so resuming cannot substitute a different model branch.
+Export chooses the highest validation accuracy across phases with identical
+validation inputs and evaluation policy; ties prefer the later phase. A worse
+refinement cannot replace a better specialization checkpoint. The exported
+copy and its evidence are recorded separately in `model-selection.json`, while
+all trained checkpoints and optimizer states remain intact.
+
+The training wrapper preserves the configured dataset RNG seed without changing
+augmentation epochs. This provides repeatable initial sampling and shuffling;
+it does not establish bitwise GPU determinism. Benchmark comparisons require
+matching held-out identities, labels, source pixels, roles and conditions.
+An inference failure on either model invalidates the comparison. Validation
+selects the checkpoint; the frozen test set evaluates the resulting candidate.
+
 Use a Python3.12 Paddle environment under
 `$XDG_DATA_HOME/poker/ocr-training` (default `~/.local/share/poker/ocr-training`).
 The earlier remote experiments used a machine-specific npm cache location;

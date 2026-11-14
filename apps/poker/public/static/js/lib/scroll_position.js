@@ -3,10 +3,17 @@
   const key = 'collector:current-page-scroll:v1';
   let region, page, top = 0, left = 0, applying = false, observer, details = {};
   let reloading = null, settling = false, suspended = false, resuming = false, geometryObserver, observedGrid;
-  const read = () => { try { return JSON.parse(sessionStorage.getItem(key)); } catch { return null; } };
+  const read = () => {
+    let raw;
+    try { raw = sessionStorage.getItem(key); } catch {}
+    if (!raw) { try { raw = localStorage.getItem(key); } catch {} }
+    try { return JSON.parse(raw); } catch { return null; }
+  };
   function save() {
     if (!page) return;
-    try { sessionStorage.setItem(key, JSON.stringify({...page, top, left, details})); } catch {}
+    const saved = JSON.stringify({...page, top, left, details});
+    try { sessionStorage.setItem(key, saved); } catch {}
+    try { localStorage.setItem(key, saved); } catch {}
   }
   function restore() {
     if (!region || !page || applying || suspended) return;

@@ -36,7 +36,7 @@ class SuggestionTests(unittest.TestCase):
         self.models['general']=Model('')
         self.assertTrue(suggest(self.models,self.freeze,self.png,'community_cards[0]')['schema_valid'])
     def test_visible_statuses_are_valid_without_changing_the_prediction(self):
-        for label in ('Fold', 'Hide Cards'):
+        for label in ('Fold', 'Hide Cards', 'Away'):
             self.models['general']=Model(label)
             result=suggest(self.models,self.freeze,self.png,'seats[1].status')
             self.assertEqual((result['raw_text'],result['text']),(label,label))

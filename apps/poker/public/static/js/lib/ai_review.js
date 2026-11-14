@@ -3,6 +3,20 @@ let aiReviewState = null, aiReviewGeneration = 0, aiReviewInitialized = false;
 const AI_REVIEW_ACTIVE = new Set(['queued','running','checking','verifying','cancelling','starting']);
 const AI_REVIEW_RESUMABLE = new Set(['cancelled','paused','interrupted','error','failed']);
 const aiReviewElement = id => document.getElementById(id);
+function rememberAiReviewPanel(open) {
+  const state=aiReviewState;if(!state || !aiReviewMatches(state)) return;
+  try {localStorage.setItem('poker-lab:ai-review-panel:v1',JSON.stringify({datasetId:state.datasetId,runId:state.runId,open}));}catch{}
+}
+function restoreAiReviewPanel(state) {
+  let open=false;
+  try {
+    const raw=localStorage.getItem('poker-lab:ai-review-panel:v1');
+    const saved=raw && raw.length<=512 ? JSON.parse(raw) : null;
+    open=saved?.datasetId===state.datasetId && saved?.runId===state.runId && saved?.open===true;
+  }catch{}
+  aiReviewElement('ai-review-panel').classList.toggle('hidden',!open);
+  aiReviewElement('btn-ai-review').setAttribute('aria-expanded',String(open));
+}
 
 function aiReviewContext() {
   return typeof isContinuousReview === 'function' && isContinuousReview() &&
@@ -25,7 +39,6 @@ function resetAiReview() {
   clearAiReviewTimer(aiReviewState);
   aiReviewState?.controller.abort();
   aiReviewState = null;
-  const key = aiReviewElement('ai-review-api-key'); if (key) key.value = '';
   aiReviewElement('ai-review-grid')?.removeAttribute('src');
   aiReviewElement('ai-review-panel')?.classList.add('hidden');
   aiReviewElement('btn-ai-review')?.setAttribute('aria-expanded','false');
@@ -52,10 +65,12 @@ function scheduleAiReviewPoll(state) {
 }
 async function loadAiReviewConfig(state) {
   try {
-    const config = await aiReviewRequest(state,'/api/ai-review/config');
+    const response = await fetch('/api/ai-review/config',{signal:state.controller.signal});
+    const config = await response.json();
+    if (!aiReviewMatches(state)) return;
+    if (!response.ok || config.success === false) throw new Error(config.error || 'Could not load OpenAI settings.');
+    if (typeof config.configured !== 'boolean' || typeof config.model !== 'string') throw new Error('Invalid OpenAI settings response.');
     state.config = config;state.configError='';
-    const model = aiReviewElement('ai-review-model');
-    if (!state.modelEdited && config.model) model.value = config.model;
     paintAiReview();
   } catch (error) {
     if (aiReviewMatches(state) && error.name !== 'AbortError') {state.configError=error.message;paintAiReview();}
@@ -97,43 +112,28 @@ function syncAiReviewView() {
   if (!state || !aiReviewMatches(state)) {
     resetAiReview();
     state = aiReviewState = {generation:aiReviewGeneration,datasetId:activeDatasetId,epoch:datasetEpoch,runId:reviewBatch.batch_id,
-      controller:new AbortController(),config:null,job:null,pending:false,statusLoading:false,error:'',timer:null,visible:false,modelEdited:false,refreshSignature:null,gridUrl:null};
+      controller:new AbortController(),config:null,job:null,pending:false,statusLoading:false,error:'',timer:null,visible:false,refreshSignature:null,gridUrl:null};
+    restoreAiReviewPanel(state);
     void loadAiReviewConfig(state);
   }
   const visible = currentView === 'session-review' && !document.hidden;
   if (!visible) {
-    state.visible=false;clearAiReviewTimer(state);aiReviewElement('ai-review-api-key').value='';
+    state.visible=false;clearAiReviewTimer(state);
     aiReviewElement('ai-review-grid')?.removeAttribute('src');state.gridUrl=null;
   } else if (!state.visible) {state.visible=true;void pollAiReview(state);}
   paintAiReview();
 }
-async function saveAiReviewSettings(state=aiReviewState,fromStart=false) {
-  if (!state || !aiReviewMatches(state)) return false;
-  const keyInput = aiReviewElement('ai-review-api-key');
-  const apiKey = keyInput.value.trim();keyInput.value='';
-  const model = aiReviewElement('ai-review-model').value.trim();
-  if (!model) throw new Error('Enter an OpenAI model.');
-  const payload = {model}; if (apiKey) payload.api_key=apiKey;
-  const data = await aiReviewPost(state,'/api/ai-review/config',payload);
-  state.config = data;state.configError='';state.modelEdited=false;
-  if (!data.configured) {
-    aiReviewElement('ai-review-settings').open=true;
-    if (fromStart) throw new Error('Add an OpenAI API key in settings to start.');
-  } else aiReviewElement('ai-review-settings').open=false;
-  return !!data.configured;
-}
 async function runAiReviewAction(action) {
   const state=aiReviewState;
   if (!state || !aiReviewMatches(state) || state.pending || state.statusLoading) return;
-  if ((action==='start' || action==='settings') && AI_REVIEW_ACTIVE.has(state.job?.state)) return;
+  if (action==='start' && AI_REVIEW_ACTIVE.has(state.job?.state)) return;
   state.pending=true;state.error='';clearAiReviewTimer(state);paintAiReview();
   try {
-    if (action==='settings') await saveAiReviewSettings(state);
-    else if (action==='start') {
+    if (action==='start') {
       const batchSize=Number(aiReviewElement('ai-review-batch-size').value);
       if (!Number.isInteger(batchSize) || batchSize<1 || batchSize>24) throw new Error('Use 1–24 crops per grid.');
-      if (!await saveAiReviewSettings(state,true)) return;
-      const data=await aiReviewPost(state,'/api/ai-review/jobs',{run_id:state.runId,model:aiReviewElement('ai-review-model').value.trim(),batch_size:batchSize,auto_correct:aiReviewElement('ai-review-auto-correct').checked});
+      if (!state.config?.configured) {window.dispatchEvent(new Event('poker-open-settings'));return;}
+      const data=await aiReviewPost(state,'/api/ai-review/jobs',{run_id:state.runId,model:state.config.model,batch_size:batchSize,auto_correct:aiReviewElement('ai-review-auto-correct').checked});
       await applyAiReviewJob(state,data.job);
     } else if (state.job && (action==='cancel' || action==='resume')) {
       const data=await aiReviewPost(state,`/api/ai-review/jobs/${encodeURIComponent(state.job.id)}/${action}`);
@@ -150,10 +150,10 @@ function paintAiReview() {
   const job=state.job,active=AI_REVIEW_ACTIVE.has(job?.state),busy=state.pending || state.statusLoading;
   const count = value => Math.max(0,Number(value)||0).toLocaleString();
   aiReviewElement('ai-review-connection').textContent=state.config ? state.config.configured?'Key configured':'API key needed' : 'Checking connection…';
-  aiReviewElement('ai-review-start').disabled=busy || active || !state.config || (!state.config.configured && !aiReviewElement('ai-review-api-key').value.trim());
+  aiReviewElement('ai-review-open-settings').classList.toggle('hidden',!!state.config?.configured);
+  aiReviewElement('ai-review-start').disabled=busy || active || !state.config || !state.config.configured;
   aiReviewElement('ai-review-start').textContent=state.pending && !job?'Starting…':job && !active?'Review again':'Start review';
-  aiReviewElement('ai-review-save-settings').disabled=busy || active;
-  ['ai-review-api-key','ai-review-model','ai-review-batch-size','ai-review-auto-correct'].forEach(id=>{aiReviewElement(id).disabled=busy || active;});
+  ['ai-review-batch-size','ai-review-auto-correct'].forEach(id=>{aiReviewElement(id).disabled=busy || active;});
   const pause=aiReviewElement('ai-review-pause');pause.classList.toggle('hidden',!active);pause.disabled=busy || job?.state==='cancelling';pause.textContent=job?.state==='cancelling'?'Pausing…':'Pause';
   const resume=aiReviewElement('ai-review-resume');resume.classList.toggle('hidden',!AI_REVIEW_RESUMABLE.has(job?.state));resume.disabled=busy;
   const error=state.error || state.configError || job?.error || '';
@@ -176,9 +176,9 @@ function paintAiReview() {
     const hasGrid=Number.isInteger(gridBatch) && gridBatch>=0 && Number(job.batches)>0;
     gridDetails.classList.toggle('hidden',!hasGrid);
     if(hasGrid) {
-      aiReviewElement('ai-review-grid-caption').textContent=`${gridRegion} · Batch ${gridBatch+1} of ${job.batches} · Crop above, current label below.`;
+      aiReviewElement('ai-review-grid-caption').textContent=`${gridRegion} · Batch ${gridBatch+1} of ${job.batches}`;
       const url=`/api/ai-review/jobs/${encodeURIComponent(job.id)}/grid?`+new URLSearchParams({batch:String(gridBatch),dataset_id:state.datasetId});
-      if(gridDetails.open && aiReviewVisible(state) && state.gridUrl!==url) {aiReviewElement('ai-review-grid').src=url;state.gridUrl=url;}
+      if(!aiReviewElement('ai-review-panel').classList.contains('hidden') && aiReviewVisible(state) && state.gridUrl!==url) {aiReviewElement('ai-review-grid').src=url;state.gridUrl=url;}
     } else {aiReviewElement('ai-review-grid').removeAttribute('src');state.gridUrl=null;}
     const list=aiReviewElement('ai-review-changes'),fragment=document.createDocumentFragment();
     const recent=(job.recent || job.changes || []).filter(item=>item.state!=='unchanged').slice(-12).reverse();
@@ -210,22 +210,18 @@ function initAiReview() {
   aiReviewElement('btn-ai-review').onclick=()=>{
     const panel=aiReviewElement('ai-review-panel'),opening=panel.classList.contains('hidden');
     panel.classList.toggle('hidden',!opening);aiReviewElement('btn-ai-review').setAttribute('aria-expanded',String(opening));
-    if(opening){if(aiReviewState && !aiReviewState.config?.configured) aiReviewElement('ai-review-settings').open=true;syncAiReviewView();}
-    else aiReviewElement('ai-review-api-key').value='';
+    if(opening) syncAiReviewView();
+    rememberAiReviewPanel(opening);
   };
-  aiReviewElement('ai-review-close').onclick=()=>{aiReviewElement('ai-review-panel').classList.add('hidden');aiReviewElement('btn-ai-review').setAttribute('aria-expanded','false');aiReviewElement('ai-review-api-key').value='';};
-  aiReviewElement('ai-review-save-settings').onclick=()=>void runAiReviewAction('settings');
+  aiReviewElement('ai-review-close').onclick=()=>{aiReviewElement('ai-review-panel').classList.add('hidden');aiReviewElement('btn-ai-review').setAttribute('aria-expanded','false');rememberAiReviewPanel(false);};
+  aiReviewElement('ai-review-open-settings').onclick=()=>window.dispatchEvent(new Event('poker-open-settings'));
+  window.addEventListener('poker-open-settings',()=>{aiReviewElement('ai-review-panel').classList.add('hidden');aiReviewElement('btn-ai-review').setAttribute('aria-expanded','false');});
+  window.addEventListener('poker-ai-settings-change',()=>{if(aiReviewState && aiReviewMatches(aiReviewState)) void loadAiReviewConfig(aiReviewState);});
   aiReviewElement('ai-review-start').onclick=()=>void runAiReviewAction('start');
   aiReviewElement('ai-review-pause').onclick=()=>void runAiReviewAction('cancel');
   aiReviewElement('ai-review-resume').onclick=()=>void runAiReviewAction('resume');
   aiReviewElement('ai-review-retry').onclick=()=>{const state=aiReviewState;if(state){void loadAiReviewConfig(state);void pollAiReview(state);}};
-  aiReviewElement('ai-review-api-key').oninput=()=>paintAiReview();
-  aiReviewElement('ai-review-model').oninput=()=>{if(aiReviewState) aiReviewState.modelEdited=true;};
-  aiReviewElement('ai-review-grid-details').addEventListener('toggle',()=>{
-    if(!aiReviewElement('ai-review-grid-details').open){aiReviewElement('ai-review-grid').removeAttribute('src');if(aiReviewState) aiReviewState.gridUrl=null;}
-    else paintAiReview();
-  });
   document.addEventListener('visibilitychange',syncAiReviewView);
-  window.addEventListener('pagehide',()=>{clearAiReviewTimer(aiReviewState);aiReviewElement('ai-review-api-key').value='';});
+  window.addEventListener('pagehide',()=>{clearAiReviewTimer(aiReviewState);});
   syncAiReviewView();
 }
