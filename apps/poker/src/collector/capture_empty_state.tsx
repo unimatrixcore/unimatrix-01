@@ -2,7 +2,7 @@ import { Camera } from "lucide-react";
 import { cn } from "@unimatrix/ui/public";
 import "./capture_empty_state.css";
 
-/** OCR Data's empty capture surface, reused by Gameplay. */
+/** OCR Benchmark's empty capture surface, reused by Gameplay. */
 export function CaptureEmptyState({
   id,
   title,

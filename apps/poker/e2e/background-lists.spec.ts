@@ -952,7 +952,7 @@ test("OCR rail prefetch is scoped to the selected dataset across navigation", as
     }).toString()})();`,
   });
   await page.goto("/gameplay");
-  const link = page.getByRole("link", { name: "OCR Data" });
+  const link = page.getByRole("link", { name: "OCR Benchmark" });
   await link.hover();
   await expect
     .poll(() => page.evaluate(() => sessionStorage.getItem("poker-lab:first-page:v1")))

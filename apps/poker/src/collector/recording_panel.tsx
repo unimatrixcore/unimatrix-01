@@ -27,7 +27,7 @@ export interface RecordingPanelProps {
   hintsId?: string;
 }
 
-/** Shared OCR Data transport layout. Controllers own the supplied actions. */
+/** Shared OCR Benchmark transport layout. Controllers own the supplied actions. */
 export function RecordingPanel({
   id,
   className,

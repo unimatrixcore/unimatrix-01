@@ -428,7 +428,7 @@ test("starts selected collections without a preflight audit and compares model v
     document.getElementById("main-content")!.scrollTop = 0;
   });
   await page.screenshot({ path: "/tmp/poker-training-completed.png", fullPage: true });
-  await page.getByRole("link", { name: "OCR Data", exact: true }).click();
+  await page.getByRole("link", { name: "OCR Benchmark", exact: true }).click();
   await expect(page.locator("#section-ocr-data")).toBeVisible();
   await page.getByRole("link", { name: "Gameplay", exact: true }).click();
   await expect(page.locator(".gameplay-workspace")).toBeVisible();

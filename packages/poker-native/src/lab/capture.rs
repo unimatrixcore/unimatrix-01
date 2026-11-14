@@ -33,7 +33,6 @@ pub struct CaptureConfig {
 pub struct CaptureService {
     root: PathBuf,
     provider: NativeCapture,
-    media_root: PathBuf,
 }
 #[derive(Debug)]
 enum Ordered {
@@ -135,7 +134,7 @@ impl CaptureService {
     }
     pub fn with_paths(
         root: PathBuf,
-        media_root: PathBuf,
+        _media_root: PathBuf,
         environment: HashMap<String, String>,
     ) -> LabResult<Self> {
         fs::create_dir_all(&root)?;
@@ -163,7 +162,6 @@ impl CaptureService {
             .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tools/poker"));
         Ok(Self {
             root,
-            media_root,
             provider: NativeCapture::new(repo, environment),
         })
     }
@@ -1350,204 +1348,4 @@ pub fn handle(
         }
         _ => None,
     }
-}
-pub fn editor(service: &LabService, request: &LabRequest) -> LabResult<LabResponse> {
-    let capture = &service.capture;
-    if request.path == "/api/editor/regions" {
-        let draft = capture.root.join("region-definer.json");
-        if request.method == "GET" {
-            let regions: Value = if draft.exists() {
-                datasets::plain(&draft)?;
-                serde_json::from_slice(&fs::read(draft)?)?
-            } else {
-                serde_json::from_str(include_str!("../../assets/regions-flat.json"))?
-            };
-            let config: Value =
-                serde_json::from_slice(&fs::read(capture.root.join("regions.json"))?)?;
-            let dimensions = capture.root.join("region-definer-dimensions.json");
-            let dimensions: Value = if dimensions.exists() {
-                datasets::plain(&dimensions)?;
-                serde_json::from_slice(&fs::read(dimensions)?)?
-            } else {
-                json!({"screenWidth":config["screen_width"],"screenHeight":config["screen_height"]})
-            };
-            return Ok(LabResponse::ok(
-                json!({"regions":regions,"screenWidth":dimensions["screenWidth"].as_u64().unwrap_or(1920),"screenHeight":dimensions["screenHeight"].as_u64().unwrap_or(1080)}),
-            ));
-        }
-        if request.method == "POST" {
-            let export = request
-                .body
-                .get("export")
-                .map(|v| v.as_bool().ok_or_else(|| bad("export must be boolean")))
-                .transpose()?
-                .unwrap_or(false);
-            let mut body = request.body.clone();
-            super::object(&body)?;
-            body.as_object_mut().expect("object").remove("export");
-            let config: EditorConfig = super::parse(&body)?;
-            if !(1..=16384).contains(&config.screen_width)
-                || !(1..=16384).contains(&config.screen_height)
-                || config.regions.len() > 512
-            {
-                return Err(bad("Invalid region configuration dimensions or count"));
-            }
-            for rect in config.regions.values() {
-                if rect.w == 0 || rect.h == 0 || rect.w > 16384 || rect.h > 16384 {
-                    return Err(bad("Invalid editor rectangle dimensions"));
-                }
-            }
-            datasets::atomic_json(&draft, &serde_json::to_value(&config.regions)?)?;
-            datasets::atomic_json(
-                &capture.root.join("region-definer-dimensions.json"),
-                &json!({"screenWidth":config.screen_width,"screenHeight":config.screen_height}),
-            )?;
-            let mut response = json!({"saved":true});
-            if export {
-                let native = editor_native(&config)?;
-                datasets::atomic_json(&capture.root.join("regions.json"), &native)?;
-                service.watch.stop_all()?;
-                response["exportPath"] = json!(capture.root.join("regions.json"));
-                response["native"] = native;
-            }
-            return Ok(LabResponse::ok(response));
-        }
-        return Err(super::not_found("Unknown editor route"));
-    }
-    if request.method == "GET" && request.path == "/api/editor/media" {
-        let mut names = Vec::new();
-        if capture.media_root.exists() {
-            datasets::plain(&capture.media_root)?;
-            for entry in fs::read_dir(&capture.media_root)? {
-                let entry = entry?;
-                datasets::plain(&entry.path())?;
-                if entry.file_type()?.is_file() {
-                    let name = entry
-                        .file_name()
-                        .to_str()
-                        .ok_or_else(|| bad("Invalid media filename"))?
-                        .to_owned();
-                    if media_type(&name).is_some() {
-                        names.push(name);
-                    }
-                }
-            }
-        }
-        names.sort();
-        return Ok(LabResponse::ok(json!(names)));
-    }
-    if request.method == "GET" && request.path.starts_with("/api/editor/media/") {
-        use std::io::{Read, Seek, SeekFrom};
-        let name = request.path.trim_start_matches("/api/editor/media/");
-        let mime = media_type(name).ok_or_else(|| bad("Unsupported editor media type"))?;
-        let path = datasets::file(&capture.media_root, name)?;
-        let mut file =
-            std::fs::File::open(path).map_err(|_| super::not_found("Media not found"))?;
-        let size = file.metadata()?.len();
-        let range = request.header("Range");
-        let (mut start, mut end) = (0, size.saturating_sub(1));
-        let mut partial = false;
-        if let Some(range) = range {
-            let range = range
-                .strip_prefix("bytes=")
-                .ok_or_else(|| bad("Invalid media range"))?;
-            let (a, b) = range
-                .split_once('-')
-                .filter(|(_, b)| !b.contains(','))
-                .ok_or_else(|| bad("Invalid media range"))?;
-            if a.is_empty() {
-                let suffix = b.parse::<u64>().map_err(|_| bad("Invalid media range"))?;
-                start = size.saturating_sub(suffix);
-            } else {
-                start = a.parse().map_err(|_| bad("Invalid media range"))?;
-                if !b.is_empty() {
-                    end = b
-                        .parse::<u64>()
-                        .map_err(|_| bad("Invalid media range"))?
-                        .min(end);
-                }
-            }
-            partial = true;
-        }
-        if size == 0 || start >= size || start > end {
-            let mut response = LabResponse::json(416, Value::Null);
-            response
-                .headers
-                .insert("Content-Range".into(), format!("bytes */{size}"));
-            return Ok(response);
-        }
-        let video = mime.starts_with("video/");
-        let requested = end - start + 1;
-        if requested > 64 * 1024 * 1024 && !video {
-            return Err(bad("Editor image exceeds media limit"));
-        }
-        if video && requested > 8 * 1024 * 1024 {
-            end = start + 8 * 1024 * 1024 - 1;
-            partial = true;
-        }
-        file.seek(SeekFrom::Start(start))?;
-        let mut bytes = Vec::with_capacity((end - start + 1) as usize);
-        file.take(end - start + 1).read_to_end(&mut bytes)?;
-        let mut response = LabResponse::binary(&bytes, mime);
-        response.status = if partial { 206 } else { 200 };
-        response
-            .headers
-            .insert("Accept-Ranges".into(), "bytes".into());
-        response
-            .headers
-            .insert("Content-Length".into(), bytes.len().to_string());
-        if partial {
-            response.headers.insert(
-                "Content-Range".into(),
-                format!("bytes {start}-{end}/{size}"),
-            );
-        }
-        return Ok(response);
-    }
-    Err(super::not_found("Unknown editor route"))
-}
-fn media_type(name: &str) -> Option<&'static str> {
-    match std::path::Path::new(name)
-        .extension()?
-        .to_str()?
-        .to_ascii_lowercase()
-        .as_str()
-    {
-        "png" => Some("image/png"),
-        "jpg" | "jpeg" => Some("image/jpeg"),
-        "webp" => Some("image/webp"),
-        "bmp" => Some("image/bmp"),
-        "mp4" => Some("video/mp4"),
-        "mkv" => Some("video/x-matroska"),
-        "webm" => Some("video/webm"),
-        "mov" => Some("video/quicktime"),
-        "avi" => Some("video/x-msvideo"),
-        _ => None,
-    }
-}
-
-#[derive(Debug, Clone, Deserialize, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-struct EditorRect {
-    x: i64,
-    y: i64,
-    w: u32,
-    h: u32,
-}
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EditorConfig {
-    regions: BTreeMap<String, EditorRect>,
-    screen_width: u32,
-    screen_height: u32,
-}
-fn editor_native(config: &EditorConfig) -> LabResult<Value> {
-    let coord = |key: &str| serde_json::to_value(config.regions.get(key)).map_err(Into::into);
-    let mut seats = Vec::new();
-    for n in 0..9 {
-        seats.push(json!({"name":coord(&format!("seat.{n}.name"))?,"nameplate":coord(&format!("seat.{n}.nameplate"))?,"bank":coord(&format!("seat.{n}.bank"))?,"bet":coord(&format!("seat.{n}.bet"))?,"cards":[coord(&format!("seat.{n}.hand_0"))?,coord(&format!("seat.{n}.hand_1"))?],"status":coord(&format!("seat.{n}.status"))?,"dealer":coord(&format!("seat.{n}.dealer"))?}));
-    }
-    Ok(
-        json!({"screen_width":config.screen_width,"screen_height":config.screen_height,"note":"Pixel coordinates at the resolution above.","round_id":coord("round_id")?,"community_cards":(1..=5).map(|n|coord(&format!("community.card_{n}"))).collect::<LabResult<Vec<Value>>>()?,"pot":coord("pot.main")?,"split_pot":coord("pot.split")?,"seats":seats}),
-    )
 }

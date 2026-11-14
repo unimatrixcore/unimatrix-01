@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { pokerRectSchema } from "./poker.js";
 
 export const pokerAiReviewConfigSchema = z.object({
   configured: z.boolean(),
@@ -8,27 +7,6 @@ export const pokerAiReviewConfigSchema = z.object({
   max_batch_size: z.number().int().positive().optional(),
 });
 export type PokerAiReviewConfig = z.infer<typeof pokerAiReviewConfigSchema>;
-
-export const pokerRegionEditorSchema = z.object({
-  regions: z.record(
-    z.string(),
-    pokerRectSchema.extend({ x: z.number().int(), y: z.number().int() }),
-  ),
-  screenWidth: z.number().int().min(1).max(16384),
-  screenHeight: z.number().int().min(1).max(16384),
-});
-export type PokerRegionEditorConfig = z.infer<typeof pokerRegionEditorSchema>;
-export const pokerRegionEditorStateSchema = pokerRegionEditorSchema;
-export const pokerRegionEditorSaveSchema = pokerRegionEditorSchema.extend({
-  export: z.boolean().optional(),
-});
-export const pokerRegionEditorResponseSchema = z.object({
-  saved: z.literal(true),
-  exportPath: z.string().optional(),
-  native: z.unknown().optional(),
-});
-export type PokerRegionEditorSave = z.infer<typeof pokerRegionEditorSaveSchema>;
-export type PokerRegionEditorResponse = z.infer<typeof pokerRegionEditorResponseSchema>;
 
 export const pokerLabRequestSchema = z.object({
   method: z.enum(["GET", "POST", "PATCH", "DELETE"]),

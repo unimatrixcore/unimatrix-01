@@ -20,7 +20,7 @@ interface RecordingToolsProps<T extends Recording> {
   archivedPrefetch: { onMouseEnter: () => void; onFocus: () => void };
 }
 
-/** Recording equivalents of OCR Data's create, rename, and archive tools. */
+/** Recording equivalents of OCR Benchmark's create, rename, and archive tools. */
 export function RecordingTools<T extends Recording>({
   current,
   disabled,

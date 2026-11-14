@@ -227,7 +227,7 @@ test("preserves the poker chip, three-section rail, four-step workflow and recor
   ).toHaveText(["Collection", "Labeling", "Review", "Database"]);
   await page.getByRole("button", { name: "Expand sections", exact: true }).click();
   const rail = page.getByRole("navigation", { name: "Sections", exact: true });
-  await expect(rail.getByRole("link")).toHaveText(["OCR Data", "Gameplay", "OCR Training"]);
+  await expect(rail.getByRole("link")).toHaveText(["OCR Benchmark", "Gameplay", "OCR Training"]);
   await expect(page.locator('img[src="/static/ui/poker-chip.svg"]').first()).toHaveAttribute(
     "src",
     "/static/ui/poker-chip.svg",

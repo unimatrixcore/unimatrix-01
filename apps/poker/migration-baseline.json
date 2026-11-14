@@ -118,7 +118,7 @@
       "target": "src/collector/capture_empty_state.tsx",
       "sha256": "e0a9a028b7d967c49bc6c77be8cfc54484a5645065266f32909d37505823338c",
       "mode": "adapted",
-      "targetSha256": "e5f149745c772ab43a117996d6b5344a2fe4a3fde915d9873e46d12185250a86"
+      "targetSha256": "aa82f8332574f415e2e1c4cb2d2e1bb7cbab740c51942a9b452930bf37cbe1b0"
     },
     {
       "source": "collector_ui/capture_list.tsx",
@@ -180,7 +180,7 @@
       "target": "src/collector/main.tsx",
       "sha256": "89b06d3a1c0aa9b88ec92c9c1ccec2f9265cbe202cd8e577e2275308d26ba8e3",
       "mode": "adapted",
-      "targetSha256": "5f2c2fcc4e7c43ae8304eb6d4e58141b8fe73422bae2d1b43b5836b4fc522c41"
+      "targetSha256": "42af61074599bfa1c6f29f91cce927cd55c446741354fac485adc63abeddaa61"
     },
     {
       "source": "collector_ui/record_keys.ts",
@@ -193,28 +193,29 @@
       "source": "collector_ui/recording_panel.css",
       "target": "src/collector/recording_panel.css",
       "sha256": "ad006264ae41a3a1258bb476000b93d54329265ac26e13346fc39d26af9916ca",
-      "mode": "preserved"
+      "mode": "adapted",
+      "targetSha256": "07b59599810dc8aef8429cbca806073f4a216b2c1691c77012653b68016aa7c5"
     },
     {
       "source": "collector_ui/recording_panel.tsx",
       "target": "src/collector/recording_panel.tsx",
       "sha256": "c68686acd2b51f7d8f4f3871a1cf4e63f8eb8d1aebf4fc39360dd0fe499c84f2",
       "mode": "adapted",
-      "targetSha256": "ed9df100068df154d34f7f0e524c9808a43907cf8c18066e85392d4d04617c9d"
+      "targetSha256": "6752b29c61580e462b963cb5ed880c5ee330fc566728628c9cdf1059020672c3"
     },
     {
       "source": "collector_ui/recording_tools.tsx",
       "target": "src/collector/recording_tools.tsx",
       "sha256": "8fbc67d4c705597c8dd381bdf7b7c2cbe64c066f0acd2da0f46d580c3c52fc35",
       "mode": "adapted",
-      "targetSha256": "a7408d34b19a28f820b0b00aa6f5675bb28a92ee22a6d8b0d133625f92694068"
+      "targetSha256": "a84863d553af3e45d7bf32183c8d589a70de3bfff20ce7fee2b514b3c4febc69"
     },
     {
       "source": "collector_ui/tool_shell.tsx",
       "target": "src/collector/tool_shell.tsx",
       "sha256": "2db9a3d8406c578cb684b10cb213addd8c7d609f3ccd4dd6dc115a843d14729e",
       "mode": "adapted",
-      "targetSha256": "275c63ced5649c56cc23db50e5d009402ec165a0db34c2e1f4c8d5176d50028d",
+      "targetSha256": "7eb1aff5d95a9defc92d3a70f83bd21fa13f0680da1fc5f15f63c6bc0c699253",
       "adaptation": "Preserve native workspaces and recording lifecycle across navigation; keep the original footer layout for global Settings and retain each workspace viewport across native restarts."
     },
     {
@@ -228,7 +229,7 @@
       "target": "src/collector/workspace_topbar.tsx",
       "sha256": "cab8cf4effbe37e3a7397f5643f0bc11a268883e8946ab951c484340ab4044d1",
       "mode": "adapted",
-      "targetSha256": "744c0b8b66a4dbf9aad33c62679980baf4bcbaefd209171cf40266c9ca5b8d79"
+      "targetSha256": "e98d28372ebc2c8325e36b9e859641ac69a66e2300c52340c986ea1f5dc2bfc6"
     },
     {
       "source": "collector_ui/public/poker-chip.svg",

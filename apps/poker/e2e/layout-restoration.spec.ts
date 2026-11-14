@@ -205,7 +205,7 @@ for (const [view, host] of [
         .filter({ has: page.getByRole("link", { name: "Gameplay" }) });
       await rail.getByRole("link", { name: "Gameplay" }).click();
       await expect(page.locator(".gameplay-workspace")).toBeVisible();
-      await rail.getByRole("link", { name: "OCR Data" }).click();
+      await rail.getByRole("link", { name: "OCR Benchmark" }).click();
       await expectSettledFirstRow(page, host, view);
       await page.screenshot({ path: testInfo.outputPath("session-review-warm.png") });
     }
