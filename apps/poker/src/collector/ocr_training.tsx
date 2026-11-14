@@ -18,7 +18,6 @@ import {
   DialogTitle,
   DialogDescription,
   TooltipProvider,
-  StatusDot,
   Tooltip,
   TooltipTrigger,
   TooltipContent,
@@ -27,12 +26,7 @@ import { TrainingActivity } from "./training-activity";
 import { TrainingSetupPanel } from "./training-setup-panel";
 import { useTrainingPaneScroll } from "./training-pane-scroll";
 import { ScrollArea } from "@unimatrix/ui/scroll-area";
-import {
-  RiPlayFill as Play,
-  RiStopFill as Square,
-  RiLoader4Line as LoaderCircle,
-  RiCpuLine as Cpu,
-} from "@remixicon/react";
+import { RiPlayFill as Play, RiStopFill as Square, RiCpuLine as Cpu } from "@remixicon/react";
 import {
   pokerLabDatasetSchema,
   pokerTrainingStartedSchema,
@@ -42,7 +36,6 @@ import {
   type PokerTrainingRun,
   type PokerTrainingState,
   type PokerTrainingCollection,
-  type PokerTrainingAnalysis,
   type PokerTrainingDetails,
 } from "@unimatrix/shared";
 import "./ocr_training.css";
@@ -56,23 +49,6 @@ const numeric = (value: number | null | undefined, digits = 0) =>
   value === null || value === undefined
     ? "—"
     : value.toLocaleString(undefined, { maximumFractionDigits: digits });
-const preparationProgress = (run?: PokerTrainingRun) => {
-  const progress = run?.data_progress;
-  const label = progress
-    ? {
-        reading: "Reading captures",
-        validating: "Validating crops",
-        deduplicating: "Removing duplicates",
-        reserving: "Reserving benchmark crops",
-        ready: "Finishing data preparation",
-      }[progress.stage]
-    : "Preparing training data";
-  const count =
-    typeof progress?.completed === "number" && typeof progress.total === "number"
-      ? ` · ${numeric(progress.completed)}/${numeric(progress.total)}`
-      : "";
-  return `${label}${count || "…"}${progress?.collection_name ? ` · ${progress.collection_name}` : ""}`;
-};
 const percent = (value: number | null | undefined) =>
   value === null || value === undefined ? "—" : `${(value * 100).toFixed(2)}%`;
 const duration = (seconds: number | null | undefined) =>
@@ -575,10 +551,6 @@ export function OcrTraining({ active }: { active: boolean }) {
   const [starting, setStarting] = useState(false);
   const [resuming, setResuming] = useState(false);
   const [stopping, setStopping] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [cancelingAnalysis, setCancelingAnalysis] = useState("");
-  const [analysisId, setAnalysisId] = useState("");
-  const [analysisResultKey, setAnalysisResultKey] = useState("");
   const [revision, setRevision] = useState(0);
   const [evidenceCondition, setEvidenceCondition] = useState("identity");
   const [selectedRun, setSelectedRun] = useState(() => readWorkspaceState().trainingRun || "");
@@ -590,26 +562,6 @@ export function OcrTraining({ active }: { active: boolean }) {
   const [gpuChecking, setGpuChecking] = useState(false);
   const [gpuProbeFailed, setGpuProbeFailed] = useState(false);
   const alive = useRef(true);
-  const requestedAnalysis = useRef("");
-  const analysisPostPending = useRef(false);
-  const cancelRequest = useRef("");
-  const selectionChanged = useRef(false);
-  const ids = selectionKey(selected);
-  const selectionTarget = JSON.stringify([ids, epochs]);
-  const lastSelectionTarget = useRef(selectionTarget);
-  const currentAnalysisKey = JSON.stringify([
-    ids,
-    epochs,
-    state?.analysis_protocol ?? "",
-    [...selected]
-      .sort()
-      .map((id) => [
-        id,
-        state?.collections?.find((collection) => collection.id === id)?.revision ?? "",
-      ]),
-  ]);
-  const latestAnalysisKey = useRef(currentAnalysisKey);
-  latestAnalysisKey.current = currentAnalysisKey;
   const activeRun = state?.runs.find(running);
   const activeCollections = activeRun?.collections;
   useEffect(() => {
@@ -618,8 +570,6 @@ export function OcrTraining({ active }: { active: boolean }) {
         selectionKey(prior) === selectionKey(activeCollections) ? prior : [...activeCollections],
       );
   }, [activeCollections]);
-  const activeAnalysis = state?.analyses.find(running);
-  const analysisRunning = !!activeAnalysis;
   const busy = starting || resuming || !!activeRun;
   const loaded = !!state;
   const validEpochs = Number.isInteger(epochs) && epochs >= 1 && epochs <= 100;
@@ -631,16 +581,20 @@ export function OcrTraining({ active }: { active: boolean }) {
     )
       rememberWorkspaceState({ trainingSelection });
   }, [selected, epochs, validEpochs]);
-  const analysisRun =
-    analysisResultKey === currentAnalysisKey
-      ? state?.analyses.find(
-          (run) =>
-            run.id === analysisId && selectionKey(run.collections) === ids && run.epochs === epochs,
-        )
+  const selectedCollections = selected.map((id) =>
+    collections.find((collection) => collection.id === id),
+  );
+  const selectedNames = selectedCollections.every((collection) => collection?.names === 0)
+    ? 0
+    : undefined;
+  const collectionCount = (field: "eligible" | "test") => {
+    const values = selectedCollections.map((collection) =>
+      field === "test" ? collection?.reservations?.test : collection?.eligible,
+    );
+    return values.length && values.every((value) => typeof value === "number")
+      ? values.reduce<number>((total, value) => total + (value ?? 0), 0)
       : undefined;
-  const readiness: PokerTrainingAnalysis | null =
-    analysisRun?.status === "completed" ? (analysisRun.analysis ?? null) : null;
-  const checking = !!cancelingAnalysis || (!!ids && (analyzing || analysisRunning));
+  };
   const gpuCacheFresh = !!state?.gpu_status && Date.now() - state.gpu_status.checked_at <= 30000;
   const gpuReadyFor = (names: number | null | undefined) =>
     gpuCacheFresh &&
@@ -649,14 +603,13 @@ export function OcrTraining({ active }: { active: boolean }) {
     (names === 0 ? ["local"] : ["local", "unimatrix-01"]).every((host) =>
       state?.gpu_status?.devices.some((device) => device.host === host && device.ready),
     );
-  const computeReady = gpuReadyFor(readiness?.names);
+  const computeReady = gpuReadyFor(selectedNames);
   const startReady = !!(
     selected.length &&
+    selectedCollections.every((collection) => !!collection) &&
     validEpochs &&
     state?.setup.ready &&
-    readiness?.ready &&
     computeReady &&
-    !checking &&
     !busy
   );
   const inspectedRun =
@@ -771,147 +724,6 @@ export function OcrTraining({ active }: { active: boolean }) {
     };
   }, [active, revision]);
   useEffect(() => {
-    if (lastSelectionTarget.current !== selectionTarget) {
-      selectionChanged.current = true;
-      lastSelectionTarget.current = selectionTarget;
-    }
-  }, [selectionTarget]);
-  useEffect(() => {
-    if (
-      !active ||
-      busy ||
-      !selectionChanged.current ||
-      !activeAnalysis ||
-      activeAnalysis.kind !== "analysis" ||
-      !["queued", "preparing"].includes(activeAnalysis.status) ||
-      (selectionKey(activeAnalysis.collections) === ids && activeAnalysis.epochs === epochs) ||
-      cancelRequest.current === activeAnalysis.id
-    )
-      return;
-    const id = activeAnalysis.id;
-    cancelRequest.current = id;
-    setCancelingAnalysis(id);
-    let canceled = false;
-    void request(`/api/training/${encodeURIComponent(id)}/cancel`, post())
-      .then((value) => {
-        const { run } = pokerTrainingStartedSchema.parse(value);
-        if (run.id !== id || run.kind !== "analysis")
-          throw new Error("Invalid preparation cancellation response");
-        canceled = true;
-        if (!alive.current) return;
-        requestedAnalysis.current = "";
-        setState((prior) =>
-          prior
-            ? { ...prior, analyses: prior.analyses.map((item) => (item.id === id ? run : item)) }
-            : prior,
-        );
-      })
-      .catch((cause) => {
-        if (alive.current) setError(message(cause));
-      })
-      .finally(() => {
-        cancelRequest.current = "";
-        if (alive.current) {
-          setCancelingAnalysis("");
-          if (canceled) setRevision((value) => value + 1);
-        }
-      });
-  }, [active, busy, activeAnalysis?.id, ids, epochs, revision]);
-  useEffect(() => {
-    setAnalysisId("");
-    setAnalyzing(false);
-  }, [currentAnalysisKey]);
-  useEffect(() => {
-    if (
-      !active ||
-      !ids ||
-      !validEpochs ||
-      !loaded ||
-      busy ||
-      analysisRunning ||
-      cancelingAnalysis ||
-      analysisPostPending.current
-    )
-      return;
-    const key = currentAnalysisKey;
-    if (requestedAnalysis.current === key) return;
-    let disposed = false;
-    let pending = false;
-    const controller = new AbortController();
-    const timer = setTimeout(() => {
-      requestedAnalysis.current = key;
-      pending = true;
-      analysisPostPending.current = true;
-      setAnalyzing(true);
-      setError("");
-      void request("/api/training/analyze", {
-        ...post({ collections: ids.split(","), epochs }),
-        signal: controller.signal,
-      })
-        .then((value) => {
-          const result = pokerTrainingStartedSchema.parse(value);
-          pending = false;
-          // Polling can observe the accepted job before its POST response arrives.
-          if (alive.current && latestAnalysisKey.current === key) {
-            setAnalysisId(result.run.id);
-            setAnalysisResultKey(key);
-            setState((prior) =>
-              prior
-                ? {
-                    ...prior,
-                    analyses: [
-                      prior.analyses.find((item) => item.id === result.run.id && !running(item)) ??
-                        result.run,
-                      ...prior.analyses.filter((run) => run.id !== result.run.id),
-                    ],
-                  }
-                : prior,
-            );
-            setRevision((value) => value + 1);
-          } else if (alive.current && running(result.run)) {
-            setState((prior) =>
-              prior
-                ? {
-                    ...prior,
-                    analyses: [
-                      result.run,
-                      ...prior.analyses.filter((run) => run.id !== result.run.id),
-                    ],
-                  }
-                : prior,
-            );
-          }
-        })
-        .catch((cause) => {
-          if (alive.current && latestAnalysisKey.current === key) {
-            setError(message(cause));
-          }
-        })
-        .finally(() => {
-          analysisPostPending.current = false;
-          if (!disposed) setAnalyzing(false);
-          else if (alive.current) setRevision((value) => value + 1);
-        });
-    }, 300);
-    return () => {
-      disposed = true;
-      clearTimeout(timer);
-      if (!pending || !alive.current) controller.abort();
-      setAnalyzing(false);
-    };
-  }, [
-    active,
-    ids,
-    epochs,
-    validEpochs,
-    loaded,
-    busy,
-    analysisRunning,
-    cancelingAnalysis,
-    revision,
-    currentAnalysisKey,
-  ]);
-  useEffect(() => {
     if (!active || !inspectedRun) return;
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -1018,7 +830,7 @@ export function OcrTraining({ active }: { active: boolean }) {
       if (alive.current) setStopping(false);
     }
   };
-  const analyzedCollections = (sourceRun?.analysis ?? readiness)?.collections ?? [];
+  const analyzedCollections = sourceRun?.analysis?.collections ?? [];
   const visibleRun =
     details &&
     details.run.id === inspectedRun?.id &&
@@ -1034,19 +846,13 @@ export function OcrTraining({ active }: { active: boolean }) {
           ? "Select a collection"
           : !state?.setup.ready
             ? state?.setup.error || "Training setup unavailable"
-            : checking
-              ? ""
-              : !readiness
-                ? ""
-                : !readiness.ready
-                  ? readiness.blockers[0] || "Selected data is not ready"
-                  : !computeReady
-                    ? gpuProbeFailed
-                      ? "GPU availability check failed"
-                      : gpuChecking || !gpuCacheFresh
-                        ? "Checking GPU availability…"
-                        : "Required GPU unavailable"
-                    : "";
+            : !computeReady
+              ? gpuProbeFailed
+                ? "GPU availability check failed"
+                : gpuChecking || !gpuCacheFresh
+                  ? "Checking GPU availability…"
+                  : "Required GPU unavailable"
+              : "";
   const controls = (
     <>
       {" "}
@@ -1077,6 +883,7 @@ export function OcrTraining({ active }: { active: boolean }) {
         <Button
           size="sm"
           disabled={!startReady}
+          title={blockedReason || undefined}
           onClick={() => {
             void start();
           }}
@@ -1101,8 +908,6 @@ export function OcrTraining({ active }: { active: boolean }) {
               event.preventDefault();
             }}
             onCheckedChange={(checked) => {
-              requestedAnalysis.current = "";
-              setAnalysisId("");
               setSelected((prior) =>
                 checked === true
                   ? [...prior, collection.id]
@@ -1122,68 +927,6 @@ export function OcrTraining({ active }: { active: boolean }) {
           {state ? "No collections available." : "Loading collections…"}
         </p>
       )}
-    </>
-  );
-  const readinessStatus = (
-    <>
-      {" "}
-      <div className="training-readiness" role="status">
-        <StatusDot
-          tone={
-            startReady
-              ? "ok"
-              : activeRun || checking || gpuChecking
-                ? "warn"
-                : !selected.length
-                  ? "idle"
-                  : "bad"
-          }
-          label={
-            startReady
-              ? "Ready"
-              : activeRun
-                ? statusName(activeRun)
-                : checking || gpuChecking
-                  ? "Checking"
-                  : !selected.length
-                    ? "No collection selected"
-                    : "Blocked"
-          }
-        />
-        {activeRun ? (
-          <span>
-            {activeRun.status === "preparing" || activeRun.status === "queued" ? (
-              preparationProgress(activeRun)
-            ) : (
-              <>{statusName(activeRun)}</>
-            )}
-          </span>
-        ) : resumable && sourceRun ? (
-          <span>Resume available</span>
-        ) : checking ? (
-          <>
-            <LoaderCircle size={14} className="training-spinner" />
-            {cancelingAnalysis ? "Stopping preparation…" : preparationProgress(activeAnalysis)}
-          </>
-        ) : readiness ? (
-          <>
-            <span className="training-readiness-state" data-ready={startReady}>
-              {startReady ? "Ready" : checking || gpuChecking ? "Checking…" : "Blocked"}
-            </span>
-          </>
-        ) : analysisRun?.status === "failed" ? (
-          <span>{analysisRun.error || "Data preparation failed."}</span>
-        ) : (
-          <span>{selected.length ? "Preparing training data…" : "No collections selected."}</span>
-        )}
-      </div>
-      {readiness && readiness.blockers.length > 1 ? (
-        <ul className="training-blockers">
-          {readiness.blockers.slice(1).map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
-      ) : null}
     </>
   );
   const computeStatus = (
@@ -1253,7 +996,6 @@ export function OcrTraining({ active }: { active: boolean }) {
               size="sm"
               onClick={() => {
                 setError("");
-                requestedAnalysis.current = "";
                 setRevision((value) => value + 1);
               }}
             >
@@ -1270,8 +1012,6 @@ export function OcrTraining({ active }: { active: boolean }) {
         <TrainingSetupPanel
           controls={controls}
           choices={collectionChoices}
-          blockedReason={blockedReason}
-          readiness={readinessStatus}
           compute={computeStatus}
           selectedCount={displayedSelection.length}
           counts={
@@ -1280,12 +1020,14 @@ export function OcrTraining({ active }: { active: boolean }) {
                 {numeric(
                   sourceRun?.summary?.accepted ??
                     sourceRun?.analysis?.accepted ??
-                    readiness?.accepted,
+                    collectionCount("eligible"),
                 )}{" "}
                 eligible
               </span>
               <span>
-                {numeric(sourceRun?.summary?.test ?? sourceRun?.analysis?.test ?? readiness?.test)}{" "}
+                {numeric(
+                  sourceRun?.summary?.test ?? sourceRun?.analysis?.test ?? collectionCount("test"),
+                )}{" "}
                 benchmark crops
               </span>
             </>
@@ -1352,11 +1094,7 @@ export function OcrTraining({ active }: { active: boolean }) {
                   onEvidenceConditionChange={setEvidenceCondition}
                 />
               ) : (
-                <div className="training-inspector">
-                  {activeAnalysis ? (
-                    <TrainingActivity run={activeAnalysis} workers={[]} telemetry={undefined} />
-                  ) : null}
-                </div>
+                <div className="training-inspector" />
               )}
             </>
           }

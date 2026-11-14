@@ -86,31 +86,68 @@ function WorkerLane({
   worker,
   histories,
   baseActive,
+  baseComplete,
 }: {
   role: "general" | "names";
   worker: PokerTrainingWorker | undefined;
   histories: History[];
   baseActive: boolean;
+  baseComplete: boolean;
 }) {
   const current = worker?.stage_id;
-  const waiting = worker?.state === "waiting";
-  const state = waiting
-    ? worker.waiting_reason ||
-      (current === "names-base"
-        ? baseActive
-          ? "Waiting for shared base model"
-          : "Waiting for base checkpoint"
-        : "Queued")
-    : (worker?.state ?? "No report");
+  const phases = role === "general" ? ["base", "general"] : ["base", "names-base", "names"];
+  const phaseIndex = phases.indexOf(current ?? "");
+  const waitingForBase =
+    role === "names" &&
+    current === "names-base" &&
+    !baseComplete &&
+    (baseActive ||
+      /shared base model|base checkpoint/i.test(worker?.waiting_reason ?? "") ||
+      (worker?.state === "waiting" && !/transfer/i.test(worker.waiting_reason ?? "")));
+  const starting = worker?.state === "initializing" || worker?.state === "waiting";
+  const operationReason = ["completed", "failed", "interrupted", "inherited"].includes(
+    worker?.state ?? "",
+  )
+    ? undefined
+    : worker?.waiting_reason;
+  const state =
+    operationReason ||
+    (worker?.state === "waiting"
+      ? waitingForBase
+        ? "Waiting for shared base model"
+        : current === "names-base"
+          ? "Waiting for base checkpoint"
+          : "Waiting for worker"
+      : worker?.state === "initializing"
+        ? "Initializing model and data loader"
+        : worker?.state === "training"
+          ? "Training"
+          : worker?.state === "completed"
+            ? `${phaseName(current)} complete`
+            : worker?.state === "inherited"
+              ? "Using active model"
+              : worker?.state === "interrupted"
+                ? "Training stopped"
+                : worker?.state === "failed"
+                  ? "Training failed"
+                  : "Waiting for worker report");
+  const currentHistory = histories.findLast(
+    (history) => history.role === role && history.stage_id === current && history.points.length,
+  );
   const previousPhase =
     current === "general" ? "base" : current === "names" ? "names-base" : undefined;
-  const previousRecorded = histories.some(
-    (history) =>
-      history.role === role && history.stage_id === previousPhase && history.points.length > 0,
-  );
-  const currentHistories = histories
-    .filter((history) => history.role === role && history.stage_id === current)
-    .slice(-1);
+  const previousHistory = previousPhase
+    ? histories.findLast(
+        (history) =>
+          history.role === role && history.stage_id === previousPhase && history.points.length,
+      )
+    : undefined;
+  const shownHistory = currentHistory ?? previousHistory;
+  const epochs = worker?.epochs && worker.epochs > 0 ? worker.epochs : undefined;
+  const epoch = !starting && worker?.epoch != null ? worker.epoch : undefined;
+  const epochProgress =
+    epoch != null && epochs ? Math.max(0, Math.min(epoch, epochs)) / epochs : undefined;
+  const segments = epochs ? Math.min(100, Math.ceil(epochs)) : 0;
   return (
     <article
       className="training-job-lane"
@@ -125,52 +162,132 @@ function WorkerLane({
             tone={
               worker?.state === "failed"
                 ? "bad"
-                : worker?.state === "training" || worker?.state === "completed"
-                  ? "ok"
-                  : "idle"
+                : starting
+                  ? "warn"
+                  : worker?.state === "training" || worker?.state === "completed"
+                    ? "ok"
+                    : "idle"
             }
             label={state}
           />
         </div>
         <p className="training-worker-host">
           {worker
-            ? `${worker.host}${worker.gpu ? ` / ${worker.gpu}` : " / GPU not reported"}`
+            ? `${worker.host}${worker.gpu ? ` · ${worker.gpu}` : " · GPU not reported"}`
             : "GPU not reported"}
         </p>
+        <ol className="training-stage-path" aria-label={`${roleName(role)} training phases`}>
+          {phases.map((phase, index) => {
+            const complete =
+              phaseIndex >= 0 &&
+              !waitingForBase &&
+              (index < phaseIndex || (index === phaseIndex && worker?.state === "completed"));
+            const active = waitingForBase ? index === 0 : index === phaseIndex && !complete;
+            return (
+              <li
+                key={phase}
+                data-state={complete ? "complete" : active ? "active" : "pending"}
+                aria-current={active ? "step" : undefined}
+              >
+                {complete ? "✓ " : ""}
+                {phase === "base"
+                  ? "Shared base"
+                  : phase === "names-base"
+                    ? "Specialization"
+                    : "Refinement"}
+              </li>
+            );
+          })}
+        </ol>
         <div className="training-current-phase">
-          <strong>{phaseName(current)}</strong>
-          <span>
-            {worker?.epoch == null
-              ? "Epoch not reported"
-              : `${number(worker.epoch, 1)} / ${number(worker.epochs)}`}
+          <span className="training-phase-ordinal">
+            {phaseIndex >= 0
+              ? `${waitingForBase ? "Next phase" : "Phase"} ${phaseIndex + 1} of ${phases.length}`
+              : "Current phase"}
           </span>
+          <strong>{phaseName(current)}</strong>
         </div>
+        <div className="training-epoch">
+          <div className="training-epoch-heading">
+            <span>Epoch</span>
+            <span className="training-epoch-value">
+              {number(epoch, 1)} / {number(epochs)}
+            </span>
+          </div>
+          {epochs ? (
+            <div
+              className="training-epoch-progress"
+              role="progressbar"
+              aria-label={`${roleName(role)} epoch progress`}
+              aria-valuemin={0}
+              aria-valuemax={epochs}
+              aria-valuenow={epoch == null ? undefined : Math.min(epoch, epochs)}
+              aria-valuetext={
+                epoch == null
+                  ? `${number(epochs)} epochs planned; ${state}`
+                  : `Epoch ${number(epoch, 1)} of ${number(epochs)}; ${state}`
+              }
+            >
+              {Array.from({ length: segments }, (_, index) => (
+                <span
+                  key={index}
+                  data-state={
+                    epochProgress == null || epochProgress * segments <= index
+                      ? "pending"
+                      : epochProgress * segments > index + 1 || worker?.state === "completed"
+                        ? "complete"
+                        : "active"
+                  }
+                />
+              ))}
+            </div>
+          ) : null}
+          {starting && epochs ? (
+            <span className="training-epoch-planned">{number(epochs)} epochs planned</span>
+          ) : null}
+        </div>
+        <p className="training-job-operation">{state}</p>
         <dl className="training-job-metrics">
           <div>
             <dt>Loss</dt>
-            <dd>{number(worker?.loss, 5)}</dd>
+            <dd>{number(starting ? undefined : worker?.loss, 5)}</dd>
           </div>
           <div>
             <dt>Step</dt>
-            <dd>{number(worker?.global_step ?? worker?.step)}</dd>
+            <dd>{number(starting ? undefined : (worker?.global_step ?? worker?.step))}</dd>
           </div>
         </dl>
-        {waiting && <p className="training-job-previous">{state}</p>}
-        {previousRecorded && (
-          <p className="training-job-previous">✓ {phaseName(previousPhase)} recorded</p>
-        )}
-        {!current && !currentHistories.length && (
-          <p className="training-telemetry-empty">Phase history unavailable for this version.</p>
-        )}
         {worker?.error && <p className="training-error">{worker.error}</p>}
       </div>
       <div className="training-job-charts">
-        {currentHistories.length ? (
-          currentHistories.map((history) => (
-            <LossHistory key={`${history.role}:${history.stage_id}`} history={history} />
-          ))
+        {shownHistory ? (
+          <>
+            <span className="training-chart-phase">
+              {currentHistory ? "Loss" : "Previous phase loss"} · {phaseName(shownHistory.stage_id)}
+            </span>
+            <LossHistory history={shownHistory} />
+          </>
         ) : (
-          <p className="training-telemetry-empty">No loss history recorded.</p>
+          <div className="training-chart-pending">
+            <strong>
+              {worker?.state === "waiting"
+                ? `${phaseName(current)} queued`
+                : worker?.state === "initializing"
+                  ? `${phaseName(current)} initializing`
+                  : worker?.state === "failed" || worker?.state === "interrupted"
+                    ? `${phaseName(current)} stopped`
+                    : current
+                      ? `${phaseName(current)} loss`
+                      : "Waiting for worker report"}
+            </strong>
+            <span>
+              {worker?.state === "inherited"
+                ? "This model is reused without training."
+                : ["completed", "failed", "interrupted"].includes(worker?.state ?? "")
+                  ? "No loss measurements retained for this phase."
+                  : "Loss appears after the first training measurement."}
+            </span>
+          </div>
         )}
       </div>
     </article>
@@ -725,7 +842,7 @@ export function TrainingActivity({
     <section className="training-job-lanes" aria-label="Training workers">
       <div className="training-scene-heading">
         <h3>Training models</h3>
-        <span>Independent jobs</span>
+        <span>{/export|parity|transfer/i.test(run.stage) ? run.stage : "Independent jobs"}</span>
       </div>
       {roles.map((role) => (
         <WorkerLane
@@ -735,6 +852,12 @@ export function TrainingActivity({
           histories={telemetry?.histories ?? []}
           baseActive={workers.some(
             (item) => item.stage_id === "base" && ["initializing", "training"].includes(item.state),
+          )}
+          baseComplete={workers.some(
+            (item) =>
+              item.role === "general" &&
+              (item.stage_id === "general" ||
+                (item.stage_id === "base" && item.state === "completed")),
           )}
         />
       ))}

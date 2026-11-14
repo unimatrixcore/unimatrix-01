@@ -16,6 +16,46 @@ import lab_training_job as job
 
 
 class TrainingJobTests(unittest.TestCase):
+    def test_phase_change_drops_previous_phase_metrics_but_retains_gpu_identity(self):
+        previous = {'role': 'names', 'host': 'unimatrix-01', 'gpu': 'fixture GPU',
+                    'stage_id': 'names-base', 'state': 'training', 'epoch': 4, 'epochs': 4,
+                    'step': 600, 'global_step': 600, 'loss': .01, 'eta_seconds': 0,
+                    'elapsed_seconds': 50, 'steps_per_epoch': 150,
+                    'waiting_reason': 'Old transfer operation'}
+        incoming = {'role': 'names', 'host': 'unimatrix-01', 'stage_id': 'names',
+                    'state': 'initializing', 'epochs': 6, 'steps_per_epoch': 200,
+                    'waiting_reason': 'Initializing model and data loader'}
+        merged = job.merge_worker_progress(previous, incoming)
+        self.assertEqual(merged, {**incoming, 'gpu': 'fixture GPU'})
+        measured = job.merge_worker_progress(merged, {
+            'stage_id': 'names', 'state': 'training', 'epoch': 1, 'step': 10, 'loss': .2})
+        self.assertNotIn('waiting_reason', measured)
+        self.assertEqual(measured['epochs'], 6)
+        self.assertEqual(measured['epoch'], 1)
+
+    def test_stage_chain_reset_reaches_published_workers_before_first_epoch(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            run = Path(temporary)
+            log = run / 'names.log'
+            workers = [{'role': 'general', 'state': 'completed'}, {
+                'role': 'names', 'host': 'unimatrix-01', 'gpu': 'remote fixture',
+                'stage_id': 'names-base', 'state': 'completed', 'epoch': 4, 'epochs': 4,
+                'step': 600, 'loss': .01, 'eta_seconds': 0}]
+            incoming = {'role': 'names', 'host': 'unimatrix-01', 'stage_id': 'names',
+                        'state': 'initializing', 'epochs': 6,
+                        'waiting_reason': 'Initializing model and data loader'}
+            def launch(*args, **kwargs):
+                log.write_text(job.PROGRESS_PREFIX + json.dumps(incoming) + '\n')
+                return types.SimpleNamespace(stdin=None, poll=lambda: 0)
+            updates = []
+            with patch.object(job.subprocess, 'Popen', side_effect=launch):
+                job._run_stage_workers([{'args': [], 'role': 'names', 'stages': ['names-base', 'names'],
+                                         'remote': True, 'log': log}], workers, run,
+                                       lambda **fields: updates.append(fields))
+            published = json.loads((run / 'workers.json').read_text())[1]
+            self.assertEqual(published, {**incoming, 'gpu': 'remote fixture'})
+            self.assertEqual(updates[0]['workers'][1], published)
+
     def test_relocation_changes_image_paths_and_preserves_labels(self):
         import yaml
         with tempfile.TemporaryDirectory() as temporary:
@@ -421,6 +461,11 @@ print('best metric, acc: 0.9, is_float16: False, best_epoch: 1')
         self.assertEqual(messages[-1]['stage_id'], 'base')
         self.assertEqual(messages[-1]['epochs'], 8)
         self.assertEqual(messages[-1]['state'], 'completed')
+        self.assertEqual(messages[0]['state'], 'initializing')
+        self.assertEqual(messages[0]['epochs'], 8)
+        self.assertEqual(messages[0]['waiting_reason'], 'Initializing model and data loader')
+        self.assertNotIn('epoch', messages[0])
+        self.assertNotIn('loss', messages[0])
         self.assertTrue(job.completed_stage(self.bundle, self.stage('base')))
 
     def test_stage_resume_rejects_changed_dependency_and_frozen_source(self):
@@ -447,6 +492,50 @@ print('best metric, acc: 0.9, is_float16: False, best_epoch: 1')
                 patch.object(job, 'sync_to_remote'), patch.object(job, '_fetch_remote_stages'):
             job.train_curriculum(prepared, remote, run, lambda **fields: None)
         self.assertEqual(batches, [[['base']], [['general'], ['names-base', 'names']]])
+
+    def test_scheduler_publishes_phase_targets_and_transfer_operations_before_blocking(self):
+        run = self.root / 'run'
+        run.mkdir()
+        prepared = {'bundle': str(self.bundle), 'python': sys.executable, 'source': str(self.root),
+                    'local_gpu': {'gpu': 'local fixture'}}
+        remote = {'root': '/remote', 'python': '/python', 'source': '/source', 'gpu': {'gpu': 'remote fixture'}}
+        updates = []
+        transfers = []
+        def update(**fields):
+            updates.append(json.loads(json.dumps(fields)))
+        def execute(jobs, workers, directory, publish):
+            if jobs[0]['stages'] == ['base']:
+                self.assertEqual(workers[0]['epochs'], 8)
+                self.assertNotIn('epoch', workers[0])
+                self.assertEqual(workers[1]['waiting_reason'], 'Waiting for shared base model')
+                workers[0].update(epoch=8, loss=.005, step=15000, eta_seconds=0)
+            else:
+                self.assertEqual(workers[0]['stage_id'], 'general')
+                self.assertEqual(workers[0]['epochs'], 4)
+                self.assertEqual(workers[0]['state'], 'initializing')
+                self.assertEqual(workers[1]['epochs'], 4)
+                for worker in workers:
+                    self.assertNotIn('epoch', worker)
+                    self.assertNotIn('loss', worker)
+                    self.assertNotIn('step', worker)
+            for worker in jobs:
+                for identity in worker['stages']:
+                    job.execute_stage(self.bundle, identity, self.root)
+        def transfer(*args, **kwargs):
+            latest = updates[-1]
+            self.assertIn('Transferring', latest['stage'])
+            self.assertEqual(latest['workers'][0]['state'], 'waiting')
+            self.assertEqual(latest['workers'][0]['stage_id'], 'general')
+            self.assertNotIn('loss', latest['workers'][0])
+            self.assertEqual(latest['workers'][1]['state'], 'waiting')
+            transfers.append(latest['workers'][1]['waiting_reason'])
+        with patch.object(job, '_run_stage_workers', side_effect=execute), \
+                patch.object(job, 'command', side_effect=transfer), \
+                patch.object(job, 'sync_to_remote', side_effect=transfer), \
+                patch.object(job, '_fetch_remote_stages'):
+            job.train_curriculum(prepared, remote, run, update)
+        self.assertTrue(any('shared checkpoint' in reason for reason in transfers))
+        self.assertTrue(any('training tools' in reason for reason in transfers))
 
     def test_final_version_binds_all_stage_receipts_and_actual_checkpoint_edges(self):
         for identity in ('base', 'general', 'names-base', 'names'):

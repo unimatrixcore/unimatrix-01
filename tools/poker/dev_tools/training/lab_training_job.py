@@ -459,8 +459,12 @@ def role_job(role, bundle, source, original=None, remote=False, resume=False, st
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGHUP, stop)
-    process = subprocess.Popen(args, start_new_session=True)
     started = time.time()
+    progress = training_progress('', role, REMOTE_HOST if remote else 'local', started)
+    progress.update(recipe_metadata, waiting_reason='Initializing model and data loader')
+    atomic_json(directory / 'progress.json', progress)
+    print(PROGRESS_PREFIX + json.dumps(progress), flush=True)
+    process = subprocess.Popen(args, start_new_session=True)
     latest_progress = 0
     try:
         while process.poll() is None:
@@ -470,6 +474,8 @@ def role_job(role, bundle, source, original=None, remote=False, resume=False, st
                 progress = training_progress(current_log(), role,
                                              REMOTE_HOST if remote else 'local', started)
                 progress.update(recipe_metadata)
+                if progress['state'] == 'initializing':
+                    progress['waiting_reason'] = 'Initializing model and data loader'
                 atomic_json(directory / 'progress.json', progress)
                 print(PROGRESS_PREFIX + json.dumps(progress), flush=True)
                 latest_progress = time.monotonic()
@@ -484,6 +490,7 @@ def role_job(role, bundle, source, original=None, remote=False, resume=False, st
     except BaseException as error:
         progress = training_progress(current_log(), role,
                                      REMOTE_HOST if remote else 'local', started)
+        progress.update(recipe_metadata)
         progress['state'] = 'interrupted' if isinstance(error, InterruptedError) else 'failed'
         atomic_json(directory / 'progress.json', progress)
         print(PROGRESS_PREFIX + json.dumps(progress), flush=True)
@@ -511,6 +518,22 @@ def _curriculum_label(workers):
     return ' · '.join(running) or 'Model stages complete'
 
 
+def stage_worker(stage, previous, state='initializing', reason='Initializing model and data loader'):
+    value = {key: previous[key] for key in ('host', 'gpu') if key in previous}
+    value.update(role=stage['role'], stage_id=stage['id'], epochs=stage['epochs'], state=state)
+    if reason:
+        value['waiting_reason'] = reason
+    return value
+
+
+def merge_worker_progress(previous, value):
+    if value.get('stage_id') != previous.get('stage_id'):
+        previous = {key: previous[key] for key in ('role', 'host', 'gpu') if key in previous}
+    else:
+        previous = {key: item for key, item in previous.items() if key != 'waiting_reason'}
+    return {**previous, **value}
+
+
 def _run_stage_workers(jobs, workers, run, update):
     processes = []
     logs = []
@@ -529,7 +552,7 @@ def _run_stage_workers(jobs, workers, run, update):
                 index = 0 if job['role'] == 'general' else 1
                 value = read_progress(job['log'], workers[index], job['offset'])
                 if value.get('stage_id') in job['stages']:
-                    workers[index] = {**workers[index], **value}
+                    workers[index] = merge_worker_progress(workers[index], value)
             atomic_json(run / 'workers.json', workers)
             update(status='training', stage=_curriculum_label(workers), workers=workers)
             if failed:
@@ -571,6 +594,7 @@ def _fetch_remote_stages(bundle, target, stages, run):
 
 
 def completed_worker(bundle, stage, fallback):
+    fallback = stage_worker(stage, fallback, 'completed', reason=None)
     path = stage_directory(bundle, stage) / 'progress.json'
     if path.is_file():
         progress = json.loads(path.read_text())
@@ -584,9 +608,10 @@ def train_curriculum(prepared, remote, run, update):
     bundle = Path(prepared['bundle']).resolve()
     curriculum = validate_curriculum(bundle) if prepared.get('resuming') else seal_curriculum(bundle)
     stages = {stage['id']: stage for stage in curriculum['stages']}
-    workers = [{'role': 'general', 'host': 'local', 'state': 'initializing', 'stage_id': 'base'},
-               {'role': 'names', 'host': REMOTE_HOST if 'names' in stages else 'inherited',
-                'state': 'waiting' if 'names' in stages else 'inherited', 'stage_id': 'names-base'}]
+    workers = [stage_worker(stages['base'], {'host': 'local'}),
+               stage_worker(stages['names-base'], {'host': REMOTE_HOST}, 'waiting',
+                            'Waiting for shared base model') if 'names-base' in stages else
+               {'role': 'names', 'host': 'inherited', 'state': 'inherited'}]
     if prepared.get('local_gpu'):
         workers[0]['gpu'] = prepared['local_gpu'].get('gpu')
     if remote:
@@ -603,8 +628,7 @@ def train_curriculum(prepared, remote, run, update):
         _run_stage_workers([local_job('base')], workers, run, update)
     if not completed_stage(bundle, stages['base']):
         raise ValueError('The shared original-pretrained base did not finish')
-    workers[0] = {'role': 'general', 'host': 'local', 'state': 'initializing', 'stage_id': 'general',
-                  'gpu': workers[0].get('gpu')}
+    workers[0] = stage_worker(stages['general'], workers[0])
     jobs = []
     if not completed_stage(bundle, stages['general']):
         jobs.append(local_job('general'))
@@ -619,18 +643,26 @@ def train_curriculum(prepared, remote, run, update):
     target = None
     if local_names_resume:
         jobs.append(local_job('names'))
-        workers[1].update(host='local', gpu=prepared.get('local_gpu', {}).get('gpu'),
-                          state='initializing', stage_id='names')
+        workers[1] = stage_worker(stages['names'], {
+            'host': 'local', 'gpu': prepared.get('local_gpu', {}).get('gpu')})
     elif remote_pending:
         if not remote:
             raise ValueError('The name curriculum requires the verified unimatrix-01 GPU')
         target_root = Path(remote['root']) / 'lab-runs' / run.name
         target = target_root / 'bundle'
+        if workers[0]['state'] != 'completed':
+            workers[0].update(state='waiting', waiting_reason='Waiting for checkpoint transfer to unimatrix-01')
+        pending_stage = next(stage for stage in names if not completed_stage(bundle, stage))
+        workers[1] = stage_worker(pending_stage, workers[1], 'waiting',
+                                  'Transferring training data and shared checkpoint to unimatrix-01')
+        update(stage='Transferring shared checkpoint to unimatrix-01', workers=workers)
         command(remote_command(['mkdir', '-p', target, target_root / 'tools']), run / 'ssh.log', timeout=30)
         command(['rsync', '-a', '--protect-args', '-e', shlex.join(ssh_args()),
                  '--include=/stages/base/checkpoints/', '--include=/stages/base/checkpoints/best_accuracy.pdparams',
                  '--exclude=/stages/base/checkpoints/***', '--exclude=/general/checkpoints/***',
                  str(bundle) + '/', REMOTE_HOST + ':' + str(target) + '/'], run / 'transfer.log', timeout=600)
+        workers[1]['waiting_reason'] = 'Transferring training tools to unimatrix-01'
+        update(stage='Transferring training tools to unimatrix-01', workers=workers)
         sync_to_remote(TOOLS.parent.parent, target_root / 'tools', run / 'transfer.log')
         args = [remote['python'], target_root / 'tools/dev_tools/training/lab_training_job.py',
                 '--stage-chain', 'names-base', 'names', '--bundle', target, '--source', remote['source'],
@@ -639,9 +671,11 @@ def train_curriculum(prepared, remote, run, update):
             args.append('--resume')
         jobs.append({'args': remote_command(args), 'role': 'names', 'stages': ['names-base', 'names'],
                      'remote': True, 'log': run / 'names.log'})
-        workers[1]['state'] = 'initializing'
+        workers[1].update(state='initializing', waiting_reason='Initializing model and data loader')
     elif names:
         workers[1] = completed_worker(bundle, stages['names'], workers[1])
+    if workers[0]['state'] == 'waiting':
+        workers[0].update(state='initializing', waiting_reason='Initializing model and data loader')
     update(stage='Resuming name refinement locally' if local_names_resume else 'General refinement · name specialization', workers=workers)
     try:
         if jobs:

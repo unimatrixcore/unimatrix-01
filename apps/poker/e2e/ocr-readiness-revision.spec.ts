@@ -126,7 +126,7 @@ function installRevisionFixture() {
   };
 }
 
-test("a collection revision keeps the active readiness check visible and requires a fresh result", async ({
+test("a collection revision refreshes metadata without preparing data or blocking Start", async ({
   page,
 }) => {
   await page.addInitScript({
@@ -134,170 +134,86 @@ test("a collection revision keeps the active readiness check visible and require
   });
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  await page.clock.install();
+  await page.goto("/training");
+  await page.getByRole("button", { name: /^Collections ·/ }).click();
+  const collection = page.getByRole("menuitemcheckbox", {
+    name: "Revision collection",
+    exact: true,
+  });
+  await collection.click();
+  const start = page.getByRole("button", { name: "Start training", exact: true });
+  await expect(start).toBeEnabled();
+  await expect(collection).toContainText("2 pending");
+  await expect(page.locator(".training-readiness")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Preparing collections" })).toHaveCount(0);
+  await page.evaluate(() => {
+    (
+      window as unknown as { readinessRevisionFixture: RevisionFixture }
+    ).readinessRevisionFixture.revision = "source-2";
+  });
+  await page.clock.runFor(30000);
+  await expect(collection).toContainText("17 pending");
+  await expect(collection).toHaveAttribute("aria-checked", "true");
+  await expect(start).toBeEnabled();
+  expect(
+    await page.evaluate(() => {
+      const control = (window as unknown as { readinessRevisionFixture: RevisionFixture })
+        .readinessRevisionFixture;
+      return { checks: control.checks, starts: control.starts, canceled: control.canceled };
+    }),
+  ).toEqual({ checks: [], starts: 0, canceled: [] });
+  expect(errors).toEqual([]);
+  await page.screenshot({ path: test.info().outputPath("revision-ready-without-preparation.png") });
+});
+
+test("changing selected collections does not start or cancel preparation, even with a legacy audit", async ({
+  page,
+}) => {
+  await page.addInitScript({
+    content: `(${installLabFixture.toString()})();(${installRevisionFixture.toString()})();`,
+  });
+  await page.addInitScript(() => {
+    (
+      window as unknown as { readinessRevisionFixture: RevisionFixture }
+    ).readinessRevisionFixture.checks.push({
+      revision: "source-1",
+      collections: ["fixture"],
+      epochs: 6,
+    });
+  });
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.clock.install();
   await page.goto("/training");
   await page.getByRole("button", { name: /^Collections ·/ }).click();
   await page.getByRole("menuitemcheckbox", { name: "Revision collection", exact: true }).click();
-  const readiness = page.locator(".training-readiness");
   const start = page.getByRole("button", { name: "Start training", exact: true });
-  await expect(readiness).toHaveText("Validating crops · 12/25");
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () =>
-          (window as unknown as { readinessRevisionFixture: RevisionFixture })
-            .readinessRevisionFixture.checks.length,
-      ),
-    )
-    .toBe(1);
+  await expect(start).toBeEnabled();
+  await page.getByRole("menuitemcheckbox", { name: "Second collection", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Collections · 2", exact: true })).toBeVisible();
+  await expect(start).toBeEnabled();
   await page.evaluate(() => {
     const control = (window as unknown as { readinessRevisionFixture: RevisionFixture })
       .readinessRevisionFixture;
-    const status = document.querySelector<HTMLElement>(".training-readiness")!;
-    const observe = () => {
-      const start = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
-        (button) => button.textContent?.trim() === "Start training",
-      );
-      control.transitions.push({
-        revision: control.revision,
-        oldComplete: control.oldComplete,
-        freshComplete: control.freshComplete,
-        text: status.textContent || "",
-        ready: !!status.querySelector('[data-ready="true"]'),
-        startEnabled: !!start && !start.disabled,
-      });
-    };
-    new MutationObserver(observe).observe(status, {
-      childList: true,
-      subtree: true,
-      characterData: true,
-    });
-    control.revision = "source-2";
+    control.progress = { stage: "reserving" };
+    control.oldComplete = true;
   });
-  await expect(
-    page.getByRole("menuitemcheckbox", { name: "Revision collection", exact: true }),
-  ).toContainText("17 pending");
-  await expect(readiness).toHaveText("Validating crops · 12/25");
-  await expect(start).toBeDisabled();
-  await expect(readiness.locator('[data-ready="true"]')).toHaveCount(0);
-  expect(
-    await page.evaluate(
-      () =>
-        (window as unknown as { readinessRevisionFixture: RevisionFixture })
-          .readinessRevisionFixture.checks.length,
-    ),
-  ).toBe(1);
-  await page.screenshot({ path: test.info().outputPath("revision-checking.png") });
-  await page.evaluate(() => {
-    (
-      window as unknown as { readinessRevisionFixture: RevisionFixture }
-    ).readinessRevisionFixture.oldComplete = true;
-  });
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () =>
-          (window as unknown as { readinessRevisionFixture: RevisionFixture })
-            .readinessRevisionFixture.checks.length,
-      ),
-    )
-    .toBe(2);
-  await expect(readiness).toHaveText("Validating crops · 12/25");
-  await expect(start).toBeDisabled();
-  expect(
-    await page.evaluate(() =>
-      (
-        window as unknown as { readinessRevisionFixture: RevisionFixture }
-      ).readinessRevisionFixture.checks.map((check) => check.revision),
-    ),
-  ).toEqual(["source-1", "source-2"]);
-  expect(
-    await page.evaluate(() =>
-      (
-        window as unknown as { readinessRevisionFixture: RevisionFixture }
-      ).readinessRevisionFixture.transitions.filter(
-        (item) => !item.freshComplete && (item.ready || item.startEnabled),
-      ),
-    ),
-  ).toEqual([]);
-  await page.evaluate(() => {
-    (
-      window as unknown as { readinessRevisionFixture: RevisionFixture }
-    ).readinessRevisionFixture.freshComplete = true;
-  });
-  await expect(readiness.locator('[data-ready="true"]')).toHaveText("Ready");
+  await page.clock.runFor(32000);
+  await expect(page.locator(".training-readiness")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Preparing collections" })).toHaveCount(0);
   await expect(start).toBeEnabled();
   expect(
-    await page.evaluate(
-      () =>
-        (window as unknown as { readinessRevisionFixture: RevisionFixture })
-          .readinessRevisionFixture.starts,
-    ),
-  ).toBe(0);
-  expect(errors).toEqual([]);
-  await page.screenshot({ path: test.info().outputPath("fresh-revision-ready.png") });
-});
-
-test("preparation shows real steps and cancels an obsolete collection selection", async ({
-  page,
-}) => {
-  await page.addInitScript({
-    content: `(${installLabFixture.toString()})();(${installRevisionFixture.toString()})();`,
+    await page.evaluate(() => {
+      const control = (window as unknown as { readinessRevisionFixture: RevisionFixture })
+        .readinessRevisionFixture;
+      return { checks: control.checks, starts: control.starts, canceled: control.canceled };
+    }),
+  ).toEqual({
+    checks: [{ revision: "source-1", collections: ["fixture"], epochs: 6 }],
+    starts: 0,
+    canceled: [],
   });
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/training");
-  await page.getByRole("button", { name: /^Collections ·/ }).click();
-  await page.getByRole("menuitemcheckbox", { name: "Revision collection", exact: true }).click();
-  const readiness = page.locator(".training-readiness");
-  const start = page.getByRole("button", { name: "Start training", exact: true });
-  await expect(readiness).toHaveText("Validating crops · 12/25");
-  await page.screenshot({ path: test.info().outputPath("validating-crops.png") });
-  await page.evaluate(() => {
-    (
-      window as unknown as { readinessRevisionFixture: RevisionFixture }
-    ).readinessRevisionFixture.progress = { stage: "deduplicating" };
-  });
-  await expect(readiness).toHaveText("Removing duplicates…");
-  await expect(start).toBeDisabled();
-  await page.getByRole("menuitemcheckbox", { name: "Second collection", exact: true }).click();
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () =>
-          (window as unknown as { readinessRevisionFixture: RevisionFixture })
-            .readinessRevisionFixture.checks.length,
-      ),
-    )
-    .toBe(2);
-  expect(
-    await page.evaluate(
-      () =>
-        (window as unknown as { readinessRevisionFixture: RevisionFixture })
-          .readinessRevisionFixture.canceled,
-    ),
-  ).toEqual(["check-1"]);
-  expect(
-    await page.evaluate(
-      () =>
-        (window as unknown as { readinessRevisionFixture: RevisionFixture })
-          .readinessRevisionFixture.checks[1]?.collections,
-    ),
-  ).toEqual(["fixture", "second"]);
-  await expect(start).toBeDisabled();
-  await page.evaluate(() => {
-    (
-      window as unknown as { readinessRevisionFixture: RevisionFixture }
-    ).readinessRevisionFixture.progress = { stage: "reserving" };
-  });
-  await expect(readiness).toHaveText("Reserving benchmark crops…");
-  await page.screenshot({ path: test.info().outputPath("reserving-benchmark.png") });
-  await page.evaluate(() => {
-    (
-      window as unknown as { readinessRevisionFixture: RevisionFixture }
-    ).readinessRevisionFixture.freshComplete = true;
-  });
-  await expect(readiness.locator('[data-ready="true"]')).toHaveText("Ready");
-  await expect(start).toBeEnabled();
   expect(errors).toEqual([]);
 });
 
@@ -339,7 +255,15 @@ test("a fresh window restores selected collections and default recipe without st
     next.getByRole("menuitemcheckbox", { name: "Second collection", exact: true }),
   ).toHaveAttribute("aria-checked", "true");
   await expect(next.getByRole("spinbutton", { name: "Epochs", exact: true })).toHaveCount(0);
-  await expect(next.locator(".training-readiness")).toHaveText("Validating crops · 12/25");
+  await expect(next.locator(".training-readiness")).toHaveCount(0);
+  await expect(next.getByRole("button", { name: "Start training", exact: true })).toBeEnabled();
+  expect(
+    await next.evaluate(() => {
+      const control = (window as unknown as { readinessRevisionFixture: RevisionFixture })
+        .readinessRevisionFixture;
+      return { checks: control.checks, canceled: control.canceled };
+    }),
+  ).toEqual({ checks: [], canceled: [] });
   expect(
     await next.evaluate(
       () =>

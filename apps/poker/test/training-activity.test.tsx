@@ -111,7 +111,7 @@ it("keeps stable worker lanes and distinct recorded loss series across phase res
 });
 it("never invents missing history, utilization or batch images", () => {
   render(<TrainingActivity run={run} workers={[]} telemetry={undefined} />);
-  expect(screen.getAllByText("No loss history recorded.")).toHaveLength(2);
+  expect(screen.getAllByText("Loss appears after the first training measurement.")).toHaveLength(2);
   expect(screen.queryByRole("img", { name: /recorded loss/ })).toBeNull();
   expect(screen.queryByRole("progressbar")).toBeNull();
 });
@@ -308,21 +308,260 @@ it("retains an honest combined score for legacy summaries without per-model resu
   expect(screen.getAllByText("Per-model score unavailable")).toHaveLength(2);
 });
 
-it("never substitutes an earlier phase history when current-phase observations are absent", () => {
+it("labels retained prior-phase history while the next phase waits for measurements", () => {
   render(
     <TrainingActivity
       run={run}
-      workers={[{ role: "names", host: "remote", state: "training", stage_id: "names" }]}
+      workers={[
+        { role: "names", host: "remote", state: "initializing", stage_id: "names", epochs: 6 },
+      ]}
       telemetry={{
         histories: [{ role: "names", stage_id: "names-base", points: [{ step: 1, loss: 0.2 }] }],
         samples: [],
       }}
     />,
   );
-  expect(
-    within(screen.getByRole("article", { name: "Names worker" })).getByText(
-      "No loss history recorded.",
-    ),
-  ).toBeTruthy();
-  expect(screen.queryByRole("img", { name: /recorded loss/ })).toBeNull();
+  const lane = screen.getByRole("article", { name: "Names worker" });
+  expect(within(lane).getByText("Previous phase loss · Names specialization")).toBeTruthy();
+  expect(lane.querySelector("figure")).toHaveAttribute("data-stage", "names-base");
+  expect(within(lane).getByText("6 epochs planned")).toBeTruthy();
+  expect(within(lane).getByText("Initializing model and data loader")).toBeTruthy();
 });
+
+it("shows known epoch targets and the shared-base dependency before any measurement", () => {
+  render(
+    <TrainingActivity
+      run={run}
+      workers={[
+        { role: "general", host: "local", state: "initializing", stage_id: "base", epochs: 8 },
+        { role: "names", host: "remote", state: "waiting", stage_id: "names-base", epochs: 4 },
+      ]}
+      telemetry={undefined}
+    />,
+  );
+  const names = screen.getByRole("article", { name: "Names worker" });
+  expect(within(names).getByText("Next phase 2 of 3")).toBeTruthy();
+  const path = within(names).getByRole("list", { name: "Names training phases" });
+  expect(within(path).getByText("Shared base")).toHaveAttribute("data-state", "active");
+  expect(within(path).getByText("Specialization")).toHaveAttribute("data-state", "pending");
+  expect(path.querySelectorAll('[data-state="complete"]')).toHaveLength(0);
+  expect(within(names).getByText("4 epochs planned")).toBeTruthy();
+  const progress = within(names).getByRole("progressbar", { name: "Names epoch progress" });
+  expect(progress).toHaveAttribute("aria-valuemax", "4");
+  expect(progress).not.toHaveAttribute("aria-valuenow");
+  expect(progress.querySelectorAll('[data-state="pending"]')).toHaveLength(4);
+  expect(within(names).getByText("Waiting for shared base model")).toBeTruthy();
+});
+
+it("does not report the phase completed merely because its final epoch started", () => {
+  render(
+    <TrainingActivity
+      run={run}
+      workers={[
+        {
+          role: "general",
+          host: "local",
+          state: "training",
+          stage_id: "base",
+          epoch: 8,
+          epochs: 8,
+        },
+      ]}
+      telemetry={telemetry}
+    />,
+  );
+  const lane = screen.getByRole("article", { name: "General worker" });
+  const path = within(lane).getByRole("list", { name: "General training phases" });
+  expect(within(path).getByText("Shared base")).toHaveAttribute("data-state", "active");
+  const progress = within(lane).getByRole("progressbar");
+  expect(progress).toHaveAttribute("aria-valuenow", "8");
+  expect(progress).toHaveAttribute("aria-valuetext", "Epoch 8 of 8; Training");
+  expect(progress.lastElementChild).toHaveAttribute("data-state", "active");
+});
+
+it("clears stale measurements while showing the actual transfer operation", () => {
+  render(
+    <TrainingActivity
+      run={run}
+      workers={[
+        {
+          role: "general",
+          host: "local",
+          state: "waiting",
+          stage_id: "general",
+          epochs: 4,
+          epoch: 8,
+          loss: 0.00507,
+          global_step: 15000,
+          waiting_reason: "Waiting for checkpoint transfer to unimatrix-01",
+        },
+      ]}
+      telemetry={telemetry}
+    />,
+  );
+  const lane = screen.getByRole("article", { name: "General worker" });
+  expect(within(lane).getByText("Phase 2 of 2")).toBeTruthy();
+  expect(within(lane).getByText("Waiting for checkpoint transfer to unimatrix-01")).toBeTruthy();
+  expect(within(lane).queryByText("0.00507")).toBeNull();
+  expect(within(lane).queryByText("15,000")).toBeNull();
+  expect(within(lane).getByRole("progressbar")).not.toHaveAttribute("aria-valuenow");
+  expect(within(lane).getByText("✓ Shared base")).toHaveAttribute("data-state", "complete");
+});
+
+it("keeps completion, failure and post-training export operations explicit", () => {
+  const view = render(
+    <TrainingActivity
+      run={{ ...run, stage: "Exporting and checking model parity" }}
+      workers={[
+        {
+          role: "general",
+          host: "local",
+          state: "completed",
+          stage_id: "general",
+          epoch: 4,
+          epochs: 4,
+        },
+      ]}
+      telemetry={undefined}
+    />,
+  );
+  expect(screen.getByText("Exporting and checking model parity")).toBeTruthy();
+  const lane = screen.getByRole("article", { name: "General worker" });
+  expect(within(lane).getByText("General refinement complete")).toBeTruthy();
+  expect(lane.querySelectorAll('.training-stage-path [data-state="complete"]')).toHaveLength(2);
+  view.rerender(
+    <TrainingActivity
+      run={{ ...run, status: "failed" }}
+      workers={[
+        {
+          role: "general",
+          host: "local",
+          state: "failed",
+          stage_id: "general",
+          epochs: 4,
+          error: "CUDA process failed",
+        },
+      ]}
+      telemetry={undefined}
+    />,
+  );
+  expect(within(lane).getByText("CUDA process failed")).toBeTruthy();
+  expect(within(lane).getByText("No loss measurements retained for this phase.")).toBeTruthy();
+  expect(within(lane).getByText("Training failed")).toBeTruthy();
+});
+
+it("bounds epoch segments while keeping a large reported target truthful", () => {
+  render(
+    <TrainingActivity
+      run={run}
+      workers={[
+        {
+          role: "general",
+          host: "local",
+          state: "training",
+          stage_id: "base",
+          epoch: 2,
+          epochs: 1000000,
+        },
+      ]}
+      telemetry={undefined}
+    />,
+  );
+  const progress = screen.getByRole("progressbar", { name: "General epoch progress" });
+  expect(progress).toHaveAttribute("aria-valuemax", "1000000");
+  expect(progress.children).toHaveLength(100);
+});
+
+it.each(["failed", "interrupted"])(
+  "keeps the Names dependency unresolved after shared base is %s",
+  (state) => {
+    render(
+      <TrainingActivity
+        run={{ ...run, status: state === "failed" ? "failed" : "interrupted" }}
+        workers={[
+          { role: "general", host: "local", state, stage_id: "base", epoch: 8, epochs: 8 },
+          { role: "names", host: "remote", state: "waiting", stage_id: "names-base", epochs: 4 },
+        ]}
+        telemetry={undefined}
+      />,
+    );
+    const names = screen.getByRole("article", { name: "Names worker" });
+    const path = within(names).getByRole("list", { name: "Names training phases" });
+    expect(path.querySelectorAll('[data-state="complete"]')).toHaveLength(0);
+    expect(within(path).getByText("Shared base")).toHaveAttribute("data-state", "active");
+    expect(within(names).getByText("Waiting for shared base model")).toBeTruthy();
+  },
+);
+
+it.each([undefined, "Waiting for base checkpoint"])(
+  "retains the checkpoint dependency after shared base finishes with reason %s",
+  (waitingReason) => {
+    render(
+      <TrainingActivity
+        run={run}
+        workers={[
+          {
+            role: "general",
+            host: "local",
+            state: "training",
+            stage_id: "general",
+            epoch: 1,
+            epochs: 4,
+          },
+          {
+            role: "names",
+            host: "remote",
+            state: "waiting",
+            stage_id: "names-base",
+            epochs: 4,
+            ...(waitingReason ? { waiting_reason: waitingReason } : {}),
+          },
+        ]}
+        telemetry={undefined}
+      />,
+    );
+    const names = screen.getByRole("article", { name: "Names worker" });
+    expect(within(names).getByText("Waiting for base checkpoint")).toBeTruthy();
+    expect(within(names).queryByText("Waiting for worker")).toBeNull();
+    const path = within(names).getByRole("list", { name: "Names training phases" });
+    expect(within(path).getByText("✓ Shared base")).toHaveAttribute("data-state", "complete");
+    expect(within(path).getByText("Specialization")).toHaveAttribute("data-state", "active");
+    expect(within(names).getByRole("progressbar")).not.toHaveAttribute("aria-valuenow");
+  },
+);
+
+it.each(["failed", "interrupted", "completed", "inherited"])(
+  "prioritizes terminal %s state over a stale initialization reason",
+  (state) => {
+    render(
+      <TrainingActivity
+        run={run}
+        workers={[
+          {
+            role: "general",
+            host: "local",
+            state,
+            stage_id: "general",
+            epochs: 4,
+            waiting_reason: "Initializing model and data loader",
+            ...(state === "failed" ? { error: "Paddle process could not start" } : {}),
+          },
+        ]}
+        telemetry={undefined}
+      />,
+    );
+    const lane = screen.getByRole("article", { name: "General worker" });
+    expect(within(lane).queryByText("Initializing model and data loader")).toBeNull();
+    expect(lane.querySelector(".training-job-operation")).toHaveTextContent(
+      state === "failed"
+        ? "Training failed"
+        : state === "interrupted"
+          ? "Training stopped"
+          : state === "completed"
+            ? "General refinement complete"
+            : "Using active model",
+    );
+    if (state === "failed")
+      expect(within(lane).getByText("Paddle process could not start")).toBeTruthy();
+  },
+);

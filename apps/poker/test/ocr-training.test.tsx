@@ -11,6 +11,7 @@ const collections = [
     total: 25,
     reviewed: 22,
     eligible: 20,
+    reservations: { reserved: 4, validation: 2, test: 2, reasons: [] },
     names: 8,
     blanks: 2,
     pending: 3,
@@ -93,9 +94,9 @@ const run = {
     ),
   },
 };
-function fixture(initialRuns: unknown[] = []) {
+function fixture(initialRuns: unknown[] = [], initialAnalyses: Record<string, unknown>[] = []) {
   let runs = initialRuns;
-  let analyses: Record<string, unknown>[] = [];
+  let analyses = initialAnalyses;
   const control = {
     failStart: false,
     telemetry: undefined as unknown,
@@ -118,6 +119,7 @@ function fixture(initialRuns: unknown[] = []) {
     reserved: 0,
     protocol: "audit-v1",
     sourceRevision: "source-v1",
+    startPreparing: false,
     analysisPreparing: false,
     dataProgress: { stage: "validating", completed: 12, total: 25 } as NonNullable<
       PokerTrainingRun["data_progress"]
@@ -208,8 +210,22 @@ function fixture(initialRuns: unknown[] = []) {
     if (options?.method === "POST") {
       if (control.failStart)
         return new Response(JSON.stringify({ error: "Remote GPU disconnected" }), { status: 503 });
-      runs = [run];
-      return response({ run });
+      runs = [
+        {
+          ...run,
+          ...(control.startPreparing
+            ? {
+                status: "preparing",
+                stage: "Preparing collections",
+                data_progress: control.dataProgress,
+                analysis: null,
+                summary: null,
+                benchmark: null,
+              }
+            : {}),
+        },
+      ];
+      return response({ run: runs[0] });
     }
     if (path === "/api/training")
       return response({
@@ -227,7 +243,11 @@ function fixture(initialRuns: unknown[] = []) {
         analysis_protocol: control.protocol,
         collections: control.unknown
           ? collections.map((item) => ({ id: item.id, name: item.name }))
-          : collections.map((collection) => ({ ...collection, revision: control.sourceRevision })),
+          : collections.map((collection) => ({
+              ...collection,
+              names: collection.id === "one" ? control.names : collection.names,
+              revision: control.sourceRevision,
+            })),
         setup: {
           ready: control.setupReady,
           error: control.setupReady ? null : "Active baseline unavailable",
@@ -321,13 +341,14 @@ async function selectReady() {
     expect(screen.getByRole("button", { name: "Start training" })).toBeEnabled();
   });
 }
-it("audits selected collections with the default recipe before start, then inspects models, conditions, exclusions and metadata", async () => {
+it("starts without a preparation audit, then inspects models, conditions, exclusions and metadata", async () => {
   const { calls } = fixture();
   renderTraining();
   await screen.findByRole("menuitemcheckbox", { name: "Collection one" });
   expect(screen.queryByRole("menuitemcheckbox", { name: "Archived" })).toBeNull();
   await selectReady();
   expect(screen.getByLabelText("Selected data counts")).toHaveTextContent("20 eligible");
+  expect(calls.some((call) => call.path === "/api/training/analyze")).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "Start training" }));
   await screen.findByRole("heading", { name: "Version 1" });
   expect(
@@ -370,7 +391,7 @@ it("cancels the active version as a neutral user stop with recorded progress", a
     "aria-checked",
     "true",
   );
-  expect(screen.getByRole("status")).toHaveTextContent("Training");
+  expect(screen.queryByRole("status")).toBeNull();
   expect(
     within(screen.getByRole("article", { name: "General worker" })).getByText("3 / 6"),
   ).toBeTruthy();
@@ -422,68 +443,69 @@ it("aborts requests and stops background polling after leaving the training tab"
   });
   expect(calls).toHaveLength(count);
 });
-it("shows unknown counts explicitly and blocks data rejected by the automatic audit", async () => {
-  const { control } = fixture();
+it("allows Start with unknown data counts and performs no audit before it is clicked", async () => {
+  const { control, calls } = fixture();
   control.unknown = true;
   control.blocked = true;
   renderTraining();
-  await screen.findByRole("menuitemcheckbox", { name: "Collection two" });
-  expect(screen.queryByRole("spinbutton")).toBeNull();
-  fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Collection one" }));
-  await screen.findByText("No verified names.");
-  expect(screen.getByRole("button", { name: "Start training" })).toBeDisabled();
+  await selectReady();
+  expect(screen.getByLabelText("Selected data counts")).toHaveTextContent(
+    "— eligible— benchmark crops",
+  );
+  expect(screen.queryByText("No verified names.")).toBeNull();
+  expect(calls.some((call) => call.path === "/api/training/analyze")).toBe(false);
 });
-it("ignores an audit result that belongs to a selection the user has left", async () => {
-  const { control } = fixture();
-  control.hold = true;
-  renderTraining();
-  fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: "Collection one" }));
-  await screen.findByText("Preparing training data…");
-  fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Collection two" }));
-  expect(screen.getByRole("button", { name: "Start training" })).toBeDisabled();
-  control.release = true;
-  await waitFor(() => {
-    expect(screen.getByRole("button", { name: "Start training" })).toBeEnabled();
-  });
-});
-it("retains one accepted audit when polling observes it before its POST response arrives", async () => {
+it("does not launch preparation on selection, metadata changes, polling, or after a completed run", async () => {
   vi.useFakeTimers();
-  const { control, calls } = fixture();
-  control.analysisPreparing = true;
-  control.holdAfterAccept = true;
-  control.staleGpu = true;
-  control.probeChecking = true;
+  const { control, calls } = fixture([run]);
   renderTraining();
   await act(async () => {
     await vi.advanceTimersByTimeAsync(20);
   });
   fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Collection one" }));
+  fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Collection two" }));
+  control.sourceRevision = "new-labels";
+  control.protocol = "new-protocol";
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(2600);
+    await vi.advanceTimersByTimeAsync(65000);
   });
-  expect(calls.filter((call) => call.path === "/api/training/analyze")).toHaveLength(1);
-  expect(screen.getByRole("status")).toHaveTextContent("Validating crops");
-  control.releaseAccepted = true;
-  control.analysisPreparing = false;
-  control.staleGpu = false;
-  control.probeChecking = false;
-  for (let cycle = 0; cycle < 130; cycle++)
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(500);
-    });
-  expect(calls.filter((call) => call.path === "/api/training/analyze")).toHaveLength(1);
+  expect(calls.filter((call) => call.path === "/api/training/analyze")).toHaveLength(0);
+  expect(
+    calls.filter((call) => call.path === "/api/training" && call.options?.method === "POST"),
+  ).toHaveLength(0);
   expect(screen.getByRole("button", { name: "Start training" })).toBeEnabled();
+  expect(screen.queryByRole("status")).toBeNull();
 });
-it("allows automatic data analysis while the baseline setup blocks training", async () => {
+it("ignores an existing legacy preparation audit when enabling Start", async () => {
+  const { calls } = fixture(
+    [],
+    [
+      {
+        id: "old-audit",
+        kind: "analysis",
+        status: "preparing",
+        created_at: Date.now(),
+        collections: ["one"],
+        epochs: 6,
+        stage: "Checking collections",
+        data_progress: { stage: "reserving" },
+      },
+    ],
+  );
+  renderTraining();
+  await selectReady();
+  expect(screen.queryByRole("status")).toBeNull();
+  expect(screen.queryByText("Reserving benchmark crops…")).toBeNull();
+  expect(calls.some((call) => call.path === "/api/training/analyze")).toBe(false);
+});
+it("keeps baseline setup as a Start gate without launching data preparation", async () => {
   const { control, calls } = fixture();
   control.setupReady = false;
   renderTraining();
   fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: "Collection one" }));
-  await waitFor(() => {
-    expect(calls.some((call) => call.path === "/api/training/analyze")).toBe(true);
-  });
   expect(screen.getByRole("button", { name: "Start training" })).toBeDisabled();
   expect(screen.getByRole("alert")).toHaveTextContent("Active baseline unavailable");
+  expect(calls.some((call) => call.path === "/api/training/analyze")).toBe(false);
 });
 it("keeps checking an in-flight GPU probe even when a prior cached result exists", async () => {
   const { control, calls } = fixture();
@@ -539,128 +561,25 @@ it("requires only the local GPU when the verified selection has no names to trai
   ).toBeTruthy();
   expect(screen.getByRole("button", { name: "Start training" })).toBeEnabled();
 });
-it.each(["protocol", "sourceRevision"] as const)(
-  "rechecks unchanged selected collections after %s changes and blocks stale readiness",
-  async (changedField) => {
-    const { control, calls } = fixture();
-    vi.useFakeTimers();
-    renderTraining();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
-    });
-    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Collection one" }));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(300);
-    });
-    expect(screen.getByRole("button", { name: "Start training" })).toBeEnabled();
-    expect(calls.filter((call) => call.path === "/api/training/analyze")).toHaveLength(1);
-    control[changedField] = "changed-v2";
-    control.hold = true;
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(30000);
-    });
-    expect(screen.getByRole("menuitemcheckbox", { name: "Collection one" })).toHaveAttribute(
-      "aria-checked",
-      "true",
-    );
-    expect(screen.getByRole("button", { name: "Start training" })).toBeDisabled();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(300);
-    });
-    expect(calls.filter((call) => call.path === "/api/training/analyze")).toHaveLength(2);
-    expect(screen.getByRole("button", { name: "Start training" })).toBeDisabled();
-    control.release = true;
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(20);
-    });
-    expect(screen.getByRole("button", { name: "Start training" })).toBeEnabled();
-  },
-);
-it("keeps a running check visible when reviewed labels change, then checks the new revision", async () => {
+it("starts one training run and shows preparation only after Start", async () => {
   const { control, calls } = fixture();
-  control.analysisPreparing = true;
-  vi.useFakeTimers();
-  renderTraining();
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(0);
-  });
-  fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Collection one" }));
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(300);
-  });
-  expect(screen.getByRole("status")).toHaveTextContent("Validating crops · 12/25");
-  control.sourceRevision = "newly-reviewed-labels";
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(2000);
-  });
-  expect(screen.getByRole("status")).toHaveTextContent("Validating crops · 12/25");
-  expect(screen.queryByText("Waiting for the previous collection check…")).toBeNull();
-  expect(screen.getByRole("button", { name: "Start training" })).toBeDisabled();
-  expect(calls.filter((call) => call.path === "/api/training/analyze")).toHaveLength(1);
-  control.analysisPreparing = false;
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(2000);
-  });
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(300);
-  });
-  expect(calls.filter((call) => call.path === "/api/training/analyze")).toHaveLength(2);
-  expect(screen.getByRole("button", { name: "Start training" })).toBeEnabled();
-  expect(calls.some((call) => call.path.endsWith("/cancel"))).toBe(false);
-});
-
-it("shows real preparation operations and only reports counts provided by the worker", async () => {
-  const { control } = fixture();
-  control.analysisPreparing = true;
+  control.startPreparing = true;
   control.dataProgress = { stage: "reading", collection_name: "Collection one" };
   renderTraining();
-  fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: "Collection one" }));
-  await screen.findByText("Reading captures… · Collection one");
-  control.dataProgress = { stage: "deduplicating" };
-  await waitFor(
-    () => expect(screen.getByRole("status")).toHaveTextContent("Removing duplicates…"),
-    { timeout: 3000 },
-  );
-  expect(screen.getByRole("status")).not.toHaveTextContent("12/25");
-  control.dataProgress = { stage: "reserving" };
-  await waitFor(
-    () => expect(screen.getByRole("status")).toHaveTextContent("Reserving benchmark crops…"),
-    { timeout: 3000 },
-  );
+  await selectReady();
+  expect(screen.queryByRole("status")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Start training" }));
+  await screen.findByRole("heading", { name: "Preparing collections" });
+  expect(
+    within(screen.getByLabelText("Preparation stages")).getByText("Read captures"),
+  ).toHaveAttribute("data-state", "active");
+  expect(screen.getByRole("button", { name: "Stop" })).toBeEnabled();
+  expect(
+    calls.filter((call) => call.path === "/api/training" && call.options?.method === "POST"),
+  ).toHaveLength(1);
+  expect(calls.filter((call) => call.path === "/api/training/analyze")).toHaveLength(0);
 });
 
-it.each(["collections"] as const)(
-  "cancels obsolete preparation when %s change and validates the current choice",
-  async (change) => {
-    const { control, calls } = fixture();
-    control.analysisPreparing = true;
-    control.holdCancel = true;
-    renderTraining();
-    fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: "Collection one" }));
-    await screen.findByText("Validating crops · 12/25");
-    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Collection two" }));
-    await screen.findByText("Stopping preparation…");
-    expect(calls.filter((call) => call.path.endsWith("/cancel"))).toHaveLength(1);
-    expect(calls.filter((call) => call.path === "/api/training/analyze")).toHaveLength(1);
-    expect(screen.getByRole("button", { name: "Start training" })).toBeDisabled();
-    control.analysisPreparing = false;
-    control.releaseCancel = true;
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Start training" })).toBeEnabled(),
-    );
-    const requests = calls.filter((call) => call.path === "/api/training/analyze");
-    expect(requests).toHaveLength(2);
-    const latest = JSON.parse(requests.at(-1)?.options?.body as string) as {
-      collections: string[];
-      epochs: number;
-    };
-    expect(latest).toEqual({
-      collections: change === "collections" ? ["one", "two"] : ["one"],
-      epochs: 6,
-    });
-    expect(calls.some((call) => call.path === "/api/training/opaque-id/cancel")).toBe(false);
-  },
-);
 it("shows valid held-out crops as reserved without treating them as excluded errors", async () => {
   const { control } = fixture();
   control.reserved = 2;
@@ -697,7 +616,7 @@ it("resumes a failed version in place without requiring a new collection selecti
     expect(screen.getByRole("button", { name: "Resume training" })).toBeEnabled();
   });
   expect(screen.queryByRole("button", { name: "Start training" })).toBeNull();
-  expect(screen.getByRole("status")).toHaveTextContent("Resume available");
+  expect(screen.queryByRole("status")).toBeNull();
   expect(screen.getByRole("menuitemcheckbox", { name: "Collection one" })).toHaveAttribute(
     "aria-checked",
     "true",
@@ -821,7 +740,9 @@ it("shows reported waiting reasons and keeps other queued workers distinct from 
     },
   ]);
   renderTraining();
-  expect(await screen.findByText("Queued", { exact: true })).toBeTruthy();
+  const names = await screen.findByRole("article", { name: "Names worker" });
+  expect(within(names).getByText("Waiting for worker", { exact: true })).toBeTruthy();
+  expect(within(names).getByText("Names refinement queued", { exact: true })).toBeTruthy();
   expect(screen.queryByText("Waiting for shared base model")).toBeNull();
 });
 
@@ -856,19 +777,23 @@ it("keeps the shared collection multi-select open across keyboard toggles", asyn
     "true",
   );
 });
-it("keeps overall readiness beside Start and tooltip-only GPU states on the bottom row", async () => {
+it("keeps tooltip-only GPU states immediately before Start and counts before Collections", async () => {
   const { control } = fixture();
   control.remoteReady = false;
   renderTraining();
   fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: "Collection one" }));
-  await screen.findByText("Required GPU unavailable");
-  const device = screen.getByRole("img", { name: /unimatrix-01.*Unavailable.*Offline/ });
-  expect(device.closest(".training-setup-bottom")).toBeTruthy();
+  const start = screen.getByRole("button", { name: "Start training" });
+  expect(start).toBeDisabled();
+  expect(start).toHaveAttribute("title", "Required GPU unavailable");
+  const compute = screen.getByRole("group", { name: "Compute availability" });
+  const device = within(compute).getByRole("img", { name: /unimatrix-01.*Unavailable.*Offline/ });
   expect(device.querySelector("svg")).toHaveClass("training-device-bad");
   expect(device).not.toHaveTextContent("Unavailable");
-  expect(
-    screen.getByRole("img", { name: /^Blocked$/ }).closest(".training-setup-actions"),
-  ).toBeTruthy();
+  expect(compute.nextElementSibling).toBe(start);
+  expect(screen.getByLabelText("Selected data counts").nextElementSibling).toBe(
+    screen.getByRole("button", { name: /^Collections ·/ }),
+  );
+  expect(screen.queryByRole("status")).toBeNull();
   expect(screen.queryByRole("heading", { name: "OCR Training" })).toBeNull();
 });
 it("ignores malformed optional telemetry while retaining the completed run and benchmark", async () => {

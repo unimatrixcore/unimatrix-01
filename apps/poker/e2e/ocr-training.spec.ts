@@ -6,12 +6,16 @@ function installTrainingFixture() {
   const control = {
     mode: "idle",
     setupError: "",
+    startPreparing: false,
     blocked: false,
     checks: [] as unknown[],
     submissions: [] as unknown[],
     holdAnalysis: false,
     releaseAnalysis: false,
     sharedBase: false,
+    transition: false,
+    initializing: false,
+    exporting: false,
     recipePhase: "",
     evidence: false,
     manyVersions: false,
@@ -89,6 +93,20 @@ function installTrainingFixture() {
       elapsed_seconds: 188,
       global_step: control.mode === "completed" ? 2280 : control.mode === "failed" ? 1268 : 888,
       steps_per_epoch: 380,
+      ...(control.transition
+        ? {
+            state: control.initializing ? "initializing" : "waiting",
+            stage_id: "general",
+            epochs: 4,
+            epoch: undefined,
+            loss: undefined,
+            global_step: undefined,
+            waiting_reason: control.initializing
+              ? "Initializing model and data loader"
+              : "Waiting for checkpoint transfer to unimatrix-01",
+          }
+        : {}),
+      ...(control.exporting ? { state: "completed" } : {}),
     },
     {
       role: "names",
@@ -121,6 +139,20 @@ function installTrainingFixture() {
           ? 1320
           : 314,
       steps_per_epoch: 220,
+      ...(control.transition
+        ? {
+            state: control.initializing ? "initializing" : "waiting",
+            stage_id: "names-base",
+            epochs: 4,
+            epoch: undefined,
+            loss: undefined,
+            global_step: undefined,
+            waiting_reason: control.initializing
+              ? "Initializing model and data loader"
+              : "Transferring training data and shared checkpoint to unimatrix-01",
+          }
+        : {}),
+      ...(control.exporting ? { state: "completed" } : {}),
     },
   ];
   const results = ["identity", "brightness_minus30", "jpeg80", "scale60"].flatMap(
@@ -157,14 +189,17 @@ function installTrainingFixture() {
           : control.mode === "stopped"
             ? "interrupted"
             : "completed",
-    stage:
-      control.mode === "failed"
-        ? "Training failed"
-        : control.mode === "running"
-          ? "Training general and names models"
-          : control.mode === "stopped"
-            ? "Stopped"
-            : "Benchmark complete",
+    stage: control.exporting
+      ? "Exporting and checking model parity"
+      : control.transition
+        ? "Transferring shared checkpoint to unimatrix-01"
+        : control.mode === "failed"
+          ? "Training failed"
+          : control.mode === "running"
+            ? "Training general and names models"
+            : control.mode === "stopped"
+              ? "Stopped"
+              : "Benchmark complete",
     error: control.mode === "stopped" ? "Training stopped by user." : null,
     collections: control.mode === "preparing" ? ["fixture", "second"] : ["fixture"],
     ...(control.mode === "preparing"
@@ -241,7 +276,7 @@ function installTrainingFixture() {
     if (request.path === "/api/training") {
       if (request.method === "POST") {
         control.submissions.push(request.body);
-        control.mode = "completed";
+        control.mode = control.startPreparing ? "preparing" : "completed";
         return ok({ run: version() }, 202);
       }
       return ok({
@@ -351,7 +386,7 @@ test.beforeEach(async ({ page }) => {
     content: `(${installLabFixture.toString()})(); (${installTrainingFixture.toString()})();`,
   });
 });
-test("automatically audits selected collections before training and compares model versions", async ({
+test("starts selected collections without a preflight audit and compares model versions", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -420,15 +455,15 @@ test("shows actual paired GPU progress and a neutral user stop", async ({ page }
   });
   await page.goto("/training");
   await openCollections(page);
-  await expect(page.getByText("No loss history recorded.")).toHaveCount(2);
+  await expect(page.getByText("Loss appears after the first training measurement.")).toHaveCount(2);
   await expect(page.getByRole("menuitemcheckbox", { name: "Evening tables" })).toHaveAttribute(
     "aria-checked",
     "true",
   );
-  await expect(page.getByRole("status")).toContainText("Training");
+  await expect(page.getByRole("status")).toHaveCount(0);
   await expect(page.getByRole("article", { name: "General worker" })).toContainText("3 / 6");
   await expect(page.getByRole("article", { name: "Names worker" })).toContainText(
-    "unimatrix-01 / RTX 3060",
+    "unimatrix-01 · RTX 3060",
   );
   await page.screenshot({ path: "/tmp/poker-training-running.png", fullPage: true });
   await expect(page.getByRole("button", { name: "Stop", exact: true })).toHaveAttribute(
@@ -446,15 +481,36 @@ test("shows actual paired GPU progress and a neutral user stop", async ({ page }
   await expect(page.getByRole("menuitemcheckbox", { name: "Evening tables" })).toBeEnabled();
   await page.screenshot({ path: "/tmp/poker-training-stopped.png", fullPage: true });
 });
-test("blocks training when automatic verification rejects the selection", async ({ page }) => {
+test("does not run preparation or gate Start on a pre-training data audit", async ({ page }) => {
   await page.addInitScript(() => {
-    (window as unknown as { trainingFixture: { blocked: boolean } }).trainingFixture.blocked = true;
+    Object.assign((window as unknown as { trainingFixture: object }).trainingFixture, {
+      blocked: true,
+      startPreparing: true,
+    });
   });
   await page.goto("/training");
   await openCollections(page);
   await page.getByRole("menuitemcheckbox", { name: "Evening tables" }).click();
-  await expect(page.getByText("No eligible names remain after verification.")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Start training" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Start training" })).toBeEnabled();
+  await expect(page.getByText("No eligible names remain after verification.")).toHaveCount(0);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { trainingFixture: { checks: unknown[] } }).trainingFixture.checks,
+    ),
+  ).toEqual([]);
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Start training", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Preparing collections" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
+  expect(
+    await page.evaluate(() => {
+      const fixture = (
+        window as unknown as { trainingFixture: { checks: unknown[]; submissions: unknown[] } }
+      ).trainingFixture;
+      return { checks: fixture.checks.length, submissions: fixture.submissions.length };
+    }),
+  ).toEqual({ checks: 0, submissions: 1 });
 });
 test("training capture shortcuts remain inactive and setup errors stay actionable", async ({
   page,
@@ -478,7 +534,7 @@ test("resumes a failed model version without creating another training run", asy
   await openCollections(page);
   const resume = page.getByRole("button", { name: "Resume training", exact: true });
   await expect(resume).toBeEnabled();
-  await expect(page.getByRole("status")).toContainText("Resume available");
+  await expect(page.getByRole("status")).toHaveCount(0);
   await expect(page.getByRole("menuitemcheckbox", { name: "Evening tables" })).toHaveAttribute(
     "aria-checked",
     "true",
@@ -513,7 +569,7 @@ test("Names explains that it is waiting for the shared base model", async ({ pag
   expect(errors).toEqual([]);
 });
 
-test("keeps stable worker rows across actual phase counter resets", async ({ page }) => {
+test("keeps stable worker columns across actual phase counter resets", async ({ page }) => {
   await page.addInitScript(() => {
     Object.assign(
       (window as unknown as { trainingFixture: { mode: string; recipePhase: string } })
@@ -636,7 +692,7 @@ test("fits both completed model results without overflow and restores the long v
   });
 });
 
-test("shows only current-phase loss in two fitting stable worker lanes", async ({ page }) => {
+test("shows stage-first columns with epoch bars and loss graphs below", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 });
   await page.addInitScript(() => {
     Object.assign(
@@ -658,8 +714,19 @@ test("shows only current-phase loss in two fitting stable worker lanes", async (
   const detail = page.locator('[data-training-scroll="opaque-uuid-do-not-heading"]');
   expect(await detail.evaluate((node) => node.scrollHeight <= node.clientHeight + 1)).toBe(true);
   const viewport = (await detail.boundingBox())!,
+    generalBox = (await general.boundingBox())!,
     namesBox = (await names.boundingBox())!;
+  expect(namesBox.x).toBeGreaterThan(generalBox.x + generalBox.width);
+  expect(namesBox.y).toBeCloseTo(generalBox.y, 0);
+  expect(namesBox.height).toBeCloseTo(generalBox.height, 0);
   expect(namesBox.y + namesBox.height).toBeLessThanOrEqual(viewport.y + viewport.height);
+  await expect(
+    general.getByRole("progressbar", { name: "General epoch progress" }),
+  ).toHaveAttribute("aria-valuenow", "3");
+  await expect(names.getByRole("progressbar", { name: "Names epoch progress" })).toHaveAttribute(
+    "aria-valuemax",
+    "6",
+  );
   await page.screenshot({ path: test.info().outputPath("training-current-stage-lanes-fit.png") });
 });
 
@@ -695,11 +762,17 @@ for (const state of ["preparing", "running", "benchmarking", "completed"]) {
       await expect(page.locator(".training-job-lane")).toHaveCount(2);
       for (const lane of await page.locator(".training-job-lane").all()) {
         await expect(lane.locator("figure")).toHaveCount(1);
-        const left = (await lane.locator(".training-job-latest").boundingBox())!,
-          right = (await lane.locator("figure").boundingBox())!;
-        expect(right.x).toBeGreaterThan(left.x + left.width);
+        const top = (await lane.locator(".training-job-latest").boundingBox())!,
+          graph = (await lane.locator("figure").boundingBox())!;
+        expect(graph.y).toBeGreaterThan(top.y + top.height);
+        await expect(lane.getByRole("progressbar")).toBeVisible();
         expect(await lane.evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe("2px");
       }
+      const cards = await page.locator(".training-job-lane").all();
+      const first = (await cards[0]!.boundingBox())!,
+        second = (await cards[1]!.boundingBox())!;
+      expect(second.x).toBeGreaterThan(first.x + first.width);
+      expect(second.y).toBeCloseTo(first.y, 0);
     } else if (state === "benchmarking") {
       await expect(page.locator(".training-case")).toHaveCount(2);
       for (const lane of await page.locator(".training-pair-lane").all()) {
@@ -719,6 +792,21 @@ for (const state of ["preparing", "running", "benchmarking", "completed"]) {
       await expect(page.locator(".training-case")).toHaveCount(0);
       await expect(page.getByRole("combobox", { name: "Result condition" })).toHaveCount(0);
     }
+    const counts = (await page.getByLabel("Selected data counts").boundingBox())!;
+    const selector = (await page.getByRole("button", { name: /^Collections ·/ }).boundingBox())!;
+    const compute = (await page
+      .getByRole("group", { name: "Compute availability" })
+      .boundingBox())!;
+    const action = (await page
+      .getByRole("button", { name: state === "completed" ? "Start training" : "Stop", exact: true })
+      .boundingBox())!;
+    expect(counts.x + counts.width).toBeLessThan(selector.x);
+    expect(compute.x + compute.width).toBeLessThan(action.x);
+    expect(Math.abs(counts.y + counts.height / 2 - selector.y - selector.height / 2)).toBeLessThan(
+      2,
+    );
+    expect(Math.abs(compute.y + compute.height / 2 - action.y - action.height / 2)).toBeLessThan(2);
+    await expect(page.locator(".training-readiness")).toHaveCount(0);
     expect(await detail.evaluate((node) => node.scrollHeight <= node.clientHeight + 1)).toBe(true);
     expect(
       await page
@@ -760,4 +848,58 @@ test("Collections keeps a keyboard multiselection open and updates the trigger c
   await expect(picker).toContainText("Collections · 2");
   await page.keyboard.press("Escape");
   await expect(picker).toBeFocused();
+});
+
+test("keeps transfer, initialization, epochs and post-training export visible between measurements", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.addInitScript(() => {
+    Object.assign((window as unknown as { trainingFixture: object }).trainingFixture, {
+      mode: "running",
+      recipePhase: "parallel",
+      transition: true,
+    });
+  });
+  await page.goto("/training");
+  const general = page.getByRole("article", { name: "General worker", exact: true });
+  const names = page.getByRole("article", { name: "Names worker", exact: true });
+  await expect(general.locator(".training-job-operation")).toHaveText(
+    "Waiting for checkpoint transfer to unimatrix-01",
+  );
+  await expect(names.locator(".training-job-operation")).toHaveText(
+    "Transferring training data and shared checkpoint to unimatrix-01",
+  );
+  for (const card of [general, names]) {
+    await expect(card.getByText("4 epochs planned")).toBeVisible();
+    await expect(card.getByRole("progressbar")).not.toHaveAttribute("aria-valuenow");
+    await expect(card.locator(".training-chart-pending")).toBeVisible();
+    await expect(card.getByText("Epoch not reported")).toHaveCount(0);
+  }
+  const detail = page.locator('[data-training-scroll="opaque-uuid-do-not-heading"]');
+  expect(await detail.evaluate((node) => node.scrollHeight <= node.clientHeight + 1)).toBe(true);
+  await page.screenshot({ path: test.info().outputPath("training-stage-columns-transfer.png") });
+  await page.evaluate(() => {
+    (
+      window as unknown as { trainingFixture: { initializing: boolean } }
+    ).trainingFixture.initializing = true;
+  });
+  await expect(names.locator(".training-job-operation")).toHaveText(
+    "Initializing model and data loader",
+  );
+  await expect(general.getByRole("progressbar")).not.toHaveAttribute("aria-valuenow");
+  await page.evaluate(() => {
+    Object.assign((window as unknown as { trainingFixture: object }).trainingFixture, {
+      transition: false,
+      initializing: false,
+    });
+  });
+  await expect(general.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "3");
+  await expect(names.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "2");
+  await page.evaluate(() => {
+    (window as unknown as { trainingFixture: { exporting: boolean } }).trainingFixture.exporting =
+      true;
+  });
+  await expect(page.getByText("Exporting and checking model parity")).toBeVisible();
+  await page.screenshot({ path: test.info().outputPath("training-stage-columns-export.png") });
 });
