@@ -673,8 +673,7 @@ it("keeps the cached native process and owned Vite server when a background Rust
   expect(launch).toHaveBeenCalledTimes(1);
   expect(startServer).toHaveBeenCalledTimes(1);
   expect(readNativeCache(tree, paths)).toBeNull();
-  expect(existsSync(cached.binary)).toBe(true);
-  writeFileSync(cached.binary, "tampered");
+  writeFileSync(cached.binary, "tampered", { flag: "r+" });
   expect(readNativeCache(tree, paths)).toBeNull();
 });
 function git(cwd: string, ...args: string[]) {
