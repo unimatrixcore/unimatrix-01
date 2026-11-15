@@ -65,8 +65,11 @@ impl ColorCache {
     }
 }
 
-fn derive(image: Option<&DynamicImage>, config: &Value) -> Value {
-    let regions = serde_json::from_value::<RegionConfig>(config["regions"].clone()).ok();
+pub(super) fn derive(image: Option<&DynamicImage>, config: &Value) -> Value {
+    let geometry = config["regions"]
+        .get("cv_regions")
+        .unwrap_or(&config["regions"]);
+    let regions = serde_json::from_value::<RegionConfig>(geometry.clone()).ok();
     let colors = serde_json::from_value::<ColorConfig>(config["colors"].clone()).ok();
     let image = image.filter(|image| {
         regions
@@ -154,6 +157,16 @@ mod tests {
             derive(Some(&image()), &invalid)["community_suits"],
             json!([null, null])
         );
+    }
+    #[test]
+    fn source_cv_contexts_preserve_recorded_suit_and_nameplate_consumers() {
+        let original = config();
+        let updated = json!({"colors":original["colors"],"regions":{"viewport":{"width":100,"height":20},"regions":[{"id":"community_cards[0]","bounds":{"x":1,"y":1,"width":2,"height":2}}],"cv_regions":original["regions"]}});
+        assert_eq!(
+            derive(Some(&image()), &original),
+            derive(Some(&image()), &updated)
+        );
+        assert_eq!(updated["regions"]["regions"][0]["bounds"]["width"], 2);
     }
     #[test]
     fn suit_requires_strictly_more_than_forty_percent_palette_support() {

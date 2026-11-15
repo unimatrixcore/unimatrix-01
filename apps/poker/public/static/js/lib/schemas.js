@@ -5,7 +5,7 @@
 const Schemas = {
   NAME: {
     isPrefix: function(val) { return this.isPartial(val); },
-    isPartial: (val) => /^[a-zA-Z0-9]*\.{0,3}$/.test(val) || /^Player [1-9]?$/.test(val) || "*RESERVED*".startsWith(val),
+    isPartial: (val) => contractPartial("name", val),
     getSuggestion: (val) => {
       if (!val) return null;
       const pool = [...new Set([...usernamePool.getItems(), ...(typeof nativeNameSuggestions === "undefined" ? [] : nativeNameSuggestions)])];
@@ -36,11 +36,7 @@ const Schemas = {
     isPrefix: function(val) { return this.isPartial(val); },
     allowed: [...globalThis.OCR_CONTRACT.categories.status.values],
     shorthands: { "k": "Check", "c": "Call", "r": "Raise", "b": "Bet", "ai": "All-In", "ds": "Decline Straddle", "hw": "Hide Winning", "sc": "Show Cards", "st": "Straddle", "sb": "SB", "bb": "BB" },
-    isPartial: function(val) {
-      if (!val) return true;
-      const v = val.toLowerCase();
-      return Schemas.STATUS.validateReviewed(val).isValid; // Explicit transcription does not extend automatic acceptance.
-    },
+    isPartial: (val) => contractPartial('status', val),
     getSuggestion: function(val) {
       if (!val) return null;
       const v = val.toLowerCase();
@@ -69,31 +65,23 @@ const Schemas = {
   CARD: {
     isPrefix: function(val) { return this.isPartial(val); },
     ranks: [...globalThis.OCR_CONTRACT.categories.card.values],
-    isPartial: function(val) { return !val || this.ranks.some(r => r.startsWith(val)); },
+    isPartial: function(val) { const rank = globalThis.OCR_CONTRACT.normalization?.rank_aliases?.[val.toUpperCase()] || val.toUpperCase(); return !val || this.ranks.some(r => r.startsWith(rank)); },
     getSuggestion: (val) => val === "1" ? { suggestion: "10", type: 'append' } : null
   },
   MONEY: {
     isPrefix: function(val) { return this.isPartial(val); },
-    isPartial: (val) => !val || /^[GS]( \d*(\.\d?)?( B{0,2})?)?$/.test(val),
-    isAtPrefix: (val) => val === "G " || val === "S ",
-    getSuggestion: (val, item) => {
-      const globalCur = gameCurrencyMap[item.game_id];
-      if (!val && globalCur) return { suggestion: globalCur + " ", type: 'replace' };
-      if (val.length === 1) {
-        if ("g ".startsWith(val.toLowerCase())) return { suggestion: "G ", type: 'replace' };
-        if ("s ".startsWith(val.toLowerCase())) return { suggestion: "S ", type: 'replace' };
-      }
-      const m = val.match(/^([GS] )?(\d+(\.\d)?)$/);
-      if (m) return { suggestion: val + " BB", type: 'append' };
-      const m2 = val.match(/^([GS] )?(\d+(\.\d)?)\s+B$/i);
-      if (m2) return { suggestion: val.slice(0, -1) + "BB", type: 'replace' };
-      return null;
+    isPartial: (val) => contractPartial('bet',val),
+    isAtPrefix: () => false,
+    getSuggestion: (val) => {
+      if (!val.endsWith(' B')) return null;
+      const candidate=val+'B';
+      return contractValid('bet',candidate) ? {suggestion:candidate,type:'append'} : null;
     }
   },
   BANK: {
-    noChips: ['G No Chips', 'S No Chips'],
+    noChips: ['No Chips'],
     isPrefix: function(val) { return this.isPartial(val); },
-    isPartial: (val) => Schemas.MONEY.isPartial(val) || "all-in".startsWith(val.toLowerCase()) || Schemas.BANK.noChips.some(label => label.toLowerCase().startsWith(val.toLowerCase())),
+    isPartial: (val) => contractPartial("bank",val),
     isAtPrefix: (val) => Schemas.MONEY.isAtPrefix(val),
     getSuggestion: (val, item) => {
       const v = val.toLowerCase();
@@ -109,19 +97,8 @@ const Schemas = {
     isPrefix: function(val) { return this.isPartial(val); },
     ritPrefix: "Run It Twice pause (",
     ritSuffix: " sec)",
-    isPartial: function(val) {
-      if (!val) return true;
-      const v = val.toLowerCase();
-      if (v.startsWith("p")) {
-        const target = "Pot: ";
-        if (target.toLowerCase().startsWith(v)) return true;
-        if (val.startsWith(target)) return Schemas.MONEY.isPartial(val.slice(target.length));
-        return false;
-      }
-      if (v.startsWith("r")) return this.ritPrefix.toLowerCase().startsWith(v) || (val.startsWith(this.ritPrefix) && /^\d*(\s*s?e?c?\)?)?$/i.test(val.slice(this.ritPrefix.length)));
-      return false;
-    },
-    isAtPrefix: (val) => val === "Pot: " || val === "Pot: G " || val === "Pot: S ",
+    isPartial: (val) => contractPartial('pot',val),
+    isAtPrefix: () => false,
     getSuggestion: function(val, item) {
       const v = val.toLowerCase();
       if (v.length >= 2 && isSubsequence(v, this.ritPrefix.toLowerCase()) && !v.startsWith(this.ritPrefix.toLowerCase())) {
@@ -137,35 +114,17 @@ const Schemas = {
           }
         }
       }
-      const target = "Pot: ";
-      if (val.length === 0 || (target.toLowerCase().startsWith(v) && v !== target.toLowerCase())) {
-        const globalCur = gameCurrencyMap[item.game_id];
-        return { suggestion: globalCur ? target + globalCur + " " : target, type: 'replace' };
-      }
-      if (val.startsWith(target)) {
-        const body = val.slice(target.length);
-        const res = Schemas.MONEY.getSuggestion(body, item);
-        if (res) {
-          if (res.type === 'replace') return { ...res, suggestion: target + res.suggestion };
-          if (res.type === 'append') return { ...res, suggestion: val + res.suggestion.slice(body.length) };
-        }
-      }
-      return null;
+      return Schemas.MONEY.getSuggestion(val, item);
     }
   },
   SPLIT_POT: {
     isPrefix: function(val) { return this.isPartial(val); },
-    isPartial: (val) => !val || /^([GS] \d+(\.\d)? BB\s+)*([GS]( \d*(\.\d?)?( B{0,2})?)?)?$/.test(val),
-    isAtPrefix: (val) => Schemas.MONEY.isAtPrefix(val),
-    getSuggestion: (val, item) => {
-      const globalCur = gameCurrencyMap[item.game_id];
-      if (!val && globalCur) return { suggestion: globalCur + " ", type: 'replace' };
-      const parts = val.trim().split(/\s+/);
-      const last = parts[parts.length - 1];
-      if (/^\d+(\.\d)?$/.test(last)) return { suggestion: val.trim() + " BB", type: 'replace' };
-      if (last.toLowerCase() === "b") return { suggestion: val.slice(0, -1) + "BB", type: 'replace' };
-      if (last.toUpperCase() === "BB" && val.endsWith(" ") && globalCur) return { suggestion: val + globalCur + " ", type: 'replace' };
-      return null;
+    isPartial: (val) => contractPartial('split_pot',val),
+    isAtPrefix: () => false,
+    getSuggestion: (val) => {
+      if (!val.endsWith(' B')) return null;
+      const candidate=val+'B';
+      return contractValid('split_pot',candidate) ? {suggestion:candidate,type:'append'} : null;
     }
   },
   DEALER: {
@@ -176,7 +135,7 @@ const Schemas = {
 };
 
 // Same JSON bytes are used by persistence, model suggestions and training.
-const ContractCategories = {name:'NAME',status:'STATUS',card:'CARD',dealer:'DEALER',bank:'BANK',bet:'MONEY',pot:'POT',split_pot:'SPLIT_POT',round_id:'ROUND_ID'};
+const ContractCategories = {name:'NAME',status:'STATUS',card:'CARD',dealer:'DEALER',bank:'BANK',bet:'MONEY',pot:'POT',split_pot:'SPLIT_POT',round_id:'ROUND_ID',suit:'SUIT',amount:'AMOUNT',table_info:'TABLE_INFO',timer:'TIMER',popup:'POPUP',combination:'COMBINATION',winner:'WINNER'};
 const wholeFieldMatch = (pattern, value) => {
   if (typeof value !== 'string') return false;
   const match = new RegExp('^(?:' + pattern + ')$').exec(value);
@@ -185,12 +144,31 @@ const wholeFieldMatch = (pattern, value) => {
 const contractValid = (category, value) => {
   const rule = globalThis.OCR_CONTRACT.categories[category];
   if (!rule || typeof value !== 'string') return false;
-  return rule.values ? rule.values.includes(value) : wholeFieldMatch(rule.pattern, value);
+  if (rule.max_utf16 !== undefined && value.length > rule.max_utf16) return false;
+  if (rule.prefix_max_utf16 !== undefined && value.slice(0,value.lastIndexOf(", NLHE")).length > rule.prefix_max_utf16) return false;
+  return rule.values && rule.values_exhaustive !== false ? rule.values.includes(value) : wholeFieldMatch(rule.pattern, value);
 };
-Schemas.ROUND_ID = {
-  isPartial: value => typeof value === 'string' && /^#? *[0-9]{0,15}$/.test(value),
-  isPrefix: function(value) { return this.isPartial(value); },
-  getSuggestion: () => null,
+function contractPartial(category,value) {
+  const rule=globalThis.OCR_CONTRACT.categories[category];
+  if (!rule || typeof value !== 'string') return false;
+  if (rule.max_utf16 !== undefined && value.length > rule.max_utf16) return false;
+  if (!value || contractValid(category,value)) return true;
+  if (rule.partial_values?.some(v=>v.toLowerCase().startsWith(value.toLowerCase()))) return true;
+  if (rule.partial_pattern) return wholeFieldMatch(rule.partial_pattern,value);
+  if (rule.values && rule.values_exhaustive !== false) return rule.values.some(v=>v.startsWith(value));
+  return category !== 'round_id' || value.startsWith('#');
+}
+Schemas.ROUND_ID = {isPartial:value=>contractPartial('round_id',value),isPrefix:function(value){return this.isPartial(value);},getSuggestion:()=>null};
+for (const [category,name] of Object.entries(ContractCategories)) {
+  if (!Schemas[name]) Schemas[name]={isPartial:value=>contractPartial(category,value),isPrefix:value=>contractPartial(category,value),getSuggestion:()=>null};
+}
+Schemas.SUIT.isPartial = value => {
+  const canonical=globalThis.OCR_CONTRACT.normalization?.suit_aliases?.[value] || value.toLowerCase();
+  return !value || globalThis.OCR_CONTRACT.categories.suit.values.includes(canonical);
+};
+Schemas.SUIT.getSuggestion = value => {
+  const canonical=globalThis.OCR_CONTRACT.normalization?.suit_aliases?.[value] || value.toLowerCase();
+  return canonical!==value && globalThis.OCR_CONTRACT.categories.suit.values.includes(canonical) ? {suggestion:canonical,type:'replace'} : null;
 };
 for (const [category, name] of Object.entries(ContractCategories)) {
   Schemas[name].validate = value => {
@@ -198,7 +176,7 @@ for (const [category, name] of Object.entries(ContractCategories)) {
     return {isValid,errorMsg:isValid ? null : 'Invalid ' + category.replaceAll('_',' ') + ' format'};
   };
 }
-// Enter confirms a human transcription; this does not extend automatic acceptance.
+// Format validity does not establish visual verification.
 Schemas.STATUS.validateReviewed = value => {
   const result = Schemas.STATUS.validate(value);
   if (result.isValid) return {...result,outsideContract:false};

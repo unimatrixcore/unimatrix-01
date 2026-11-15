@@ -7,8 +7,10 @@ pub mod ai_review;
 pub mod capture;
 pub mod datasets;
 pub mod gameplay;
+pub mod legacy_benchmark;
 pub mod migration;
 pub mod model;
+pub mod pixel_assets;
 pub mod queue;
 pub mod review;
 pub mod training;
@@ -172,6 +174,7 @@ pub struct LabService {
     pub model: Arc<model::ModelRuntime>,
     pub ai_review: Arc<ai_review::AiReviewManager>,
     pub gameplay: Arc<gameplay::GameplayService>,
+    pub gameplay_ai: Arc<gameplay::ai::GameplayAi>,
     pub capture: Arc<capture::CaptureService>,
     pub training: training::TrainingManager,
     pub watch: watch::WatchCoordinator,
@@ -259,7 +262,9 @@ impl LabService {
             "/api/label_history" => &["sample_key", "filename"],
             "/api/name_suggestions" => &["search"],
             "/api/get_session_history" => &["order"],
-            _ if gameplay.is_some_and(|(kind, _)| kind == "sessions") => &["archived"],
+            _ if gameplay.is_some_and(|(kind, _)| kind == "sessions") => {
+                &["archived", "collection_id"]
+            }
             _ if gameplay.is_some_and(|(kind, _)| kind == "frames") => &["hand_id", "order"],
             _ => &[],
         };
@@ -340,6 +345,7 @@ impl LabService {
             }
             json!({"items":filtered[offset..end],"total":filtered.len(),"next_cursor":if end<filtered.len(){Some(format!("{revision}:{end}"))}else{None},"meta":{"default_dataset_id":"legacy"}})
         } else if let Some((kind, session)) = gameplay {
+            self.gameplay_ai.sync_effective_hands(self)?;
             let archived = request.query("archived").unwrap_or("0");
             if !["0", "1"].contains(&archived) {
                 return Err(bad("Invalid archived filter"));
@@ -347,7 +353,7 @@ impl LabService {
             if request.query("hand_id").is_some_and(|s| s.len() > 256) {
                 return Err(bad("Invalid hand filter"));
             }
-            self.gameplay.list_page(
+            let mut page = self.gameplay.list_page_collection(
                 kind,
                 session,
                 request.query("hand_id"),
@@ -355,11 +361,30 @@ impl LabService {
                 archived == "1",
                 inner.as_deref(),
                 limit,
-            )?
+                request.query("collection_id"),
+            )?;
+            if kind == "frames" {
+                if let Some(frames) = page.get_mut("items").and_then(Value::as_array_mut) {
+                    self.gameplay_ai
+                        .enrich_summaries(frames, &self.gameplay.evidence_root()?)?;
+                }
+            }
+            if kind == "hands" {
+                if let (Some(session), Some(hands)) =
+                    (session, page.get_mut("items").and_then(Value::as_array_mut))
+                {
+                    self.gameplay_ai.enrich_hands(
+                        hands,
+                        session,
+                        &self.gameplay.evidence_root()?,
+                    )?;
+                }
+            }
+            page
         } else {
-            let ctx = self.registry.resolve(id)?;
+            let ctx = self.registry.resolve_readonly(id)?;
             let _operation = ctx.lock_operation()?;
-            self.registry.resolve(id)?;
+            self.registry.resolve_readonly(id)?;
             let page = match request.path.as_str() {
                 "/api/queue" => queue::page(
                     &ctx,
@@ -494,6 +519,8 @@ impl LabService {
             config_root.clone(),
             environment.clone(),
         )?);
+        let gameplay_ai = Arc::new(gameplay::ai::GameplayAi::open(&root, config_root.clone())?);
+        ai_review.ensure(&gameplay_ai.context)?;
         let training = training::TrainingManager::new(
             root.clone(),
             tools_root,
@@ -511,6 +538,7 @@ impl LabService {
             model,
             ai_review,
             gameplay,
+            gameplay_ai,
             capture,
             training,
             watch: watch::WatchCoordinator::default(),
@@ -551,6 +579,11 @@ impl LabService {
         }
         if let Some(response) = self.training.handle(request) {
             return response;
+        }
+        if request.method != "GET"
+            && (request.path == "/api/datasets" || request.path.starts_with("/api/datasets/"))
+        {
+            return Err(conflict("OCR Benchmark is archived and read-only"));
         }
         if request.path == "/api/uptime" && request.method == "GET" {
             return Ok(LabResponse::ok(json!({"uptime":self.started})));
@@ -606,7 +639,29 @@ impl LabService {
                 }
             })
             .ok_or_else(|| bad("X-Dataset-ID is required"))?;
-        let ctx = self.registry.resolve(id)?;
+        if request.method != "GET" {
+            return Err(conflict(
+                "OCR Benchmark is archived and read-only; use Gameplay AI for verification",
+            ));
+        }
+        let ctx = self.registry.resolve_readonly(id)?;
+        if media {
+            if let Some((directory, filename)) = request
+                .path
+                .strip_prefix("/api/db_image/")
+                .map(|f| ("images", f))
+                .or_else(|| {
+                    request
+                        .path
+                        .strip_prefix("/api/cap_image/")
+                        .map(|f| ("full_captures", f))
+                })
+            {
+                let source = self.registry.readonly_source(id)?;
+                let path = datasets::file(&source.join(directory), filename)?;
+                return Ok(LabResponse::binary(&std::fs::read(path)?, "image/png"));
+            }
+        }
         let _operation = if [
             "/api/model_suggestion",
             "/api/sync_status",
@@ -619,7 +674,7 @@ impl LabService {
             Some(ctx.lock_operation()?)
         };
         if _operation.is_some() {
-            self.registry.resolve(id)?;
+            self.registry.resolve_readonly(id)?;
         }
         if let Some(response) = self.ai_review.handle(self, &ctx, request) {
             return response;

@@ -84,6 +84,70 @@ pub fn atomic_json(path: &Path, value: &Value) -> LabResult<()> {
     Ok(())
 }
 impl DatasetRegistry {
+    pub fn readonly_source(&self, id: &str) -> LabResult<PathBuf> {
+        if !self.read()?.iter().any(|row| row.id == id) {
+            return Err(not_found("Unknown benchmark collection"));
+        }
+        let path = self.root.join(id);
+        plain(&path)?;
+        Ok(path)
+    }
+    pub fn resolve_readonly(&self, id: &str) -> LabResult<Arc<DatasetContext>> {
+        let source = self.readonly_source(id)?;
+        let mut contexts = self
+            .contexts
+            .lock()
+            .map_err(|_| conflict("Dataset context lock poisoned"))?;
+        let cache_key = format!("readonly:{id}");
+        if let Some(ctx) = contexts.get(&cache_key) {
+            return Ok(ctx.clone());
+        }
+        let snapshot = std::env::temp_dir().join(format!("poker-benchmark-{}", uuid()));
+        crate::storage_paths::ensure_directory(&snapshot)?;
+        let mut stable = false;
+        for _ in 0..3 {
+            let mut before = Vec::new();
+            for suffix in ["", "-wal"] {
+                let path = source.join(format!("data.db{suffix}"));
+                match fs::read(&path) {
+                    Ok(bytes) => {
+                        before.push((suffix, super::sha256(&bytes)));
+                        fs::write(snapshot.join(format!("data.db{suffix}")), bytes)?;
+                    }
+                    Err(error)
+                        if suffix == "-wal" && error.kind() == std::io::ErrorKind::NotFound =>
+                    {
+                        let _ = fs::remove_file(snapshot.join("data.db-wal"));
+                    }
+                    Err(error) => return Err(error.into()),
+                }
+            }
+            stable = before.iter().all(|(suffix, hash)| {
+                fs::read(source.join(format!("data.db{suffix}")))
+                    .is_ok_and(|bytes| super::sha256(&bytes) == *hash)
+            });
+            if stable {
+                break;
+            }
+        }
+        if !stable {
+            let _ = fs::remove_dir_all(&snapshot);
+            return Err(conflict(
+                "Benchmark source changed during read-only snapshot",
+            ));
+        }
+        let conn = Connection::open(snapshot.join("data.db"))?;
+        init_database(&conn)?;
+        let ctx = Arc::new(DatasetContext {
+            id: id.into(),
+            directory: snapshot,
+            db: Mutex::new(conn),
+            operation: Mutex::new(()),
+            state: Mutex::new(json!({"_readonly_archive":true})),
+        });
+        contexts.insert(cache_key, ctx.clone());
+        Ok(ctx)
+    }
     pub fn new(root: PathBuf) -> LabResult<Self> {
         if !root.is_absolute()
             || root
@@ -316,7 +380,7 @@ impl DatasetRegistry {
     }
 }
 
-fn init_database(conn: &Connection) -> LabResult<()> {
+pub(super) fn init_database(conn: &Connection) -> LabResult<()> {
     conn.execute_batch("PRAGMA journal_mode=WAL;CREATE TABLE IF NOT EXISTS full_captures(id INTEGER PRIMARY KEY AUTOINCREMENT,filename TEXT UNIQUE,monitor TEXT,timestamp INTEGER,regions_hash TEXT);CREATE TABLE IF NOT EXISTS images(id INTEGER PRIMARY KEY AUTOINCREMENT,filename TEXT UNIQUE,phash TEXT,label TEXT,region_id TEXT,source_id INTEGER,timestamp INTEGER,FOREIGN KEY(source_id) REFERENCES full_captures(id));CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT);CREATE TABLE IF NOT EXISTS session_progress(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT);CREATE TABLE IF NOT EXISTS session_history(id INTEGER PRIMARY KEY AUTOINCREMENT,timestamp INTEGER,data TEXT);CREATE INDEX IF NOT EXISTS idx_images_phash ON images(phash);CREATE INDEX IF NOT EXISTS idx_images_region_id ON images(region_id);")?;
     let columns: Vec<String> = conn
         .prepare("PRAGMA table_info(images)")?

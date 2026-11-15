@@ -149,6 +149,9 @@ impl CaptureService {
                 include_bytes!("../../assets/colors.json").as_slice(),
             ),
         ] {
+            if name == "regions.json" && root.join("gameplay-regions.json").is_file() {
+                continue;
+            }
             let path = root.join(name);
             if !path.exists() {
                 fs::write(&path, contents)?;
@@ -166,7 +169,12 @@ impl CaptureService {
         })
     }
     pub fn config(&self) -> LabResult<CaptureConfig> {
-        let regions = fs::read(self.root.join("regions.json"))?;
+        let current = self.root.join("gameplay-regions.json");
+        let regions = fs::read(if current.is_file() {
+            current
+        } else {
+            self.root.join("regions.json")
+        })?;
         let ordered: Ordered = serde_json::from_slice(&regions)?;
         let regions = ordered.value();
         let colors: Value = serde_json::from_slice(&fs::read(self.root.join("colors.json"))?)?;

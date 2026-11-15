@@ -5,11 +5,14 @@ mod credentials;
 mod grid;
 #[path = "ai_review/protocol.rs"]
 mod protocol;
+#[path = "ai_review/recovery.rs"]
+mod recovery;
 #[path = "ai_review/risk.rs"]
 mod risk;
 use super::datasets::{DatasetContext, DatasetRegistry};
 use super::model::ModelRuntime;
 use super::{bad, conflict, now_ms, uuid, LabRequest, LabResponse, LabResult, LabService};
+use crate::launcher_activity::{ActivityLease, ActivityRole};
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -34,8 +37,16 @@ struct Item {
     prior_event_id: i64,
     #[serde(default)]
     crop: Vec<u8>,
+    #[serde(default)]
+    guide: Value,
 }
 pub fn region_group(region: &str) -> String {
+    if region
+        .strip_prefix("pot.")
+        .is_some_and(|index| index.parse::<usize>().is_ok())
+    {
+        return "pot.visible[*]".into();
+    }
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     RE.get_or_init(|| regex::Regex::new(r"\[\d+\]").unwrap())
         .replace_all(region, "[*]")
@@ -78,6 +89,12 @@ fn item(row: &Row<'_>) -> rusqlite::Result<Item> {
         pixel_sha256: row.get("pixel_sha256")?,
         prior_event_id: row.get("prior_event_id")?,
         crop: row.get("crop")?,
+        guide: row
+            .get::<_, String>("visual_evidence")
+            .ok()
+            .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+            .map(|value| value["guide"].clone())
+            .unwrap_or(Value::Null),
     })
 }
 struct Config {
@@ -93,6 +110,7 @@ struct Inner {
     initialized: Mutex<HashSet<String>>,
     transport: Arc<Transport>,
     background: bool,
+    activity: fn(ActivityRole) -> LabResult<ActivityLease>,
     credentials: Option<credentials::CredentialStore>,
 }
 #[derive(Clone)]
@@ -113,12 +131,16 @@ impl AiReviewManager {
         ))
     }
     #[cfg(test)]
-    fn with_transport(
+    pub(crate) fn with_transport(
         registry: Arc<DatasetRegistry>,
         transport: Arc<Transport>,
         background: bool,
     ) -> Self {
         Self::with_storage(registry, transport, background, None)
+    }
+    #[cfg(test)]
+    pub(crate) fn run_fixture(&self, ctx: &Arc<DatasetContext>, id: &str) {
+        self.run_job(ctx, id);
     }
     fn with_storage(
         registry: Arc<DatasetRegistry>,
@@ -162,6 +184,7 @@ impl AiReviewManager {
                 initialized: Mutex::new(HashSet::new()),
                 transport,
                 background,
+                activity: ActivityLease::acquire,
                 credentials: storage,
             }),
         }
@@ -198,6 +221,76 @@ UPDATE ai_review_jobs SET state='interrupted',error='Collector restarted. Resume
         }
         initialized.insert(ctx.id.clone());
         Ok(())
+    }
+    pub(crate) fn evidence_plan(
+        &self,
+        ctx: &DatasetContext,
+        batch: i64,
+        mixed: bool,
+    ) -> LabResult<Value> {
+        self.ensure(ctx)?;
+        let conn = ctx.connection()?;
+        let mut snapshot=rows(&conn,"SELECT queue_id,sample_key,region_id,label,prediction_id,pixel_sha256,payload,frame_id FROM queue_items WHERE active=1 AND reviewed=1 AND discarded=0 ORDER BY queue_id",[])?;
+        let ceiling = snapshot
+            .iter()
+            .filter_map(|row| row["queue_id"].as_i64())
+            .max()
+            .unwrap_or(0);
+        risk::order(&conn, &mut snapshot, ceiling)?;
+        let batches = grid::plan_batches_mixed(&snapshot, batch, mixed)?;
+        let mut panels = 0usize;
+        for indices in &batches {
+            let mut keys = HashSet::new();
+            for index in indices {
+                let row = &snapshot[*index];
+                let guide = serde_json::from_str::<Value>(row["payload"].as_str().unwrap_or("{}"))
+                    .unwrap_or(Value::Null)["guide"]
+                    .clone();
+                let key = grid::panel_key(&guide, row["pixel_sha256"].as_str().unwrap_or(""))
+                    .unwrap_or_else(|| format!("semantic-{index}"));
+                keys.insert(key);
+            }
+            panels += keys.len();
+        }
+        Ok(
+            json!({"batch_size_semantic_ceiling":batch,"semantic_items":snapshot.len(),"presentation_panels":panels,"first_pass_batches":batches.len(),"two_pass_calls_upper_without_repairs":batches.len()*2,"provider_calls":0}),
+        )
+    }
+    pub(crate) fn preview_grid(
+        &self,
+        ctx: &DatasetContext,
+        keys: &[String],
+        blind: bool,
+    ) -> LabResult<Vec<u8>> {
+        let conn = ctx.connection()?;
+        let mut items = Vec::new();
+        for (ordinal, key) in keys.iter().enumerate() {
+            let (region, label, crop, payload): (String, String, Vec<u8>, String) = conn
+                .query_row(
+                    &format!(
+                        "SELECT region_id,label,{},payload FROM queue_items WHERE sample_key=?",
+                        super::pixel_assets::expression(&conn, "queue_items")?
+                    ),
+                    [key],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                )?;
+            items.push(Item {
+                job_id: "read-only-evidence-preview".into(),
+                ordinal: ordinal as i64,
+                batch_index: 0,
+                queue_id: 0,
+                sample_key: key.clone(),
+                group_name: region_group(&region),
+                region_id: region,
+                prior_label: label,
+                prior_prediction_id: None,
+                pixel_sha256: String::new(),
+                prior_event_id: 0,
+                crop,
+                guide: serde_json::from_str::<Value>(&payload)?["guide"].clone(),
+            });
+        }
+        grid::build(&items, blind)
     }
     pub fn config(&self) -> LabResult<Value> {
         let c = self
@@ -311,7 +404,11 @@ UPDATE ai_review_jobs SET state='interrupted',error='Collector restarted. Resume
         .ok_or_else(|| bad("AI review job does not belong to this dataset"))
     }
     fn active_run(&self, conn: &Connection, ctx: &DatasetContext, run: &str) -> LabResult<Value> {
-        self.inner.registry.resolve(&ctx.id)?;
+        if ctx.id == "gameplay-ai" {
+            ctx.ensure_active()?;
+        } else {
+            self.inner.registry.resolve(&ctx.id)?;
+        }
         if run.is_empty() || run.chars().count() > 64 {
             return Err(bad("Review run identity is required"));
         }
@@ -386,6 +483,7 @@ UPDATE ai_review_jobs SET state='interrupted',error='Collector restarted. Resume
         if config["configured"] != true {
             return Err(bad("Add an OpenAI API key before starting visual review"));
         }
+        let lease = (self.inner.activity)(ActivityRole::Review)?;
         let id = uuid();
         {
             let mut config = self
@@ -416,7 +514,38 @@ UPDATE ai_review_jobs SET state='interrupted',error='Collector restarted. Resume
             let ceiling = snapshot["ceiling"]
                 .as_i64()
                 .ok_or_else(|| bad("Invalid review run ceiling"))?;
-            let mut snapshot=rows(&conn,"SELECT queue_id,sample_key,region_id,label,prediction_id,pixel_sha256 FROM queue_items WHERE active=1 AND reviewed=1 AND discarded=0 AND queue_id<=? ORDER BY queue_id",[ceiling])?;
+            let repair = data
+                .get("repair_sample_keys")
+                .filter(|value| !value.is_null());
+            if repair.is_some() && ctx.id != "gameplay-ai" {
+                return Err(bad("Diagnostic evidence selection is Gameplay-only"));
+            }
+            let mut snapshot=rows(&conn,"SELECT queue_id,sample_key,region_id,label,prediction_id,pixel_sha256,payload,active,reviewed,frame_id FROM queue_items WHERE discarded=0 AND queue_id<=? ORDER BY queue_id",[ceiling])?;
+            if let Some(keys) = repair {
+                let keys = keys
+                    .as_array()
+                    .filter(|keys| !keys.is_empty() && keys.len() <= 2)
+                    .ok_or_else(|| bad("Repair requires1to2existing samples"))?;
+                let keys = keys
+                    .iter()
+                    .map(|key| key.as_str().ok_or_else(|| bad("Invalid repair sample")))
+                    .collect::<LabResult<HashSet<_>>>()?;
+                snapshot.retain(|row| keys.contains(row["sample_key"].as_str().unwrap_or("")));
+                if snapshot.len() != keys.len() {
+                    return Err(bad("Unknown repair sample"));
+                }
+                if batch != 1 || auto {
+                    return Err(bad(
+                        "Repair requires isolated batches and automatic correction disabled",
+                    ));
+                }
+            } else {
+                snapshot.retain(|row| {
+                    row["active"] == 1
+                        && (row["reviewed"] == 1
+                            || (ctx.id == "gameplay-ai" && data["recover_from_job_id"].is_string()))
+                });
+            }
             if snapshot.is_empty() {
                 return Err(bad("This review run has no labeled crops to check"));
             }
@@ -440,41 +569,85 @@ UPDATE ai_review_jobs SET state='interrupted',error='Collector restarted. Resume
             let tx = conn.transaction()?;
             let now = now_ms();
             tx.execute("INSERT INTO ai_review_jobs(id,dataset_id,run_id,state,model,batch_size,auto_correct,created_at,updated_at) VALUES(?,?,?,'queued',?,?,?,?,?)",params![id,ctx.id,run,model,batch,auto,now,now])?;
-            let mut batch_index = -1i64;
-            let mut group = String::new();
-            let mut group_ordinal = 0i64;
-            for (ordinal, row) in snapshot.iter().enumerate() {
-                let name = region_group(row["region_id"].as_str().unwrap());
-                if name != group {
-                    group = name;
-                    group_ordinal = 0;
-                    batch_index += 1;
-                } else if group_ordinal % batch == 0 {
-                    batch_index += 1;
+            if ctx.id == "gameplay-ai" {
+                let budget = data["max_requests"].as_u64().unwrap_or(100);
+                if !(1..=10000).contains(&budget) {
+                    return Err(bad("Request budget must be1to10000"));
                 }
-                let key = row["sample_key"].as_str().unwrap();
-                tx.execute("INSERT INTO ai_review_items(job_id,ordinal,batch_index,queue_id,sample_key,region_id,group_name,prior_label,prior_prediction_id,pixel_sha256,prior_event_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)",params![id,ordinal as i64,batch_index,row["queue_id"].as_i64(),key,row["region_id"].as_str(),group,row["label"].as_str(),row["prediction_id"].as_str(),row["pixel_sha256"].as_str(),latest.get(key).copied().unwrap_or(0)])?;
-                group_ordinal += 1;
+                tx.execute(
+                    "INSERT INTO queue_meta(key,value) VALUES(?,?)",
+                    params![format!("gameplay_request_budget:{id}"), budget.to_string()],
+                )?;
+                // Keep the gameplay link in the same transaction as the job. A crash
+                // after commit must never leave an unlinked, potentially billed job.
+                let has_gameplay_runs: bool = tx.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='gameplay_ai_runs')",
+                    [],
+                    |row| row.get(0),
+                )?;
+                if has_gameplay_runs {
+                    let linked = tx.execute(
+                        "UPDATE gameplay_ai_runs SET job_id=? WHERE run_id=? AND (job_id IS NULL OR ?)",
+                        params![id, run, repair.is_some()],
+                    )?;
+                    if linked != 1 {
+                        return Err(conflict("Prepared Gameplay scope changed"));
+                    }
+                }
+                tx.execute("UPDATE ai_review_jobs SET usage=? WHERE id=?",params![json!({"evidence_policy":if repair.is_some(){"gameplay_isolated_blind_v1"}else{"gameplay_family_blind_v1"},"diagnostic_only":repair.is_some(),"recover_from_job_id":data["recover_from_job_id"],"reading_contract":protocol::READING_CONTRACT,"review_policy":super::gameplay::ai::evidence_cache::REVIEW_POLICY}).to_string(),id])?;
+            }
+            let mut ordinal = 0i64;
+            for (batch_index, indices) in grid::plan_batches_mixed(
+                &snapshot,
+                batch,
+                ctx.id == "gameplay-ai" && data["mixed_regions"] == true,
+            )?
+            .into_iter()
+            .enumerate()
+            {
+                for index in indices {
+                    let row = &snapshot[index];
+                    let group = region_group(row["region_id"].as_str().unwrap());
+                    let key = row["sample_key"].as_str().unwrap();
+                    tx.execute("INSERT INTO ai_review_items(job_id,ordinal,batch_index,queue_id,sample_key,region_id,group_name,prior_label,prior_prediction_id,pixel_sha256,prior_event_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)",params![id,ordinal,batch_index as i64,row["queue_id"].as_i64(),key,row["region_id"].as_str(),group,row["label"].as_str(),row["prediction_id"].as_str(),row["pixel_sha256"].as_str(),latest.get(key).copied().unwrap_or(0)])?;
+                    ordinal += 1;
+                }
+            }
+            if let Some(source) = data["recover_from_job_id"].as_str() {
+                recovery::import(&tx, ctx, source, &id)?;
             }
             tx.commit()?;
             if self.inner.background {
                 config.running.insert((ctx.id.clone(), id.clone()));
             }
         }
-        self.launch(ctx, id.clone());
+        self.launch(ctx, id.clone(), lease);
         self.status(ctx, Some(&id), None)
     }
-    fn launch(&self, ctx: &Arc<DatasetContext>, id: String) {
+    fn launch(&self, ctx: &Arc<DatasetContext>, id: String, lease: ActivityLease) {
         if self.inner.background {
             let manager = self.clone();
             let ctx = ctx.clone();
             std::thread::spawn(move || {
+                let _lease = lease;
                 manager.run_job(&ctx, &id);
             });
         }
     }
     pub fn resume(&self, ctx: &Arc<DatasetContext>, id: &str) -> LabResult<Value> {
+        self.resume_with_limit(ctx, id, None)
+    }
+    pub fn resume_with_limit(
+        &self,
+        ctx: &Arc<DatasetContext>,
+        id: &str,
+        max_requests: Option<u64>,
+    ) -> LabResult<Value> {
+        if max_requests.is_some_and(|limit| !(1..=10000).contains(&limit)) {
+            return Err(bad("Request limit must be an integer from 1 to 10000"));
+        }
         self.ensure(ctx)?;
+        let lease = (self.inner.activity)(ActivityRole::Review)?;
         if self.config()?["configured"] != true {
             return Err(bad("Add an OpenAI API key before resuming"));
         }
@@ -513,6 +686,27 @@ UPDATE ai_review_jobs SET state='interrupted',error='Collector restarted. Resume
                     "Another review is already running for this dataset",
                 ));
             }
+            if ctx.id == "gameplay-ai" {
+                super::gameplay::ai::quarantine::guard(&conn, id)?;
+                let limit = match max_requests {
+                    Some(limit) => limit,
+                    None => conn.query_row(
+                        "SELECT CAST(value AS INTEGER) FROM queue_meta WHERE key=?",
+                        [format!("gameplay_request_budget:{id}")],
+                        |r| r.get::<_, i64>(0),
+                    )? as u64,
+                };
+                let usage: Value = serde_json::from_str(job["usage"].as_str().unwrap_or("{}"))?;
+                if usage["requests"].as_u64().unwrap_or(0) >= limit {
+                    return Err(bad("Request limit is already exhausted; set a limit above requests already used"));
+                }
+                if max_requests.is_some() {
+                    conn.execute(
+                        "INSERT INTO queue_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                        params![format!("gameplay_request_budget:{id}"), limit.to_string()],
+                    )?;
+                }
+            }
             conn.execute(
                 "UPDATE ai_review_jobs SET state='queued',error='',updated_at=? WHERE id=?",
                 params![now_ms(), id],
@@ -521,7 +715,7 @@ UPDATE ai_review_jobs SET state='interrupted',error='Collector restarted. Resume
                 config.running.insert((ctx.id.clone(), id.into()));
             }
         }
-        self.launch(ctx, id.into());
+        self.launch(ctx, id.into(), lease);
         self.status(ctx, Some(id), None)
     }
     pub fn cancel(&self, ctx: &DatasetContext, id: &str) -> LabResult<Value> {
@@ -731,13 +925,99 @@ UPDATE ai_review_jobs SET state='interrupted',error='Collector restarted. Resume
                 }
                 self.active_run(&conn, ctx, job["run_id"].as_str().unwrap())?;
             }
-            let mut payload = protocol::payload(model, png, items, blind);
+            let mut payload =
+                protocol::payload(model, png, items, blind || ctx.id == "gameplay-ai");
+            if ctx.id == "gameplay-ai" {
+                let job = Self::job(&*ctx.connection()?, ctx, id)?;
+                let metadata = serde_json::from_str::<Value>(job["usage"].as_str().unwrap_or("{}"))
+                    .unwrap_or(Value::Null);
+                let policy = metadata["evidence_policy"]
+                    .as_str()
+                    .unwrap_or("gameplay_family_blind_v1");
+                let prompt = payload["input"][0]["content"][0]["text"]
+                    .as_str()
+                    .unwrap_or("");
+                payload["input"][0]["content"][0]["text"] =
+                    json!(format!("Evidence presentation policy: {policy}. {prompt}"));
+            }
+            if ctx.id == "gameplay-ai" && !blind {
+                let prompt = payload["input"][0]["content"][0]["text"]
+                    .as_str()
+                    .unwrap_or("");
+                payload["input"][0]["content"][0]["text"] =
+                    json!(format!("First unverified pixel-only reading. {prompt}"));
+            }
             if let Some(error) = &feedback {
                 if let Some(prompt) = payload["input"][0]["content"][0]["text"].as_str() {
                     payload["input"][0]["content"][0]["text"]=json!(format!("{prompt}\nYour previous response failed validation: {error} Return the complete corrected JSON with exactly the requested IDs. Preserve the image transcription; do not invent missing text. Text must be at most 200 characters, reason at most 1000; clear requires nonempty text and blank requires empty text."));
                 }
             }
-            let response = match (self.inner.transport)(payload, &key) {
+            let transport_result = if ctx.id == "gameplay-ai" {
+                let request_key =
+                    super::sha256(format!("{id}:{}", serde_json::to_string(&payload)?).as_bytes());
+                let conn = ctx.connection()?;
+                conn.execute_batch("CREATE TABLE IF NOT EXISTS gameplay_ai_request_intents(request_key TEXT PRIMARY KEY,job_id TEXT NOT NULL,state TEXT NOT NULL,response TEXT,created_at INTEGER NOT NULL);CREATE TABLE IF NOT EXISTS gameplay_ai_asset_requests(claim_key TEXT PRIMARY KEY,request_key TEXT NOT NULL,state TEXT NOT NULL)")?;
+                let saved:Option<(String,Option<String>)>=conn.query_row("SELECT state,response FROM gameplay_ai_request_intents WHERE request_key=? AND job_id=?",params![request_key,id],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
+                if let Some((state, response)) = saved {
+                    if state != "received" {
+                        return Err(bad("A previous provider request has an unknown outcome; automatic retry is blocked"));
+                    }
+                    let mut response: Value = serde_json::from_str(
+                        response
+                            .as_deref()
+                            .ok_or_else(|| bad("Saved provider response missing"))?,
+                    )?;
+                    response["_reused_response"] = json!(true);
+                    Ok(response)
+                } else {
+                    let phase = if blind { "verification" } else { "review" };
+                    for item in items {
+                        let claim =
+                            super::sha256(format!("{}:{phase}", item.sample_key).as_bytes());
+                        let pending:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM gameplay_ai_asset_requests WHERE claim_key=? AND state='pending')",[&claim],|r|r.get(0))?;
+                        if pending {
+                            return Err(bad("A previous provider request for this crop has an unknown outcome; automatic retry is blocked"));
+                        }
+                    }
+                    let limit: Option<String> = conn
+                        .query_row(
+                            "SELECT value FROM queue_meta WHERE key=?",
+                            [format!("gameplay_request_budget:{id}")],
+                            |r| r.get(0),
+                        )
+                        .optional()?;
+                    let limit = limit
+                        .and_then(|v| v.parse::<i64>().ok())
+                        .filter(|v| (1..=10000).contains(v))
+                        .ok_or_else(|| bad("Set an explicit request limit before resuming this older Gameplay review"))?;
+                    let used: i64 = conn.query_row(
+                        "SELECT COUNT(*) FROM gameplay_ai_request_intents WHERE job_id=?",
+                        [id],
+                        |r| r.get(0),
+                    )?;
+                    if used >= limit {
+                        return Err(bad(
+                            "Gameplay request budget reached; no further API request was sent",
+                        ));
+                    }
+                    conn.execute("INSERT INTO gameplay_ai_request_intents(request_key,job_id,state,created_at) VALUES(?,?,'pending',?)",params![request_key,id,now_ms()])?;
+                    for item in items {
+                        let claim =
+                            super::sha256(format!("{}:{phase}", item.sample_key).as_bytes());
+                        conn.execute("INSERT INTO gameplay_ai_asset_requests(claim_key,request_key,state) VALUES(?,?,'pending') ON CONFLICT(claim_key) DO UPDATE SET request_key=excluded.request_key,state='pending'",params![claim,request_key])?;
+                    }
+                    drop(conn);
+                    let response = (self.inner.transport)(payload, &key);
+                    if let Ok(value) = &response {
+                        ctx.connection()?.execute("UPDATE gameplay_ai_request_intents SET state='received',response=? WHERE request_key=?",params![value.to_string(),request_key])?;
+                        ctx.connection()?.execute("UPDATE gameplay_ai_asset_requests SET state='received' WHERE request_key=?",[&request_key])?;
+                    }
+                    response
+                }
+            } else {
+                (self.inner.transport)(payload, &key)
+            };
+            let response = match transport_result {
                 Ok(response) => response,
                 Err(error) => {
                     self.record_attempt(
@@ -750,6 +1030,9 @@ UPDATE ai_review_jobs SET state='interrupted',error='Collector restarted. Resume
                         Some(&error.message),
                         &[],
                     )?;
+                    if ctx.id == "gameplay-ai" {
+                        return Err(error);
+                    }
                     if !protocol::retryable_transport(&error.message) || attempt == 2 {
                         return Err(error);
                     }
@@ -785,6 +1068,16 @@ UPDATE ai_review_jobs SET state='interrupted',error='Collector restarted. Resume
                                 json!(value.chars().take(200).collect::<String>()),
                             );
                         }
+                    }
+                    for item in items {
+                        let reading = &mut parsed[&item.ordinal.to_string()];
+                        reading["_response"] = Value::Object(identity.clone());
+                        reading["request_evidence"] = recovery::request_evidence(
+                            &item.guide,
+                            &item.pixel_sha256,
+                            &item.sample_key,
+                            &item.group_name,
+                        );
                     }
                     parsed
                         .as_object_mut()
@@ -835,11 +1128,16 @@ UPDATE ai_review_jobs SET state='interrupted',error='Collector restarted. Resume
         let job = Self::job(&tx, ctx, id)?;
         let mut usage: Value = serde_json::from_str(job["usage"].as_str().unwrap())?;
         for field in ["input_tokens", "output_tokens", "total_tokens"] {
+            if response["_reused_response"] == true {
+                continue;
+            }
             if let Some(value) = response["usage"][field].as_u64() {
                 usage[field] = json!(usage[field].as_u64().unwrap_or(0).saturating_add(value));
             }
         }
-        usage["requests"] = json!(usage["requests"].as_u64().unwrap_or(0).saturating_add(1));
+        if response["_reused_response"] != true {
+            usage["requests"] = json!(usage["requests"].as_u64().unwrap_or(0).saturating_add(1));
+        }
         tx.execute("INSERT INTO ai_review_attempts(job_id,batch_index,phase,attempt,created_at,response_id,model,usage,error,repairs,diagnostics) VALUES(?,?,?,?,?,?,?,?,?,?,?)",params![id,items.first().map(|item|item.batch_index).unwrap_or(0),if blind {"verification"}else{"review"},(attempt+1) as i64,now_ms(),response["id"].as_str().map(|v|v.chars().take(200).collect::<String>()),response["model"].as_str().map(|v|v.chars().take(200).collect::<String>()),response["usage"].to_string(),error.unwrap_or("").chars().take(400).collect::<String>(),serde_json::to_string(repairs)?,protocol::diagnostics(&response).to_string()])?;
         tx.execute(
             "UPDATE ai_review_jobs SET usage=?,updated_at=? WHERE id=?",
@@ -849,7 +1147,15 @@ UPDATE ai_review_jobs SET state='interrupted',error='Collector restarted. Resume
         Ok(())
     }
     fn run_job(&self, ctx: &Arc<DatasetContext>, id: &str) {
-        if let Err(error) = self.run_inner(ctx, id) {
+        let (lease, outcome) = match (self.inner.activity)(ActivityRole::Review) {
+            Ok(lease) => {
+                let outcome = self.run_inner(ctx, id);
+                (Some(lease), outcome)
+            }
+            Err(error) => (None, Err(error)),
+        };
+        let _lease = lease;
+        if let Err(error) = outcome {
             let message = if error.status == 409 {
                 "Review stopped because its dataset, run, or source changed. Resume after checking the session.".into()
             } else if error.status >= 500 {
@@ -889,7 +1195,7 @@ UPDATE ai_review_jobs SET state='interrupted',error='Collector restarted. Resume
                     conn.execute("UPDATE ai_review_jobs SET state='completed',updated_at=? WHERE id=? AND state='running'",params![now_ms(),id])?;
                     break;
                 };
-                let mut query=conn.prepare("SELECT i.*,q.crop FROM ai_review_items i JOIN queue_items q ON q.queue_id=i.queue_id WHERE i.job_id=? AND i.batch_index=? ORDER BY i.ordinal")?;
+                let mut query=conn.prepare(&format!("SELECT i.*,{} AS crop,q.payload AS visual_evidence FROM ai_review_items i JOIN queue_items q ON q.queue_id=i.queue_id WHERE i.job_id=? AND i.batch_index=? ORDER BY i.ordinal",super::pixel_assets::expression(&conn,"q")?))?;
                 let items = query
                     .query_map(params![id, index], item)?
                     .collect::<Result<Vec<_>, _>>()?;
@@ -898,61 +1204,93 @@ UPDATE ai_review_jobs SET state='interrupted',error='Collector restarted. Resume
             };
             let grid = match saved.as_ref().and_then(|s| s.0.clone()) {
                 Some(grid) => grid,
-                None => grid::build(&items, false)?,
+                None => grid::build(&items, ctx.id == "gameplay-ai")?,
             };
             ctx.connection()?.execute(
-                "INSERT OR IGNORE INTO ai_review_batches(job_id,batch_index,grid) VALUES(?,?,?)",
+                "INSERT INTO ai_review_batches(job_id,batch_index,grid) VALUES(?,?,?) ON CONFLICT(job_id,batch_index) DO UPDATE SET grid=COALESCE(ai_review_batches.grid,excluded.grid)",
                 params![id, index, grid],
             )?;
-            let reviewed = if let Some(response) = saved.as_ref().and_then(|s| s.1.as_ref()) {
-                serde_json::from_str(response)?
-            } else {
+            let mut reviewed: Value = saved
+                .as_ref()
+                .and_then(|s| s.1.as_ref())
+                .map(|v| serde_json::from_str(v))
+                .transpose()?
+                .unwrap_or_else(|| json!({}));
+            let missing_first: Vec<Item> = items
+                .iter()
+                .filter(|i| reviewed.get(i.ordinal.to_string()).is_none())
+                .cloned()
+                .collect();
+            if !missing_first.is_empty() {
+                let first_grid = grid::build(&missing_first, ctx.id == "gameplay-ai")?;
                 let Some(readings) = self.call(
                     ctx,
                     id,
                     job["model"].as_str().unwrap(),
-                    &grid,
-                    &items,
+                    &first_grid,
+                    &missing_first,
                     false,
                 )?
                 else {
                     break;
                 };
+                for (key, value) in readings
+                    .as_object()
+                    .ok_or_else(|| bad("Invalid saved readings"))?
+                {
+                    reviewed[key] = value.clone();
+                }
                 ctx.connection()?.execute(
                     "UPDATE ai_review_batches SET response=? WHERE job_id=? AND batch_index=?",
-                    params![readings.to_string(), id, index],
+                    params![reviewed.to_string(), id, index],
                 )?;
-                readings
-            };
-            let mismatches: Vec<Item> = items
+            }
+            let mut verified: Value = saved
+                .as_ref()
+                .and_then(|s| s.2.as_ref())
+                .map(|value| serde_json::from_str(value))
+                .transpose()?
+                .unwrap_or_else(|| json!({}));
+            // Gameplay needs an independent reading even when the first pass matches
+            // the captured label. Reuse any saved verification before requesting more.
+            let missing: Vec<Item> = items
                 .iter()
                 .filter(|i| {
                     reviewed[i.ordinal.to_string()]["clarity"] != "uncertain"
-                        && reviewed[i.ordinal.to_string()]["text"] != i.prior_label
+                        && (ctx.id == "gameplay-ai"
+                            || reviewed[i.ordinal.to_string()]["text"] != i.prior_label)
+                        && verified.get(i.ordinal.to_string()).is_none()
                 })
                 .cloned()
                 .collect();
-            let mut verified = json!({});
-            if !mismatches.is_empty() {
-                verified = if let Some(verification) = saved.as_ref().and_then(|s| s.2.as_ref()) {
-                    serde_json::from_str(verification)?
-                } else {
-                    let blind = grid::build(&mismatches, true)?;
-                    ctx.connection()?.execute("UPDATE ai_review_batches SET blind_grid=? WHERE job_id=? AND batch_index=?",params![blind,id,index])?;
-                    let Some(readings) = self.call(
-                        ctx,
-                        id,
-                        job["model"].as_str().unwrap(),
-                        &blind,
-                        &mismatches,
-                        true,
-                    )?
-                    else {
-                        break;
-                    };
-                    ctx.connection()?.execute("UPDATE ai_review_batches SET verification=? WHERE job_id=? AND batch_index=?",params![readings.to_string(),id,index])?;
-                    readings
+            if !missing.is_empty() {
+                let blind = grid::build(&missing, true)?;
+                ctx.connection()?.execute(
+                    "UPDATE ai_review_batches SET blind_grid=? WHERE job_id=? AND batch_index=?",
+                    params![blind, id, index],
+                )?;
+                let Some(readings) = self.call(
+                    ctx,
+                    id,
+                    job["model"].as_str().unwrap(),
+                    &blind,
+                    &missing,
+                    true,
+                )?
+                else {
+                    break;
                 };
+                if let (Some(target), Some(source)) =
+                    (verified.as_object_mut(), readings.as_object())
+                {
+                    for (key, value) in source {
+                        target.insert(key.clone(), value.clone());
+                    }
+                }
+                ctx.connection()?.execute(
+                    "UPDATE ai_review_batches SET verification=? WHERE job_id=? AND batch_index=?",
+                    params![verified.to_string(), id, index],
+                )?;
             }
             self.apply_batch(ctx, &job, &items, &reviewed, &verified)?;
         }
@@ -986,6 +1324,10 @@ UPDATE ai_review_jobs SET state='interrupted',error='Collector restarted. Resume
             let key = item.ordinal.to_string();
             let reading = &reviewed[&key];
             let verification = verified.get(&key);
+            let first_response = reading.get("_response").unwrap_or(&reviewed["_response"]);
+            let second_response = verification
+                .and_then(|v| v.get("_response"))
+                .unwrap_or(&verified["_response"]);
             let current = tx
                 .query_row(
                     "SELECT * FROM queue_items WHERE queue_id=?",
@@ -995,7 +1337,10 @@ UPDATE ai_review_jobs SET state='interrupted',error='Collector restarted. Resume
                 .optional()?;
             let crop: Option<Vec<u8>> = tx
                 .query_row(
-                    "SELECT crop FROM queue_items WHERE queue_id=?",
+                    &format!(
+                        "SELECT {} FROM queue_items WHERE queue_id=?",
+                        super::pixel_assets::expression(&tx, "queue_items")?
+                    ),
                     [item.queue_id],
                     |r| r.get(0),
                 )
@@ -1005,10 +1350,20 @@ UPDATE ai_review_jobs SET state='interrupted',error='Collector restarted. Resume
                 [&item.sample_key],
                 |r| r.get(0),
             )?;
+            let diagnostic_only =
+                serde_json::from_str::<Value>(job["usage"].as_str().unwrap_or("{}"))
+                    .unwrap_or(Value::Null)["diagnostic_only"]
+                    == true;
             let mut conflict = current.as_ref().is_none_or(|c| {
-                c["active"] != 1
+                (!diagnostic_only
+                    && (c["active"] != 1
+                        || (c["reviewed"] != 1
+                            && serde_json::from_str::<Value>(
+                                job["usage"].as_str().unwrap_or("{}"),
+                            )
+                            .unwrap_or(Value::Null)["recover_from_job_id"]
+                                .is_null())))
                     || c["discarded"] != 0
-                    || c["reviewed"] != 1
                     || c["sample_key"] != item.sample_key
                     || c["region_id"] != item.region_id
                     || c["pixel_sha256"] != item.pixel_sha256
@@ -1030,8 +1385,54 @@ UPDATE ai_review_jobs SET state='interrupted',error='Collector restarted. Resume
             if conflict {
                 state = "conflict";
                 reason = "Source was edited, removed, or replaced after this review began.".into();
+            } else if ctx.id == "gameplay-ai"
+                && !super::gameplay::ai::evidence_cache::automatic_support(
+                    &item.region_id,
+                    &current
+                        .as_ref()
+                        .and_then(|c| c["payload"].as_str())
+                        .and_then(|s| serde_json::from_str::<Value>(s).ok())
+                        .unwrap_or(Value::Null),
+                )
+            {
+                state = "flagged";
+                reason = "Card target support requires manual review".into();
+            } else if ctx.id == "gameplay-ai"
+                && super::gameplay::ai::evidence_cache::blank_contradicts_foreground(
+                    &item.region_id,
+                    &current
+                        .as_ref()
+                        .and_then(|c| c["payload"].as_str())
+                        .and_then(|s| serde_json::from_str::<Value>(s).ok())
+                        .unwrap_or(Value::Null),
+                    text,
+                )
+            {
+                state = "flagged";
+                reason =
+                    "Blank reading contradicts supported card foreground; human review required"
+                        .into();
+            } else if diagnostic_only {
+                state = "flagged";
+                reason =
+                    "Diagnostic evidence only; an operator must inspect and release this reading."
+                        .into();
+            } else if !crate::labels::category_for_region(&item.region_id).is_some_and(|category| {
+                crate::labels::validate_text(category, text, reading["clarity"] == "blank")
+            }) {
+                state = "flagged";
+                reason = "Reading is outside the current validation contract.".into();
             } else if reading["clarity"] == "uncertain" {
                 state = "flagged";
+            } else if ctx.id == "gameplay-ai"
+                && !verification.is_some_and(|v| {
+                    v["clarity"] != "uncertain"
+                        && v["text"] == text
+                        && v["clarity"] == reading["clarity"]
+                })
+            {
+                state = "flagged";
+                reason = "Independent reading disagreed or was uncertain.".into();
             } else if text != item.prior_label {
                 let agreed = verification.is_some_and(|v| {
                     v["clarity"] != "uncertain"
@@ -1063,7 +1464,7 @@ UPDATE ai_review_jobs SET state='interrupted',error='Collector restarted. Resume
                         "UPDATE review_samples SET label=? WHERE sample_key=?",
                         params![item.prior_label, item.sample_key],
                     )?;
-                    let payload = json!({"text":text,"raw_text":text,"schema_valid":true,"category":crate::labels::category_for_region(&item.region_id),"review_provider":"openai","model_version":verified["_response"]["model"].as_str().unwrap_or(job["model"].as_str().unwrap()),"model":job["model"],"first_response":reviewed["_response"],"verification_response":verified["_response"],"ai_review_job_id":id,"independent_visual_agreement":true,"visually_verified":false,"validation_contract":{"version":crate::labels::contract_version(),"sha256":super::sha256(crate::labels::CONTRACT_BYTES)},"pixel_sha256":pixel_hash,"image_sha256":image_hash});
+                    let payload = json!({"text":text,"raw_text":reading["raw_text"].as_str().unwrap_or(text),"schema_valid":true,"category":crate::labels::category_for_region(&item.region_id),"review_provider":"openai","model_version":verified["_response"]["model"].as_str().unwrap_or(job["model"].as_str().unwrap()),"model":job["model"],"first_response":first_response,"verification_response":second_response,"ai_review_job_id":id,"independent_visual_agreement":true,"visually_verified":false,"validation_contract":{"version":crate::labels::contract_version(),"sha256":super::sha256(crate::labels::CONTRACT_BYTES)},"pixel_sha256":pixel_hash,"image_sha256":image_hash});
                     let prediction = super::review::prediction_conn(&tx, ctx, &input, payload)?;
                     let prediction_key = prediction["id"]
                         .as_str()
@@ -1093,7 +1494,7 @@ UPDATE ai_review_jobs SET state='interrupted',error='Collector restarted. Resume
                     .and_then(|c| c["label"].as_str())
                     .unwrap_or(&item.prior_label)
             };
-            let result = json!({"sample_key":item.sample_key,"queue_id":item.queue_id,"region_id":item.region_id,"prior_label":item.prior_label,"label":label,"proposed_label":text,"state":state,"outcome":state,"reason":reason.chars().take(1000).collect::<String>(),"prediction_id":prediction_id,"event_id":new_event,"original_prediction_id":item.prior_prediction_id,"pixel_sha256":item.pixel_sha256,"ordinal":item.ordinal,"batch_index":item.batch_index,"visually_verified":false,"first_reading":reading,"verification":verification,"first_response":reviewed.get("_response").cloned().unwrap_or_else(||json!({})),"verification_response":verified.get("_response").cloned().unwrap_or_else(||json!({}))});
+            let result = json!({"sample_key":item.sample_key,"queue_id":item.queue_id,"region_id":item.region_id,"prior_label":item.prior_label,"label":label,"proposed_label":text,"state":state,"outcome":state,"reason":reason.chars().take(1000).collect::<String>(),"prediction_id":prediction_id,"event_id":new_event,"original_prediction_id":item.prior_prediction_id,"pixel_sha256":item.pixel_sha256,"ordinal":item.ordinal,"batch_index":item.batch_index,"visually_verified":false,"first_reading":reading,"verification":verification,"first_response":first_response,"verification_response":second_response});
             tx.execute("UPDATE ai_review_items SET state=?,result=? WHERE job_id=? AND ordinal=? AND state='pending'",params![state,result.to_string(),id,item.ordinal])?;
         }
         tx.execute(
@@ -1104,6 +1505,7 @@ UPDATE ai_review_jobs SET state='interrupted',error='Collector restarted. Resume
         Ok(())
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1145,7 +1547,7 @@ mod tests {
                 calls,
             }
         }
-        fn seed(&self, prior: &str) -> String {
+        fn queue(&self, prior: &str) {
             let mut png = Cursor::new(Vec::new());
             DynamicImage::new_rgb8(30, 10)
                 .write_to(&mut png, ImageFormat::Png)
@@ -1169,12 +1571,112 @@ mod tests {
             )
             .unwrap();
             drop(conn);
+        }
+        fn seed(&self, prior: &str) -> String {
+            self.queue(prior);
             let job = self
                 .manager
                 .start(&self.ctx, &json!({"run_id":"run"}))
                 .unwrap();
             job["id"].as_str().unwrap().into()
         }
+    }
+    #[test]
+    fn failed_activity_protection_starts_no_job_and_spends_no_request() {
+        let mut f = Fixture::new("ace", "clear");
+        f.queue("ace");
+        Arc::get_mut(&mut f.manager.inner).unwrap().activity =
+            |_| Err(bad("Fixture launcher rejected activity"));
+        assert!(f.manager.start(&f.ctx, &json!({"run_id":"run"})).is_err());
+        assert_eq!(
+            f.ctx
+                .connection()
+                .unwrap()
+                .query_row("SELECT COUNT(*) FROM ai_review_jobs", [], |r| r
+                    .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+        assert_eq!(f.calls.load(Ordering::SeqCst), 0);
+    }
+    #[test]
+    fn worker_activity_failure_records_terminal_error_without_calling_provider() {
+        let mut f = Fixture::new("ace", "clear");
+        let id = f.seed("ace");
+        Arc::get_mut(&mut f.manager.inner).unwrap().activity =
+            |_| Err(bad("Fixture activity timed out"));
+        f.manager.run_job(&f.ctx, &id);
+        assert_eq!(
+            f.manager.status(&f.ctx, Some(&id), None).unwrap()["state"],
+            "failed"
+        );
+        assert_eq!(f.calls.load(Ordering::SeqCst), 0);
+    }
+    #[test]
+    fn source_guided_ellipsis_preserves_display_string_without_inferring_hidden_identity() {
+        for name in ["maxhamme...", "codywilson…"] {
+            assert!(crate::labels::validate_text("name", name, false));
+            let f = Fixture::new(name, "clear");
+            let canonical = crate::labels::normalize_text("name", name);
+            let id = f.seed(&canonical);
+            f.ctx
+                .connection()
+                .unwrap()
+                .execute(
+                    "UPDATE queue_items SET payload=?",
+                    [json!({"guide":{"family":"name"}}).to_string()],
+                )
+                .unwrap();
+            f.manager.run_job(&f.ctx, &id);
+            let state: String = f
+                .ctx
+                .connection()
+                .unwrap()
+                .query_row(
+                    "SELECT state FROM ai_review_items WHERE job_id=?",
+                    [&id],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(state, "unchanged");
+            let result: String = f
+                .ctx
+                .connection()
+                .unwrap()
+                .query_row(
+                    "SELECT result FROM ai_review_items WHERE job_id=?",
+                    [&id],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            let result: Value = serde_json::from_str(&result).unwrap();
+            assert_eq!(result["first_reading"]["text"], canonical);
+            assert_eq!(result["first_reading"]["clarity"], "clear");
+            assert_eq!(result["label"], canonical);
+            assert_eq!(f.calls.load(Ordering::SeqCst), 1);
+        }
+        let f = Fixture::new("Alice.Smith", "clear");
+        let id = f.seed("Alice.Smith");
+        f.ctx
+            .connection()
+            .unwrap()
+            .execute(
+                "UPDATE queue_items SET payload=?",
+                [json!({"guide":{"family":"name"}}).to_string()],
+            )
+            .unwrap();
+        f.manager.run_job(&f.ctx, &id);
+        let state: String = f
+            .ctx
+            .connection()
+            .unwrap()
+            .query_row(
+                "SELECT state FROM ai_review_items WHERE job_id=?",
+                [id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(state, "unchanged");
     }
     #[test]
     fn old_attempt_audit_table_migrates_before_resume_and_preserves_history() {
@@ -1477,11 +1979,17 @@ mod tests {
             pixel_sha256: "hash".into(),
             prior_event_id: 0,
             crop: vec![],
+            guide: Value::Null,
         };
         let response = |items: Value| json!({"output_text":json!({"items":items}).to_string()});
         assert!(protocol::parse(&response(json!([])), std::slice::from_ref(&item)).is_err());
         assert!(protocol::parse(
             &response(json!([{"id":"7","text":"","clarity":"clear","reason":""}])),
+            std::slice::from_ref(&item)
+        )
+        .is_err());
+        assert!(protocol::parse(
+            &response(json!([{"id":"7","text":" ","clarity":"clear","reason":""}])),
             std::slice::from_ref(&item)
         )
         .is_err());
@@ -1505,10 +2013,9 @@ mod tests {
             json!({"items":[{"id":"7","text":" Away ","clarity":"clear","reason":"Pixels"}]});
         let (repaired, _) =
             protocol::repair_format(&json!({"output_text":format!("```json\n{exact}\n```")}));
-        assert_eq!(
-            protocol::parse(&repaired, &[item]).unwrap()["7"]["text"],
-            " Away "
-        );
+        let normalized = protocol::parse(&repaired, &[item]).unwrap();
+        assert_eq!(normalized["7"]["text"], "Away");
+        assert_eq!(normalized["7"]["raw_text"], " Away ");
     }
     #[test]
     fn key_is_not_exposed_in_responses_or_job_records_and_invalid_configuration_fails() {
@@ -1939,5 +2446,155 @@ mod tests {
         assert_eq!(job["conflicts"], 1);
         assert_eq!(job["corrected"], 0);
         assert_eq!(job["recent"][0]["label"], "Edited");
+    }
+    #[test]
+    #[ignore = "requires private confirmed failure pixels and raw paid observations"]
+    fn offline_visible_diamond_raw_pair_recovery_flags_without_provider() {
+        use super::super::gameplay::ai::{evidence_cache as cache, quarantine};
+        let path = std::path::PathBuf::from(
+            std::env::var_os("POKER_BLANK_FAILURE").expect("set POKER_BLANK_FAILURE"),
+        );
+        let failure: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let crop = std::fs::read(path.parent().unwrap().join("failure-crop.png")).unwrap();
+        assert_eq!(
+            super::super::review::image_identity(&crop).unwrap().1,
+            failure["pixel_sha256"]
+        );
+        let rgb = image::load_from_memory(&crop).unwrap().to_rgb8();
+        let guide = &failure["payload"]["guide"];
+        assert_eq!(guide["crop_width"], rgb.width());
+        assert_eq!(guide["crop_height"], rgb.height());
+        let ax = guide["anchor"]["x"].as_f64().unwrap();
+        let ay = guide["anchor"]["y"].as_f64().unwrap();
+        assert!((ax - f64::from(rgb.width()) / 2.).abs() < 1e-6);
+        assert!((ay - f64::from(rgb.height()) / 2.).abs() < 1e-6);
+        assert_eq!(
+            rgb.get_pixel(ax.floor() as u32, ay.floor() as u32).0,
+            [255, 255, 255]
+        );
+        let mut f = Fixture::new("", "blank");
+        let database: String = f
+            .ctx
+            .connection()
+            .unwrap()
+            .query_row(
+                "SELECT file FROM pragma_database_list WHERE name='main'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        f.ctx = Arc::new(DatasetContext {
+            id: "gameplay-ai".into(),
+            directory: f.ctx.directory.clone(),
+            db: Mutex::new(Connection::open(database).unwrap()),
+            operation: Mutex::new(()),
+            state: Mutex::new(json!({})),
+        });
+        f.queue("");
+        {
+            let conn = f.ctx.connection().unwrap();
+            conn.execute("UPDATE queue_meta SET value=json_set(value,'$.dataset_id','gameplay-ai') WHERE key='stream:run'",[]).unwrap();
+            conn.execute(
+                "UPDATE queue_items SET sample_key=?,region_id=?,pixel_sha256=?,crop=?,payload=?",
+                params![
+                    failure["sample_key"].as_str(),
+                    failure["region_id"].as_str(),
+                    failure["pixel_sha256"].as_str(),
+                    crop,
+                    failure["payload"].to_string()
+                ],
+            )
+            .unwrap();
+        }
+        let target = f
+            .manager
+            .start(&f.ctx, &json!({"run_id":"run","max_requests":1}))
+            .unwrap();
+        let id = target["id"].as_str().unwrap();
+        let source = failure["job_id"].as_str().unwrap();
+        {
+            let conn = f.ctx.connection().unwrap();
+            conn.execute_batch("CREATE TABLE gameplay_ai_runs(run_id TEXT,job_id TEXT,profile_id TEXT,session_id TEXT,scope TEXT); CREATE TABLE gameplay_ai_job_quarantines(job_id TEXT PRIMARY KEY);
+CREATE TABLE gameplay_ai_decisions(id INTEGER,occurrence_id TEXT,sample_key TEXT,label TEXT,state TEXT);
+CREATE TABLE gameplay_ai_manual(sample_key TEXT,label TEXT,state TEXT);
+CREATE TABLE gameplay_ai_cache_aliases(sample_key TEXT PRIMARY KEY,family TEXT,pixel_sha256 TEXT,cache_key TEXT);").unwrap();
+            let scope = json!({"validation_sha256":super::super::sha256(crate::labels::CONTRACT_BYTES),"review_policy":cache::REVIEW_POLICY});
+            conn.execute(
+                "INSERT INTO gameplay_ai_runs VALUES('run',?,'same-profile','same-session',?)",
+                params![id, scope.to_string()],
+            )
+            .unwrap();
+            let mut old_scope = scope.clone();
+            old_scope["review_policy"] = json!("card_support_seat_occupancy_raw_recovery_v2");
+            conn.execute("INSERT INTO gameplay_ai_runs VALUES('source-run',?,'same-profile','same-session',?)",params![source,old_scope.to_string()]).unwrap();
+            conn.execute("INSERT INTO ai_review_jobs(id,dataset_id,run_id,state,model,batch_size,auto_correct,created_at,updated_at,usage) SELECT ?1,dataset_id,'source-run','cancelled',model,batch_size,auto_correct,created_at,updated_at,usage FROM ai_review_jobs WHERE id=?2",params![source,id]).unwrap();
+            conn.execute("INSERT INTO ai_review_items SELECT ?1,31,19,queue_id,sample_key,region_id,group_name,prior_label,prior_prediction_id,pixel_sha256,prior_event_id,'pending',NULL FROM ai_review_items WHERE job_id=?2",params![source,id]).unwrap();
+            let mut phases = Vec::new();
+            for key in ["first_reading", "verification"] {
+                let reading = &failure["result"][key];
+                assert_eq!(
+                    reading["request_evidence"],
+                    recovery::request_evidence(
+                        &failure["payload"]["guide"],
+                        failure["pixel_sha256"].as_str().unwrap(),
+                        failure["sample_key"].as_str().unwrap(),
+                        failure["group_name"].as_str().unwrap()
+                    )
+                );
+                phases.push(json!({"31":reading,"_response":reading["_response"]}).to_string());
+            }
+            conn.execute("INSERT INTO ai_review_batches(job_id,batch_index,response,verification) VALUES(?,19,?,?)",params![source,phases[0],phases[1]]).unwrap();
+            conn.execute(
+                "INSERT INTO gameplay_ai_job_quarantines VALUES(?)",
+                [source],
+            )
+            .unwrap();
+            recovery::import(&conn, &f.ctx, source, id).unwrap();
+            assert_eq!(
+                conn.query_row(
+                    "SELECT COUNT(*) FROM ai_review_recovered_observations",
+                    [],
+                    |r| r.get::<_, i64>(0)
+                )
+                .unwrap(),
+                2
+            );
+            cache::register(
+                &conn,
+                failure["sample_key"].as_str().unwrap(),
+                "suit",
+                failure["pixel_sha256"].as_str().unwrap(),
+            )
+            .unwrap();
+        }
+        f.manager.run_fixture(&f.ctx, id);
+        let conn = f.ctx.connection().unwrap();
+        let raw: String = conn
+            .query_row(
+                "SELECT result FROM ai_review_items WHERE job_id=?",
+                [id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let result: Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(result["state"], "flagged", "{result}");
+        assert!(result["reason"].as_str().unwrap().contains("contradicts"));
+        assert!(result["event_id"].is_null());
+        assert_eq!(result["proposed_label"], "");
+        assert_eq!(f.calls.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM label_review_events", [], |r| r
+                .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+        assert!(matches!(
+            cache::truth(&conn, failure["sample_key"].as_str().unwrap()).unwrap(),
+            cache::Truth::NeedsReview { .. }
+        ));
+        assert!(quarantine::guard(&conn, source).is_err());
+        if let Ok(output) = std::env::var("POKER_BLANK_RECEIPT") {
+            std::fs::write(output,serde_json::to_vec_pretty(&json!({"state":"flagged","provider_calls":0,"recovered_phases":2,"accepted_events":0,"cache":"needs_review","result":result})).unwrap()).unwrap();
+        }
     }
 }

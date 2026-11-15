@@ -33,7 +33,10 @@ assert.equal(run(`Schemas.STATUS.validate('Hide Cards').isValid`),true);
 assert.equal(run(`Schemas.STATUS.validate('Away').isValid`),true);
 assert.equal(run(`Schemas.STATUS.isPartial('Hide C')`),true);
 assert.equal(run(`Schemas.STATUS.isPartial('Fo')`),true);
-for (const text of ['fold','Folded','F0ld']) assert.equal(run(`Schemas.STATUS.validate(${JSON.stringify(text)}).isValid`),false);
+assert.equal(sandbox.OCR_CONTRACT.categories.status.values_exhaustive,true);
+for (const text of ['Call','Fold','Check','All-In','Sit out','Disconnected']) assert.equal(run(`Schemas.STATUS.validate(${JSON.stringify(text)}).isValid`),true,text);
+for (const text of ['fold','Folded','F0ld']) assert.equal(run(`Schemas.STATUS.validate(${JSON.stringify(text)}).isValid`),false,text);
+assert.equal(run("Schemas.STATUS.validateReviewed('WaitingForPlayers').outsideContract"),true);
 run(`
   activeDatasetId='dataset-a'; isRecovering=false;
   labelInput=document.getElementById('label-input');
@@ -57,9 +60,10 @@ function reset(key='sample-a', prediction={id:'prediction-a',text:'Alice',raw_te
     assert.equal(run(`Schemas.NAME.validate('Player ${number}').isValid`),true);
     assert.equal(run(`Schemas.NAME.isPartial('Player ${number}')`),true);
   }
-  for (const label of ['Player 0','Player 10','player 1','Player  1','Player\t1','Player 1...','Other Name']) {
+  for (const label of ['Player 0','Player 10','player 1','Player  1','Player\t1','Player 1...','Other Name','Álice','名字']) {
     sandbox.nameCase=label;
-    assert.equal(run('Schemas.NAME.validate(nameCase).isValid'),false,label);
+    assert.equal(run('Schemas.NAME.validate(nameCase).isValid'),true,label);
+    assert.equal(run('Schemas.NAME.isPartial(nameCase)'),true,label);
   }
   assert.equal(run("Schemas.NAME.validate('Alice123...').isValid"),true);
   reset('player-typing');
@@ -71,7 +75,7 @@ function reset(key='sample-a', prediction={id:'prediction-a',text:'Alice',raw_te
   assert.equal(blocked,false,'the literal space after Player can be typed');
   element('label-input').value='Player ';element('label-input').selectionStart=7;element('label-input').selectionEnd=7;
   element('label-input').onbeforeinput({inputType:'insertText',data:'0',preventDefault(){blocked=true;}});
-  assert.equal(blocked,true,'Player 0 remains blocked while typing');
+  assert.equal(blocked,false,'source-valid Player 0 remains typable');
   reset();
   now += 1700;
   const before = run('reviewElapsed()');
@@ -299,16 +303,15 @@ function reset(key='sample-a', prediction={id:'prediction-a',text:'Alice',raw_te
   assert.equal(run('pool[0].label'),'Away');
   assert.equal(run('pool[0].review_event.outside_contract'),0);
 
-  // A new status can be retained as human truth, without enabling model acceptance.
   reset('novel-status',{id:'novel-prediction',text:'New Table Status',raw_text:'New Table Status',category:'status',schema_valid:false});
   run(`pool[0].id='seats[0].status';labelInput.value='New Table Status';`);
   network=async()=>({event:{id:'novel-review',outside_contract:1,schema_valid:0},success:true});
   const beforeNovel=calls.filter(call=>call.url==='/api/review_label').length;
   await run('acceptModelSuggestion()');
-  assert.equal(calls.filter(call=>call.url==='/api/review_label').length,beforeNovel,'unlisted status cannot auto-accept');
+  assert.equal(calls.filter(call=>call.url==='/api/review_label').length,beforeNovel,'stale invalid prediction cannot auto-accept');
   await run('saveCurrentAndNext()');
   const novel=JSON.parse(calls.findLast(call=>call.url==='/api/review_label').opts.body);
-  assert.equal(novel.allow_outside_contract,true,'Enter explicitly confirms the human transcription');
+  assert.equal(novel.allow_outside_contract,true,'human transcription outside known statuses is recorded explicitly');
   assert.equal(novel.action,'correct');assert.equal(novel.label,'New Table Status');
   assert.equal(run('pool[0].label'),'New Table Status');
 

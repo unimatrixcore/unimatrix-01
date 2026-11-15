@@ -1,0 +1,469 @@
+[
+  {
+    "region": "seats[0].cards[0].suit",
+    "category": "suit",
+    "input": "♦",
+    "output": "d",
+    "valid": true
+  },
+  {
+    "region": "seats[0].cards[0].suit",
+    "category": "suit",
+    "input": "♥️",
+    "output": "h",
+    "valid": true
+  },
+  {
+    "region": "seats[0].cards[0].suit",
+    "category": "suit",
+    "input": "♣",
+    "output": "c",
+    "valid": true
+  },
+  {
+    "region": "seats[0].cards[0].suit",
+    "category": "suit",
+    "input": "♠",
+    "output": "s",
+    "valid": true
+  },
+  {
+    "region": "seats[0].cards[0].suit",
+    "category": "suit",
+    "input": "D",
+    "output": "d",
+    "valid": true
+  },
+  {
+    "region": "community_cards[0]",
+    "category": "card",
+    "input": "t",
+    "output": "T",
+    "valid": false
+  },
+  {
+    "region": "community_cards[0]",
+    "category": "card",
+    "input": "10",
+    "output": "10",
+    "valid": true
+  },
+  {
+    "region": "community_cards[0]",
+    "category": "card",
+    "input": "a",
+    "output": "A",
+    "valid": true
+  },
+  {
+    "region": "community_cards[0]",
+    "category": "card",
+    "input": "E",
+    "output": "E",
+    "valid": false
+  },
+  {
+    "region": "community_cards[0]",
+    "category": "card",
+    "input": "",
+    "output": "",
+    "valid": false
+  },
+  {
+    "region": "seats[0].bet",
+    "category": "bet",
+    "input": "G 2.34 BB",
+    "output": "G 2.34 BB",
+    "valid": true,
+    "legacyCurrencyIcons": true
+  },
+  {
+    "region": "seats[0].bet",
+    "category": "bet",
+    "input": "G2.34BB",
+    "output": "G 2.34 BB",
+    "valid": true,
+    "legacyCurrencyIcons": true
+  },
+  {
+    "region": "seats[0].bet",
+    "category": "bet",
+    "input": "s355.6bb",
+    "output": "S 355.6 BB",
+    "valid": true,
+    "legacyCurrencyIcons": true
+  },
+  {
+    "region": "seats[0].bet",
+    "category": "bet",
+    "input": "355.6 BB",
+    "output": "355.6 BB",
+    "valid": false,
+    "legacyCurrencyIcons": true
+  },
+  {
+    "region": "seats[0].bet",
+    "category": "bet",
+    "input": "S 355.6 B",
+    "output": "S 355.6 B",
+    "valid": false,
+    "legacyCurrencyIcons": true
+  },
+  {
+    "region": "seats[0].bet",
+    "category": "bet",
+    "input": "S -1 BB",
+    "output": "S -1 BB",
+    "valid": false,
+    "legacyCurrencyIcons": true
+  },
+  {
+    "region": "seats[0].bet",
+    "category": "bet",
+    "input": "S 1,23 BB",
+    "output": "S 1,23 BB",
+    "valid": false,
+    "legacyCurrencyIcons": true
+  },
+  {
+    "region": "seats[0].bet",
+    "category": "bet",
+    "input": "S 1.123456789 BB",
+    "output": "S 1.123456789 BB",
+    "valid": false,
+    "legacyCurrencyIcons": true
+  },
+  {
+    "region": "seats[0].bet",
+    "category": "bet",
+    "input": "S 1.12345678 BB",
+    "output": "S 1.12345678 BB",
+    "valid": true,
+    "legacyCurrencyIcons": true
+  },
+  {
+    "region": "seats[0].bet",
+    "category": "bet",
+    "input": "S 1K BB",
+    "output": "S 1K BB",
+    "valid": false,
+    "legacyCurrencyIcons": true
+  },
+  {
+    "region": "seats[0].bet",
+    "category": "bet",
+    "input": "S 1K",
+    "output": "S 1K",
+    "valid": false,
+    "legacyCurrencyIcons": true
+  },
+  {
+    "region": "pot",
+    "category": "pot",
+    "input": "Pot:S31BB",
+    "output": "Pot: S 31 BB",
+    "valid": true
+  },
+  {
+    "region": "pot",
+    "category": "pot",
+    "input": "Pot: S 31 BB",
+    "output": "Pot: S 31 BB",
+    "valid": true
+  },
+  {
+    "region": "pot",
+    "category": "pot",
+    "input": "S 31 BB",
+    "output": "S 31 BB",
+    "valid": false
+  },
+  {
+    "region": "pot",
+    "category": "pot",
+    "input": "Pot: Pot: S 31 BB",
+    "output": "Pot: Pot: S 31 BB",
+    "valid": false
+  },
+  {
+    "region": "pot",
+    "category": "pot",
+    "input": "Run It Twice pause (12 sec)",
+    "output": "Run It Twice pause (12 sec)",
+    "valid": true
+  },
+  {
+    "region": "pot",
+    "category": "pot",
+    "input": "RunItTwicepause(12sec)",
+    "output": "Run It Twice pause (12 sec)",
+    "valid": true
+  },
+  {
+    "region": "pot",
+    "category": "pot",
+    "input": "Run It Twice pause (1.2 sec)",
+    "output": "Run It Twice pause (1.2 sec)",
+    "valid": false
+  },
+  {
+    "region": "split_pot",
+    "category": "split_pot",
+    "input": "S235.5BBG37.5BB",
+    "output": "S 235.5 BB G 37.5 BB",
+    "valid": true
+  },
+  {
+    "region": "split_pot",
+    "category": "split_pot",
+    "input": "S 2 BB\nG 3 BB",
+    "output": "S 2 BB G 3 BB",
+    "valid": true
+  },
+  {
+    "region": "split_pot",
+    "category": "split_pot",
+    "input": "S 2 BB Pot: G 3 BB",
+    "output": "S 2 BB Pot: G 3 BB",
+    "valid": false
+  },
+  {
+    "region": "split_pot",
+    "category": "split_pot",
+    "input": "S 2 BB X 3 BB",
+    "output": "S 2 BB X 3 BB",
+    "valid": false
+  },
+  {
+    "region": "bank",
+    "category": "bank",
+    "input": "G No Chips",
+    "output": "G No Chips",
+    "valid": true
+  },
+  {
+    "region": "bank",
+    "category": "bank",
+    "input": "sNoChips",
+    "output": "S No Chips",
+    "valid": true
+  },
+  {
+    "region": "bank",
+    "category": "bank",
+    "input": "all-in",
+    "output": "All-In",
+    "valid": true
+  },
+  {
+    "region": "bank",
+    "category": "bank",
+    "input": "No Chips",
+    "output": "No Chips",
+    "valid": false
+  },
+  {
+    "region": "bank",
+    "category": "bank",
+    "input": "S 0 BB",
+    "output": "S 0 BB",
+    "valid": true
+  },
+  {
+    "region": "bank",
+    "category": "bank",
+    "input": "S 1K",
+    "output": "S 1K",
+    "valid": false
+  },
+  {
+    "region": "name",
+    "category": "name",
+    "input": "Zoë_猫!",
+    "output": "Zoë_猫!",
+    "valid": true
+  },
+  {
+    "region": "name",
+    "category": "name",
+    "input": "A  B",
+    "output": "A  B",
+    "valid": true
+  },
+  {
+    "region": "name",
+    "category": "name",
+    "input": "maxhamme…",
+    "output": "maxhamme...",
+    "valid": true
+  },
+  {
+    "region": "name",
+    "category": "name",
+    "input": "codywilson...",
+    "output": "codywilson...",
+    "valid": true
+  },
+  {
+    "region": "name",
+    "category": "name",
+    "input": "Player 1",
+    "output": "Player 1",
+    "valid": true
+  },
+  {
+    "region": "name",
+    "category": "name",
+    "input": "*RESERVED*",
+    "output": "*RESERVED*",
+    "valid": true
+  },
+  {
+    "region": "name",
+    "category": "name",
+    "input": "",
+    "output": "",
+    "valid": false
+  },
+  {
+    "region": "status",
+    "category": "status",
+    "input": "decline  straddle",
+    "output": "Decline Straddle",
+    "valid": true
+  },
+  {
+    "region": "status",
+    "category": "status",
+    "input": "Call 12.34",
+    "output": "Call 12.34",
+    "valid": false
+  },
+  {
+    "region": "status",
+    "category": "status",
+    "input": "New Action",
+    "output": "New Action",
+    "valid": false
+  },
+  {
+    "region": "status",
+    "category": "status",
+    "input": "Away",
+    "output": "Away",
+    "valid": true
+  },
+  {
+    "region": "status",
+    "category": "status",
+    "input": "Winner",
+    "output": "Winner",
+    "valid": false
+  },
+  {
+    "region": "round_id",
+    "category": "round_id",
+    "input": "#89612405",
+    "output": "#89612405",
+    "valid": true
+  },
+  {
+    "region": "round_id",
+    "category": "round_id",
+    "input": "# 000001",
+    "output": "# 000001",
+    "valid": true
+  },
+  {
+    "region": "round_id",
+    "category": "round_id",
+    "input": "#123456789012345",
+    "output": "#123456789012345",
+    "valid": true
+  },
+  {
+    "region": "round_id",
+    "category": "round_id",
+    "input": "#12345",
+    "output": "#12345",
+    "valid": false
+  },
+  {
+    "region": "round_id",
+    "category": "round_id",
+    "input": "#1234567890123456",
+    "output": "#1234567890123456",
+    "valid": false
+  },
+  {
+    "region": "round_id",
+    "category": "round_id",
+    "input": "###abc",
+    "output": "###abc",
+    "valid": false
+  },
+  {
+    "region": "round_id",
+    "category": "round_id",
+    "input": "#猫123456",
+    "output": "#猫123456",
+    "valid": false
+  },
+  {
+    "region": "table.info",
+    "category": "table_info",
+    "input": "Tigard #17, NLHE - S 0.01/0.02",
+    "output": "Tigard #17, NLHE - S 0.01/0.02",
+    "valid": true
+  },
+  {
+    "region": "table.info",
+    "category": "table_info",
+    "input": "Tigard #17, NLHE - 0.01/0.02",
+    "output": "Tigard #17, NLHE - 0.01/0.02",
+    "valid": false
+  },
+  {
+    "region": "table.info",
+    "category": "table_info",
+    "input": "A, NLHE - G 1,234.12/2,345.67",
+    "output": "A, NLHE - G 1,234.12/2,345.67",
+    "valid": true
+  },
+  {
+    "region": "table.info",
+    "category": "table_info",
+    "input": "A, NLHE - S 1K/2K",
+    "output": "A, NLHE - S 1K/2K",
+    "valid": false
+  },
+  {
+    "region": "table.info",
+    "category": "table_info",
+    "input": "A, NLHE - S -1/2",
+    "output": "A, NLHE - S -1/2",
+    "valid": false
+  },
+  {
+    "region": "dealer",
+    "category": "dealer",
+    "input": "d",
+    "output": "D",
+    "valid": true
+  },
+  {
+    "region": "dealer",
+    "category": "dealer",
+    "input": "",
+    "output": "",
+    "valid": true
+  },
+  {
+    "region": "name",
+    "category": "name",
+    "input": "foo…",
+    "output": "foo...",
+    "valid": true,
+    "currencyFormat": "{0}"
+  }
+]

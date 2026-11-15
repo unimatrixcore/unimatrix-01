@@ -47,6 +47,11 @@ pub fn ensure(ctx: &DatasetContext) -> LabResult<()> {
         .is_some();
     if !exists
         && ctx.id == "legacy"
+        && ctx
+            .state
+            .lock()
+            .map_err(|_| conflict("Dataset state lock poisoned"))?["_readonly_archive"]
+            != true
         && conn.query_row("SELECT COUNT(*) FROM images", [], |r| r.get::<_, i64>(0))? > 0
     {
         let root = ctx
@@ -158,6 +163,7 @@ fn sample(conn: &Connection, input: &SampleInput) -> LabResult<Sample> {
         conn.execute("UPDATE review_samples SET image_sha256=?,crop=?,filename=COALESCE(?,filename) WHERE sample_key=?",params![image,input.png,input.filename,input.key])?;
     }
     conn.execute("INSERT OR IGNORE INTO review_samples(sample_key,region_id,pixel_sha256,image_sha256,filename,label,crop) VALUES(?,?,?,?,?,?,?)",params![input.key,input.region_id,pixels,image,input.filename,prior,input.png])?;
+    super::pixel_assets::attach(conn, "review_samples", &input.key, &input.png, &pixels)?;
     Ok(conn.query_row("SELECT region_id,pixel_sha256,image_sha256,filename,label FROM review_samples WHERE sample_key=?",[&input.key],|r|Ok(Sample{region:r.get(0)?,pixels:r.get(1)?,image:r.get(2)?,filename:r.get(3)?,label:r.get(4)?}))?)
 }
 pub fn prediction_conn(
@@ -350,7 +356,10 @@ pub fn sample_input(ctx: &DatasetContext, data: &Value) -> LabResult<SampleInput
         let conn = ctx.connection()?;
         ctx.ensure_active()?;
         conn.query_row(
-            "SELECT region_id,filename,crop FROM review_samples WHERE sample_key=?",
+            &format!(
+                "SELECT region_id,filename,{} FROM review_samples WHERE sample_key=?",
+                super::pixel_assets::expression(&conn, "review_samples")?
+            ),
             [key],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
@@ -382,7 +391,10 @@ pub fn sample_input(ctx: &DatasetContext, data: &Value) -> LabResult<SampleInput
         ctx.ensure_active()?;
         let queued: Option<(String, Vec<u8>, i64)> = conn
             .query_row(
-                "SELECT region_id,crop,queue_id FROM queue_items WHERE sample_key=? AND active=1",
+                &format!(
+                    "SELECT region_id,{},queue_id FROM queue_items WHERE sample_key=? AND active=1",
+                    super::pixel_assets::expression(&conn, "queue_items")?
+                ),
                 [key],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )

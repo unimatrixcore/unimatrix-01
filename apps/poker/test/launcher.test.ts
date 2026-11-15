@@ -30,7 +30,10 @@ import {
   stopChild,
   setRecordingIntent,
   recordingActive,
+  setActivityIntent,
+  activityActive,
   supervise,
+  main as launcherMain,
   type Worktree,
 } from "../scripts/launch.js";
 
@@ -449,9 +452,16 @@ it("invalidates native artifacts when the embedded OCR contract changes", () => 
 function fakeProcess(): ChildProcess {
   return spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
 }
-it.each(["rebuild", "checkout", "checkout-build", "rebuild-placement-failure"])(
-  "defers %s until every recording source explicitly stops",
-  async (mode) => {
+it.each(
+  ["rebuild", "checkout", "checkout-build", "rebuild-placement-failure"].flatMap((mode) =>
+    [
+      ["gameplay", "collector"],
+      ["preparation", "review"],
+    ].map((roles) => ({ mode, roles })),
+  ),
+)(
+  "defers $mode until every recording or AI activity source explicitly stops",
+  async ({ mode, roles }) => {
     const rebuild = mode.startsWith("rebuild");
     const { common, repo, other, paths } = fixture();
     const trees = discoverWorktrees(common);
@@ -480,8 +490,8 @@ it.each(["rebuild", "checkout", "checkout-build", "rebuild-placement-failure"])(
     });
     const build = vi.fn((selected: Worktree) => {
       if (mode === "checkout-build") {
-        setRecordingIntent(apps[0]!.pid!, "gameplay", true, paths);
-        setRecordingIntent(apps[0]!.pid!, "collector", true, paths);
+        setActivityIntent(apps[0]!.pid!, roles[0] as "gameplay" | "preparation", true, paths);
+        setActivityIntent(apps[0]!.pid!, roles[1] as "collector" | "review", true, paths);
       }
       stampedFixture(selected, binary);
       return Promise.resolve(seedNativeCache(selected, binary, paths));
@@ -518,8 +528,8 @@ it.each(["rebuild", "checkout", "checkout-build", "rebuild-placement-failure"])(
         const original = apps[0]!;
         if (ticks === 1) {
           if (mode !== "checkout-build") {
-            setRecordingIntent(original.pid!, "gameplay", true, paths);
-            setRecordingIntent(original.pid!, "collector", true, paths);
+            setActivityIntent(original.pid!, roles[0] as "gameplay" | "preparation", true, paths);
+            setActivityIntent(original.pid!, roles[1] as "collector" | "review", true, paths);
           }
           if (!rebuild) selectWorktree(common, repo, other, paths);
           else {
@@ -531,10 +541,12 @@ it.each(["rebuild", "checkout", "checkout-build", "rebuild-placement-failure"])(
           expect(launch).toHaveBeenCalledTimes(1);
           expect(original.exitCode).toBeNull();
           expect(servers[0]!.exitCode).toBeNull();
-          expect(recordingActive(original.pid!, paths)).toBe(true);
+          expect(activityActive(original.pid!, paths)).toBe(true);
         }
-        if (ticks === 4) setRecordingIntent(original.pid!, "gameplay", false, paths);
-        if (ticks === 5) setRecordingIntent(original.pid!, "collector", false, paths);
+        if (ticks === 4)
+          setActivityIntent(original.pid!, roles[0] as "gameplay" | "preparation", false, paths);
+        if (ticks === 5)
+          setActivityIntent(original.pid!, roles[1] as "collector" | "review", false, paths);
         await new Promise((done) => setTimeout(done, 20));
       },
     });
@@ -789,4 +801,49 @@ it("persists only validated selections and reports the actual supervisor checkou
   });
   writeFileSync(paths.state, JSON.stringify({ pid: 2147483647, current, error: null }));
   expect(launcherStatus(common, repo, paths).current).toBeNull();
+});
+
+it("AI activity leases ignore stale PID-start claims and clear only their own role", () => {
+  const { paths } = fixture();
+  setActivityIntent(process.pid, "preparation", true, paths);
+  setActivityIntent(process.pid, "review", true, paths);
+  expect(activityActive(process.pid, paths)).toBe(true);
+  expect(recordingActive(process.pid, paths)).toBe(false);
+  setActivityIntent(process.pid, "preparation", false, paths);
+  expect(activityActive(process.pid, paths)).toBe(true);
+  writeFileSync(
+    join(paths.cache, "recording", `${process.pid}-review.json`),
+    '{"token":"previous-process"}',
+  );
+  expect(activityActive(process.pid, paths)).toBe(false);
+});
+
+it("activity acknowledgement does not depend on worktree discovery or a native build", async () => {
+  const root = mkdtempSync(join(tmpdir(), "poker-activity-cli-"));
+  temporary.push(root);
+  vi.stubEnv("XDG_CACHE_HOME", join(root, "cache"));
+  const log = vi.spyOn(console, "log").mockImplementation(() => {});
+  try {
+    await launcherMain([
+      "--git-dir",
+      root,
+      "--recording",
+      String(process.pid),
+      "preparation",
+      "on",
+    ]);
+    expect(activityActive(process.pid)).toBe(true);
+    expect(log).toHaveBeenLastCalledWith('{"ok":true}');
+    await launcherMain([
+      "--git-dir",
+      root,
+      "--recording",
+      String(process.pid),
+      "preparation",
+      "off",
+    ]);
+    expect(activityActive(process.pid)).toBe(false);
+  } finally {
+    log.mockRestore();
+  }
 });

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { existsSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -201,6 +201,43 @@ test(
       const differentCards = await page.evaluate(extractRegions);
       for (const a of small.regions.filter((r) => r.category === "rank" || r.category === "suit"))
         assert.deepEqual(differentCards.regions.find((r) => r.id === a.id)?.bounds, a.bounds, a.id);
+      const potGuides = [];
+      for (const count of [1, 2, 10])
+        for (const value of [1, 355.6]) {
+          await page.evaluate(
+            async ({ count, value }) => {
+              window.poker.setState({ pots: Array.from({ length: count }, () => value) });
+              await window.poker.ready();
+            },
+            { count, value },
+          );
+          const state = await page.evaluate(extractRegions);
+          const guide = state.regions.find((region) => region.id === "pot.0")!.guide!;
+          potGuides.push(guide);
+          assert.equal(guide.family, "split_pot_group");
+        }
+      for (const guide of potGuides)
+        assert.deepEqual(
+          guide,
+          potGuides[0],
+          "pot CSS group guide must not depend on count/reflow/current width",
+        );
+      const headerGuides = [];
+      for (const handId of ["1", "X".repeat(200)]) {
+        await page.evaluate(async (handId) => {
+          window.poker.setState({ handId });
+          await window.poker.ready();
+        }, handId);
+        headerGuides.push(
+          (await page.evaluate(extractRegions)).regions.find((region) => region.id === "game.id")!
+            .guide,
+        );
+      }
+      assert.deepEqual(
+        headerGuides[0],
+        headerGuides[1],
+        "game ID guide must follow its fixed CSS slot",
+      );
       for (const options of [
         { value: Number.MAX_SAFE_INTEGER, bb: true, group: true },
         { value: Number.MAX_SAFE_INTEGER, bb: false, group: true },
@@ -212,6 +249,14 @@ test(
             a = small.regions.find((r) => r.id === id)!,
             b = large.regions.find((r) => r.id === id)!;
           assert.deepEqual(b.bounds, a.bounds, id);
+          assert.deepEqual(
+            b.guide,
+            a.guide,
+            `${id}: guide follows CSS allocation, not current ink`,
+          );
+          assert.equal(b.guide?.source, "css_slot");
+          assert.ok(b.guide!.slot.width < b.bounds!.width);
+          assert.equal(b.guide!.anchor.y, b.guide!.slot.y + b.guide!.slot.height / 2);
           assert.equal(b.envelope?.policy, "safe_funds_formatter");
           assert.ok(b.bounds!.width > 300 && b.bounds!.width < 500, id);
           assert.ok(
@@ -241,6 +286,214 @@ test(
       assert.ok(bet.cropOverlaps?.includes("dealer"), JSON.stringify(bet.cropOverlaps));
       assert.equal(bet.autoLabelEligible, false);
       assert.equal(bet.cropLabel, null);
+    } finally {
+      await browser.close();
+    }
+  },
+);
+
+test(
+  "split-pot maximum envelopes contain all rendered values across centered wrapping",
+  { skip: !process.env.POKER_MOCK_URL },
+  async () => {
+    const frozen = JSON.parse(
+      readFileSync(
+        new URL("../../../packages/poker-native/assets/gameplay-regions.json", import.meta.url),
+        "utf8",
+      ),
+    ) as {
+      regions: {
+        id: string;
+        localizer?: { search_bounds: { x: number; y: number; width: number; height: number } };
+      }[];
+    };
+    const browser = await chromium.launch({ headless: true });
+    try {
+      const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+      await page.goto(loopbackUrl(process.env.POKER_MOCK_URL!));
+      await page.waitForFunction(() => !!window.poker?.ready);
+      for (const count of [1, 2, 10])
+        for (const mode of [
+          { bb: true, group: true },
+          { bb: false, group: true },
+          { bb: false, group: false },
+        ]) {
+          await page.evaluate(
+            async ({ count, mode }) => {
+              window.poker.replay.pause();
+              window.poker.setState({
+                currency: "$",
+                currencyPrecision: 0,
+                decimals: 8,
+                bbPrecision: 8,
+                displayInBB: mode.bb,
+                grouping: mode.group,
+                blinds: [1, 3],
+                bank: 0,
+                pots: Array.from({ length: count }, () => Number.MAX_SAFE_INTEGER),
+                seats: window.poker.getState().seats.map((s) => ({ ...s, bet: 0 })),
+              });
+              await window.poker.ready();
+              document.getAnimations().forEach((a) => a.pause());
+            },
+            { count, mode },
+          );
+          const result = await page.evaluate(extractRegions);
+          const pots = result.regions.filter((r) => r.category === "split_pot" && r.inkBounds);
+          assert.equal(pots.length, count, "Maximum-amount case must render every requested pot");
+          const panels = await page.evaluate(() =>
+            [...document.querySelectorAll("[data-pot-index] .text")].map((el) => {
+              const r = el.getBoundingClientRect();
+              return { x: r.x, y: r.y, width: r.width, height: r.height };
+            }),
+          );
+          assert.equal(panels.length, count, "Every requested pot must have a panel");
+          const search = frozen.regions.find((r) => r.id === "split_pot")!.localizer!.search_bounds;
+          for (const panel of panels)
+            assert.ok(
+              panel.x >= search.x - 0.5 &&
+                panel.y >= search.y - 0.5 &&
+                panel.x + panel.width <= search.x + search.width + 0.5 &&
+                panel.y + panel.height <= search.y + search.height + 0.5,
+              JSON.stringify({ count, mode, search, panel }),
+            );
+          for (const region of pots) {
+            const b = search,
+              ink = region.inkBounds!;
+            assert.ok(
+              ink.x >= b.x - 0.5 &&
+                ink.y >= b.y - 0.5 &&
+                ink.x + ink.width <= b.x + b.width + 0.5 &&
+                ink.y + ink.height <= b.y + b.height + 0.5,
+              JSON.stringify({ id: region.id, count, mode, bounds: b, ink }),
+            );
+          }
+        }
+    } finally {
+      await browser.close();
+    }
+  },
+);
+
+test(
+  "award and popup guides use fixed CSS slots and contain source motion extrema",
+  { skip: !process.env.POKER_MOCK_URL },
+  async () => {
+    const browser = await chromium.launch({ headless: true });
+    try {
+      let reference: unknown;
+      for (const amount of [1, Number.MAX_SAFE_INTEGER]) {
+        const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+        const pageErrors: string[] = [];
+        page.on("pageerror", (e) => pageErrors.push(e.message));
+        await page.addInitScript(() => {
+          // Limit concurrent deck fetches: Chromium can exhaust resources when the
+          // extractor requests all SVGs at once while these effects are active.
+          const fetchAsset = window.fetch.bind(window);
+          let pending = Promise.resolve();
+          window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+            if (!String(input).endsWith(".svg")) return fetchAsset(input, init);
+            const result = pending.then(() => fetchAsset(input, init));
+            pending = result.then(
+              () => undefined,
+              () => undefined,
+            );
+            return result;
+          }) as typeof window.fetch;
+          const schedule = window.setTimeout.bind(window);
+          window.setTimeout = ((handler: TimerHandler, delay?: number, ...args: unknown[]) =>
+            schedule(
+              handler,
+              delay !== undefined && delay >= 3500 && delay <= 4400 ? 60000 : delay,
+              ...args,
+            )) as typeof window.setTimeout;
+        });
+        await page.goto(loopbackUrl(process.env.POKER_MOCK_URL!));
+        await page.waitForFunction(() => !!window.poker?.ready);
+        await page.evaluate(async (amount) => {
+          window.poker.setState({
+            currencyPrecision: 0,
+            decimals: 8,
+            bbPrecision: 8,
+            blinds: [1, 1],
+            grouping: true,
+            displayInBB: true,
+            seats: window.poker
+              .getState()
+              .seats.map((s) => ({ ...s, winner: true, award: amount, action: "" })),
+            settings: { chat: { showBubbleMessages: true } },
+          });
+          for (let i = 0; i < 9; i++)
+            window.poker.effects.message(i, amount === 1 ? "OK" : "W".repeat(200));
+          await window.poker.ready();
+          await document.fonts.ready;
+          document.getAnimations().forEach((a) => a.pause());
+        }, amount);
+        assert.deepEqual(pageErrors, []);
+        await page.waitForSelector('[data-seat="8"] .message-content', {
+          state: "attached",
+          timeout: 2000,
+        });
+        for (const phase of [
+          "bubble-animation-enter",
+          "bubble-animation-enter-active",
+          "bubble-animation-enter-done",
+          "bubble-animation-exit-active",
+        ]) {
+          for (const progress of [0, 0.5, 1]) {
+            await page.evaluate(
+              ({ phase, progress }) => {
+                document.querySelectorAll<HTMLElement>(".message").forEach((el) => {
+                  el.style.transition = "none";
+                  el.className = `message ${phase}`;
+                });
+                document.querySelectorAll(".r-seat__won_message").forEach((el) =>
+                  el.getAnimations().forEach((a) => {
+                    a.pause();
+                    a.currentTime = Number(a.effect!.getTiming().duration) * progress;
+                  }),
+                );
+              },
+              { phase, progress },
+            );
+            const regions = (await page.evaluate(extractRegions)).regions.filter((r) =>
+              ["award", "popup"].includes(r.category),
+            );
+            assert.equal(regions.length, 18);
+            const guides = regions.map((r) => ({ id: r.id, guide: r.guide }));
+            if (reference === undefined) reference = guides;
+            else assert.deepEqual(guides, reference, `${amount}/${phase}/${progress}`);
+            const rendered = await page.evaluate(() =>
+              [
+                ...document.querySelectorAll(".PlayerWonContainer__funds__text,.message-content"),
+              ].map((el) => {
+                const range = document.createRange();
+                range.selectNodeContents(el);
+                const r = el.matches(".message-content")
+                  ? el.getBoundingClientRect()
+                  : range.getBoundingClientRect();
+                return {
+                  id: `seat.${el.closest("[data-seat]")!.getAttribute("data-seat")}.${el.matches(".message-content") ? "popup" : "award"}`,
+                  x: r.x,
+                  y: r.y,
+                  right: r.right,
+                  bottom: r.bottom,
+                };
+              }),
+            );
+            for (const ink of rendered) {
+              const b = regions.find((r) => r.id === ink.id)!.bounds!;
+              assert.ok(
+                ink.x >= b.x - 1 &&
+                  ink.right <= b.x + b.width + 1 &&
+                  ink.y >= b.y - 1 &&
+                  ink.bottom <= b.y + b.height + 1,
+                JSON.stringify({ amount, phase, progress, ink, b }),
+              );
+            }
+          }
+        }
+      }
     } finally {
       await browser.close();
     }
