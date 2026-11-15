@@ -2489,6 +2489,7 @@ mod tests {
             db: Mutex::new(Connection::open(database).unwrap()),
             operation: Mutex::new(()),
             state: Mutex::new(json!({})),
+            _archive_snapshot: None,
         });
         f.queue("");
         {

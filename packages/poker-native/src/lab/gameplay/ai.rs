@@ -191,6 +191,7 @@ impl GameplayAi {
                 db: Mutex::new(conn),
                 operation: Mutex::new(()),
                 state: Mutex::new(json!({"_internal_gameplay":true})),
+                _archive_snapshot: None,
             }),
             config,
             projection: Mutex::new(()),

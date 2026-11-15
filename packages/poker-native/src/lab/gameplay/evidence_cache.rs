@@ -267,7 +267,7 @@ fn valid_for_family(kind: &str, text: &str, human: bool) -> bool {
         "bank" => "seats[0].bank",
         "upper_pot" => "pot",
         "game_id" => "round_id",
-        "table_line" => "table_info",
+        "table_line" => "table.info",
         "dealer" => "dealer",
         "amount" => "pot.0",
         "winner" => "seat.0.award",

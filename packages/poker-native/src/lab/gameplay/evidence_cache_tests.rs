@@ -97,6 +97,40 @@ fn run(service: &LabService, session: &str) -> Value {
 }
 
 #[test]
+fn table_line_ai_and_manual_truth_reuse_the_canonical_region_contract() {
+    let original = "Tigard #17, NLHE - S 0.01/0.02";
+    let corrected = "Tennessee #12345, NLHE - S 0.01/0.02";
+    let (_directory, service, calls) = fixture(json!([region("table.info", 2)]), original);
+    let first = record(&service, json!({"table.info": original}));
+    let prepared = run(&service, &first);
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    let item = read_items(
+        &service.gameplay_ai.context.connection().unwrap(),
+        prepared["run_id"].as_str().unwrap(),
+    )
+    .unwrap()
+    .remove(0);
+    assert_eq!(item["state"], "unchanged");
+    service
+        .gameplay_ai
+        .review(
+            &service,
+            &json!({"occurrence_id":item["id"],"expected_revision":item["revision"],"action":"manual","label":corrected}),
+        )
+        .unwrap();
+    let second = record(&service, json!({"table.info": original}));
+    let prepared = service.gameplay_ai.prepare(&service, &second).unwrap();
+    assert_eq!(prepared["scope"]["exact_cache_hits"], 1);
+    let items = read_items(
+        &service.gameplay_ai.context.connection().unwrap(),
+        prepared["run_id"].as_str().unwrap(),
+    )
+    .unwrap();
+    assert_eq!(items[0]["label"], corrected);
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+}
+
+#[test]
 fn exact_cross_seat_reuse_survives_prediction_profile_and_service_restart() {
     let (directory, service, calls) = fixture(
         json!([region("seats[0].bet", 2), region("seats[8].bet", 22)]),
