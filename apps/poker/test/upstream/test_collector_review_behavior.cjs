@@ -23,6 +23,7 @@ const sandbox = {console, Headers, URLSearchParams, Event, Date:ClockDate, Promi
   document:{getElementById:element,createElement:tag=>element('created-' + tag + '-' + Math.random())},
   window:{CollectorSharedUi:{reviewGamification},setTimeout,fetch:async(url,opts)=>{calls.push({url,opts});const data=await network(url,opts);return {ok:!data.httpError,status:data.httpError||200,json:async()=>data};}},history:{},showToast(){}};
 vm.createContext(sandbox);
+vm.runInContext(fs.readFileSync('dev_tools/static/js/lib/utils.js','utf8'),sandbox);
 const source = fs.readFileSync('dev_tools/static/js/app.js','utf8').replace('init().catch(error => { showLoading(false); showToast(error.message, "error"); });','').replace('const setView =', 'let setView ='); // Allow replacing only the DOM view renderer in this VM.
 vm.runInContext(fs.readFileSync('dev_tools/static/js/lib/scoring.js','utf8'),sandbox);
 vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../static/js/lib/list_cards.js'),'utf8'),sandbox);vm.runInContext(source,sandbox);
@@ -37,6 +38,21 @@ assert.equal(sandbox.OCR_CONTRACT.categories.status.values_exhaustive,true);
 for (const text of ['Call','Fold','Check','All-In','Sit out','Disconnected']) assert.equal(run(`Schemas.STATUS.validate(${JSON.stringify(text)}).isValid`),true,text);
 for (const text of ['fold','Folded','F0ld']) assert.equal(run(`Schemas.STATUS.validate(${JSON.stringify(text)}).isValid`),false,text);
 assert.equal(run("Schemas.STATUS.validateReviewed('WaitingForPlayers').outsideContract"),true);
+for (const currency of ['S','G']) {
+  assert.equal(run(`Schemas.BANK.getSuggestion('${currency} No C').suggestion`),`${currency} No Chips`);
+  assert.equal(run(`Schemas.BANK.validate('${currency} No Chips').isValid`),true);
+}
+assert.equal(run("Schemas.BANK.validate('No Chips').isValid"),false);
+assert.equal(run("Schemas.POT.getSuggestion('Pot: S 3 B').suggestion"),'Pot: S 3 BB');
+assert.equal(run("Schemas.MONEY.getSuggestion('Pot: S 3 B')"),null);
+assert.equal(run("Schemas.MONEY.getSuggestion('S 3 B').suggestion"),'S 3 BB');
+for (const [glyph, letter] of [['♦','d'],['♥','h'],['♣','c'],['♠','s']]) {
+  for (const variation of ['\ufe0e','\ufe0f']) {
+    const input=JSON.stringify(glyph+variation);
+    assert.equal(run(`Schemas.SUIT.isPartial(${input})`),true);
+    assert.equal(run(`Schemas.SUIT.getSuggestion(${input}).suggestion`),letter);
+  }
+}
 run(`
   activeDatasetId='dataset-a'; isRecovering=false;
   labelInput=document.getElementById('label-input');
@@ -45,7 +61,7 @@ run(`
   currentView='labeling';
   updateStepperButtons=()=>{};renderDatasetNavigator=()=>{};showLabelingStats=()=>{};
   syncPoolsWithLabelChange=()=>{};refreshLabelHistory=()=>{};renderDatabase=()=>{};
-  usernamePool={getItems:()=>[],has:()=>true,counts:{clear(){}},getCount:()=>2,add(){},remove(){}};
+  Object.assign(usernamePool,{getItems:()=>[],has:()=>true,counts:{clear(){}},getCount:()=>2,add(){},remove(){}});
   globalThis.effects=[];showFloatingScore=(...effect)=>effects.push(effect);
   inputGroup=document.getElementById('input-group');
 `);

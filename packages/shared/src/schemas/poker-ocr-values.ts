@@ -221,8 +221,9 @@ export function normalizePokerOcrValue(
   if (category === "name") return value.replace(/…/g, "...");
   if (["winner", "popup", "combination", "round_id"].includes(category ?? "")) return value;
   if (options.currencyFormat !== undefined) return value;
-  value = value.replace(/\s+/g, " ").replace(/\bbb\b/gi, "BB");
+  value = value.replace(/\s+/g, " ");
   if (category === "table_info") return value;
+  value = value.replace(/\bbb\b/gi, "BB");
   const compact = value.replace(/\s/g, "");
   const timer =
     category === "pot"
@@ -332,7 +333,7 @@ export function pokerOcrValueSchema(
       if (pattern && regionId.endsWith(".award")) pattern = `\\+${pattern}`;
       if (pattern && category === "bank") pattern = `(?:${pattern}|All-In|[GS] No Chips)`;
       if (pattern && category === "pot") pattern = `(?:Pot: ${pattern}|${pause})`;
-      if (pattern && category === "split_pot") pattern = `(?:${pattern}[ \\t\\r\\n\\f\\v]*)+`;
+      if (pattern && category === "split_pot") pattern = `(?:${pattern}(?:[ \\t\\r\\n\\f\\v]+|$))+`;
       if (category === "table_info" && contextGiven) {
         const small = contextAmountPattern(
           { ...options, displayInBB: false },

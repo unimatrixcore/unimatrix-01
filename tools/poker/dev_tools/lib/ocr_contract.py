@@ -112,7 +112,9 @@ def validate_text_with_currency_format(category, label, allow_blank=False, curre
             offset = at + len(token)
         return result + re.escape(currency_format[offset:])
     item = '[GS] ' + pattern('amount')
-    if category == 'bank':
+    if category == 'amount':
+        item = r'\+?' + item
+    elif category == 'bank':
         item = f'(?:{item}|[GS] No Chips|All-In)'
     elif category == 'pot':
         item = fr'(?:Pot: {item}|Run It Twice pause \([0-9]+ sec\))'

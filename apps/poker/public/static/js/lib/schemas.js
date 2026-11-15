@@ -79,7 +79,7 @@ const Schemas = {
     }
   },
   BANK: {
-    noChips: ['No Chips'],
+    noChips: globalThis.OCR_CONTRACT.categories.bank.partial_values.filter(value => value.endsWith('No Chips')),
     isPrefix: function(val) { return this.isPartial(val); },
     isPartial: (val) => contractPartial("bank",val),
     isAtPrefix: (val) => Schemas.MONEY.isAtPrefix(val),
@@ -114,6 +114,7 @@ const Schemas = {
           }
         }
       }
+      if (val.endsWith(' B') && contractValid('pot', val+'B')) return {suggestion:val+'B',type:'append'};
       return Schemas.MONEY.getSuggestion(val, item);
     }
   },
@@ -163,11 +164,13 @@ for (const [category,name] of Object.entries(ContractCategories)) {
   if (!Schemas[name]) Schemas[name]={isPartial:value=>contractPartial(category,value),isPrefix:value=>contractPartial(category,value),getSuggestion:()=>null};
 }
 Schemas.SUIT.isPartial = value => {
-  const canonical=globalThis.OCR_CONTRACT.normalization?.suit_aliases?.[value] || value.toLowerCase();
+  const glyph=value.replace(/[\ufe0e\ufe0f]/g,'');
+  const canonical=globalThis.OCR_CONTRACT.normalization?.suit_aliases?.[glyph] || glyph.toLowerCase();
   return !value || globalThis.OCR_CONTRACT.categories.suit.values.includes(canonical);
 };
 Schemas.SUIT.getSuggestion = value => {
-  const canonical=globalThis.OCR_CONTRACT.normalization?.suit_aliases?.[value] || value.toLowerCase();
+  const glyph=value.replace(/[\ufe0e\ufe0f]/g,'');
+  const canonical=globalThis.OCR_CONTRACT.normalization?.suit_aliases?.[glyph] || glyph.toLowerCase();
   return canonical!==value && globalThis.OCR_CONTRACT.categories.suit.values.includes(canonical) ? {suggestion:canonical,type:'replace'} : null;
 };
 for (const [category, name] of Object.entries(ContractCategories)) {

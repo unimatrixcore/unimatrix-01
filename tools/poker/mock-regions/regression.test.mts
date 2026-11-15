@@ -493,6 +493,31 @@ test(
             }
           }
         }
+        for (const mode of ["missing", "nonlinear"] as const) {
+          await page.evaluate((mode) => {
+            document.querySelectorAll(".r-seat__won_message").forEach((el) => {
+              const animation = new Animation(
+                new KeyframeEffect(el, [{ transform: "scale(2)" }, { transform: "scale(3)" }], {
+                  duration: 100,
+                }),
+              );
+              Object.defineProperty(el, "getAnimations", {
+                configurable: true,
+                value: () => (mode === "missing" ? [] : [animation]),
+              });
+            });
+          }, mode);
+          const awards = (await page.evaluate(extractRegions)).regions.filter(
+            (r) => r.category === "award",
+          );
+          assert.equal(awards.length, 9);
+          for (const region of awards) {
+            assert.equal(region.visibility, "unsupported", `${mode}: ${region.id}`);
+            assert.equal(region.bounds, null);
+            assert.equal(region.autoLabelEligible, false);
+            assert.equal(region.cropLabel, null);
+          }
+        }
       }
     } finally {
       await browser.close();

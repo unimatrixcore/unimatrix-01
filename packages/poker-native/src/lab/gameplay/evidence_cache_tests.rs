@@ -37,7 +37,7 @@ fn fixture(regions: Value, label: &str) -> (tempfile::TempDir, LabService, Arc<A
     (directory, service, calls)
 }
 fn region(id: &str, x: u32) -> Value {
-    json!({"id":id,"presence":{"state":"present","target_support":"supported","card_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1"}},"card_target_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1"},"bounds":{"x":x,"y":2,"width":6,"height":6}})
+    json!({"id":id,"presence":{"state":"present","target_support":"supported","card_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1","boundary_contact":[false,false,false,false]}},"card_target_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1","boundary_contact":[false,false,false,false]},"bounds":{"x":x,"y":2,"width":6,"height":6}})
 }
 fn record(service: &LabService, labels: Value) -> String {
     let store = service.gameplay.evidence_store().unwrap();
@@ -1452,9 +1452,9 @@ fn frame_only_manual_verifies_original_scope_before_presence_and_normalization_p
 #[test]
 fn card_rank_and_suit_ignore_obsolete_presence_absence_and_ambiguity() {
     let mut rank = region("community_cards[0]", 2);
-    rank["presence"] = json!({"state":"absent","policy":"source_pixel_presence_v1","reason":"Old pixel classifier","target_support":"supported","card_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1"}});
+    rank["presence"] = json!({"state":"absent","policy":"source_pixel_presence_v1","reason":"Old pixel classifier","target_support":"supported","card_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1","boundary_contact":[false,false,false,false]}});
     let mut suit = region("community_cards[0].suit", 22);
-    suit["presence"] = json!({"state":"ambiguous","policy":"source_pixel_presence_v1","reason":"Old pixel classifier","target_support":"supported","card_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1"}});
+    suit["presence"] = json!({"state":"ambiguous","policy":"source_pixel_presence_v1","reason":"Old pixel classifier","target_support":"supported","card_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1","boundary_contact":[false,false,false,false]}});
     let (_directory, service, calls) = fixture(json!([rank, suit]), "2");
     let session = record(
         &service,
@@ -1831,4 +1831,263 @@ fn four_source_failure_proofs_never_support_automatic_truth() {
         assert_eq!(row["presence"]["state"], "present");
         assert_eq!(row["pixel_sha_before"], row["pixel_sha_after"]);
     }
+}
+
+#[test]
+fn accepted_split_and_scalar_disagreement_conflicts_in_both_projections() {
+    let (_directory, service, calls) = fixture(money_regions(), "S 2 BB");
+    let session = record(
+        &service,
+        json!({"seats[0].bet":"S 2 BB","split_pot":"S 2 BB S 2 BB"}),
+    );
+    service
+        .ai_review
+        .ensure(&service.gameplay_ai.context)
+        .unwrap();
+    let prepared = service.gameplay_ai.prepare(&service, &session).unwrap();
+    let run = prepared["run_id"].as_str().unwrap();
+    let (items, _) = service.gameplay_ai.read_snapshot(run).unwrap();
+    let split = items
+        .iter()
+        .find(|i| i["region_id"] == "split_pot")
+        .unwrap();
+    service.gameplay_ai.review(&service, &json!({"occurrence_id":split["id"],"expected_revision":split["revision"],"action":"manual","label":"S 2 BB S 2 BB"})).unwrap();
+    let (items, _) = service.gameplay_ai.read_snapshot(run).unwrap();
+    let scalar = items
+        .iter()
+        .find(|i| i["region_id"] == "seats[0].bet")
+        .unwrap();
+    service.gameplay_ai.review(&service, &json!({"occurrence_id":scalar["id"],"expected_revision":scalar["revision"],"action":"manual","label":"S 3 BB"})).unwrap();
+    let conn = service.gameplay_ai.context.connection().unwrap();
+    let fresh = read_items(&conn, run).unwrap();
+    let groups = cache::group_work(&conn, fresh.clone()).unwrap();
+    for region in ["split_pot", "seats[0].bet"] {
+        let item = fresh.iter().find(|i| i["region_id"] == region).unwrap();
+        assert_eq!(item["state"], "conflict", "{region}: {item}");
+        let group = groups.iter().find(|i| i["region_id"] == region).unwrap();
+        assert_eq!(group["state"], "conflict", "{region}: {group}");
+    }
+    let scalar_key = fresh
+        .iter()
+        .find(|i| i["region_id"] == "seats[0].bet")
+        .unwrap()["sample_key"]
+        .as_str()
+        .unwrap();
+    conn.execute("INSERT INTO gameplay_ai_decisions(occurrence_id,sample_key,label,state,created_at) VALUES('other-human',?,'S 4 BB','manual',0)", [scalar_key]).unwrap();
+    let conflicted = read_items(&conn, run).unwrap();
+    let parent = conflicted
+        .iter()
+        .find(|i| i["region_id"] == "split_pot")
+        .unwrap();
+    assert_eq!(parent["state"], "conflict");
+    assert_eq!(parent["reason"], "Conflicting manual readings");
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn historical_supported_boundary_contact_blocks_automatic_reuse_but_keeps_human_truth() {
+    let (_directory, service, calls) = fixture(json!([region("community_cards[0].suit", 2)]), "c");
+    let session = record(&service, json!({"community_cards[0].suit":"c"}));
+    let prepared = run(&service, &session);
+    let run_id = prepared["run_id"].as_str().unwrap();
+    let conn = service.gameplay_ai.context.connection().unwrap();
+    let item = read_items(&conn, run_id).unwrap().remove(0);
+    let key = item["sample_key"].as_str().unwrap().to_owned();
+    assert!(matches!(
+        cache::truth(&conn, &key).unwrap(),
+        cache::Truth::Accepted { human: false, .. }
+    ));
+    conn.execute("UPDATE queue_items SET payload=json_set(payload,'$.presence.card_evidence.boundary_contact',json('[true,false,false,false]')) WHERE sample_key=?", [&key]).unwrap();
+    conn.execute("UPDATE gameplay_ai_cache_context SET payload=json_set(payload,'$.presence.card_evidence.boundary_contact',json('[true,false,false,false]')) WHERE occurrence_id=?", [item["id"].as_str().unwrap()]).unwrap();
+    assert!(matches!(
+        cache::truth(&conn, &key).unwrap(),
+        cache::Truth::NeedsReview { .. }
+    ));
+    let blocked = read_items(&conn, run_id).unwrap().remove(0);
+    assert_eq!(blocked["state"], "flagged");
+    drop(conn);
+    let reviewed = service.gameplay_ai.review(&service, &json!({"occurrence_id":blocked["id"],"expected_revision":blocked["revision"],"action":"manual","label":"c"})).unwrap();
+    assert_eq!(reviewed["item"]["state"], "manual");
+    let conn = service.gameplay_ai.context.connection().unwrap();
+    assert!(matches!(
+        cache::truth(&conn, &key).unwrap(),
+        cache::Truth::Accepted { human: true, .. }
+    ));
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+}
+
+#[test]
+fn automatic_card_support_requires_four_clear_boundary_flags() {
+    let mut evidence = json!({"presence":{"target_support":"supported","card_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1","boundary_contact":[false,false,false,false]}}});
+    for id in ["community_cards[0]", "community_cards[0].suit"] {
+        assert!(cache::automatic_support(id, &evidence));
+        for flags in [
+            json!([true, false, false, false]),
+            json!([false, false, false]),
+            Value::Null,
+            json!([false, false, false, "false"]),
+        ] {
+            evidence["presence"]["card_evidence"]["boundary_contact"] = flags;
+            assert!(!cache::automatic_support(id, &evidence));
+        }
+        evidence["presence"]["card_evidence"]["boundary_contact"] =
+            json!([false, false, false, false]);
+    }
+    assert!(cache::automatic_support("seats[0].bet", &json!({})));
+}
+
+#[test]
+fn real_clipped_uniform_pixels_cannot_inherit_historical_supported_reading() {
+    use crate::lab::gameplay::{card_crop as plane, card_fields, presence};
+    use std::collections::BTreeMap;
+    let quad = [
+        plane::Point { x: 0., y: 0. },
+        plane::Point { x: 100., y: 0. },
+        plane::Point { x: 100., y: 100. },
+        plane::Point { x: 0., y: 100. },
+    ];
+    let pose = plane::CardPose {
+        policy: plane::POLICY.into(),
+        prior_quad: quad,
+        quad,
+        rank: plane::LocalRect {
+            x: 0.1,
+            y: 0.05,
+            width: 0.2,
+            height: 0.2,
+        },
+        suit: plane::LocalRect {
+            x: 0.1,
+            y: 0.23,
+            width: 0.2,
+            height: 0.25,
+        },
+        prior_angle_degrees: 0.,
+        measured_angle_degrees: 0.,
+        applied_angle_degrees: 0.,
+        adjusted: false,
+        top_edge: None,
+        left_edge: None,
+    };
+    let mut pixels = RgbImage::from_pixel(120, 120, Rgb([255; 3]));
+    for y in 8..17 {
+        for x in 10..13 {
+            pixels.put_pixel(x, y, Rgb([20; 3]));
+        }
+    }
+    let before = pixels.clone();
+    let region = json!({"id":"community_cards[0]","category":"card","ocr":true,"card_prior_id":"card","card_field":"rank","guide":{"family":"card.rank"},"bounds":{"x":10,"y":5,"width":20,"height":20}});
+    let poses = BTreeMap::from([("card".to_owned(), plane::CardResolution::Pose { pose })]);
+    let resolved = card_fields::resolve(&pixels, &json!({}), &region, &poses).unwrap();
+    assert_eq!(resolved["card_target_evidence"]["surface"]["uniform"], true);
+    assert_eq!(
+        resolved["card_target_evidence"]["target_support"],
+        "ambiguous"
+    );
+    assert!(resolved["card_target_evidence"]["boundary_contact"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|v| *v == true));
+    let current_presence = presence::assess(&DynamicImage::ImageRgb8(pixels.clone()), &resolved);
+    assert_eq!(current_presence["target_support"], "ambiguous");
+    assert_eq!(pixels, before);
+    let target = card_fields::sample(&pixels, &resolved).unwrap().unwrap();
+    let target_png = crate::media::png(&target).unwrap();
+    let expected_pixel_sha = crate::lab::review::image_identity(&target_png).unwrap().1;
+
+    let (_directory, service, calls) = fixture(json!([region.clone()]), "A");
+    let mut historical = resolved.clone();
+    // Reconstruct the former uniform-face exception while retaining measured flags.
+    historical["card_target_evidence"]["target_support"] = json!("supported");
+    historical["presence"] = current_presence.clone();
+    historical["presence"]["target_support"] = json!("supported");
+    historical["presence"]["card_evidence"]["target_support"] = json!("supported");
+    historical
+        .as_object_mut()
+        .unwrap()
+        .remove("guideUnsupportedReason");
+    fs::write(
+        service.gameplay_ai.config.join("gameplay-regions.json"),
+        json!({"viewport":{"width":120,"height":120},"regions":[historical]}).to_string(),
+    )
+    .unwrap();
+    let store = service.gameplay.evidence_store().unwrap();
+    let settings = json!({"regions":{}});
+    let session = store
+        .create("fixture", 1000, "Fixture", &settings, "fixture")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let png = crate::media::png(&DynamicImage::ImageRgb8(pixels)).unwrap();
+    store
+        .admit(
+            &session,
+            &png,
+            120,
+            120,
+            "2026-11-14T00:00:00Z",
+            &settings,
+            "fixture",
+            &json!({"community_cards[0]":{"prediction":{"text":"K"}}}),
+            "12345678",
+            &json!({}),
+        )
+        .unwrap();
+    service
+        .ai_review
+        .ensure(&service.gameplay_ai.context)
+        .unwrap();
+    let prepared = service.gameplay_ai.prepare(&service, &session).unwrap();
+    let run_id = prepared["run_id"].as_str().unwrap();
+    let conn = service.gameplay_ai.context.connection().unwrap();
+    let items = read_items(&conn, run_id).unwrap();
+    assert_eq!(items.len(), 1);
+    let item = &items[0];
+    let key = item["sample_key"].as_str().unwrap();
+    let (queue_id, sha, payload): (i64, String, String) = conn
+        .query_row(
+            "SELECT queue_id,pixel_sha256,payload FROM queue_items WHERE sample_key=?",
+            [key],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap();
+    let payload: Value = serde_json::from_str(&payload).unwrap();
+    assert_eq!(sha, expected_pixel_sha);
+    assert!(payload["guide"]["guideUnsupportedReason"].is_null());
+    assert!(payload["guide"]["localization_error"].is_null());
+
+    assert_eq!(
+        payload["presence"]["card_evidence"]["target_support"],
+        "supported"
+    );
+    assert!(payload["presence"]["card_evidence"]["boundary_contact"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|v| *v == true));
+    conn.execute("INSERT INTO ai_review_jobs(id,dataset_id,run_id,state,model,batch_size,auto_correct,created_at,updated_at) VALUES('old-supported','gameplay-ai',?,'completed','fixture',1,1,0,0)",[run_id]).unwrap();
+    conn.execute(
+        "UPDATE gameplay_ai_runs SET job_id='old-supported' WHERE run_id=?",
+        [run_id],
+    )
+    .unwrap();
+    let result = json!({"label":"A","pixel_sha256":sha,"first_reading":{"text":"A","clarity":"clear"},"verification":{"text":"A","clarity":"clear"}});
+    conn.execute("INSERT INTO ai_review_items(job_id,ordinal,batch_index,queue_id,sample_key,region_id,group_name,prior_label,pixel_sha256,prior_event_id,state,result) VALUES('old-supported',0,0,?,?,?,'rank','K',?,0,'corrected',?)",params![queue_id,key,"community_cards[0]",sha,result.to_string()]).unwrap();
+    assert!(matches!(
+        cache::truth(&conn, key).unwrap(),
+        cache::Truth::NeedsReview { .. }
+    ));
+    conn.execute("UPDATE gameplay_ai_cache_context SET payload=json_set(payload,'$.presence',json(?)) WHERE occurrence_id=?", params![current_presence.to_string(), item["id"].as_str().unwrap()]).unwrap();
+    let current = read_items(&conn, run_id).unwrap();
+    assert_eq!(current[0]["state"], "flagged");
+    assert_eq!(current[0]["presence"]["target_support"], "ambiguous");
+    assert_eq!(
+        current[0]["presence"]["card_evidence"]["surface"]["uniform"],
+        true
+    );
+
+    assert_ne!(current[0]["label"], "A");
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
 }

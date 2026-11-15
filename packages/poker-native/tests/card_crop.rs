@@ -1,3 +1,4 @@
+use poker_native::lab::gameplay::{ai, presence};
 #[path = "../src/lab/gameplay/card_crop.rs"]
 mod card_crop;
 use card_crop::{resolve_pose, sample_field, CardPrior, CardResolution, Field, LocalRect, Point};

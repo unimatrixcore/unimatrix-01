@@ -885,41 +885,44 @@ export async function extractRegions(): Promise<{
         if (
           !translations.length ||
           translations.some((m) => m.a !== 1 || m.d !== 1 || m.b !== 0 || m.c !== 0)
-        )
-          throw new Error("Award source requires linear translation keyframes");
-        const saved = wrapper.getAttribute("style");
-        try {
-          wrapper.style.setProperty("transform", "none", "important");
-          const savedTextStyle = el.getAttribute("style");
-          (el as HTMLElement).style.setProperty("white-space", "nowrap", "important");
-          const row = el.getBoundingClientRect();
-          if (savedTextStyle === null) el.removeAttribute("style");
-          else el.setAttribute("style", savedTextStyle);
-          const slot = message.getBoundingClientRect(),
-            width = moneyWidth(el),
-            align = getComputedStyle(message).alignItems;
-          guideAlignment =
-            align === "flex-start" ? "left" : align === "flex-end" ? "right" : "center";
-          guideSlot = { x: slot.x, y: row.y, width: slot.width, height: row.height };
-          const x =
-            guideAlignment === "left"
-              ? slot.x
-              : guideAlignment === "right"
-                ? slot.right - width
-                : slot.x + (slot.width - width) / 2;
-          const minX = Math.min(0, ...translations.map((m) => m.e)),
-            maxX = Math.max(0, ...translations.map((m) => m.e));
-          const minY = Math.min(0, ...translations.map((m) => m.f)),
-            maxY = Math.max(0, ...translations.map((m) => m.f));
-          b = {
-            x: x + minX,
-            y: row.y + minY,
-            width: width + maxX - minX,
-            height: row.height * (css.whiteSpace === "nowrap" ? 1 : 2) + maxY - minY,
-          };
-        } finally {
-          if (saved === null) wrapper.removeAttribute("style");
-          else wrapper.setAttribute("style", saved);
+        ) {
+          region.visibility = "unsupported";
+          region.reason = "Award source requires linear translation keyframes";
+        } else {
+          const saved = wrapper.getAttribute("style");
+          try {
+            wrapper.style.setProperty("transform", "none", "important");
+            const savedTextStyle = el.getAttribute("style");
+            (el as HTMLElement).style.setProperty("white-space", "nowrap", "important");
+            const row = el.getBoundingClientRect();
+            if (savedTextStyle === null) el.removeAttribute("style");
+            else el.setAttribute("style", savedTextStyle);
+            const slot = message.getBoundingClientRect(),
+              width = moneyWidth(el),
+              align = getComputedStyle(message).alignItems;
+            guideAlignment =
+              align === "flex-start" ? "left" : align === "flex-end" ? "right" : "center";
+            guideSlot = { x: slot.x, y: row.y, width: slot.width, height: row.height };
+            const x =
+              guideAlignment === "left"
+                ? slot.x
+                : guideAlignment === "right"
+                  ? slot.right - width
+                  : slot.x + (slot.width - width) / 2;
+            const minX = Math.min(0, ...translations.map((m) => m.e)),
+              maxX = Math.max(0, ...translations.map((m) => m.e));
+            const minY = Math.min(0, ...translations.map((m) => m.f)),
+              maxY = Math.max(0, ...translations.map((m) => m.f));
+            b = {
+              x: x + minX,
+              y: row.y + minY,
+              width: width + maxX - minX,
+              height: row.height * (css.whiteSpace === "nowrap" ? 1 : 2) + maxY - minY,
+            };
+          } finally {
+            if (saved === null) wrapper.removeAttribute("style");
+            else wrapper.setAttribute("style", saved);
+          }
         }
       }
       policy = "source_award_motion_envelope";

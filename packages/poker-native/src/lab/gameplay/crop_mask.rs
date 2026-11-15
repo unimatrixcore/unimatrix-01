@@ -202,7 +202,9 @@ fn contains(panel: &RoundedPanel, x: f64, y: f64) -> bool {
             _ => x < cx && y > cy,
         };
         if in_corner && radius.x > 0.0 && radius.y > 0.0 {
-            return ((x - cx) / radius.x).powi(2) + ((y - cy) / radius.y).powi(2) <= 1.0;
+            if ((x - cx) / radius.x).powi(2) + ((y - cy) / radius.y).powi(2) > 1.0 {
+                return false;
+            }
         }
     }
     true
@@ -322,6 +324,24 @@ mod tests {
         let n = normalized(&d.panels[0]).unwrap();
         assert_eq!(n.corners[0].x, 10.0);
         assert!((n.corners[0].y - 10.0 / 3.0).abs() < 1e-9);
+    }
+    #[test]
+    fn overlapping_corner_regions_must_satisfy_both_ellipses() {
+        let panel = RoundedPanel {
+            bounds: Rect {
+                x: 0.,
+                y: 0.,
+                width: 10.,
+                height: 10.,
+            },
+            corners: [
+                CornerRadius { x: 8., y: 8. },
+                CornerRadius { x: 0., y: 0. },
+                CornerRadius { x: 8., y: 8. },
+                CornerRadius { x: 0., y: 0. },
+            ],
+        };
+        assert!(!contains(&panel, 7.9, 7.9));
     }
     #[test]
     fn invalid_radii_and_missing_panels_fail_closed() {

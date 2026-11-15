@@ -11,7 +11,7 @@ fn fixture() -> (tempfile::TempDir, LabService) {
     let tools = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tools/poker");
     let service =
         LabService::open_with_paths(root, config.clone(), tools, Default::default()).unwrap();
-    fs::write(config.join("gameplay-regions.json"),json!({"viewport":{"width":20,"height":20},"regions":[{"id":"board.0.rank","presence":{"state":"present","target_support":"supported","card_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1"}},"card_target_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1"},"category":"card","bounds":{"x":2,"y":2,"width":6,"height":6}}]}).to_string()).unwrap();
+    fs::write(config.join("gameplay-regions.json"),json!({"viewport":{"width":20,"height":20},"regions":[{"id":"board.0.rank","presence":{"state":"present","target_support":"supported","card_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1","boundary_contact":[false,false,false,false]}},"card_target_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1","boundary_contact":[false,false,false,false]},"category":"card","bounds":{"x":2,"y":2,"width":6,"height":6}}]}).to_string()).unwrap();
     (dir, service)
 }
 fn recording(service: &LabService) -> String {
@@ -548,7 +548,7 @@ fn preparation_reuses_durable_scope_and_prevents_premature_paid_start() {
 #[test]
 fn guided_neighbor_pixel_change_cannot_reuse_an_exact_asset_or_guess_a_label() {
     let (_dir, mut service) = fixture();
-    fs::write(service.gameplay_ai.config.join("gameplay-regions.json"),json!({"source":"fixture_css","viewport":{"width":20,"height":20},"regions":[{"id":"board.0.rank","presence":{"state":"present","target_support":"supported","card_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1"}},"card_target_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1"},"bounds":{"x":2,"y":2,"width":6,"height":6},"guide":{"slot":{"x":2,"y":2,"width":6,"height":6},"anchor":{"x":5,"y":5},"alignment":"center","family":"card_rank","source":"deck_glyph_union"}}]}).to_string()).unwrap();
+    fs::write(service.gameplay_ai.config.join("gameplay-regions.json"),json!({"source":"fixture_css","viewport":{"width":20,"height":20},"regions":[{"id":"board.0.rank","presence":{"state":"present","target_support":"supported","card_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1","boundary_contact":[false,false,false,false]}},"card_target_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1","boundary_contact":[false,false,false,false]},"bounds":{"x":2,"y":2,"width":6,"height":6},"guide":{"slot":{"x":2,"y":2,"width":6,"height":6},"anchor":{"x":5,"y":5},"alignment":"center","family":"card_rank","source":"deck_glyph_union"}}]}).to_string()).unwrap();
     let session = recording(&service);
     let root = service.gameplay.evidence_root().unwrap();
     let conn = Connection::open(root.join("gameplay.sqlite3")).unwrap();
@@ -1061,7 +1061,7 @@ fn changed_policy_relinks_occurrences_without_reusing_old_shared_truth() {
 fn frame_ledger_summary_distinguishes_unsupported_visual_and_manual_states() {
     let (_dir, service) = fixture();
     let guide = json!({"slot":{"x":2.,"y":2.,"width":6.,"height":6.},"anchor":{"x":5.,"y":5.},"alignment":"center","family":"rank","source":"deck_glyph_union"});
-    fs::write(service.gameplay_ai.config.join("gameplay-regions.json"),json!({"source":"fixture_css","viewport":{"width":20,"height":20},"regions":[{"id":"board.0.rank","presence":{"state":"present","target_support":"supported","card_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1"}},"card_target_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1"},"category":"card","bounds":{"x":2,"y":2,"width":6,"height":6},"guide":guide},{"id":"seat.0.award","category":"winner","bounds":{"x":10,"y":10,"width":4,"height":4},"guideUnsupportedReason":"CSS motion lacks a proven fixed slot"},{"id":"header.timer","category":"timer","bounds":{"x":0,"y":0,"width":1,"height":1},"ocr":false}]}).to_string()).unwrap();
+    fs::write(service.gameplay_ai.config.join("gameplay-regions.json"),json!({"source":"fixture_css","viewport":{"width":20,"height":20},"regions":[{"id":"board.0.rank","presence":{"state":"present","target_support":"supported","card_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1","boundary_contact":[false,false,false,false]}},"card_target_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1","boundary_contact":[false,false,false,false]},"category":"card","bounds":{"x":2,"y":2,"width":6,"height":6},"guide":guide},{"id":"seat.0.award","category":"winner","bounds":{"x":10,"y":10,"width":4,"height":4},"guideUnsupportedReason":"CSS motion lacks a proven fixed slot"},{"id":"header.timer","category":"timer","bounds":{"x":0,"y":0,"width":1,"height":1},"ocr":false}]}).to_string()).unwrap();
     let session = recording(&service);
     let root = service.gameplay.evidence_root().unwrap();
     let id: String = Connection::open(root.join("gameplay.sqlite3"))
@@ -1197,7 +1197,7 @@ fn appending_a_frame_preserves_occurrence_owned_human_decisions() {
 #[test]
 fn pilot_uses_existing_workflow_and_full_scope_reuses_accepted_assets() {
     let (_dir, mut service) = fixture();
-    fs::write(service.gameplay_ai.config.join("gameplay-regions.json"),json!({"viewport":{"width":20,"height":20},"regions":[{"id":"board.0.rank","presence":{"state":"present","target_support":"supported","card_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1"}},"card_target_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1"},"bounds":{"x":2,"y":2,"width":6,"height":6}},{"id":"board.1.rank","presence":{"state":"present","target_support":"supported","card_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1"}},"bounds":{"x":2,"y":2,"width":6,"height":6}},{"id":"header.timer","ocr":false,"bounds":{"x":0,"y":0,"width":1,"height":1}}]}).to_string()).unwrap();
+    fs::write(service.gameplay_ai.config.join("gameplay-regions.json"),json!({"viewport":{"width":20,"height":20},"regions":[{"id":"board.0.rank","presence":{"state":"present","target_support":"supported","card_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1","boundary_contact":[false,false,false,false]}},"card_target_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1","boundary_contact":[false,false,false,false]},"bounds":{"x":2,"y":2,"width":6,"height":6}},{"id":"board.1.rank","presence":{"state":"present","target_support":"supported","card_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1","boundary_contact":[false,false,false,false]}},"bounds":{"x":2,"y":2,"width":6,"height":6}},{"id":"header.timer","ocr":false,"bounds":{"x":0,"y":0,"width":1,"height":1}}]}).to_string()).unwrap();
     let calls = Arc::new(AtomicUsize::new(0));
     let counter = calls.clone();
     service.ai_review = Arc::new(AiReviewManager::with_transport(
@@ -2497,7 +2497,12 @@ fn workflow_reopened_preparation_is_resumable_without_starting_provider_work() {
 
 #[test]
 fn recovery_replays_raw_phases_with_no_duplicate_calls_and_keeps_quarantine() {
-    for saved_second in [true, false] {
+    for (saved_second, row_only, duplicate) in [
+        (true, false, false),
+        (true, true, false),
+        (true, false, true),
+        (false, false, false),
+    ] {
         let (_dir, mut service) = fixture();
         let calls = Arc::new(AtomicUsize::new(0));
         let counter = calls.clone();
@@ -2530,6 +2535,42 @@ fn recovery_replays_raw_phases_with_no_duplicate_calls_and_keeps_quarantine() {
             .ai_review
             .run_fixture(&service.gameplay_ai.context, old);
         assert_eq!(calls.load(Ordering::SeqCst), 2);
+        // Both saved phases remain processable after the exact request cap is spent.
+        {
+            let conn = service.gameplay_ai.context.connection().unwrap();
+            assert_eq!(
+                conn.query_row(
+                    "SELECT COUNT(*) FROM gameplay_ai_request_intents WHERE job_id=?",
+                    [old],
+                    |r| r.get::<_, i64>(0)
+                )
+                .unwrap(),
+                2
+            );
+            conn.execute(
+                "UPDATE ai_review_items SET state='pending',result=NULL WHERE job_id=?",
+                [old],
+            )
+            .unwrap();
+            conn.execute("UPDATE ai_review_jobs SET state='queued' WHERE id=?", [old])
+                .unwrap();
+        }
+        service
+            .ai_review
+            .run_fixture(&service.gameplay_ai.context, old);
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        assert_eq!(
+            service
+                .gameplay_ai
+                .context
+                .connection()
+                .unwrap()
+                .query_row("SELECT state FROM ai_review_jobs WHERE id=?", [old], |r| {
+                    r.get::<_, String>(0)
+                })
+                .unwrap(),
+            "completed"
+        );
         let raw: String;
         {
             let mut conn = service.gameplay_ai.context.connection().unwrap();
@@ -2546,6 +2587,15 @@ fn recovery_replays_raw_phases_with_no_duplicate_calls_and_keeps_quarantine() {
                     let mut value: Value = serde_json::from_str(&value).unwrap();
                     let row = value.as_object_mut().unwrap().remove("0").unwrap();
                     value["17"] = row;
+                    if column == "response" {
+                        if row_only {
+                            value.as_object_mut().unwrap().remove("_response");
+                        } else {
+                            value["_response"]["id"] = json!("different-batch-response");
+                        }
+                    } else if duplicate {
+                        value["17"]["_response"]["id"] = json!("response-0");
+                    }
                     conn.execute(
                         &format!("UPDATE ai_review_batches SET {column}=? WHERE job_id=?"),
                         params![value.to_string(), old],
@@ -2617,7 +2667,7 @@ fn recovery_replays_raw_phases_with_no_duplicate_calls_and_keeps_quarantine() {
             .run_fixture(&service.gameplay_ai.context, new);
         assert_eq!(
             calls.load(Ordering::SeqCst),
-            if saved_second { 2 } else { 3 }
+            if saved_second && !duplicate { 2 } else { 3 }
         );
         let status = service.gameplay_ai.status(&service, &session).unwrap();
         assert_eq!(status["counts"]["corrected"], 3, "{status}");
@@ -2644,7 +2694,15 @@ fn recovery_replays_raw_phases_with_no_duplicate_calls_and_keeps_quarantine() {
                 |r| r.get::<_, i64>(0)
             )
             .unwrap(),
-            if saved_second { 2 } else { 1 }
+            if saved_second && !duplicate { 2 } else { 1 }
+        );
+        assert_eq!(conn.query_row("SELECT response_id FROM ai_review_recovered_observations WHERE target_job=? AND phase='review'", [new], |r| r.get::<_,String>(0)).unwrap(), "response-0");
+        let recovered_row: String = conn.query_row("SELECT reading FROM ai_review_recovered_observations WHERE target_job=? AND phase='review'", [new], |r| r.get(0)).unwrap();
+        let recovered_row: Value = serde_json::from_str(&recovered_row).unwrap();
+        assert_eq!(recovered_row["_response"]["id"], "response-0");
+        assert_eq!(
+            recovered_row["observation_provenance"]["response_id"],
+            "response-0"
         );
         assert_eq!(conn.query_row("SELECT source_ordinal FROM ai_review_recovered_observations WHERE target_job=? LIMIT 1",[new],|r|r.get::<_,i64>(0)).unwrap(),17);
         assert_eq!(conn.query_row("SELECT source_batch FROM ai_review_recovered_observations WHERE target_job=? LIMIT 1",[new],|r|r.get::<_,i64>(0)).unwrap(),135);
@@ -2654,6 +2712,29 @@ fn recovery_replays_raw_phases_with_no_duplicate_calls_and_keeps_quarantine() {
                 [new]
             )
             .is_err());
+        drop(conn);
+        if row_only {
+            let mut conn = service.gameplay_ai.context.connection().unwrap();
+            let tx = conn.transaction().unwrap();
+            quarantine::apply(&tx, new, "second fixture audit").unwrap();
+            tx.commit().unwrap();
+            drop(conn);
+            let chained = service.gameplay_ai.prepare_workflow(&service, &session, None, &json!({"review_after_prepare":true,"max_requests":1,"recover_from_job_id":new})).unwrap();
+            let chained_id = chained["job_id"].as_str().unwrap();
+            service
+                .ai_review
+                .run_fixture(&service.gameplay_ai.context, chained_id);
+            assert_eq!(calls.load(Ordering::SeqCst), 2);
+            let conn = service.gameplay_ai.context.connection().unwrap();
+            let identities = conn.prepare("SELECT phase,response_id,source_job FROM ai_review_recovered_observations WHERE target_job=? ORDER BY phase").unwrap().query_map([chained_id], |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?))).unwrap().collect::<rusqlite::Result<Vec<_>>>().unwrap();
+            assert_eq!(
+                identities,
+                vec![
+                    ("review".into(), "response-0".into(), new.into()),
+                    ("verification".into(), "response-1".into(), new.into())
+                ]
+            );
+        }
     }
 }
 
@@ -2907,7 +2988,7 @@ fn injected_occupancy_is_rederived_from_current_pixels_before_ai_admission() {
     for state in ["empty", "occupied", "unknown"] {
         let (_dir, service) = fixture();
         let occupancy = json!({"state":state,"source":"source_free_seat_pixels","reason":"fixture free-seat pixels","policy":"source_free_seat_occupancy_v1"});
-        let regions=["seats[0].cards[0]","seats[0].name"].into_iter().map(|id|json!({"id":id,"bounds":{"x":2,"y":2,"width":6,"height":6},"seat_occupancy":occupancy,"presence":{"state":"present","target_support":"supported","card_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1"}}})).collect::<Vec<_>>();
+        let regions=["seats[0].cards[0]","seats[0].name"].into_iter().map(|id|json!({"id":id,"bounds":{"x":2,"y":2,"width":6,"height":6},"seat_occupancy":occupancy,"presence":{"state":"present","target_support":"supported","card_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1","boundary_contact":[false,false,false,false]}}})).collect::<Vec<_>>();
         fs::write(
             service.gameplay_ai.config.join("gameplay-regions.json"),
             json!({"viewport":{"width":20,"height":20},"regions":regions}).to_string(),
@@ -3076,7 +3157,7 @@ fn supported_card_blank_pairs_never_accept_even_when_prior_is_blank() {
         } else {
             "unsupported"
         };
-        fs::write(service.gameplay_ai.config.join("gameplay-regions.json"),json!({"viewport":{"width":20,"height":20},"regions":[{"id":region,"bounds":{"x":2,"y":2,"width":6,"height":6},"presence":{"target_support":support,"card_evidence":{"target_support":support,"policy":"source_card_plane_component_support_v1"}}}]}).to_string()).unwrap();
+        fs::write(service.gameplay_ai.config.join("gameplay-regions.json"),json!({"viewport":{"width":20,"height":20},"regions":[{"id":region,"bounds":{"x":2,"y":2,"width":6,"height":6},"presence":{"target_support":support,"card_evidence":{"target_support":support,"policy":"source_card_plane_component_support_v1","boundary_contact":[false,false,false,false]}}}]}).to_string()).unwrap();
         service.ai_review = Arc::new(AiReviewManager::with_transport(
             service.registry.clone(),
             Arc::new(move |_, _| {
@@ -3369,36 +3450,37 @@ fn read_snapshot_invalidates_on_local_and_external_writes_and_run_changes() {
 }
 
 #[test]
-fn read_snapshot_retries_write_after_projection() {
+fn read_snapshot_returns_consistent_uncached_rows_under_continuous_commits() {
     use std::sync::atomic::{AtomicUsize, Ordering};
     let (_dir, service) = fixture();
     let session = recording(&service);
     let prepared = service.gameplay_ai.prepare(&service, &session).unwrap();
     let run = prepared["run_id"].as_str().unwrap().to_owned();
-    let path = service
-        .gameplay_ai
-        .context
-        .connection()
-        .unwrap()
-        .path()
-        .unwrap()
-        .to_owned();
+    let conn = service.gameplay_ai.context.connection().unwrap();
+    let initial = read_items(&conn, &run).unwrap();
+    let initial_groups = cache::group_work(&conn, initial.clone()).unwrap();
+    let path = conn.path().unwrap().to_owned();
+    drop(conn);
     let calls = Arc::new(AtomicUsize::new(0));
     let observed = calls.clone();
     let hook_run = run.clone();
     *service.gameplay_ai.projection_hook.lock().unwrap() = Some(Arc::new(move || {
-        if observed.fetch_add(1, Ordering::SeqCst) == 0 {
-            let external = Connection::open(&path).unwrap();
-            external.execute("UPDATE gameplay_ai_occurrences SET reason='concurrent write' WHERE id=(SELECT occurrence_id FROM gameplay_ai_run_items WHERE run_id=? LIMIT 1)", [&hook_run]).unwrap();
-        }
+        let n = observed.fetch_add(1, Ordering::SeqCst);
+        let external = Connection::open(&path).unwrap();
+        external.execute("UPDATE gameplay_ai_occurrences SET reason=? WHERE id=(SELECT occurrence_id FROM gameplay_ai_run_items WHERE run_id=? LIMIT 1)", params![format!("concurrent {n}"), hook_run]).unwrap();
     }));
     let (items, groups) = service.gameplay_ai.read_snapshot(&run).unwrap();
-    assert!(calls.load(Ordering::SeqCst) >= 2);
-    let conn = service.gameplay_ai.context.connection().unwrap();
-    let expected = read_items(&conn, &run).unwrap();
-    let expected_groups = cache::group_work(&conn, expected.clone()).unwrap();
-    assert_read_rows(&items, &expected);
-    assert_read_rows(&groups, &expected_groups);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_read_rows(&items, &initial);
+    assert_read_rows(&groups, &initial_groups);
+    assert!(service.gameplay_ai.read_snapshot.lock().unwrap().is_none());
+    let _ = service.gameplay_ai.read_snapshot(&run).unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert!(service.gameplay_ai.read_snapshot.lock().unwrap().is_none());
+    *service.gameplay_ai.projection_hook.lock().unwrap() = None;
+    let (fresh, _) = service.gameplay_ai.read_snapshot(&run).unwrap();
+    let (warm, _) = service.gameplay_ai.read_snapshot(&run).unwrap();
+    assert!(Arc::ptr_eq(&fresh, &warm));
 }
 
 #[test]
@@ -3666,7 +3748,7 @@ fn incremental_refresh_preserves_suit_and_money_component_truth() {
         &[panel(0.), panel(20.)],
     )
     .unwrap();
-    let region = |id: &str, x| json!({"id":id,"presence":{"state":"present","target_support":"supported","card_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1"}},"card_target_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1"},"bounds":{"x":x,"y":2,"width":6,"height":6}});
+    let region = |id: &str, x| json!({"id":id,"presence":{"state":"present","target_support":"supported","card_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1","boundary_contact":[false,false,false,false]}},"card_target_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1","boundary_contact":[false,false,false,false]},"bounds":{"x":x,"y":2,"width":6,"height":6}});
     let mut bet = region("seats[0].bet", 2);
     bet["crop_mask"] = json!(scalar);
     let cases = [

@@ -371,22 +371,19 @@ pub fn plan(specs: &[SourceSpec], configs: &[PathBuf]) -> Result<Plan, String> {
                     );
                     continue;
                 }
-                let dimensions = match image::ImageReader::new(std::io::Cursor::new(&bytes))
-                    .with_guessed_format()
-                    .map_err(error)?
-                    .into_dimensions()
-                {
-                    Ok(v) => v,
-                    Err(_) => {
-                        unresolved(
-                            &mut batch.unresolved,
-                            origin,
-                            "invalid_full_frame_pixels",
-                            evidence,
-                        );
-                        continue;
-                    }
-                };
+                let dimensions =
+                    match image::load_from_memory_with_format(&bytes, image::ImageFormat::Png) {
+                        Ok(v) => (v.width(), v.height()),
+                        Err(_) => {
+                            unresolved(
+                                &mut batch.unresolved,
+                                origin,
+                                "invalid_full_frame_pixels",
+                                evidence,
+                            );
+                            continue;
+                        }
+                    };
                 let hash_config = capture["regions_hash"].as_str().unwrap_or("");
                 let config = known_configs
                     .get(hash_config)

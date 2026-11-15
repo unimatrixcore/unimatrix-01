@@ -1933,54 +1933,50 @@ impl GameplayAi {
         Ok(json!({"job":self.status(service,&session)?}))
     }
     fn read_snapshot(&self, run: &str) -> LabResult<(ReadRows, ReadRows)> {
-        loop {
-            let source = ReadSource::read(&*self.context.connection()?)?;
-            {
-                let cache = self
-                    .read_snapshot
-                    .lock()
-                    .map_err(|_| conflict("Read snapshot lock poisoned"))?;
-                if let Some(snapshot) = cache.as_ref() {
-                    if snapshot.run == run && snapshot.source == source {
-                        return Ok((snapshot.items.clone(), snapshot.grouped.clone()));
-                    }
-                }
-            }
-            let conn = Connection::open_with_flags(
-                &source.path,
-                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-            )?;
-            let version: i64 = conn.query_row("PRAGMA data_version", [], |r| r.get(0))?;
-            conn.execute_batch("BEGIN")?;
-            let result = (|| {
-                let items = read_items(&conn, run)?;
-                let grouped = cache::group_work(&conn, items.clone())?;
-                Ok::<_, crate::lab::LabError>((share_read_rows(items), share_read_rows(grouped)))
-            })();
-            let end = conn.execute_batch("ROLLBACK");
-            let (items, grouped) = result?;
-            end?;
-            let after: i64 = conn.query_row("PRAGMA data_version", [], |r| r.get(0))?;
-            #[cfg(test)]
-            if let Some(hook) = self.projection_hook.lock().unwrap().as_ref() {
-                hook();
-            }
-            let current = ReadSource::read(&*self.context.connection()?)?;
-            if after != version || current != source {
-                continue;
-            }
-            let mut cache = self
+        let source = ReadSource::read(&*self.context.connection()?)?;
+        {
+            let cache = self
                 .read_snapshot
                 .lock()
                 .map_err(|_| conflict("Read snapshot lock poisoned"))?;
-            *cache = Some(ReadSnapshot {
-                run: run.into(),
-                source,
-                items: items.clone(),
-                grouped: grouped.clone(),
-            });
+            if let Some(snapshot) = cache.as_ref() {
+                if snapshot.run == run && snapshot.source == source {
+                    return Ok((snapshot.items.clone(), snapshot.grouped.clone()));
+                }
+            }
+        }
+        let conn =
+            Connection::open_with_flags(&source.path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        let version: i64 = conn.query_row("PRAGMA data_version", [], |r| r.get(0))?;
+        conn.execute_batch("BEGIN")?;
+        let result = (|| {
+            let items = read_items(&conn, run)?;
+            let grouped = cache::group_work(&conn, items.clone())?;
+            Ok::<_, crate::lab::LabError>((share_read_rows(items), share_read_rows(grouped)))
+        })();
+        let end = conn.execute_batch("ROLLBACK");
+        let (items, grouped) = result?;
+        end?;
+        let after: i64 = conn.query_row("PRAGMA data_version", [], |r| r.get(0))?;
+        #[cfg(test)]
+        if let Some(hook) = self.projection_hook.lock().unwrap().as_ref() {
+            hook();
+        }
+        let current = ReadSource::read(&*self.context.connection()?)?;
+        if after != version || current != source {
             return Ok((items, grouped));
         }
+        let mut cache = self
+            .read_snapshot
+            .lock()
+            .map_err(|_| conflict("Read snapshot lock poisoned"))?;
+        *cache = Some(ReadSnapshot {
+            run: run.into(),
+            source,
+            items: items.clone(),
+            grouped: grouped.clone(),
+        });
+        Ok((items, grouped))
     }
     fn status(&self, service: &LabService, session: &str) -> LabResult<Value> {
         let scope = selected_run(&*self.context.connection()?, session)?;

@@ -39,10 +39,24 @@ fn statistics(
         {
             uniform += 1;
         }
-        if hi - lo <= 70 && delta > 18 {
+        if hi - lo <= 70
+            && delta > 18
+            && !p
+                .0
+                .iter()
+                .zip(bg)
+                .all(|(a, b)| (i32::from(*a) - i32::from(b)).abs() <= 7)
+        {
             strong += 1;
         }
-        if hi - lo <= 85 && delta > 5 {
+        if hi - lo <= 85
+            && delta > 5
+            && !p
+                .0
+                .iter()
+                .zip(bg)
+                .all(|(a, b)| (i32::from(*a) - i32::from(b)).abs() <= 7)
+        {
             faint += 1;
         }
     }
@@ -139,6 +153,13 @@ mod tests {
     }
     #[test]
     fn empty_surface_is_absent_but_faint_or_occluded_is_not_blank() {
+        assert_eq!(
+            assess(
+                &DynamicImage::ImageRgb8(RgbImage::from_pixel(40, 20, Rgb([30, 40, 20]))),
+                &region()
+            )["state"],
+            "absent"
+        );
         let empty = DynamicImage::ImageRgb8(RgbImage::from_pixel(40, 20, Rgb([25, 42, 53])));
         assert_eq!(assess(&empty, &region())["state"], "absent");
         let mut faint = empty.to_rgb8();

@@ -187,5 +187,40 @@
     "currencyFormat": "{0}",
     "value": "A\nB, NLHE - S 1/2",
     "valid": false
+  },
+  {
+    "category": "amount",
+    "region": "seat.0.award",
+    "currencyFormat": "{0}",
+    "value": "+S 12.34",
+    "valid": true
+  },
+  {
+    "category": "amount",
+    "region": "pot.0",
+    "currencyFormat": "{0}",
+    "value": "S 12.34",
+    "valid": true
+  },
+  {
+    "category": "amount",
+    "region": "seat.0.award",
+    "currencyFormat": "{0}",
+    "value": "++S 12.34",
+    "valid": false
+  },
+  {
+    "category": "split_pot",
+    "region": "split_pot",
+    "currencyFormat": "{0}",
+    "value": "S 1G 2",
+    "valid": false
+  },
+  {
+    "category": "split_pot",
+    "region": "split_pot",
+    "currencyFormat": "{value}/{0}",
+    "value": "S 1/1G 2/2",
+    "valid": false
   }
 ]

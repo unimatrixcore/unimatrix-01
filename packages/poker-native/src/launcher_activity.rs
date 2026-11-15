@@ -63,12 +63,10 @@ impl ActivityLease {
             .get_or_init(Default::default)
             .lock()
             .map_err(|_| bad("Launcher activity lock poisoned"))?;
-        if let Some(count) = claims.get_mut(&claim) {
-            *count += 1;
-        } else {
+        if claims.get(&claim).copied().unwrap_or(0) == 0 {
             set(&claim, true)?;
-            claims.insert(claim.clone(), 1);
         }
+        *claims.entry(claim.clone()).or_insert(0) += 1;
         Ok(Self { claim: Some(claim) })
     }
 }
@@ -135,7 +133,7 @@ impl Drop for ActivityLease {
             if set(&claim, false).is_ok() {
                 claims.remove(&claim);
             } else {
-                eprintln!("Launcher activity protection could not be released; automatic restart remains deferred");
+                eprintln!("Launcher activity protection could not be released; launcher state is unconfirmed");
             }
         }
     }
@@ -176,6 +174,40 @@ printf '{"ok":true}'
         assert!(lines.lines().last().unwrap().ends_with("review off"));
         std::fs::remove_dir_all(root).unwrap();
     }
+    #[test]
+    fn acquisition_reasserts_protection_after_a_failed_final_release() {
+        let root = tempfile::tempdir().unwrap();
+        let script = root.path().join("launcher.sh");
+        let fail = script.with_extension("sh.fail");
+        let log = script.with_extension("sh.calls");
+        std::fs::write(
+            &script,
+            r#"printf '%s\n' "$*" >> "$0.calls"
+case "$*" in *'review off') if test -e "$0.fail"; then printf '{"ok":false}'; exit 0; fi;; esac
+printf '{"ok":true}'
+"#,
+        )
+        .unwrap();
+        let claim = Claim {
+            node: "/bin/sh".into(),
+            launcher: script,
+            git: root.path().into(),
+            role: ActivityRole::Review,
+        };
+        let lease = ActivityLease::claim(claim.clone()).unwrap();
+        std::fs::write(&fail, b"fail").unwrap();
+        drop(lease);
+        assert_eq!(CLAIMS.get().unwrap().lock().unwrap().get(&claim), Some(&0));
+        std::fs::remove_file(fail).unwrap();
+        let lease = ActivityLease::claim(claim.clone()).unwrap();
+        let calls = std::fs::read_to_string(&log).unwrap();
+        assert_eq!(calls.lines().count(), 3);
+        assert!(calls.lines().last().unwrap().ends_with("review on"));
+        drop(lease);
+        assert_eq!(std::fs::read_to_string(log).unwrap().lines().count(), 4);
+        assert_eq!(CLAIMS.get().unwrap().lock().unwrap().get(&claim), None);
+    }
+
     #[test]
     fn rejected_acquisition_does_not_leave_a_claim() {
         let claim = Claim {

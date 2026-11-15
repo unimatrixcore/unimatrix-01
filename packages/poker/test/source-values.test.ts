@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { pokerOcrValueContract, normalizePokerOcrValue, isPokerOcrValue } from "@unimatrix/shared";
 import { pokerOcrContract, validateOcrText } from "../src/contract.js";
 
@@ -49,8 +50,8 @@ describe("one generated source-derived OCR contract", () => {
       [
         "-c",
         script,
-        new URL("../../../tools/poker/dev_tools/lib", import.meta.url).pathname,
-        fixturePath.pathname,
+        fileURLToPath(new URL("../../../tools/poker/dev_tools/lib", import.meta.url)),
+        fileURLToPath(fixturePath),
       ],
       { encoding: "utf8", env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" } },
     );
@@ -70,8 +71,8 @@ describe("one generated source-derived OCR contract", () => {
       [
         "-c",
         script,
-        new URL("../../../tools/poker/dev_tools/lib", import.meta.url).pathname,
-        contextsPath.pathname,
+        fileURLToPath(new URL("../../../tools/poker/dev_tools/lib", import.meta.url)),
+        fileURLToPath(contextsPath),
       ],
       { encoding: "utf8", env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" } },
     );

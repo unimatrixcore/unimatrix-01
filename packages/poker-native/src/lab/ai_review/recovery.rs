@@ -88,7 +88,11 @@ CREATE TRIGGER IF NOT EXISTS recovered_no_delete BEFORE DELETE ON ai_review_reco
             if row.is_null() {
                 continue;
             }
-            let Some(response) = saved["_response"]["id"].as_str().filter(|s| !s.is_empty()) else {
+            let identity = row
+                .get("_response")
+                .filter(|v| v["id"].as_str().is_some_and(|s| !s.is_empty()))
+                .unwrap_or(&saved["_response"]);
+            let Some(response) = identity["id"].as_str().filter(|s| !s.is_empty()) else {
                 continue;
             };
             if phase == "verification" && conn.query_row("SELECT EXISTS(SELECT 1 FROM ai_review_recovered_observations WHERE target_job=? AND target_ordinal=? AND phase='review' AND response_id=?)",params![target,item.ordinal,response],|r|r.get::<_,bool>(0))? { continue; }
@@ -109,7 +113,7 @@ CREATE TRIGGER IF NOT EXISTS recovered_no_delete BEFORE DELETE ON ai_review_reco
                 continue;
             };
             let mut reading = parsed[&item.ordinal.to_string()].clone();
-            reading["_response"] = saved["_response"].clone();
+            reading["_response"] = identity.clone();
             reading["request_evidence"] = evidence;
             reading["observation_provenance"] = json!({"job_id":source,"batch_index":batch,"ordinal":ordinal,"phase":phase,"response_id":response,"reading_contract":protocol::READING_CONTRACT,"guide_sha256":super::super::sha256(item.guide.to_string().as_bytes()),"pixel_sha256":item.pixel_sha256});
             conn.execute(

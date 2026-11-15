@@ -16,7 +16,7 @@ fn target_evidence(
         plane::CardResolution::Fallback { reason } => ("unsupported", reason.as_str()),
         plane::CardResolution::Pose { .. } => match fit {
             None => ("ambiguous", "Foreground components could not be isolated inside the source glyph support"),
-            Some(fit) if surface["uniform"] != true && fit.boundary_contact.iter().any(|touches| *touches) =>
+            Some(fit) if fit.boundary_contact.iter().any(|touches| *touches) =>
                 ("ambiguous", "Selected foreground reaches the source glyph sampling boundary; clipping or overlapping artwork is unresolved"),
             Some(_) => ("supported", "Measured card edges with source face and foreground support; transcription requires verification"),
         },
@@ -387,6 +387,89 @@ mod tests {
             top_edge: None,
             left_edge: None,
         };
+        let resolution = plane::CardResolution::Pose { pose: pose.clone() };
+        let mut evidence = json!({});
+        let mut boundary_fit = card_glyph::GlyphFit {
+            bounds: card_glyph::InkBounds {
+                x: 1,
+                y: 1,
+                width: 2,
+                height: 2,
+            },
+            erase_pixels: vec![],
+            background_rgb: [255; 3],
+            boundary_contact: [true, false, false, false],
+        };
+        target_evidence(
+            &mut evidence,
+            &resolution,
+            Some(&boundary_fit),
+            &json!({"uniform":true}),
+        );
+        assert_eq!(
+            evidence["card_target_evidence"]["target_support"],
+            "ambiguous"
+        );
+        assert_eq!(evidence["card_target_evidence"]["ocr_admission"], "always");
+        boundary_fit.boundary_contact = [false; 4];
+        target_evidence(
+            &mut evidence,
+            &resolution,
+            Some(&boundary_fit),
+            &json!({"uniform":true}),
+        );
+        assert_eq!(
+            evidence["card_target_evidence"]["target_support"],
+            "supported"
+        );
+        for (start_x, expected) in [(10, "ambiguous"), (13, "supported")] {
+            let mut pixels = RgbImage::from_pixel(120, 120, Rgb([255; 3]));
+            for y in 8..17 {
+                for x in start_x..start_x + 3 {
+                    pixels.put_pixel(x, y, Rgb([20; 3]));
+                }
+            }
+            let before = pixels.clone();
+            let region = json!({"id":"community_cards[0]","category":"card","ocr":true,"card_prior_id":"card","card_field":"rank","guide":{"family":"card.rank"},"bounds":{"x":10,"y":5,"width":20,"height":20}});
+            let poses = BTreeMap::from([(
+                "card".to_string(),
+                plane::CardResolution::Pose { pose: pose.clone() },
+            )]);
+            let output = resolve(&pixels, &json!({}), &region, &poses).unwrap();
+            assert_eq!(output["card_target_evidence"]["surface"]["uniform"], true);
+            assert_eq!(output["card_target_evidence"]["target_support"], expected);
+            assert_eq!(output["card_target_evidence"]["ocr_admission"], "always");
+            assert_eq!(
+                super::super::presence::assess(&DynamicImage::ImageRgb8(pixels.clone()), &output)
+                    ["state"],
+                "present"
+            );
+            let mut occurrence = output.clone();
+            occurrence["presence"] =
+                super::super::presence::assess(&DynamicImage::ImageRgb8(pixels.clone()), &output);
+            assert_eq!(
+                super::super::ai::evidence_cache::automatic_support(
+                    "community_cards[0]",
+                    &occurrence
+                ),
+                expected == "supported"
+            );
+            assert_eq!(pixels, before);
+            let ink = &output["card_sampling"]["ink_bounds"];
+            let plane_crop = sample_field(&pixels, &pose, plane::Field::Rank).unwrap();
+            let expected_pixels = image::imageops::crop_imm(
+                &plane_crop.rgb,
+                ink["x"].as_u64().unwrap() as u32,
+                ink["y"].as_u64().unwrap() as u32,
+                ink["width"].as_u64().unwrap() as u32,
+                ink["height"].as_u64().unwrap() as u32,
+            )
+            .to_image();
+            assert_eq!(
+                sample(&pixels, &output).unwrap().unwrap().to_rgb8(),
+                expected_pixels
+            );
+        }
         let rank = sample_field(&frame, &pose, plane::Field::Rank).unwrap();
         let rank_fit = fit_field(&frame, &pose, &rank, true, Some([255; 3])).unwrap();
         assert_eq!(rank_fit.bounds.y + rank_fit.bounds.height + 5, 30);

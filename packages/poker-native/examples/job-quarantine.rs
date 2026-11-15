@@ -1,5 +1,7 @@
 use poker_native::lab::gameplay::ai::quarantine;
-use rusqlite::{backup::Backup, types::ValueRef, Connection, OpenFlags, TransactionBehavior};
+use rusqlite::{
+    backup::Backup, types::ValueRef, Connection, OpenFlags, OptionalExtension, TransactionBehavior,
+};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{
@@ -74,7 +76,7 @@ fn integrity(conn: &Connection) -> Result<()> {
     Ok(())
 }
 fn snapshot(conn: &Connection) -> Result<Value> {
-    let tables=conn.prepare("SELECT name FROM sqlite_master WHERE type='table' AND (name NOT LIKE 'sqlite_%' OR name='sqlite_sequence') ORDER BY name")?.query_map([],|r|r.get::<_,String>(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
+    let tables=conn.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name!='gameplay_ai_quarantine_receipts' AND (name NOT LIKE 'sqlite_%' OR name='sqlite_sequence') ORDER BY name")?.query_map([],|r|r.get::<_,String>(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
     let mut output = BTreeMap::new();
     for table in tables {
         if !table.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
@@ -130,6 +132,16 @@ fn durable_write(path: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
+fn atomic_receipt(path: &Path, bytes: &[u8]) -> Result<()> {
+    let temporary = path.with_extension(format!("{}.tmp", uuid::Uuid::new_v4().simple()));
+    durable_write(&temporary, bytes)?;
+    let published = fs::hard_link(&temporary, path);
+    let _ = fs::remove_file(&temporary);
+    published?;
+    fs::File::open(path.parent().ok_or("Receipt directory missing")?)?.sync_all()?;
+    Ok(())
+}
+
 fn dry_run(path: &Path, job: &str, directory: &Path) -> Result<Value> {
     let source = open_read(path)?;
     source.execute_batch("BEGIN")?;
@@ -182,10 +194,35 @@ fn apply(path: &Path, job: &str, directory: &Path) -> Result<Value> {
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     idle(&tx)?;
     if quarantine::contains(&tx, job).map_err(|e| e.message)? {
-        let mut previous: Value =
-            serde_json::from_slice(&fs::read(directory.join("applied-receipt.json"))?)?;
+        let applied_path = directory.join("applied-receipt.json");
+        let mut previous: Value = match fs::read(&applied_path) {
+            Ok(bytes) => serde_json::from_slice(&bytes)?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                let exists: bool = tx.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='gameplay_ai_quarantine_receipts')",
+                    [], |r| r.get(0),
+                )?;
+                let saved: Option<String> = if exists {
+                    tx.query_row(
+                        "SELECT receipt FROM gameplay_ai_quarantine_receipts WHERE job_id=?",
+                        [job],
+                        |r| r.get(0),
+                    )
+                    .optional()?
+                } else {
+                    None
+                };
+                serde_json::from_str(
+                    &saved.ok_or("Quarantine has no durable applied receipt; audit required")?,
+                )?
+            }
+            Err(error) => return Err(error.into()),
+        };
         if previous["job_id"] != job || previous["backup_sha256"] != receipt["backup_sha256"] {
             return Err("Applied receipt identity mismatch".into());
+        }
+        if !applied_path.exists() {
+            atomic_receipt(&applied_path, &serde_json::to_vec_pretty(&previous)?)?;
         }
         previous["already_applied"] = json!(true);
         return Ok(previous);
@@ -200,10 +237,16 @@ fn apply(path: &Path, job: &str, directory: &Path) -> Result<Value> {
     )
     .map_err(|e| e.message)?;
     let after = snapshot(&tx)?;
+    let result = json!({"job_id":job,"backup_sha256":receipt["backup_sha256"],"before":receipt["snapshot"],"after":after,"result":applied,"provider_calls":0});
+    // Excluded from snapshot because a receipt cannot hash its own serialized contents.
+    tx.execute_batch("CREATE TABLE IF NOT EXISTS gameplay_ai_quarantine_receipts(job_id TEXT PRIMARY KEY,receipt TEXT NOT NULL); CREATE TRIGGER IF NOT EXISTS quarantine_receipt_no_update BEFORE UPDATE ON gameplay_ai_quarantine_receipts BEGIN SELECT RAISE(ABORT,'Quarantine receipt is append-only'); END; CREATE TRIGGER IF NOT EXISTS quarantine_receipt_no_delete BEFORE DELETE ON gameplay_ai_quarantine_receipts BEGIN SELECT RAISE(ABORT,'Quarantine receipt is append-only'); END;")?;
+    tx.execute(
+        "INSERT INTO gameplay_ai_quarantine_receipts VALUES(?,?)",
+        rusqlite::params![job, result.to_string()],
+    )?;
     tx.commit()?;
     integrity(&conn)?;
-    let result = json!({"job_id":job,"backup_sha256":receipt["backup_sha256"],"before":receipt["snapshot"],"after":after,"result":applied,"provider_calls":0});
-    durable_write(
+    atomic_receipt(
         &directory.join("applied-receipt.json"),
         &serde_json::to_vec_pretty(&result)?,
     )?;
@@ -338,5 +381,40 @@ INSERT INTO review_samples VALUES('sample','Q');").unwrap();
         conn.execute("UPDATE ai_review_jobs SET state='running'", [])
             .unwrap();
         assert!(dry_run(&path, "job", &other.path().join("busy")).is_err());
+    }
+    #[test]
+    fn missing_receipt_recovers_committed_result_without_reapplying() {
+        let root = tempfile::tempdir().unwrap();
+        let path = fixture(root.path());
+        let backup = root.path().join("backup");
+        dry_run(&path, "job", &backup).unwrap();
+        let applied = apply(&path, "job", &backup).unwrap();
+        fs::remove_file(backup.join("applied-receipt.json")).unwrap();
+        let committed = hash_file(&path).unwrap();
+        let recovered = apply(&path, "job", &backup).unwrap();
+        assert_eq!(recovered["already_applied"], true);
+        assert_eq!(recovered["result"], applied["result"]);
+        assert_eq!(recovered["after"], applied["after"]);
+        assert_eq!(hash_file(&path).unwrap(), committed);
+        let durable: Value =
+            serde_json::from_slice(&fs::read(backup.join("applied-receipt.json")).unwrap())
+                .unwrap();
+        assert_eq!(durable, applied);
+        assert_eq!(apply(&path, "job", &backup).unwrap(), recovered);
+        let conn = Connection::open(&path).unwrap();
+        assert!(conn
+            .execute("DELETE FROM gameplay_ai_quarantine_receipts", [])
+            .is_err());
+        let mut mismatched = applied;
+        mismatched["backup_sha256"] = json!("wrong-backup");
+        fs::write(
+            backup.join("applied-receipt.json"),
+            serde_json::to_vec(&mismatched).unwrap(),
+        )
+        .unwrap();
+        assert!(apply(&path, "job", &backup)
+            .unwrap_err()
+            .to_string()
+            .contains("Applied receipt identity mismatch"));
     }
 }

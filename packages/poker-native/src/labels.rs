@@ -380,6 +380,11 @@ pub fn validate_text_with_currency_format(
             .strip_prefix("Pot: ")
             .is_some_and(|value| cash_item_matches(template, value, &number));
     }
+    let label = if category == "amount" {
+        label.strip_prefix('+').unwrap_or(label)
+    } else {
+        label
+    };
     cash_item_matches(template, label, &number)
 }
 

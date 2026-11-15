@@ -7,6 +7,7 @@ use std::collections::{BTreeSet, HashMap};
 pub mod money_shape;
 
 pub const POLICY: &str = "family_exact_v1";
+const MONEY_DISAGREEMENT: &str = "Scalar and ordered-list evidence disagree for matching pixels";
 
 pub fn family(region: &str) -> Option<&'static str> {
     Some(match crate::labels::category_for_region(region)? {
@@ -49,7 +50,12 @@ pub fn automatic_support(region: &str, payload: &Value) -> bool {
             || (payload["presence"]["target_support"] == "supported"
                 && payload["presence"]["card_evidence"]["target_support"] == "supported"
                 && payload["presence"]["card_evidence"]["policy"]
-                    == super::super::card_fields::TARGET_EVIDENCE_POLICY))
+                    == super::super::card_fields::TARGET_EVIDENCE_POLICY
+                && payload["presence"]["card_evidence"]["boundary_contact"]
+                    .as_array()
+                    .is_some_and(|edges| {
+                        edges.len() == 4 && edges.iter().all(|edge| edge == false)
+                    })))
 }
 
 pub fn blank_contradicts_foreground(region: &str, payload: &Value, text: &str) -> bool {
@@ -481,10 +487,22 @@ pub fn truth(conn: &Connection, key: &str) -> LabResult<Truth> {
             return Ok(direct);
         }
         if let Truth::Accepted { ref label, .. } = direct {
-            if parse_money_list(label).is_none_or(|parts| parts.len() != components.len()) {
+            let Some(parts) =
+                parse_money_list(label).filter(|parts| parts.len() == components.len())
+            else {
                 return Ok(Truth::Blocked(
                     "Accepted split list does not match the resolved panel count/order".into(),
                 ));
+            };
+            for (component, expected) in components.iter().zip(parts) {
+                match scalar_truth(conn, component)? {
+                    Truth::Accepted { label, .. } if label == expected => {}
+                    Truth::Pending => {}
+                    Truth::Accepted { .. } => return Ok(Truth::Blocked(MONEY_DISAGREEMENT.into())),
+                    blocked @ Truth::Blocked(_) | blocked @ Truth::NeedsReview { .. } => {
+                        return Ok(blocked)
+                    }
+                }
             }
             return Ok(direct);
         }
@@ -562,9 +580,10 @@ fn scalar_truth_with_direct(
         }
     }
     if labels.len() > 1 {
-        return Ok(Truth::Blocked(
-            "Scalar and ordered-list evidence disagree for matching pixels".into(),
-        ));
+        return Ok(Truth::Blocked(MONEY_DISAGREEMENT.into()));
+    }
+    if let Some(Truth::Blocked(reason)) = &blocked_parent {
+        return Ok(Truth::Blocked(reason.clone()));
     }
     if labels.is_empty() {
         if let Some(reason) = blocked_parent {
@@ -983,7 +1002,29 @@ pub fn project(conn: &Connection, items: &mut [Value]) -> LabResult<()> {
             item["reason"] = json!("Card target support requires manual review");
             continue;
         }
-        if own || state.as_ref() == Some(&json!("ambiguous")) {
+        if own {
+            if item["review_evidence"]["cache_eligible"] != false
+                && evidence
+                    .as_ref()
+                    .is_some_and(|(kind, _)| kind == "money_list" || kind == "money_scalar")
+            {
+                if let Truth::Blocked(reason) = truth(conn, &key)? {
+                    let list_component_conflict = evidence
+                        .as_ref()
+                        .is_some_and(|(kind, _)| kind == "money_list")
+                        && !matches!(
+                            base_truth(conn, &key)?,
+                            Truth::Blocked(_) | Truth::NeedsReview { .. }
+                        );
+                    if reason == MONEY_DISAGREEMENT || list_component_conflict {
+                        item["state"] = json!("conflict");
+                        item["reason"] = json!(reason);
+                    }
+                }
+            }
+            continue;
+        }
+        if state.as_ref() == Some(&json!("ambiguous")) {
             continue;
         }
         if evidence.is_none() {

@@ -623,7 +623,7 @@ mod tests {
             Default::default(),
         )
         .unwrap();
-        fs::write(config.join("gameplay-regions.json"),json!({"viewport":{"width":20,"height":20},"regions":[{"id":"board.0.rank","presence":{"state":"present","target_support":"supported","card_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1"}},"bounds":{"x":2,"y":2,"width":6,"height":6}},{"id":"board.1.rank","presence":{"state":"present","target_support":"supported","card_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1"}},"bounds":{"x":2,"y":2,"width":6,"height":6}}]}).to_string()).unwrap();
+        fs::write(config.join("gameplay-regions.json"),json!({"viewport":{"width":20,"height":20},"regions":[{"id":"board.0.rank","presence":{"state":"present","target_support":"supported","card_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1","boundary_contact":[false,false,false,false]}},"bounds":{"x":2,"y":2,"width":6,"height":6}},{"id":"board.1.rank","presence":{"state":"present","target_support":"supported","card_evidence":{"target_support":"supported","policy":"source_card_plane_component_support_v1","boundary_contact":[false,false,false,false]}},"bounds":{"x":2,"y":2,"width":6,"height":6}}]}).to_string()).unwrap();
         let record = |service: &LabService| {
             let store = service.gameplay.evidence_store().unwrap();
             let settings = json!({"regions":{}});

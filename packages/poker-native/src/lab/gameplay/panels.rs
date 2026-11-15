@@ -772,18 +772,32 @@ pub fn resolve_profile_cancellable(
             let rect = json!({"x":x.floor() as u32,"y":y.floor() as u32,"w":((x+w).ceil()-x.floor()) as u32,"h":((y+h).ceil()-y.floor()) as u32});
             let path = id.replace('[', ".").replace(']', "");
             let parts = path.split('.').collect::<Vec<_>>();
-            let mut target = &mut snapshot["cv_regions"];
-            for part in &parts[..parts.len() - 1] {
-                target = if let Ok(index) = part.parse::<usize>() {
-                    &mut target[index]
+            let target = parts[..parts.len() - 1].iter().fold(
+                Some(&mut snapshot["cv_regions"]),
+                |target, part| {
+                    target.and_then(|value| {
+                        if let Ok(index) = part.parse::<usize>() {
+                            value.as_array_mut().and_then(|array| array.get_mut(index))
+                        } else {
+                            value
+                                .as_object_mut()
+                                .and_then(|object| object.get_mut(*part))
+                        }
+                    })
+                },
+            );
+            if let Some(target) = target {
+                let last = parts[parts.len() - 1];
+                let slot = if let Ok(index) = last.parse::<usize>() {
+                    target.as_array_mut().and_then(|array| array.get_mut(index))
                 } else {
-                    &mut target[*part]
+                    target
+                        .as_object_mut()
+                        .and_then(|object| object.get_mut(last))
                 };
-            }
-            if let Ok(index) = parts[parts.len() - 1].parse::<usize>() {
-                target[index] = rect;
-            } else {
-                target[parts[parts.len() - 1]] = rect;
+                if let Some(slot) = slot {
+                    *slot = rect;
+                }
             }
         }
     }
@@ -816,6 +830,24 @@ mod tests {
         assert_eq!(error.message, "Gameplay preparation cancelled");
         assert_eq!(checks.get(), 3);
         assert_eq!(profile, original);
+    }
+    #[test]
+    fn malformed_numeric_cv_paths_do_not_panic_or_create_nodes() {
+        let image = DynamicImage::ImageRgb8(RgbImage::from_pixel(20, 20, Rgb([25, 42, 53])));
+        for cv in [
+            json!({"seats": []}),
+            json!({"seats": {"4": {"name": {"x":0,"y":0,"w":1,"h":1}}}}),
+            json!({"seats":[{}]}),
+        ] {
+            let profile = json!({"cv_regions":cv,"regions":[{"id":"seats[4].name","category":"name","bounds":{"x":1,"y":1,"width":4,"height":4}}]});
+            let result = resolve_profile(&image, &profile).unwrap();
+            assert_eq!(result["cv_regions"], profile["cv_regions"]);
+        }
+        let profile = json!({"cv_regions":{"items":[]},"regions":[{"id":"items[99]","category":"name","bounds":{"x":1,"y":1,"width":4,"height":4}}]});
+        assert_eq!(
+            resolve_profile(&image, &profile).unwrap()["cv_regions"],
+            profile["cv_regions"]
+        );
     }
     fn panel(image: &mut RgbImage, x: u32, y: u32, w: u32) {
         for yy in y..y + 30 {

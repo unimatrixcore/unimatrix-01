@@ -567,6 +567,166 @@ fn archived_mutations_fail_before_resolving_or_changing_any_source_files() {
     }
     assert!(!f.temp.path().join("started").exists());
 }
+fn install_synthetic_current_profile(f: &Fixture) -> Value {
+    let legacy: Value =
+        serde_json::from_slice(&fs::read(f.temp.path().join("config/regions.json")).unwrap())
+            .unwrap();
+    let profile = json!({"schema_version":2,"cv_regions":legacy,"regions":[
+        {"id":"round_id","ocr":true,"bounds":{"x":0,"y":0,"width":2,"height":2}},
+        {"id":"seats[0].name","ocr":true,"bounds":{"x":0,"y":6,"width":2,"height":2}},
+        {"id":"seats[1].name","ocr":true,"bounds":{"x":2,"y":6,"width":2,"height":2}},
+        {"id":"seats[1].bet","ocr":true,"bounds":{"x":4,"y":4,"width":2,"height":2}},
+        {"id":"ignored","ocr":false,"bounds":{"x":6,"y":6,"width":2,"height":2}}
+    ]});
+    fs::write(
+        f.temp.path().join("config/gameplay-regions.json"),
+        profile.to_string(),
+    )
+    .unwrap();
+    profile
+}
+
+#[test]
+fn current_profile_capture_and_watch_share_gate_seats_and_layout_hash() {
+    for watch in [false, true] {
+        let f = Fixture::new_engine(false);
+        let profile = install_synthetic_current_profile(&f);
+        let layout = f.service.capture.config().unwrap();
+        assert_eq!(layout.regions, profile["cv_regions"]);
+        let expected_hash = capture::region_hash(&layout).unwrap();
+        let ctx = f.service.registry.resolve("legacy").unwrap();
+        let response = if watch {
+            let started = f.engine_request(
+                "POST",
+                "/api/watch/start",
+                json!({"monitor":"TEST","interval_seconds":1}),
+            );
+            assert_eq!(started.status, 200, "{}", started.body);
+            assert_eq!(
+                ctx.state.lock().unwrap()["watch_runtime"]["config_hash"],
+                layout.hash
+            );
+            let lease = started.body["lease_id"].clone();
+            let result = f.engine_request("POST", "/api/watch/tick", json!({"lease_id":lease}));
+            let mut changed = profile.clone();
+            changed["regions"][1]["bounds"]["x"] = json!(1);
+            fs::write(
+                f.temp.path().join("config/gameplay-regions.json"),
+                changed.to_string(),
+            )
+            .unwrap();
+            let stale = f.engine_request("POST", "/api/watch/tick", json!({"lease_id":lease}));
+            assert_eq!(stale.status, 409, "{}", stale.body);
+            assert!(stale.body["error"]
+                .as_str()
+                .unwrap()
+                .contains("configuration changed"));
+            result
+        } else {
+            f.engine_request("POST", "/api/capture", json!({"monitor":"TEST"}))
+        };
+        assert_eq!(response.status, 200, "{}", response.body);
+        let regions = if watch {
+            &response.body["frames"][0]["regions"]
+        } else {
+            &response.body["regions"]
+        };
+        let ids = regions
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["id"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert!(ids.contains(&"round_id"), "{ids:?}");
+        assert!(ids.contains(&"seats[0].name"), "{ids:?}");
+        assert!(!ids.contains(&"seats[1].name"), "{ids:?}");
+        assert!(ids.contains(&"seats[1].bet"), "{ids:?}");
+        assert!(!ids.contains(&"ignored"));
+        let state = ctx.state.lock().unwrap();
+        assert_eq!(state["last_game_text"], "# 123456");
+        assert_eq!(state["last_gate_binding"][2], layout.hash);
+        drop(state);
+        let saved: String = ctx
+            .connection()
+            .unwrap()
+            .query_row("SELECT regions_hash FROM full_captures", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(saved, expected_hash);
+    }
+}
+
+#[test]
+fn current_profile_capture_and_watch_reject_invalid_game_id() {
+    for watch in [false, true] {
+        let f = Fixture::new_engine(false);
+        install_synthetic_current_profile(&f);
+        let script = f
+            .temp
+            .path()
+            .join("tools/dev_tools/training/collector_inference.py");
+        let source = fs::read_to_string(&script).unwrap();
+        fs::write(
+            &script,
+            source.replace(
+                "text=os.environ.get('POKER_TEST_TEXT','# 123456')",
+                "text='invalid'",
+            ),
+        )
+        .unwrap();
+        let response = if watch {
+            let started = f.engine_request("POST", "/api/watch/start", json!({"monitor":"TEST"}));
+            assert_eq!(started.status, 200);
+            let lease = started.body["lease_id"].clone();
+            let result = f.engine_request("POST", "/api/watch/tick", json!({"lease_id":lease}));
+            assert_eq!(
+                f.engine_request("POST", "/api/watch/stop", json!({"lease_id":lease}))
+                    .status,
+                200
+            );
+            result
+        } else {
+            f.engine_request("POST", "/api/capture", json!({"monitor":"TEST"}))
+        };
+        assert_eq!(response.status, 400, "{}", response.body);
+        assert!(response.body["error"]
+            .as_str()
+            .unwrap()
+            .contains("Game ID not verified"));
+        let ctx = f.service.registry.resolve("legacy").unwrap();
+        assert_eq!(
+            ctx.connection()
+                .unwrap()
+                .query_row("SELECT COUNT(*) FROM full_captures", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+    }
+}
+
+#[test]
+fn bundled_profile_is_unchanged_and_adapts_cv_and_current_fields() {
+    let bytes = include_bytes!("../assets/gameplay-regions.json");
+    assert_eq!(
+        lab::sha256(bytes),
+        "f3e05596327a81f75ca9ae28df3cd015cc1ef1e0cb050b9084d962db6c366755"
+    );
+    let f = Fixture::new_engine(false);
+    fs::write(f.temp.path().join("config/gameplay-regions.json"), bytes).unwrap();
+    let profile: Value = serde_json::from_slice(bytes).unwrap();
+    let adapted = f.service.capture.config().unwrap();
+    assert_eq!(adapted.regions, profile["cv_regions"]);
+    assert_eq!(adapted.hash, f.service.capture.config().unwrap().hash);
+    assert!(adapted.order.iter().any(|(id, _)| id == "round_id"));
+    assert!(adapted.order.iter().any(|(id, _)| id.starts_with("seats[")));
+    assert!(adapted
+        .order
+        .iter()
+        .all(|(id, _)| !id.starts_with("cv_regions") && !id.starts_with("regions[")));
+}
+
 #[test]
 fn manual_capture_uses_model_gate_inactive_bets_queue_dedup_and_no_orphans() {
     let f = Fixture::new_engine(false);

@@ -465,5 +465,12 @@
     "output": "foo...",
     "valid": true,
     "currencyFormat": "{0}"
+  },
+  {
+    "region": "table.info",
+    "category": "table_info",
+    "input": "bb #17, NLHE - S 0.01/0.02",
+    "output": "bb #17, NLHE - S 0.01/0.02",
+    "valid": true
   }
 ]

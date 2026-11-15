@@ -220,7 +220,7 @@ impl Store {
             }
             if tx
                 .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM gameplay_import_origins WHERE origin=?)",
+                    "SELECT EXISTS(SELECT 1 FROM gameplay_import_origins o JOIN frames f ON f.id=o.frame_id WHERE o.origin=?)",
                     [&frame.origin],
                     |r| r.get::<_, bool>(0),
                 )
@@ -230,7 +230,7 @@ impl Store {
                 continue;
             }
             tx.execute("INSERT INTO frames(id,session_id,captured_at,hand_id,ocr_status,error,width,height,image_sha256,results_json,config_hash,config_json,timings_json) VALUES(?,?,?,?,'error','Legacy capture requires OCR processing',?,?,?,'{}',?,?,'{}')",params![frame.id,frame.session_id,frame.captured_at,frame.hand_id,frame.width,frame.height,frame.image_sha256,frame.config_hash,frame.config.to_string()]).map_err(err)?;
-            tx.execute("INSERT INTO gameplay_import_origins(origin,fingerprint,frame_id,evidence_json) VALUES(?,?,?,?)",params![frame.origin,frame.fingerprint,frame.id,frame.evidence.to_string()]).map_err(err)?;
+            tx.execute("INSERT OR IGNORE INTO gameplay_import_origins(origin,fingerprint,frame_id,evidence_json) VALUES(?,?,?,?)",params![frame.origin,frame.fingerprint,frame.id,frame.evidence.to_string()]).map_err(err)?;
             for label in &frame.labels {
                 tx.execute("INSERT INTO gameplay_import_labels(frame_id,region_id,label,provenance_json,pixel_sha256) VALUES(?,?,?,?,?)",params![frame.id,label.region_id,label.label,label.provenance.to_string(),label.pixel_sha256]).map_err(err)?;
             }

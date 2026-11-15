@@ -35,7 +35,7 @@
       "target": "public/static/js/lib/schemas.js",
       "sha256": "52d2b24e249142a0f3981b9845d3d9760665a87630d5c16f9a5c255449da68a3",
       "mode": "adapted",
-      "targetSha256": "30db7d5f196faae1c1c2d400fb569d1f28ce0d4136918d85cde3b45ca4c6c0b4",
+      "targetSha256": "f80628588c43a34eea867f4787074ef0d1b870c6135f8503731ddb92a5fb28e7",
       "adaptation": "Use the generated OCR contract for canonical validation, partial input and suit aliases; keep generic pot suggestions as bare amounts and normalize total-pot captions only at their source region."
     },
     {

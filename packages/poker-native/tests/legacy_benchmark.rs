@@ -455,3 +455,106 @@ fn source_inventory_is_checked_before_the_import_transaction_commits() {
     fs::write(spec.directory.join("images/orphan.png"), png()).unwrap();
     assert_eq!(apply(&prepared, &destination).unwrap()["inserted"], 2);
 }
+
+#[test]
+fn pruned_import_restores_frame_labels_pixels_and_original_origin_then_reuses() {
+    let temp = tempfile::tempdir().unwrap();
+    let (source, config) = policy_fixture(&temp.path().join("source"));
+    let prepared = plan(&[source.clone()], &[config]).unwrap();
+    let destination = temp.path().join("destination");
+    let store = Store::new(destination.clone()).unwrap();
+    assert_eq!(apply(&prepared, &destination).unwrap()["inserted"], 2);
+    let frame = &prepared.batch.frames[0];
+    assert_eq!(frame.labels.len(), 2);
+    let conn = Connection::open(destination.join("gameplay.sqlite3")).unwrap();
+    let origin: (String, String, String) = conn
+        .query_row(
+            "SELECT fingerprint,frame_id,evidence_json FROM gameplay_import_origins WHERE origin=?",
+            [&frame.origin],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap();
+    let label_rows = || {
+        conn.prepare("SELECT frame_id,region_id,label,provenance_json,pixel_sha256 FROM gameplay_import_labels ORDER BY frame_id,region_id").unwrap().query_map([], |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,r.get::<_,String>(4)?))).unwrap().collect::<rusqlite::Result<Vec<_>>>().unwrap()
+    };
+    let labels = label_rows();
+    let pixels = fs::read(destination.join("frames").join(format!("{}.png", frame.id))).unwrap();
+    assert_eq!(
+        store.prune(false, Some(&frame.session_id)).unwrap()["count"],
+        2
+    );
+    assert_eq!(
+        conn.query_row("SELECT COUNT(*) FROM gameplay_import_labels", [], |r| r
+            .get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
+    assert!(!destination
+        .join("frames")
+        .join(format!("{}.png", frame.id))
+        .exists());
+    assert_eq!(apply(&prepared, &destination).unwrap()["inserted"], 2);
+    assert_eq!(label_rows(), labels);
+    assert_eq!(
+        fs::read(destination.join("frames").join(format!("{}.png", frame.id))).unwrap(),
+        pixels
+    );
+    assert_eq!(
+        conn.query_row(
+            "SELECT fingerprint,frame_id,evidence_json FROM gameplay_import_origins WHERE origin=?",
+            [&frame.origin],
+            |r| Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?
+            ))
+        )
+        .unwrap(),
+        origin
+    );
+    let repeated = apply(&prepared, &destination).unwrap();
+    assert_eq!(repeated["reused"], 2);
+    assert_eq!(repeated["inserted"], 0);
+    assert_eq!(label_rows(), labels);
+    assert_eq!(
+        conn.query_row("SELECT COUNT(*) FROM frames", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        2
+    );
+    prepared.sources[0].assert_unchanged().unwrap();
+}
+
+#[test]
+fn valid_png_header_with_corrupt_idat_is_unresolved_while_other_frames_continue() {
+    let temp = tempfile::tempdir().unwrap();
+    let (source, config) = policy_fixture(&temp.path().join("source"));
+    let path = source.directory.join("full_captures/first.png");
+    let mut bytes = fs::read(&path).unwrap();
+    let idat = bytes.windows(4).position(|part| part == b"IDAT").unwrap();
+    bytes[idat + 4] ^= 0xff;
+    assert_eq!(
+        image::ImageReader::new(Cursor::new(&bytes))
+            .with_guessed_format()
+            .unwrap()
+            .into_dimensions()
+            .unwrap(),
+        (12, 8)
+    );
+    assert!(image::load_from_memory(&bytes).is_err());
+    fs::write(&path, &bytes).unwrap();
+    let prepared = plan(&[source], &[config]).unwrap();
+    assert_eq!(prepared.batch.frames.len(), 1);
+    assert!(prepared.batch.frames[0].origin.ends_with(":2"));
+    let unresolved = prepared
+        .batch
+        .unresolved
+        .iter()
+        .find(|row| row.origin.ends_with(":full_captures:1"))
+        .unwrap();
+    assert_eq!(unresolved.reason, "invalid_full_frame_pixels");
+    assert!(!unresolved.evidence["crops"].as_array().unwrap().is_empty());
+    let destination = temp.path().join("destination");
+    Store::new(destination.clone()).unwrap();
+    assert_eq!(apply(&prepared, &destination).unwrap()["inserted"], 1);
+    prepared.sources[0].assert_unchanged().unwrap();
+}
