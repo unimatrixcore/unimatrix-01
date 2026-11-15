@@ -3264,6 +3264,13 @@ fn recovery_candidate_status_is_session_scoped_idle_and_read_only() {
     assert!(err.message.contains("from this recording"));
 }
 
+fn assert_read_rows(actual: &ReadRows, expected: &[Value]) {
+    assert_eq!(actual.len(), expected.len());
+    for (actual, expected) in actual.iter().zip(expected) {
+        assert_eq!(actual.as_ref(), expected);
+    }
+}
+
 #[test]
 #[ignore = "Requires an immutable private ledger snapshot, never opens live data"]
 fn private_projection_benchmark() {
@@ -3294,8 +3301,8 @@ fn private_projection_benchmark() {
         let (items, groups) = service.gameplay_ai.read_snapshot(&run).unwrap();
         let page: Vec<_> = groups.iter().take(100).cloned().collect();
         let elapsed = start.elapsed();
-        assert_eq!(*items, baseline_items);
-        assert_eq!(*groups, baseline_groups);
+        assert_read_rows(&items, &baseline_items);
+        assert_read_rows(&groups, &baseline_groups);
         eprintln!(
             "snapshot {i}: {:?} items={} groups={} page={}",
             elapsed,
@@ -3390,8 +3397,8 @@ fn read_snapshot_retries_write_after_projection() {
     let conn = service.gameplay_ai.context.connection().unwrap();
     let expected = read_items(&conn, &run).unwrap();
     let expected_groups = cache::group_work(&conn, expected.clone()).unwrap();
-    assert_eq!(*items, expected);
-    assert_eq!(*groups, expected_groups);
+    assert_read_rows(&items, &expected);
+    assert_read_rows(&groups, &expected_groups);
 }
 
 #[test]
@@ -3439,8 +3446,8 @@ fn manual_refresh_matches_fresh_projection_and_invalidates_external_write() {
         .is_some_and(|s| s.source == source && Arc::ptr_eq(&s.items, &incremental)));
     let expected = read_items(&conn, run).unwrap();
     let expected_groups = cache::group_work(&conn, expected.clone()).unwrap();
-    assert_eq!(*incremental, expected);
-    assert_eq!(*groups, expected_groups);
+    assert_read_rows(&incremental, &expected);
+    assert_read_rows(&groups, &expected_groups);
     let second = incremental[1].clone();
     let path = conn.path().unwrap().to_owned();
     drop(conn);
@@ -3449,8 +3456,8 @@ fn manual_refresh_matches_fresh_projection_and_invalidates_external_write() {
     let conn = service.gameplay_ai.context.connection().unwrap();
     let fresh = read_items(&conn, run).unwrap();
     let fresh_groups = cache::group_work(&conn, fresh.clone()).unwrap();
-    assert_eq!(*conflict_items, fresh);
-    assert_eq!(*conflict_groups, fresh_groups);
+    assert_read_rows(&conflict_items, &fresh);
+    assert_read_rows(&conflict_groups, &fresh_groups);
     drop(conn);
     let request = |filter: &str, grouped: &str| LabRequest {
         method: "GET".into(),
@@ -3515,6 +3522,65 @@ fn manual_refresh_matches_fresh_projection_and_invalidates_external_write() {
 }
 
 #[test]
+fn manual_refresh_shares_untouched_occurrences_and_groups() {
+    let (_dir, service) = fixture();
+    let config = service.gameplay_ai.config.join("gameplay-regions.json");
+    let mut profile: Value = serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
+    profile["regions"].as_array_mut().unwrap().push(json!({
+        "id":"game.id", "bounds":{"x":10,"y":10,"width":6,"height":6}
+    }));
+    fs::write(config, profile.to_string()).unwrap();
+    let session = recording(&service);
+    let prepared = service.gameplay_ai.prepare(&service, &session).unwrap();
+    let run = prepared["run_id"].as_str().unwrap();
+    let (before, before_groups) = service.gameplay_ai.read_snapshot(run).unwrap();
+    let target = before
+        .iter()
+        .find(|item| item["region_id"] == "board.0.rank")
+        .unwrap();
+    service
+        .gameplay_ai
+        .review(
+            &service,
+            &json!({
+                "occurrence_id":target["id"], "expected_revision":target["revision"],
+                "action":"manual", "label":"Q"
+            }),
+        )
+        .unwrap();
+    let (after, groups) = service.gameplay_ai.read_snapshot(run).unwrap();
+    let untouched: Vec<_> = before
+        .iter()
+        .filter(|item| item["region_id"] == "game.id")
+        .collect();
+    assert_eq!(untouched.len(), 3);
+    for old in untouched {
+        let new = after.iter().find(|item| item["id"] == old["id"]).unwrap();
+        assert!(Arc::ptr_eq(old, new));
+    }
+    let old_group = before_groups
+        .iter()
+        .find(|item| item["region_id"] == "game.id")
+        .unwrap();
+    let new_group = groups
+        .iter()
+        .find(|item| item["work_key"] == old_group["work_key"])
+        .unwrap();
+    assert!(Arc::ptr_eq(old_group, new_group));
+    let changed = after
+        .iter()
+        .find(|item| item["id"] == target["id"])
+        .unwrap();
+    assert!(!Arc::ptr_eq(target, changed));
+    assert_eq!(target["label"], "K");
+    assert_eq!(changed["label"], "Q");
+    let conn = service.gameplay_ai.context.connection().unwrap();
+    let fresh = read_items(&conn, run).unwrap();
+    assert_read_rows(&after, &fresh);
+    assert_read_rows(&groups, &cache::group_work(&conn, fresh).unwrap());
+}
+
+#[test]
 #[ignore = "Requires a private ledger copied to a temporary writable database"]
 fn private_manual_refresh_benchmark() {
     let source = std::fs::canonicalize(std::env::var("POKER_PERF_DB").unwrap()).unwrap();
@@ -3574,8 +3640,8 @@ fn private_manual_refresh_benchmark() {
         let conn = service.gameplay_ai.context.connection().unwrap();
         let fresh = read_items(&conn, &run).unwrap();
         let fresh_groups = cache::group_work(&conn, fresh.clone()).unwrap();
-        assert_eq!(*incremental, fresh);
-        assert_eq!(*groups, fresh_groups);
+        assert_read_rows(&incremental, &fresh);
+        assert_read_rows(&groups, &fresh_groups);
         eprintln!(
             "save {n}: post={post:?} get={get:?} needs_review={} revision={}",
             page.body["total"], result.body["revision"]
@@ -3685,8 +3751,8 @@ fn incremental_refresh_preserves_suit_and_money_component_truth() {
                 && Arc::ptr_eq(&cached.items, &incremental)));
         let fresh = read_items(&conn, run).unwrap();
         let fresh_groups = cache::group_work(&conn, fresh.clone()).unwrap();
-        assert_eq!(*incremental, fresh);
-        assert_eq!(*grouped, fresh_groups);
+        assert_read_rows(&incremental, &fresh);
+        assert_read_rows(&grouped, &fresh_groups);
         if target == "split_pot" {
             assert!(
                 conn.query_row(
@@ -3744,8 +3810,8 @@ fn manual_refresh_does_not_publish_across_external_commit() {
     let (result, groups) = service.gameplay_ai.read_snapshot(run).unwrap();
     let conn = service.gameplay_ai.context.connection().unwrap();
     let fresh = read_items(&conn, run).unwrap();
-    assert_eq!(*groups, cache::group_work(&conn, fresh.clone()).unwrap());
-    assert_eq!(*result, fresh);
+    assert_read_rows(&groups, &cache::group_work(&conn, fresh.clone()).unwrap());
+    assert_read_rows(&result, &fresh);
     assert!(!Arc::ptr_eq(&old, &result));
 }
 
@@ -3788,7 +3854,7 @@ fn manual_refresh_updates_cached_other_run_sharing_alias() {
             |s| s.source == ReadSource::read(&conn).unwrap() && Arc::ptr_eq(&s.items, &current)
         ));
     let fresh = read_items(&conn, first_run).unwrap();
-    assert_eq!(*groups, cache::group_work(&conn, fresh.clone()).unwrap());
-    assert_eq!(*current, fresh);
+    assert_read_rows(&groups, &cache::group_work(&conn, fresh.clone()).unwrap());
+    assert_read_rows(&current, &fresh);
     assert!(!Arc::ptr_eq(&old, &current));
 }

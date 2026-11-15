@@ -77,8 +77,13 @@ pub struct GameplayAi {
 struct ReadSnapshot {
     run: String,
     source: ReadSource,
-    items: Arc<Vec<Value>>,
-    grouped: Arc<Vec<Value>>,
+    items: ReadRows,
+    grouped: ReadRows,
+}
+type ReadRows = Arc<Vec<Arc<Value>>>;
+
+fn share_read_rows(rows: Vec<Value>) -> ReadRows {
+    Arc::new(rows.into_iter().map(Arc::new).collect())
 }
 #[derive(Clone, PartialEq, Eq)]
 struct ReadSource {
@@ -1927,7 +1932,7 @@ impl GameplayAi {
         )?;
         Ok(json!({"job":self.status(service,&session)?}))
     }
-    fn read_snapshot(&self, run: &str) -> LabResult<(Arc<Vec<Value>>, Arc<Vec<Value>>)> {
+    fn read_snapshot(&self, run: &str) -> LabResult<(ReadRows, ReadRows)> {
         loop {
             let source = ReadSource::read(&*self.context.connection()?)?;
             {
@@ -1950,7 +1955,7 @@ impl GameplayAi {
             let result = (|| {
                 let items = read_items(&conn, run)?;
                 let grouped = cache::group_work(&conn, items.clone())?;
-                Ok::<_, crate::lab::LabError>((Arc::new(items), Arc::new(grouped)))
+                Ok::<_, crate::lab::LabError>((share_read_rows(items), share_read_rows(grouped)))
             })();
             let end = conn.execute_batch("ROLLBACK");
             let (items, grouped) = result?;
@@ -2137,6 +2142,7 @@ impl GameplayAi {
         let mut items: Vec<&Value> = source
             .into_iter()
             .flat_map(|v| v.iter())
+            .map(AsRef::as_ref)
             .filter(|item| item["state"] != "absent")
             .collect();
         if let Some(key) = request.query("work_key") {
@@ -2539,7 +2545,12 @@ fn refresh_manual_snapshot(
     let updated = read_items_where(conn, &filter, &values)?;
     let updates: HashMap<_, _> = updated
         .iter()
-        .map(|item| (item["id"].as_str().unwrap().to_owned(), item.clone()))
+        .map(|item| {
+            (
+                item["id"].as_str().unwrap().to_owned(),
+                Arc::new(item.clone()),
+            )
+        })
         .collect();
     let mut affected: BTreeSet<String> = old
         .items
@@ -2565,9 +2576,9 @@ fn refresh_manual_snapshot(
                 .as_str()
                 .is_some_and(|key| affected.contains(key))
         })
-        .cloned()
+        .map(|item| item.as_ref().clone())
         .collect();
-    let mut grouped: Vec<Value> = old
+    let mut grouped: Vec<Arc<Value>> = old
         .grouped
         .iter()
         .filter(|item| {
@@ -2577,7 +2588,11 @@ fn refresh_manual_snapshot(
         })
         .cloned()
         .collect();
-    grouped.extend(cache::group_work(conn, affected_items)?);
+    grouped.extend(
+        cache::group_work(conn, affected_items)?
+            .into_iter()
+            .map(Arc::new),
+    );
     grouped.sort_by(|a, b| {
         a["frame_id"]
             .as_str()
