@@ -2,26 +2,6 @@ import { expect, test } from "@playwright/test";
 import type { PokerLabRequest } from "@unimatrix/shared";
 import { installLabFixture } from "./fixture.js";
 
-test("remembers the capture interval while stopped and ignores invalid saved values", async ({
-  page,
-}) => {
-  await page.addInitScript(installLabFixture);
-  await page.goto("/collection");
-  await expect(page.locator("#loading-overlay")).toBeHidden();
-  await page.evaluate(() => {
-    localStorage.setItem("poker:capture-interval-seconds", "999");
-  });
-  await page.reload();
-  await expect(page.locator("#watch-interval")).toHaveValue("2");
-  await page
-    .getByRole("button", { name: "Capture source and recording settings", exact: true })
-    .click();
-  await page.locator("#watch-interval").selectOption("5");
-  await page.reload();
-  await expect(page.locator("#watch-interval")).toHaveValue("5");
-  await expect(page.locator("#watch-status")).toHaveAttribute("data-active", "false");
-});
-
 test("gameplay reload reconnects its recording and explicit Stop survives another reload", async ({
   page,
 }) => {
@@ -69,7 +49,7 @@ test("gameplay reload reconnects its recording and explicit Stop survives anothe
   await page.addInitScript(() => {
     const original = window.__POKER_LAB_TEST_INVOKE__;
     window.__POKER_LAB_TEST_INVOKE__ = (request) =>
-      request.path.startsWith("/api/gameplay")
+      request.path.startsWith("/api/gameplay") && request.path !== "/api/gameplay/collections"
         ? (window as unknown as { recordingBackend: typeof original }).recordingBackend!(request)
         : original!(request);
   });
@@ -97,50 +77,6 @@ test("gameplay reload reconnects its recording and explicit Stop survives anothe
   await expect(page.getByRole("button", { name: "Pause", exact: true })).toHaveCount(0);
   expect(stops).toBe(1);
   expect(creates).toBe(1);
-});
-
-test("collection reload retains its lease, source and interval, while navigation explicitly stops", async ({
-  page,
-}) => {
-  const requests: PokerLabRequest[] = [];
-  await page.exposeFunction("rememberRecordingRequest", (request: PokerLabRequest) => {
-    requests.push(request);
-  });
-  await page.addInitScript(installLabFixture);
-  await page.addInitScript(() => {
-    const original = window.__POKER_LAB_TEST_INVOKE__;
-    window.__POKER_LAB_TEST_INVOKE__ = async (request) => {
-      if (request.path.startsWith("/api/watch/"))
-        await (
-          window as unknown as { rememberRecordingRequest: (request: unknown) => Promise<void> }
-        ).rememberRecordingRequest(request);
-      return original!(request);
-    };
-  });
-  await page.goto("/collection");
-  await expect(page.locator("#loading-overlay")).toBeHidden();
-  await page
-    .getByRole("button", { name: "Capture source and recording settings", exact: true })
-    .click();
-  await page.locator("#watch-interval").selectOption("2");
-  await page.keyboard.press("Escape");
-  await page.locator("#watch-start").click();
-  await expect
-    .poll(() => requests.filter((r) => r.path.endsWith("/tick")).length)
-    .toBeGreaterThan(0);
-  const before = requests.filter((r) => r.path.endsWith("/tick")).length;
-  await page.reload();
-  await expect
-    .poll(() => requests.filter((r) => r.path.endsWith("/tick")).length)
-    .toBeGreaterThan(before);
-  expect(requests.filter((r) => r.path.endsWith("/start"))).toHaveLength(1);
-  expect(requests.filter((r) => r.path.endsWith("/stop"))).toHaveLength(0);
-  await expect(page.locator("#watch-interval")).toHaveValue("2");
-  await page
-    .getByRole("navigation", { name: "Sections", exact: true })
-    .getByRole("link", { name: "Gameplay" })
-    .click();
-  await expect.poll(() => requests.filter((r) => r.path.endsWith("/stop")).length).toBe(1);
 });
 
 for (const delayed of ["session", "launcher"] as const) {

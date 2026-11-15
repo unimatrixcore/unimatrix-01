@@ -119,7 +119,8 @@
       "target": "src/collector/capture_empty_state.tsx",
       "sha256": "e0a9a028b7d967c49bc6c77be8cfc54484a5645065266f32909d37505823338c",
       "mode": "adapted",
-      "targetSha256": "aa82f8332574f415e2e1c4cb2d2e1bb7cbab740c51942a9b452930bf37cbe1b0"
+      "targetSha256": "59f2d79d8504968c2e5cbf72756af5b90521507c05a9b8f773d79a3eaacc6099",
+      "adaptation": "Use the selected Gameplay AI queue and current region geometry, icon tooltips and Recording-only controls; retain Benchmark source behind read-only archive access."
     },
     {
       "source": "collector_ui/capture_list.tsx",
@@ -153,28 +154,32 @@
       "target": "src/collector/gameplay.css",
       "sha256": "f9eddd2977efc9d9025c3197b44ec5269c86a9aa02ef0af0ce2281309f4a3eb3",
       "mode": "adapted",
-      "targetSha256": "8bb1f4407cc0e53f733752253dd9955961ff3c7beec1f954b4176ec97cec8501"
+      "targetSha256": "94c8166c7ba40272452b3eb016eb7564e86183a1641e09947d46078502c913ad",
+      "adaptation": "Integrate the focused Gameplay review queue and current region profiles; archive Benchmark navigation while preserving its original source and data."
     },
     {
       "source": "collector_ui/gameplay.tsx",
       "target": "src/collector/gameplay.tsx",
       "sha256": "30ac4ed3bc466dfe9b99c1c269b5d257dec03771246eb20ef70868c826b8bbb0",
       "mode": "adapted",
-      "targetSha256": "0b4c627f4ad14cead3562f6c9e25ca4c01eea1fc7d5b12bd8f49e4d93ad5682d",
-      "adaptation": "Restore recording sessions across reload while rejecting stale reconnection results after selection changes; preserve explicit pause/stop/navigation and saved recording, view, and hand."
+      "targetSha256": "9493bd5394fde2473bcf3b1641d9fdabf6084259ba0bbec63a9107c4e29b5ae4",
+      "adaptation": "Integrate current source-derived OCR validation and effective region profiles; archive Benchmark controllers and use the selected Gameplay review layout. Project current ledger verification and unsupported counts without changing original OCR; preserve preview interaction state during visible-frame refresh. Wait for the selected view's own first result, keep loading indicators within their data surfaces, and clear recovered startup timeouts without replacing rows or resetting drafts. Keep schema diagnostics out of user-facing error banners. Show occurrence-owned legacy verification with its source provenance."
     },
     {
       "source": "collector_ui/gameplay_preview.css",
       "target": "src/collector/gameplay_preview.css",
       "sha256": "34be99b22bd852dee3459addcabb552e3e9a989f0c4ca09623cf3b6b4f2c8059",
-      "mode": "preserved"
+      "mode": "adapted",
+      "targetSha256": "9dbe5999caf27bbc8f3c2bb76b44411280e4c173f7fbb96d38f8305aa28bd2f6",
+      "adaptation": "Integrate the focused Gameplay review queue and current region profiles; archive Benchmark navigation while preserving its original source and data. Project current ledger verification and unsupported counts without changing original OCR; preserve preview interaction state during visible-frame refresh. Render filled text hearts with a dedicated symbol font."
     },
     {
       "source": "collector_ui/gameplay_preview.tsx",
       "target": "src/collector/gameplay_preview.tsx",
       "sha256": "f8e5a95530457d897618428b14dc287e829e9e235c653736d34919899b2f6182",
       "mode": "adapted",
-      "targetSha256": "da36bafb54f3e7718df7c318088c3724b9ecae206795cbf9e0dc9fc1d6e49c79"
+      "targetSha256": "d3157cee75cd09407f0075d069a7c5a6b369d13c94c8f152d18ef6020350b48d",
+      "adaptation": "Integrate the focused Gameplay review queue and current region profiles; archive Benchmark navigation while preserving its original source and data. Project current ledger verification and unsupported counts without changing original OCR; preserve preview interaction state during visible-frame refresh. Preserve verified legacy annotation strings outside the current OCR contract."
     },
     {
       "source": "collector_ui/main.tsx",
@@ -209,15 +214,16 @@
       "target": "src/collector/recording_tools.tsx",
       "sha256": "8fbc67d4c705597c8dd381bdf7b7c2cbe64c066f0acd2da0f46d580c3c52fc35",
       "mode": "adapted",
-      "targetSha256": "a84863d553af3e45d7bf32183c8d589a70de3bfff20ce7fee2b514b3c4febc69"
+      "targetSha256": "4a4a2740ee80475fa661150576ec7ffe4ca83f25098d24a8dddb8d767da093cf",
+      "adaptation": "Use the selected Gameplay AI queue and current region geometry, icon tooltips and Recording-only controls; retain Benchmark source behind read-only archive access."
     },
     {
       "source": "collector_ui/tool_shell.tsx",
       "target": "src/collector/tool_shell.tsx",
       "sha256": "2db9a3d8406c578cb684b10cb213addd8c7d609f3ccd4dd6dc115a843d14729e",
       "mode": "adapted",
-      "targetSha256": "7eb1aff5d95a9defc92d3a70f83bd21fa13f0680da1fc5f15f63c6bc0c699253",
-      "adaptation": "Preserve native workspaces and recording lifecycle across navigation; keep the original footer layout for global Settings and retain each workspace viewport across native restarts."
+      "targetSha256": "a9ebe013846d26e584171030200997a63359e3273347631ce865674f5911dc9e",
+      "adaptation": "Integrate the focused Gameplay review queue and current region profiles; archive Benchmark navigation while preserving its original source and data."
     },
     {
       "source": "collector_ui/workspace_topbar.css",

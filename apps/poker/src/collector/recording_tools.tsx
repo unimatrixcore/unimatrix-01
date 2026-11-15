@@ -7,6 +7,7 @@ import {
   type BackgroundListOptions,
 } from "@unimatrix/instant-list";
 import { Popover, PopoverContent, PopoverTrigger } from "@unimatrix/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@unimatrix/ui/editor";
 
 type Recording = { id: string; name: string; frame_count: number };
 interface RecordingToolsProps<T extends Recording> {
@@ -60,176 +61,190 @@ export function RecordingTools<T extends Recording>({
   }
 
   return (
-    <div className="dataset-tools" aria-label="Recording tools">
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        className="dataset-icon"
-        aria-label="New recording"
-        title="New recording"
-        disabled={blocked}
-        onClick={onNew}
-      >
-        <Plus size={16} />
-      </Button>
-      <Popover
-        open={renameOpen}
-        onOpenChange={(open) => {
-          setRenameOpen(open);
-          setName(current?.name || "");
-          setError("");
-        }}
-      >
-        <PopoverTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="dataset-icon"
-            aria-label="Rename recording"
-            title="Rename recording"
-            disabled={blocked || !current}
-          >
-            <Pencil size={16} />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent
-          align="end"
-          sideOffset={8}
-          className="recording-settings-popover rounded-none border-0 ring-0 animate-none transition-none"
+    <TooltipProvider delayDuration={250}>
+      <div className="dataset-tools" aria-label="Recording tools">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="dataset-icon"
+              aria-label="New recording"
+              title="New recording"
+              disabled={blocked}
+              onClick={onNew}
+            >
+              <Plus size={16} />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>New recording</TooltipContent>
+        </Tooltip>
+        <Popover
+          open={renameOpen}
+          onOpenChange={(open) => {
+            setRenameOpen(open);
+            setName(current?.name || "");
+            setError("");
+          }}
         >
-          <form
-            className="grid gap-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (name.trim())
-                void perform(
-                  () => onRename(name.trim()),
-                  () => {
-                    setRenameOpen(false);
-                  },
-                );
-            }}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="dataset-icon"
+                  aria-label="Rename recording"
+                  title="Rename recording"
+                  disabled={blocked || !current}
+                >
+                  <Pencil size={16} />
+                </Button>
+              </PopoverTrigger>
+            </TooltipTrigger>
+            <TooltipContent>Rename recording</TooltipContent>
+          </Tooltip>
+          <PopoverContent
+            align="end"
+            sideOffset={8}
+            className="recording-settings-popover rounded-none border-0 ring-0 animate-none transition-none"
           >
-            <label className="grid gap-2 text-xs">
-              Recording name
-              <Input
-                aria-label="Recording name to rename"
-                value={name}
-                onChange={(event) => {
-                  setName(event.target.value);
+            <form
+              className="grid gap-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (name.trim())
+                  void perform(
+                    () => onRename(name.trim()),
+                    () => {
+                      setRenameOpen(false);
+                    },
+                  );
+              }}
+            >
+              <label className="grid gap-2 text-xs">
+                Recording name
+                <Input
+                  aria-label="Recording name to rename"
+                  value={name}
+                  onChange={(event) => {
+                    setName(event.target.value);
+                  }}
+                  maxLength={100}
+                  disabled={blocked}
+                  required
+                  autoFocus
+                />
+              </label>
+              {error && (
+                <p role="alert" className="text-xs text-destructive">
+                  {error}
+                </p>
+              )}
+              <Button type="submit" size="sm" disabled={blocked || !name.trim()}>
+                Save name
+              </Button>
+            </form>
+          </PopoverContent>
+        </Popover>
+        <Popover
+          open={manageOpen}
+          onOpenChange={(open) => {
+            manage(open);
+          }}
+        >
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="dataset-icon"
+                  {...archivedPrefetch}
+                  aria-label="Manage recordings"
+                  title="Archive and restore recordings"
+                  disabled={blocked}
+                >
+                  <MoreHorizontal size={16} />
+                </Button>
+              </PopoverTrigger>
+            </TooltipTrigger>
+            <TooltipContent>Manage recordings</TooltipContent>
+          </Tooltip>
+          <PopoverContent
+            align="end"
+            sideOffset={8}
+            className="recording-settings-popover rounded-none border-0 ring-0 animate-none transition-none"
+          >
+            <strong className="text-sm font-medium">Manage recordings</strong>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={blocked || !current}
+              onClick={() =>
+                void perform(onArchive, () => {
+                  setManageOpen(false);
+                })
+              }
+            >
+              <Archive size={16} />
+              Archive current recording
+            </Button>
+            <div className="grid gap-2 text-xs">
+              Archived recordings
+              <InstantVirtualList
+                ariaLabel="Archived recordings"
+                items={archived.items}
+                getItemId={(item) => item.id}
+                rowHeight={40}
+                height={160}
+                isFetching={archived.isFetching}
+                error={archived.error}
+                hasNextPage={archived.hasNextPage}
+                onEndReached={archived.onEndReached}
+                onRetry={() => {
+                  void archived.refetch();
                 }}
-                maxLength={100}
-                disabled={blocked}
-                required
-                autoFocus
+                renderItem={(item) => (
+                  <Button
+                    variant={restoreId === item.id ? "outline" : "ghost"}
+                    size="sm"
+                    aria-pressed={restoreId === item.id}
+                    onClick={() => {
+                      setRestoreId(item.id);
+                    }}
+                  >
+                    {item.name} · {item.frame_count} frames
+                  </Button>
+                )}
               />
-            </label>
+              {!archived.isFetching && !archived.error && !archived.items.length && (
+                <span>No archived recordings</span>
+              )}
+            </div>
             {error && (
               <p role="alert" className="text-xs text-destructive">
                 {error}
               </p>
             )}
-            <Button type="submit" size="sm" disabled={blocked || !name.trim()}>
-              Save name
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={blocked || !restoreId}
+              onClick={() =>
+                void perform(
+                  () => onRestore(restoreId),
+                  () => {
+                    setManageOpen(false);
+                  },
+                )
+              }
+            >
+              Restore selected
             </Button>
-          </form>
-        </PopoverContent>
-      </Popover>
-      <Popover
-        open={manageOpen}
-        onOpenChange={(open) => {
-          manage(open);
-        }}
-      >
-        <PopoverTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="dataset-icon"
-            {...archivedPrefetch}
-            aria-label="Manage recordings"
-            title="Archive and restore recordings"
-            disabled={blocked}
-          >
-            <MoreHorizontal size={16} />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent
-          align="end"
-          sideOffset={8}
-          className="recording-settings-popover rounded-none border-0 ring-0 animate-none transition-none"
-        >
-          <strong className="text-sm font-medium">Manage recordings</strong>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={blocked || !current}
-            onClick={() =>
-              void perform(onArchive, () => {
-                setManageOpen(false);
-              })
-            }
-          >
-            <Archive size={16} />
-            Archive current recording
-          </Button>
-          <p className="text-xs text-muted-foreground">
-            Archiving keeps captured frames and OCR readings.
-          </p>
-          <div className="grid gap-2 text-xs">
-            Archived recordings
-            <InstantVirtualList
-              ariaLabel="Archived recordings"
-              items={archived.items}
-              getItemId={(item) => item.id}
-              rowHeight={40}
-              height={160}
-              isFetching={archived.isFetching}
-              error={archived.error}
-              hasNextPage={archived.hasNextPage}
-              onEndReached={archived.onEndReached}
-              onRetry={() => {
-                void archived.refetch();
-              }}
-              renderItem={(item) => (
-                <Button
-                  variant={restoreId === item.id ? "outline" : "ghost"}
-                  size="sm"
-                  aria-pressed={restoreId === item.id}
-                  onClick={() => {
-                    setRestoreId(item.id);
-                  }}
-                >
-                  {item.name} · {item.frame_count} frames
-                </Button>
-              )}
-            />
-            {!archived.isFetching && !archived.error && !archived.items.length && (
-              <span>No archived recordings</span>
-            )}
-          </div>
-          {error && (
-            <p role="alert" className="text-xs text-destructive">
-              {error}
-            </p>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={blocked || !restoreId}
-            onClick={() =>
-              void perform(
-                () => onRestore(restoreId),
-                () => {
-                  setManageOpen(false);
-                },
-              )
-            }
-          >
-            Restore selected
-          </Button>
-        </PopoverContent>
-      </Popover>
-    </div>
+          </PopoverContent>
+        </Popover>
+      </div>
+    </TooltipProvider>
   );
 }

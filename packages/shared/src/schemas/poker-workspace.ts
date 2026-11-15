@@ -25,7 +25,8 @@ export const pokerWorkspaceStateSchema = z.object({
   gameplay: z
     .object({
       sessionId: z.string().max(256),
-      view: z.enum(["recording", "games", "frames"]),
+      view: z.enum(["recording", "games", "frames", "ai"]),
+      collectionId: z.string().max(256).optional(),
       hand: z.string().max(256).optional(),
     })
     .optional(),

@@ -16,6 +16,7 @@ import {
 } from "@unimatrix/shared";
 import type { ReactNode } from "react";
 import { consumeLabPageHandoff, clearLabPageHandoff } from "./lab-page-handoff";
+import { readWithSummaryRetry } from "./summary-read";
 
 export const labQueryClient = createInstantQueryClient();
 export function LabQueryProvider({ children }: { children: ReactNode }) {
@@ -81,17 +82,22 @@ export function labListOptions<T>({
         invoke: async (command, args) => {
           const fixture =
             import.meta.env.MODE === "test-browser" ? window.__POKER_LAB_TEST_INVOKE__ : undefined;
-          if (fixture)
-            return fixture({
-              ...request,
-              query: {
-                ...request.query,
-                background_page: "1",
-                limit: String(args.limit),
-                ...(typeof args.cursor === "string" ? { cursor: args.cursor } : {}),
-              },
-            });
-          return invoke(command, args);
+          return readWithSummaryRetry(
+            () =>
+              fixture
+                ? fixture({
+                    ...request,
+                    query: {
+                      ...request.query,
+                      background_page: "1",
+                      limit: String(args.limit),
+                      ...(typeof args.cursor === "string" ? { cursor: args.cursor } : {}),
+                    },
+                  })
+                : invoke(command, args),
+            path,
+            context.signal,
+          );
         },
         parse: (value) => {
           const response = pokerLabResponseSchema.parse(value);

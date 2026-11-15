@@ -15,6 +15,7 @@ export interface InstantVirtualListProps<T> {
   height?: number | string;
   onEndReached?: () => void | Promise<void>;
   isFetching?: boolean;
+  isFetchingNextPage?: boolean;
   error?: unknown;
   onRetry?: () => void | Promise<void>;
   hasNextPage?: boolean;
@@ -35,6 +36,7 @@ export function InstantVirtualList<T>({
   height = 480,
   onEndReached,
   isFetching = false,
+  isFetchingNextPage,
   error,
   onRetry,
   hasNextPage = false,
@@ -112,6 +114,8 @@ export function InstantVirtualList<T>({
   }, [scrollToItemId, requestedIndex, virtualizer]);
   const rows = virtualizer.getVirtualItems();
   const end = rows.at(-1)?.index ?? -1;
+  const fetchingMore = isFetchingNextPage ?? items.length > 0;
+  const initialLoading = items.length === 0;
   useEffect(() => {
     if (scrollIntent && hasNextPage && !isFetching && end >= items.length - 6) {
       setScrollIntent(false);
@@ -200,20 +204,21 @@ export function InstantVirtualList<T>({
           )}
         </div>
       )}
-      {isFetching && end >= items.length - 6 && (
+      {isFetching && (initialLoading || !fetchingMore || end >= items.length - 6) && (
         <div
           role="status"
           aria-live="polite"
           style={{
             position: getScrollElement ? "sticky" : "absolute",
-            bottom: 4,
+            ...(initialLoading || !fetchingMore ? { top: 8 } : { bottom: 4 }),
             right: 12,
+            ...(initialLoading ? { left: 12, textAlign: "center" } : {}),
             pointerEvents: "none",
             fontSize: 12,
             ...(getScrollElement ? { width: "fit-content", marginLeft: "auto" } : {}),
           }}
         >
-          Loading more…
+          {initialLoading ? "Loading…" : fetchingMore ? "Loading more…" : "Refreshing…"}
         </div>
       )}
     </div>
