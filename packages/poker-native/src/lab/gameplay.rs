@@ -30,6 +30,80 @@ use std::{
     collections::{BTreeMap, HashMap},
     path::PathBuf,
 };
+fn enrich_response_frame(
+    request: &LabRequest,
+    response: &mut LabResponse,
+    enrich: impl FnOnce(&mut serde_json::Value) -> LabResult<()>,
+) -> LabResult<()> {
+    if let Some(frame) = response.body.get_mut("frame") {
+        if let Err(error) = enrich(frame) {
+            if request.method == "POST" && request.path.ends_with("/capture") {
+                frame["effective_region_error"] = serde_json::json!(error.message);
+            } else {
+                return Err(error);
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod response_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn committed_capture_survives_enrichment_failure_once() {
+        let root = tempfile::tempdir().unwrap();
+        let store = store::Store::new(root.path().join("recordings")).unwrap();
+        let session = store
+            .create("monitor", 1000, "fixture", &json!({}), "hash")
+            .unwrap();
+        let id = session["id"].as_str().unwrap();
+        let frame = store
+            .admit(
+                id,
+                b"fixture",
+                1,
+                1,
+                "2026-01-01T00:00:00Z",
+                &json!({}),
+                "hash",
+                &json!({}),
+                "123",
+                &json!({}),
+            )
+            .unwrap();
+        let frame_id = frame["id"].clone();
+        let mut response =
+            LabResponse::ok(json!({"frame":frame,"session":store.session(id).unwrap()}));
+        let mut request = LabRequest {
+            method: "POST".into(),
+            path: format!("/api/gameplay/sessions/{id}/capture"),
+            body: json!({}),
+            query: Default::default(),
+            headers: Default::default(),
+        };
+        enrich_response_frame(&request, &mut response, |_| {
+            Err(super::super::bad("fixture enrichment failure"))
+        })
+        .unwrap();
+        assert_eq!(response.body["frame"]["id"], frame_id);
+        assert_eq!(
+            response.body["frame"]["effective_region_error"],
+            "fixture enrichment failure"
+        );
+        assert_eq!(response.body["session"]["frame_count"], 1);
+        assert_eq!(store.frames(id, None, 0, 10, "desc").unwrap()["total"], 1);
+        request.method = "GET".into();
+        assert!(
+            enrich_response_frame(&request, &mut response, |_| Err(super::super::bad(
+                "failure"
+            )))
+            .is_err()
+        );
+    }
+}
 pub struct GameplayService {
     inner: native::Gameplay,
 }
@@ -142,11 +216,11 @@ impl GameplayService {
             }
         }
         Some(self.request(request).and_then(|mut response| {
-            if let Some(frame) = response.body.get_mut("frame") {
+            enrich_response_frame(request, &mut response, |frame| {
                 service
                     .gameplay_ai
-                    .enrich_frame_at(frame, &self.evidence_root()?)?;
-            }
+                    .enrich_frame_at(frame, &self.evidence_root()?)
+            })?;
             if let Some(frames) = response
                 .body
                 .get_mut("frames")

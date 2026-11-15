@@ -222,5 +222,33 @@
     "currencyFormat": "{value}/{0}",
     "value": "S 1/1G 2/2",
     "valid": false
+  },
+  {
+    "category": "split_pot",
+    "region": "split_pot",
+    "currencyFormat": "{0}",
+    "value": "S 1,234 G 2,345.6",
+    "valid": true
+  },
+  {
+    "category": "split_pot",
+    "region": "split_pot",
+    "currencyFormat": "${0}",
+    "value": "S $1,234 G $2,345.67",
+    "valid": true
+  },
+  {
+    "category": "split_pot",
+    "region": "split_pot",
+    "currencyFormat": "{0}",
+    "value": "S 1,234G 2",
+    "valid": false
+  },
+  {
+    "category": "split_pot",
+    "region": "split_pot",
+    "currencyFormat": "${0}",
+    "value": "S $1,23 G $2",
+    "valid": false
   }
 ]

@@ -1729,16 +1729,29 @@ fn workflow_flagged_prepare_launches_review_without_frontend() {
 fn workflow_pause_at_prepared_completion_prevents_provider_calls() {
     let (_dir, service, calls) = workflow_fixture();
     let session = recording(&service);
-    let entered = Arc::new(std::sync::Barrier::new(2));
-    let release = Arc::new(std::sync::Barrier::new(2));
-    let (a, b) = (entered.clone(), release.clone());
+    let (entered_tx, entered_rx) = std::sync::mpsc::sync_channel(1);
+    let (release_tx, release_rx) = std::sync::mpsc::sync_channel(1);
+    let release_rx = std::sync::Mutex::new(release_rx);
     *service.gameplay_ai.handoff_hook.lock().unwrap() = Some(Arc::new(move || {
-        a.wait();
-        b.wait();
+        if entered_tx.send(()).is_ok() {
+            let _ = release_rx
+                .lock()
+                .unwrap()
+                .recv_timeout(std::time::Duration::from_secs(5));
+        }
     }));
     std::thread::scope(|scope| {
         let worker = scope.spawn(|| workflow_prepare(&service, &session, true));
-        entered.wait();
+        entered_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("handoff was not reached");
+        {
+            let conn = service.gameplay_ai.context.connection().unwrap();
+            assert!(
+                quarantine::lock_preparation(&conn).is_err(),
+                "handoff must retain the ledger lease"
+            );
+        }
         let before: String = service
             .gameplay_ai
             .context
@@ -1790,7 +1803,7 @@ fn workflow_pause_at_prepared_completion_prevents_provider_calls() {
         assert_eq!(response.body["job"]["state"], "paused");
         assert_eq!(response.body["job"]["auto_correct"], false);
         assert_eq!(response.body["job"]["max_requests"], 2);
-        release.wait();
+        release_tx.send(()).unwrap();
         assert!(worker.join().unwrap()["job_id"].is_null());
     });
     assert_eq!(calls.load(Ordering::SeqCst), 0);
@@ -3117,6 +3130,29 @@ fn resume_explicit_budget_is_job_specific_and_exhaustion_sends_no_request() {
         assert_eq!(request(Some(limit)).status, 400);
     }
     assert_eq!(calls.load(Ordering::SeqCst), 0);
+    {
+        let conn = service.gameplay_ai.context.connection().unwrap();
+        let lease = quarantine::lock_preparation(&conn).unwrap();
+        let before: String = conn
+            .query_row("SELECT state FROM ai_review_jobs WHERE id=?", [job], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        drop(conn);
+        let rejected = request(Some(json!(650)));
+        assert_eq!(rejected.status, 409, "{}", rejected.body);
+        let conn = service.gameplay_ai.context.connection().unwrap();
+        assert_eq!(
+            conn.query_row("SELECT state FROM ai_review_jobs WHERE id=?", [job], |r| {
+                r.get::<_, String>(0)
+            })
+            .unwrap(),
+            before
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        drop(conn);
+        drop(lease);
+    }
     let response = request(Some(json!(650)));
     assert_eq!(response.status, 200, "{}", response.body);
     assert_eq!(response.body["job"]["id"], job);
@@ -4801,4 +4837,330 @@ fn frame_summary_cache_stays_bounded_and_admits_new_working_set() {
             .load(Ordering::SeqCst),
         scans
     );
+}
+
+#[test]
+fn archived_or_inactive_prepared_run_cannot_start_or_spend() {
+    for archived in [true, false] {
+        let (_dir, service, calls) = workflow_fixture();
+        let first = recording(&service);
+        let prepared = service.gameplay_ai.prepare(&service, &first).unwrap();
+        let run = prepared["run_id"].as_str().unwrap();
+        if archived {
+            service
+                .gameplay
+                .evidence_store()
+                .unwrap()
+                .archive(&first)
+                .unwrap();
+        } else {
+            let second = recording(&service);
+            let other = service.gameplay_ai.prepare(&service, &second).unwrap();
+            assert_ne!(other["run_id"], run);
+        }
+        let conn = service.gameplay_ai.context.connection().unwrap();
+        let budget: Option<String> = conn
+            .query_row(
+                "SELECT value FROM queue_meta WHERE key='gameplay_request_budget'",
+                [],
+                |r| r.get(0),
+            )
+            .optional()
+            .unwrap();
+        let jobs: i64 = conn
+            .query_row("SELECT COUNT(*) FROM ai_review_jobs", [], |r| r.get(0))
+            .unwrap();
+        let active: i64 = conn
+            .query_row("SELECT COUNT(*) FROM queue_items WHERE active=1", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        drop(conn);
+        let error = service
+            .gameplay_ai
+            .start(
+                &service,
+                &json!({"session_id":first,"run_id":run,"max_requests":2}),
+            )
+            .unwrap_err();
+        assert_eq!(error.status, 409);
+        assert!(
+            error.message.contains(if archived {
+                "Archived recordings are read-only"
+            } else {
+                "Prepare this recording again"
+            }),
+            "{}",
+            error.message
+        );
+        let conn = service.gameplay_ai.context.connection().unwrap();
+        assert_eq!(
+            conn.query_row(
+                "SELECT value FROM queue_meta WHERE key='gameplay_request_budget'",
+                [],
+                |r| r.get::<_, String>(0)
+            )
+            .optional()
+            .unwrap(),
+            budget
+        );
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM ai_review_jobs", [], |r| r
+                .get::<_, i64>(0))
+                .unwrap(),
+            jobs
+        );
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM queue_items WHERE active=1", [], |r| r
+                .get::<_, i64>(0))
+                .unwrap(),
+            active
+        );
+        assert!(conn
+            .query_row(
+                "SELECT job_id FROM gameplay_ai_runs WHERE run_id=?",
+                [run],
+                |r| r.get::<_, Option<String>>(0)
+            )
+            .unwrap()
+            .is_none());
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+}
+
+#[test]
+fn archived_recording_cannot_resume_directly_or_through_preparation_handoff() {
+    for handoff in [false, true] {
+        let (_dir, service, calls) = workflow_fixture();
+        let session = recording(&service);
+        let prepared = workflow_prepare(&service, &session, true);
+        let job = prepared["job_id"].as_str().unwrap();
+        let run = prepared["run_id"].as_str().unwrap();
+        service
+            .ai_review
+            .cancel(&service.gameplay_ai.context, job)
+            .unwrap();
+        service
+            .gameplay
+            .evidence_store()
+            .unwrap()
+            .archive(&session)
+            .unwrap();
+        let budget_rows = || {
+            let conn = service.gameplay_ai.context.connection().unwrap();
+            let mut query = conn.prepare("SELECT key,value FROM queue_meta WHERE key LIKE 'gameplay_request_budget%' ORDER BY key").unwrap();
+            query
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })
+                .unwrap()
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .unwrap()
+        };
+        let before = budget_rows();
+        if handoff {
+            let raw: String = service
+                .gameplay_ai
+                .context
+                .connection()
+                .unwrap()
+                .query_row(
+                    "SELECT value FROM queue_meta WHERE key='gameplay_workflow'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            let mut intent: Value = serde_json::from_str(&raw).unwrap();
+            intent["max_requests"] = json!(9999);
+            service
+                .gameplay_ai
+                .context
+                .connection()
+                .unwrap()
+                .execute(
+                    "UPDATE queue_meta SET value=? WHERE key='gameplay_workflow'",
+                    [intent.to_string()],
+                )
+                .unwrap();
+            let error = service
+                .gameplay_ai
+                .finish_preparation(
+                    &service,
+                    &session,
+                    run,
+                    intent["generation"].as_str().unwrap(),
+                    prepared.clone(),
+                )
+                .unwrap_err();
+            assert_eq!(error.status, 409);
+            assert!(error.message.contains("Archived recordings are read-only"));
+        } else {
+            let response = service.request(LabRequest {
+                method: "POST".into(),
+                path: "/api/gameplay/ai/resume".into(),
+                body: json!({"job_id":job,"max_requests":9999}),
+                query: Default::default(),
+                headers: Default::default(),
+            });
+            assert_eq!(response.status, 409, "{}", response.body);
+        }
+        assert_eq!(budget_rows(), before);
+        assert_eq!(
+            service
+                .ai_review
+                .status(&service.gameplay_ai.context, Some(job), None)
+                .unwrap()["state"],
+            "cancelled"
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+}
+
+#[test]
+fn received_intent_replay_clears_stale_claims_without_provider_calls() {
+    let (_dir, service, calls) = workflow_fixture();
+    let session = recording(&service);
+    let prepared = workflow_prepare(&service, &session, true);
+    let job = prepared["job_id"].as_str().unwrap();
+    service
+        .ai_review
+        .run_fixture(&service.gameplay_ai.context, job);
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    {
+        let conn = service.gameplay_ai.context.connection().unwrap();
+        conn.execute("UPDATE gameplay_ai_asset_requests SET state='pending' WHERE request_key IN (SELECT request_key FROM gameplay_ai_request_intents WHERE job_id=?)",[job]).unwrap();
+        conn.execute(
+            "UPDATE ai_review_batches SET response=NULL,verification=NULL WHERE job_id=?",
+            [job],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE ai_review_items SET state='pending',result=NULL WHERE job_id=?",
+            [job],
+        )
+        .unwrap();
+        conn.execute("UPDATE ai_review_jobs SET state='queued' WHERE id=?", [job])
+            .unwrap();
+    }
+    service
+        .ai_review
+        .run_fixture(&service.gameplay_ai.context, job);
+    let conn = service.gameplay_ai.context.connection().unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(conn.query_row("SELECT COUNT(*) FROM gameplay_ai_asset_requests WHERE state='pending' AND request_key IN (SELECT request_key FROM gameplay_ai_request_intents WHERE job_id=?)",[job],|r|r.get::<_,i64>(0)).unwrap(),0);
+    assert_eq!(
+        conn.query_row("SELECT state FROM ai_review_jobs WHERE id=?", [job], |r| {
+            r.get::<_, String>(0)
+        })
+        .unwrap(),
+        "completed"
+    );
+}
+
+#[test]
+fn preparation_and_direct_start_hold_and_release_ledger_lease_on_errors() {
+    let (_dir, service, calls) = workflow_fixture();
+    let session = recording(&service);
+    {
+        let conn = service.gameplay_ai.context.connection().unwrap();
+        let lease = quarantine::lock_preparation(&conn).unwrap();
+        drop(conn);
+        let error = service
+            .gameplay_ai
+            .prepare_workflow(&service, &session, None, &json!({}))
+            .unwrap_err();
+        assert_eq!(error.status, 409);
+        drop(lease);
+    }
+    let invalid = service
+        .gameplay_ai
+        .prepare_workflow(&service, &session, None, &json!({"max_requests":0}))
+        .unwrap_err();
+    assert_eq!(invalid.status, 400);
+    {
+        let conn = service.gameplay_ai.context.connection().unwrap();
+        drop(quarantine::lock_preparation(&conn).unwrap());
+    }
+    let prepared = service.gameplay_ai.prepare(&service, &session).unwrap();
+    let run = prepared["run_id"].as_str().unwrap();
+    let conn = service.gameplay_ai.context.connection().unwrap();
+    let lease = quarantine::lock_preparation(&conn).unwrap();
+    drop(conn);
+    let error = service
+        .gameplay_ai
+        .start(
+            &service,
+            &json!({"session_id":session,"run_id":run,"max_requests":2}),
+        )
+        .unwrap_err();
+    assert_eq!(error.status, 409);
+    drop(lease);
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    let conn = service.gameplay_ai.context.connection().unwrap();
+    assert_eq!(
+        conn.query_row("SELECT COUNT(*) FROM ai_review_jobs", [], |r| r
+            .get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
+}
+
+#[test]
+fn failed_preparation_after_durable_insert_releases_lease_for_unrelated_quarantine() {
+    let (_dir, service, calls) = workflow_fixture();
+    let completed_session = recording(&service);
+    let prior = workflow_prepare(&service, &completed_session, true);
+    let stopped_job = prior["job_id"].as_str().unwrap().to_owned();
+    service
+        .ai_review
+        .cancel(&service.gameplay_ai.context, &stopped_job)
+        .unwrap();
+    let failed_session = recording(&service);
+    let recording_root = service.gameplay.evidence_root().unwrap();
+    let source = Connection::open(recording_root.join("gameplay.sqlite3")).unwrap();
+    let frame: String = source
+        .query_row(
+            "SELECT id FROM frames WHERE session_id=? ORDER BY captured_at,id LIMIT 1",
+            [&failed_session],
+            |r| r.get(0),
+        )
+        .unwrap();
+    drop(source);
+    let image_path = recording_root.join("frames").join(format!("{frame}.png"));
+    let mut image = fs::read(&image_path).unwrap();
+    image.push(0);
+    fs::write(image_path, image).unwrap();
+    let error = service
+        .gameplay_ai
+        .prepare(&service, &failed_session)
+        .unwrap_err();
+    assert!(
+        error.message.contains("pixels changed"),
+        "{}",
+        error.message
+    );
+    let mut conn = service.gameplay_ai.context.connection().unwrap();
+    let (failed_run, scope): (String, String) = conn
+        .query_row(
+            "SELECT run_id,scope FROM gameplay_ai_runs WHERE session_id=?",
+            [&failed_session],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    let scope: Value = serde_json::from_str(&scope).unwrap();
+    assert_eq!(scope["phase"], "preparing");
+    assert_eq!(scope["processed_frames"], 0);
+    assert_ne!(prior["run_id"].as_str().unwrap(), failed_run);
+    assert_eq!(
+        service.gameplay_ai.context.state.lock().unwrap()["preparation_inflight"],
+        false
+    );
+    let before = quarantine::inspect(&conn, &stopped_job).unwrap();
+    assert_eq!(before["already_quarantined"], false);
+    let tx = conn.transaction().unwrap();
+    let applied = quarantine::apply(&tx, &stopped_job, "fixture audit").unwrap();
+    assert_eq!(applied["applied"], true);
+    tx.commit().unwrap();
+    assert!(quarantine::contains(&conn, &stopped_job).unwrap());
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
 }

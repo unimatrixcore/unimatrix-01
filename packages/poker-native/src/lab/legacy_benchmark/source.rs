@@ -395,10 +395,14 @@ pub fn plan(specs: &[SourceSpec], configs: &[PathBuf]) -> Result<Plan, String> {
                 } else {
                     json!("matching_python_sorted_json_md5")
                 };
-                let verified_labels =
+                let (verified_labels, invalid_annotations) =
                     verified_labels(&evidence, &config, &root, &reviews, &review_samples, &conn)?;
                 evidence["label_policy"] = json!(LABEL_POLICY);
                 evidence["unresolved_annotations"] = json!(evidence["crops"].as_array().unwrap().iter().filter(|crop|!verified_labels.iter().any(|label|label.region_id==crop["region_id"].as_str().unwrap_or(""))).map(|crop|json!({"source_record":crop["id"],"region_id":crop["region_id"],"reason":"annotation_mapping_or_label_conflict_unresolved"})).collect::<Vec<_>>());
+                evidence["unresolved_annotations"]
+                    .as_array_mut()
+                    .unwrap()
+                    .extend(invalid_annotations);
                 evidence["review_samples"] = json!(review_samples
                     .iter()
                     .filter(|sample| evidence["queue"]
@@ -538,7 +542,8 @@ fn verified_labels(
     reviews: &[Value],
     samples: &[Value],
     conn: &Connection,
-) -> Result<Vec<ImportLabel>, String> {
+) -> Result<(Vec<ImportLabel>, Vec<Value>), String> {
+    let mut invalid_annotations = Vec::new();
     let profile: Value =
         serde_json::from_slice(super::super::gameplay::profile::CURRENT).map_err(error)?;
     let mut candidates = BTreeMap::<String, Vec<ImportLabel>>::new();
@@ -632,8 +637,20 @@ fn verified_labels(
         } else {
             fs::read(&path).map_err(error)?
         };
-        let (_, pixels) = crate::lab::review::image_identity(&png).map_err(error)?;
-        let decoded = image::load_from_memory(&png).map_err(error)?;
+        let decoded = crate::lab::review::image_identity(&png)
+            .map_err(error)
+            .and_then(|(_, pixels)| {
+                image::load_from_memory(&png)
+                    .map(|image| (pixels, image))
+                    .map_err(error)
+            });
+        let (pixels, decoded) = match decoded {
+            Ok(value) => value,
+            Err(_) => {
+                invalid_annotations.push(json!({"source_record":crop["id"],"source_table":crop["source_table"],"region_id":region,"reason":"invalid_annotation_pixels","image_sha256":hash(&png)}));
+                continue;
+            }
+        };
         let (width, height) = (decoded.width(), decoded.height());
         if Some(width as i64) != rect["w"].as_i64() || Some(height as i64) != rect["h"].as_i64() {
             continue;
@@ -717,17 +734,20 @@ fn verified_labels(
                 provenance,
             });
     }
-    Ok(candidates
-        .into_values()
-        .filter(|items| items.iter().all(|i| i.label == items[0].label))
-        .map(|mut items| {
-            let records = items
-                .iter()
-                .map(|i| i.provenance.clone())
-                .collect::<Vec<_>>();
-            let mut first = items.remove(0);
-            first.provenance["annotations"] = json!(records);
-            first
-        })
-        .collect())
+    Ok((
+        candidates
+            .into_values()
+            .filter(|items| items.iter().all(|i| i.label == items[0].label))
+            .map(|mut items| {
+                let records = items
+                    .iter()
+                    .map(|i| i.provenance.clone())
+                    .collect::<Vec<_>>();
+                let mut first = items.remove(0);
+                first.provenance["annotations"] = json!(records);
+                first
+            })
+            .collect(),
+        invalid_annotations,
+    ))
 }

@@ -2109,3 +2109,40 @@ fn real_clipped_uniform_pixels_cannot_inherit_historical_supported_reading() {
     assert_ne!(current[0]["label"], "A");
     assert_eq!(calls.load(Ordering::SeqCst), 0);
 }
+
+#[test]
+fn blocked_money_parent_wins_over_later_review_in_any_order() {
+    for blocked_first in [true, false] {
+        let (_directory, service, calls) = fixture(json!([region("seats[0].bet", 2)]), "S 2 BB");
+        let session = record(&service, json!({"seats[0].bet":"S 2 BB"}));
+        let prepared = service.gameplay_ai.prepare(&service, &session).unwrap();
+        let conn = service.gameplay_ai.context.connection().unwrap();
+        let scalar = read_items(&conn, prepared["run_id"].as_str().unwrap()).unwrap()[0]
+            ["sample_key"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let (blocked, review) = if blocked_first {
+            ("a-parent", "z-parent")
+        } else {
+            ("z-parent", "a-parent")
+        };
+        for parent in [blocked, review] {
+            conn.execute("INSERT INTO gameplay_ai_cache_aliases(sample_key,family,pixel_sha256,cache_key) VALUES(?,'money_list',?,?)",params![parent,parent,parent]).unwrap();
+            conn.execute("INSERT INTO gameplay_ai_cache_components(parent_key,ordinal,component_key) VALUES(?,0,?)",params![parent,scalar]).unwrap();
+        }
+        for (id, key, label) in [
+            ("scalar", scalar.as_str(), "S 2 BB"),
+            ("blocked-a", blocked, "S 2 BB"),
+            ("blocked-b", blocked, "S 3 BB"),
+            ("review", review, "invalid"),
+        ] {
+            conn.execute("INSERT INTO gameplay_ai_decisions(occurrence_id,sample_key,label,state,created_at) VALUES(?,?,?,'manual',0)",params![id,key,label]).unwrap();
+        }
+        assert!(matches!(
+            cache::truth(&conn, &scalar).unwrap(),
+            cache::Truth::Blocked(_)
+        ));
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+}

@@ -41,6 +41,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .push(pair["region_id"].as_str().ok_or("Missingregion_id")?.into());
         }
         let mut ready = BTreeMap::new();
+        let mut snapshots = BTreeMap::new();
         for (frame, ids) in by_frame {
             let raw = std::fs::read(frames.join(format!("{frame}.png")))?;
             if let Ok(evidence) = poker_native::lab::gameplay::ai::GameplayAi::export_pixel_evidence(
@@ -50,6 +51,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ready.insert((frame.clone(), e.region_id.clone()), e);
                 }
             }
+            snapshots.insert(frame, raw);
         }
         for (index, pair) in pairs.iter().enumerate() {
             let frame = pair["frame_id"].as_str().ok_or("Missingframe_id")?;
@@ -57,7 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 return Err("Invalidframe_id".into());
             }
             let id = pair["region_id"].as_str().ok_or("Missingregion_id")?;
-            let raw = std::fs::read(frames.join(format!("{frame}.png")))?;
+            let raw = snapshots.get(frame).ok_or("Frame snapshot missing")?;
             let evidence = if let Some(evidence) =
                 ready.remove(&(frame.to_string(), id.to_string()))
             {
@@ -66,7 +68,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut exported =
                     match poker_native::lab::gameplay::ai::GameplayAi::export_pixel_evidence(
                         &profile,
-                        &raw,
+                        raw,
                         &[id.into()],
                     ) {
                         Ok(value) => value,
@@ -89,7 +91,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             metadata["frame_id"] = json!(frame);
             metadata["filename"] = json!(filename);
             metadata["presentation_filename"] = json!(presentation_filename);
-            metadata["frame_image_sha256"] = json!(format!("{:x}", Sha256::digest(&raw)));
+            metadata["frame_image_sha256"] = json!(format!("{:x}", Sha256::digest(raw)));
             receipt.push(metadata);
         }
         let metadata = json!({"source_profile":profile_path,"profile_sha256":profile_sha,"source_profile_id":serde_json::from_slice::<Value>(&profile)?["id"],"provider_calls":0,"jobs_created":0,"label_source":"unreviewed_native_pixels","pixel_sha_convention":"SHA256(width+'x'+height+':RGB:'+decodedRGBbytes)","items":receipt});

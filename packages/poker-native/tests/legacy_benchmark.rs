@@ -558,3 +558,48 @@ fn valid_png_header_with_corrupt_idat_is_unresolved_while_other_frames_continue(
     assert_eq!(apply(&prepared, &destination).unwrap()["inserted"], 1);
     prepared.sources[0].assert_unchanged().unwrap();
 }
+
+#[test]
+fn corrupt_annotations_retain_full_frames_and_unresolved_evidence() {
+    let temp = tempfile::tempdir().unwrap();
+    let (source, config) = policy_fixture(&temp.path().join("source"));
+    let path = source.directory.join("images/round.png");
+    let mut bytes = fs::read(&path).unwrap();
+    let idat = bytes.windows(4).position(|part| part == b"IDAT").unwrap();
+    bytes[idat + 4] ^= 0xff;
+    assert!(image::load_from_memory(&bytes).is_err());
+    fs::write(&path, &bytes).unwrap();
+    let before = database_snapshot(&source.directory);
+    let prepared = plan(&[source.clone()], &[config]).unwrap();
+    assert_eq!(prepared.batch.frames.len(), 2);
+    let first = &prepared.batch.frames[0];
+    assert_eq!(first.hand_id, None);
+    assert!(!first
+        .labels
+        .iter()
+        .any(|label| label.region_id == "round_id"));
+    assert_eq!(first.labels.len(), 1);
+    assert_eq!(first.labels[0].provenance["visually_verified"], false);
+    assert!(first.evidence["unresolved_annotations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["source_record"] == 1 && item["region_id"] == "round_id"));
+    assert!(first.evidence["crops"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|crop| crop["id"] == 1 && crop["label"] == "#123456"));
+    assert!(first.evidence["unresolved_annotations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["source_record"] == 1 && item["reason"] == "invalid_annotation_pixels"));
+    assert!(prepared.batch.frames[1].origin.ends_with(":2"));
+    let destination = temp.path().join("destination");
+    Store::new(destination.clone()).unwrap();
+    assert_eq!(apply(&prepared, &destination).unwrap()["inserted"], 2);
+    prepared.sources[0].assert_unchanged().unwrap();
+    assert_eq!(database_snapshot(&source.directory), before);
+    assert_eq!(fs::read(&path).unwrap(), bytes);
+}

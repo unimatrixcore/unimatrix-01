@@ -326,13 +326,13 @@ pub fn validate_text_with_currency_format(
     let number = format!("{}{}", contract().value.format.number_pattern, suffix);
     let (item, _) = currency_pattern(template, &number, "amount");
     if category == "split_pot" {
-        let Ok(pattern) = Regex::new(&format!(r"\A[GS] {item}")) else {
+        let Ok(pattern) = Regex::new(&format!(r"\A([GS] {item})(?:\s|\z)")) else {
             return false;
         };
         let mut remaining = label;
         let mut count = 0;
         while let Some(captures) = pattern.captures(remaining) {
-            let matched = captures.get(0).unwrap();
+            let matched = captures.get(1).unwrap();
             if !cash_item_matches(template, matched.as_str(), &number) {
                 return false;
             }

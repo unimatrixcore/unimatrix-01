@@ -73,8 +73,8 @@ fn safe_id(id: &str) -> bool {
 
 impl Store {
     /// Import prepared evidence without changing original OCR or source files.
-    /// Published files precede the transaction; a crashed publication is reused
-    /// only after its hash is checked against the same deterministic origin.
+    /// Publication and prune cleanup share SQLite's writer lock. Uncommitted
+    /// files are reused only after their deterministic-origin hash is checked.
     pub fn import_legacy(&self, batch: &ImportBatch) -> Result<Value, String> {
         self.import_legacy_checked(batch, || Ok(()))
     }
@@ -254,6 +254,12 @@ impl Store {
             tx.execute("INSERT OR IGNORE INTO gameplay_import_unresolved(origin,fingerprint,reason,evidence_json) VALUES(?,?,?,?)",params![item.origin,item.fingerprint,item.reason,item.evidence.to_string()]).map_err(err)?;
         }
         validate_source()?;
+        fs::File::open(self.root.join("frames"))
+            .and_then(|directory| directory.sync_all())
+            .map_err(err)?;
+        fs::File::open(&self.root)
+            .and_then(|directory| directory.sync_all())
+            .map_err(err)?;
         tx.commit().map_err(err)?;
         Ok(
             json!({"inserted":inserted,"reused":reused,"unresolved":batch.unresolved.len(),"collection_id":batch.collection.id,"ocr_started":false,"verification_started":false}),

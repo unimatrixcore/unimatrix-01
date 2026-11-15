@@ -1,6 +1,91 @@
 use crate::lab::{conflict, now_ms, LabResult};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
+use std::{
+    fs::{File, OpenOptions},
+    os::fd::AsRawFd,
+    path::PathBuf,
+};
+
+pub struct LedgerOperationGuard {
+    file: File,
+    database: PathBuf,
+}
+
+impl Drop for LedgerOperationGuard {
+    fn drop(&mut self) {
+        unsafe {
+            libc::flock(self.file.as_raw_fd(), libc::LOCK_UN);
+        }
+    }
+}
+
+fn database_path(conn: &Connection) -> LabResult<PathBuf> {
+    let path = conn
+        .path()
+        .filter(|path| !path.is_empty())
+        .ok_or_else(|| conflict("Preparation ownership requires a file-backed ledger"))?;
+    Ok(std::fs::canonicalize(path)?)
+}
+
+/// Hold before preparation's first durable write until its final handoff or error.
+/// The lock file must never be unlinked: all processes must lock the same inode.
+pub fn lock_preparation(conn: &Connection) -> LabResult<LedgerOperationGuard> {
+    let database = database_path(conn)?;
+    let file = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(database.with_extension("preparation.lock"))?;
+    if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+        let error = std::io::Error::last_os_error();
+        if error.kind() == std::io::ErrorKind::WouldBlock {
+            return Err(conflict(
+                "Stop active preparation or quarantine before ledger operation",
+            ));
+        }
+        return Err(error.into());
+    }
+    Ok(LedgerOperationGuard { file, database })
+}
+
+pub fn lock_idle(conn: &Connection) -> LabResult<LedgerOperationGuard> {
+    let guard = lock_preparation(conn)?;
+    idle_jobs(conn)?;
+    Ok(guard)
+}
+
+impl LedgerOperationGuard {
+    fn check(&self, conn: &Connection) -> LabResult<()> {
+        if database_path(conn)? != self.database {
+            return Err(conflict("Preparation guard belongs to a different ledger"));
+        }
+        Ok(())
+    }
+
+    pub fn inspect(&self, conn: &Connection, job: &str) -> LabResult<Value> {
+        self.check(conn)?;
+        inspect_locked(conn, job)
+    }
+
+    pub fn apply(&self, conn: &Connection, job: &str, reason: &str) -> LabResult<Value> {
+        self.check(conn)?;
+        apply_locked(conn, job, reason)
+    }
+}
+
+fn idle_jobs(conn: &Connection) -> LabResult<()> {
+    let busy: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM ai_review_jobs WHERE state IN ('queued','running'))",
+        [],
+        |r| r.get(0),
+    )?;
+    if busy {
+        return Err(conflict("Stop active review before ledger quarantine"));
+    }
+    Ok(())
+}
 
 pub fn ensure(conn: &Connection) -> LabResult<()> {
     conn.execute_batch("CREATE TABLE IF NOT EXISTS gameplay_ai_job_quarantines(job_id TEXT PRIMARY KEY,reason TEXT NOT NULL,created_at INTEGER NOT NULL,provenance TEXT NOT NULL);
@@ -63,19 +148,17 @@ fn idle(conn: &Connection, job: &str) -> LabResult<()> {
     {
         return Err(conflict("Quarantine requires a stopped Gameplay job"));
     }
-    let busy: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM ai_review_jobs WHERE state IN ('queued','running')) OR EXISTS(SELECT 1 FROM gameplay_ai_runs WHERE json_extract(scope,'$.phase')='preparing')", [], |r| r.get(0))?;
-    if busy {
-        return Err(conflict(
-            "Stop active review and preparation before ledger quarantine",
-        ));
-    }
-    Ok(())
+    idle_jobs(conn)
 }
 
 const CURRENT_EVENTS: &str = "SELECT e.id,e.sample_key,e.label,e.prior_label,e.pixel_sha256,e.dataset_id FROM label_review_events e LEFT JOIN model_predictions p ON p.id=e.prediction_id WHERE e.action='accepted' AND json_extract(p.payload,'$.ai_review_job_id')=?1 AND e.id IN (SELECT json_extract(result,'$.event_id') FROM ai_review_items WHERE job_id=?1) AND e.id=(SELECT MAX(x.id) FROM label_review_events x WHERE x.sample_key=e.sample_key) AND NOT EXISTS(SELECT 1 FROM gameplay_ai_decisions d WHERE d.sample_key=e.sample_key) AND NOT EXISTS(SELECT 1 FROM gameplay_ai_manual m WHERE m.sample_key=e.sample_key)";
 const AFFECTED: &str = "WITH RECURSIVE affected(cache_key) AS (SELECT a.cache_key FROM gameplay_ai_cache_aliases a JOIN ai_review_items i USING(sample_key) WHERE i.job_id=?1 UNION SELECT a.cache_key FROM affected f JOIN gameplay_ai_cache_aliases child ON child.cache_key=f.cache_key JOIN gameplay_ai_cache_components c ON c.component_key=child.sample_key JOIN gameplay_ai_cache_aliases a ON a.sample_key=c.parent_key UNION SELECT child.cache_key FROM affected f JOIN gameplay_ai_cache_aliases parent ON parent.cache_key=f.cache_key JOIN gameplay_ai_cache_components c ON c.parent_key=parent.sample_key JOIN gameplay_ai_cache_aliases child ON child.sample_key=c.component_key) SELECT DISTINCT o.id FROM gameplay_ai_occurrences o JOIN gameplay_ai_cache_aliases a USING(sample_key) JOIN affected f USING(cache_key)";
 
 pub fn inspect(conn: &Connection, job: &str) -> LabResult<Value> {
+    lock_idle(conn)?.inspect(conn, job)
+}
+
+fn inspect_locked(conn: &Connection, job: &str) -> LabResult<Value> {
     idle(conn, job)?;
     let states = conn
         .prepare("SELECT state,count(*) FROM ai_review_items WHERE job_id=? GROUP BY state")?
@@ -100,12 +183,16 @@ pub fn inspect(conn: &Connection, job: &str) -> LabResult<Value> {
 
 // The caller holds an IMMEDIATE transaction so job transitions and projection updates are atomic.
 pub fn apply(conn: &Connection, job: &str, reason: &str) -> LabResult<Value> {
+    lock_idle(conn)?.apply(conn, job, reason)
+}
+
+fn apply_locked(conn: &Connection, job: &str, reason: &str) -> LabResult<Value> {
     if conn.is_autocommit() || reason.trim().is_empty() {
         return Err(conflict(
             "Quarantine requires a transaction and an audit reason",
         ));
     }
-    let before = inspect(conn, job)?;
+    let before = inspect_locked(conn, job)?;
     if contains(conn, job)? {
         return Ok(json!({"before":before,"applied":false,"provider_calls":0}));
     }

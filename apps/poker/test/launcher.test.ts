@@ -32,6 +32,7 @@ import {
   recordingActive,
   setActivityIntent,
   activityActive,
+  beginReplacement,
   supervise,
   main as launcherMain,
   type Worktree,
@@ -846,4 +847,84 @@ it("activity acknowledgement does not depend on worktree discovery or a native b
   } finally {
     log.mockRestore();
   }
+});
+
+it("atomically excludes activity claims across processes during replacement and recovers", async () => {
+  const root = mkdtempSync(join(tmpdir(), "poker-admission-"));
+  temporary.push(root);
+  const env = { ...process.env, XDG_CACHE_HOME: join(root, "cache") };
+  const paths = launcherPaths(env);
+  mkdirSync(join(paths.cache, "recording", `${process.pid}.admission-lock`), { recursive: true });
+  const claim = (state: "on" | "off") =>
+    spawnSync(
+      process.execPath,
+      [
+        join(process.cwd(), "scripts/launch.ts"),
+        "--git-dir",
+        root,
+        "--recording",
+        String(process.pid),
+        "review",
+        state,
+      ],
+      { env, encoding: "utf8" },
+    );
+  expect(claim("on").status).toBe(0);
+  expect(beginReplacement(process.pid, paths)).toBeNull();
+  expect(claim("off").status).toBe(0);
+  const release = beginReplacement(process.pid, paths);
+  expect(release).not.toBeNull();
+  expect(claim("on").status).not.toBe(0);
+  expect(activityActive(process.pid, paths)).toBe(false);
+  release!();
+  expect(claim("on").status).toBe(0);
+  expect(activityActive(process.pid, paths)).toBe(true);
+  expect(claim("off").status).toBe(0);
+  const gate = join(paths.cache, "recording", `${process.pid}.admission-flock`);
+  const holder = spawn(
+    process.execPath,
+    [
+      "-e",
+      `
+    const fs = require('node:fs');
+    const { spawnSync } = require('node:child_process');
+    const fd = fs.openSync(process.argv[1], 'r+');
+    const result = spawnSync('flock', ['--exclusive', '--nonblock', '3'], {stdio:['ignore','ignore','inherit',fd]});
+    if (result.status !== 0) process.exit(2);
+    process.stdout.write('locked\\n');
+    setInterval(() => {}, 1000);
+  `,
+      gate,
+    ],
+    { stdio: ["ignore", "pipe", "inherit"] },
+  );
+  try {
+    await new Promise<void>((resolve, reject) => {
+      holder.stdout.once("data", () => {
+        resolve();
+      });
+      holder.once("error", reject);
+      holder.once("exit", (code) => {
+        reject(new Error(`Lock holder exited early: ${code}`));
+      });
+    });
+    expect(claim("on").status).not.toBe(0);
+    expect(beginReplacement(process.pid, paths)).toBeNull();
+  } finally {
+    const exited = new Promise<void>((resolve) => {
+      holder.once("exit", () => {
+        resolve();
+      });
+    });
+    holder.kill("SIGKILL");
+    await exited;
+  }
+  expect(existsSync(gate)).toBe(true);
+  expect(claim("on").status).toBe(0);
+  expect(claim("off").status).toBe(0);
+  const own = beginReplacement(process.pid, paths)!;
+  const marker = join(paths.cache, "recording", `${process.pid}.shutdown.json`);
+  writeFileSync(marker, JSON.stringify({ owner: "different-owner" }));
+  own();
+  expect(existsSync(marker)).toBe(true);
 });

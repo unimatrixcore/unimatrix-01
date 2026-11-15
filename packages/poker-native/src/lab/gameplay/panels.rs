@@ -139,6 +139,9 @@ fn wrapped_panels(image: &RgbImage, spec: &Value) -> Option<LabResult<Vec<Value>
         if rows.is_empty() {
             continue;
         }
+        if rows.iter().map(Vec::len).sum::<usize>() != found.len() {
+            continue;
+        }
         for (index, row) in rows.iter().enumerate() {
             let l = row.first().unwrap().0;
             let r = row.last().unwrap().2;
@@ -930,6 +933,13 @@ mod tests {
             }
         }
         assert!(resolve(&DynamicImage::ImageRgb8(missing), &f).is_err());
+        let mut missing_first_row = image.clone();
+        for y in 80..110 {
+            for x in 288..712 {
+                missing_first_row.put_pixel(x, y, Rgb([60, 60, 60]));
+            }
+        }
+        assert!(resolve(&DynamicImage::ImageRgb8(missing_first_row), &f).is_err());
         f["localizer"]["excluded_bounds"] = json!([{"x":270,"y":80,"width":40,"height":30}]);
         assert!(resolve(&DynamicImage::ImageRgb8(image), &f).is_err());
     }

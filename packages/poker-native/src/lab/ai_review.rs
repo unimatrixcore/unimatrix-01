@@ -889,6 +889,26 @@ UPDATE ai_review_jobs SET state='interrupted',error='Collector restarted. Resume
                 .unwrap_or(""),
         ))
     }
+    fn complete_gameplay_intent(
+        conn: &mut Connection,
+        request_key: &str,
+        response: Option<&Value>,
+    ) -> LabResult<()> {
+        let tx = conn.transaction()?;
+        if let Some(response) = response {
+            if tx.execute("UPDATE gameplay_ai_request_intents SET state='received',response=? WHERE request_key=? AND state='pending'", params![response.to_string(),request_key])? != 1 {
+                return Err(conflict("Provider request intent changed before response persistence"));
+            }
+        } else if !tx.query_row("SELECT EXISTS(SELECT 1 FROM gameplay_ai_request_intents WHERE request_key=? AND state='received' AND response IS NOT NULL)",[request_key],|r|r.get::<_,bool>(0))? {
+            return Err(conflict("Saved provider response is unavailable"));
+        }
+        tx.execute(
+            "UPDATE gameplay_ai_asset_requests SET state='received' WHERE request_key=?",
+            [request_key],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
     fn call(
         &self,
         ctx: &DatasetContext,
@@ -955,7 +975,7 @@ UPDATE ai_review_jobs SET state='interrupted',error='Collector restarted. Resume
             let transport_result = if ctx.id == "gameplay-ai" {
                 let request_key =
                     super::sha256(format!("{id}:{}", serde_json::to_string(&payload)?).as_bytes());
-                let conn = ctx.connection()?;
+                let mut conn = ctx.connection()?;
                 conn.execute_batch("CREATE TABLE IF NOT EXISTS gameplay_ai_request_intents(request_key TEXT PRIMARY KEY,job_id TEXT NOT NULL,state TEXT NOT NULL,response TEXT,created_at INTEGER NOT NULL);CREATE TABLE IF NOT EXISTS gameplay_ai_asset_requests(claim_key TEXT PRIMARY KEY,request_key TEXT NOT NULL,state TEXT NOT NULL)")?;
                 let saved:Option<(String,Option<String>)>=conn.query_row("SELECT state,response FROM gameplay_ai_request_intents WHERE request_key=? AND job_id=?",params![request_key,id],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
                 if let Some((state, response)) = saved {
@@ -967,6 +987,7 @@ UPDATE ai_review_jobs SET state='interrupted',error='Collector restarted. Resume
                             .as_deref()
                             .ok_or_else(|| bad("Saved provider response missing"))?,
                     )?;
+                    Self::complete_gameplay_intent(&mut conn, &request_key, None)?;
                     response["_reused_response"] = json!(true);
                     Ok(response)
                 } else {
@@ -1009,8 +1030,11 @@ UPDATE ai_review_jobs SET state='interrupted',error='Collector restarted. Resume
                     drop(conn);
                     let response = (self.inner.transport)(payload, &key);
                     if let Ok(value) = &response {
-                        ctx.connection()?.execute("UPDATE gameplay_ai_request_intents SET state='received',response=? WHERE request_key=?",params![value.to_string(),request_key])?;
-                        ctx.connection()?.execute("UPDATE gameplay_ai_asset_requests SET state='received' WHERE request_key=?",[&request_key])?;
+                        Self::complete_gameplay_intent(
+                            &mut *ctx.connection()?,
+                            &request_key,
+                            Some(value),
+                        )?;
                     }
                     response
                 }
@@ -2597,5 +2621,57 @@ CREATE TABLE gameplay_ai_cache_aliases(sample_key TEXT PRIMARY KEY,family TEXT,p
         if let Ok(output) = std::env::var("POKER_BLANK_RECEIPT") {
             std::fs::write(output,serde_json::to_vec_pretty(&json!({"state":"flagged","provider_calls":0,"recovered_phases":2,"accepted_events":0,"cache":"needs_review","result":result})).unwrap()).unwrap();
         }
+    }
+    #[test]
+    fn received_intent_and_claims_commit_atomically_and_reconcile_replay() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE gameplay_ai_request_intents(request_key TEXT PRIMARY KEY,state TEXT,response TEXT); CREATE TABLE gameplay_ai_asset_requests(claim_key TEXT PRIMARY KEY,request_key TEXT,state TEXT); INSERT INTO gameplay_ai_request_intents VALUES('k','pending',NULL); INSERT INTO gameplay_ai_asset_requests VALUES('c','k','pending'); INSERT INTO gameplay_ai_asset_requests VALUES('other','other-key','pending'); CREATE TRIGGER fail_claim BEFORE UPDATE ON gameplay_ai_asset_requests BEGIN SELECT RAISE(ABORT,'simulated crash'); END;").unwrap();
+        let response = json!({"id":"paid-response"});
+        assert!(
+            AiReviewManager::complete_gameplay_intent(&mut conn, "k", Some(&response)).is_err()
+        );
+        let stored: (String, Option<String>) = conn
+            .query_row(
+                "SELECT state,response FROM gameplay_ai_request_intents WHERE request_key='k'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(stored, ("pending".into(), None));
+        conn.execute_batch("DROP TRIGGER fail_claim").unwrap();
+        AiReviewManager::complete_gameplay_intent(&mut conn, "k", Some(&response)).unwrap();
+        assert_eq!(
+            conn.query_row(
+                "SELECT state FROM gameplay_ai_asset_requests WHERE claim_key='c'",
+                [],
+                |r| r.get::<_, String>(0)
+            )
+            .unwrap(),
+            "received"
+        );
+        conn.execute(
+            "UPDATE gameplay_ai_asset_requests SET state='pending' WHERE claim_key='c'",
+            [],
+        )
+        .unwrap();
+        AiReviewManager::complete_gameplay_intent(&mut conn, "k", None).unwrap();
+        assert_eq!(
+            conn.query_row(
+                "SELECT state FROM gameplay_ai_asset_requests WHERE claim_key='c'",
+                [],
+                |r| r.get::<_, String>(0)
+            )
+            .unwrap(),
+            "received"
+        );
+        assert_eq!(
+            conn.query_row(
+                "SELECT state FROM gameplay_ai_asset_requests WHERE claim_key='other'",
+                [],
+                |r| r.get::<_, String>(0)
+            )
+            .unwrap(),
+            "pending"
+        );
     }
 }

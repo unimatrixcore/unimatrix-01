@@ -246,7 +246,7 @@ fn overlay_edges(image: &RgbImage, b: &Value, radius: f64) -> Option<f64> {
             .sum(),
     )
 }
-fn fit_overlay(image: &RgbImage, style: &Value) -> Option<Value> {
+fn fit_overlay(image: &RgbImage, style: &Value) -> Option<Option<Value>> {
     let b = &style["nominal_bounds"];
     let x = b["x"].as_f64()?;
     let y = b["y"].as_f64()?;
@@ -281,7 +281,7 @@ fn fit_overlay(image: &RgbImage, style: &Value) -> Option<Value> {
             }
         }
     }
-    best
+    Some(best)
 }
 
 pub fn resolve(image: &DynamicImage, region: &Value) -> LabResult<Value> {
@@ -300,7 +300,9 @@ pub fn resolve(image: &DynamicImage, region: &Value) -> LabResult<Value> {
     let mut partial = false;
     for style in styles {
         if style["background_alpha"].as_f64().unwrap_or(1.) < 1. {
-            if let Some(candidate) = fit_overlay(rgb, style) {
+            if let Some(fit) = fit_overlay(rgb, style) {
+                partial = true;
+                let Some(candidate) = fit else { continue };
                 let radius = style["radius"].as_f64().unwrap();
                 if !matches.iter().any(|(old, _)| *old == candidate) {
                     matches.push((candidate, radius));
@@ -397,4 +399,34 @@ pub fn resolve(image: &DynamicImage, region: &Value) -> LabResult<Value> {
     result["localization"] =
         json!({"policy":"source_status_panels_v1","panels":[b],"corner_radius":radius});
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image::{ImageBuffer, Rgb};
+
+    #[test]
+    fn incomplete_translucent_overlay_is_not_absent() {
+        let region = json!({"localizer":{"styles":[{
+            "background_alpha":0.5, "nominal_bounds":{"x":20,"y":20,"width":60,"height":30},
+            "anchor":{"x":50,"y":50}, "radius":4, "max_width":60
+        }]}});
+        let blank = ImageBuffer::from_pixel(120, 80, Rgb([180, 180, 180]));
+        assert_eq!(
+            resolve(&DynamicImage::ImageRgb8(blank.clone()), &region).unwrap()["localization"]
+                ["state"],
+            "original_negative_slot"
+        );
+        let mut merged = blank;
+        for y in 20..50 {
+            for x in 20..120 {
+                merged.put_pixel(x, y, Rgb([60, 60, 60]));
+            }
+            if y == 35 {
+                merged.put_pixel(83, y, Rgb([180, 180, 180]));
+            }
+        }
+        assert!(resolve(&DynamicImage::ImageRgb8(merged), &region).is_err());
+    }
 }

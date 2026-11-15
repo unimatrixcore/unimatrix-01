@@ -1150,6 +1150,17 @@ impl GameplayAi {
                 if part == "stop" {
                     service.ai_review.cancel(&self.context, id)?;
                 } else {
+                    let _preparation_lease =
+                        quarantine::lock_preparation(&*self.context.connection()?)?;
+                    if service
+                        .gameplay
+                        .evidence_store()?
+                        .session(&session)
+                        .map_err(bad)?["archived"]
+                        == true
+                    {
+                        return Err(conflict("Archived recordings are read-only"));
+                    }
                     quarantine::guard(&*self.context.connection()?, id)?;
                     let limit = request
                         .body
@@ -1178,14 +1189,7 @@ impl GameplayAi {
                 let conn = self.context.connection()?;
                 let (run, _, scope) = selected_run(&conn, session)?
                     .ok_or_else(|| conflict("Prepare this recording first"))?;
-                let active: Option<String> = conn
-                    .query_row(
-                        "SELECT json_extract(value,'$') FROM queue_meta WHERE key='active_stream'",
-                        [],
-                        |r| r.get(0),
-                    )
-                    .optional()?;
-                if active.as_deref() != Some(&run) {
+                if !is_active_stream(&conn, &run)? {
                     return Err(conflict(
                         "Prepare this recording again before planning review",
                     ));
@@ -1489,6 +1493,7 @@ impl GameplayAi {
             Ok(guard) => guard,
             Err(_) => return adopt(),
         };
+        let _preparation_lease = quarantine::lock_preparation(&*self.context.connection()?)?;
         if service.ai_review.is_busy(&self.context)? {
             let prepared = adopt()?;
             if review {
@@ -2137,6 +2142,15 @@ impl GameplayAi {
                 status["state"].as_str(),
                 Some("cancelled" | "interrupted" | "failed")
             ) {
+                if service
+                    .gameplay
+                    .evidence_store()?
+                    .session(session)
+                    .map_err(bad)?["archived"]
+                    == true
+                {
+                    return Err(conflict("Archived recordings are read-only"));
+                }
                 self.context.connection()?.execute("INSERT INTO queue_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![format!("gameplay_request_budget:{job}"),intent["max_requests"].as_u64().unwrap_or(100).to_string()])?;
                 self.context.connection()?.execute("INSERT INTO queue_meta(key,value) VALUES('gameplay_request_budget',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [intent["max_requests"].as_u64().unwrap_or(100).to_string()])?;
                 quarantine::guard(&*self.context.connection()?, &job)?;
@@ -2201,6 +2215,7 @@ impl GameplayAi {
         )
     }
     fn start(&self, service: &LabService, body: &Value) -> LabResult<Value> {
+        let _preparation_lease = quarantine::lock_preparation(&*self.context.connection()?)?;
         let _operation =
             self.context.operation.try_lock().map_err(|_| {
                 conflict("Gameplay preparation or review transition is in progress")
@@ -2272,6 +2287,19 @@ impl GameplayAi {
         }
         if body["session_id"] != session {
             return Err(conflict("Prepared recording does not match"));
+        }
+        let recording = service
+            .gameplay
+            .evidence_store()?
+            .session(&session)
+            .map_err(bad)?;
+        if recording["archived"] == true {
+            return Err(conflict("Archived recordings are read-only"));
+        }
+        if !is_active_stream(&*self.context.connection()?, run)? {
+            return Err(conflict(
+                "Prepare this recording again before starting paid review",
+            ));
         }
         let budget = body
             .get("max_requests")
@@ -2871,6 +2899,17 @@ fn activate_prepared_scope(conn: &Connection, run: &str) -> LabResult<()> {
     conn.execute("INSERT INTO queue_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",params![format!("stream:{run}"),stream.to_string()])?;
     conn.execute("INSERT INTO queue_meta(key,value) VALUES('active_stream',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",[json!(run).to_string()])?;
     Ok(())
+}
+
+fn is_active_stream(conn: &Connection, run: &str) -> LabResult<bool> {
+    let active: Option<String> = conn
+        .query_row(
+            "SELECT json_extract(value,'$') FROM queue_meta WHERE key='active_stream'",
+            [],
+            |r| r.get(0),
+        )
+        .optional()?;
+    Ok(active.as_deref() == Some(run))
 }
 
 fn select_run(conn: &Connection, run: &str) -> LabResult<()> {

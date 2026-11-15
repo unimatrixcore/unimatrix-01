@@ -56,15 +56,6 @@ fn guard(conn: &Connection) -> Result<()> {
     }
     Ok(())
 }
-fn idle(conn: &Connection) -> Result<()> {
-    let busy:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM ai_review_jobs WHERE state IN ('queued','running')) OR EXISTS(SELECT 1 FROM gameplay_ai_runs WHERE json_extract(scope,'$.phase')='preparing')",[],|r|r.get(0))?;
-    if busy {
-        return Err(
-            "Pause preparation and paid jobs before backing up or activating cache features".into(),
-        );
-    }
-    Ok(())
-}
 fn integrity(conn: &Connection) -> Result<()> {
     let rows = conn
         .prepare("PRAGMA integrity_check")?
@@ -144,9 +135,9 @@ fn atomic_receipt(path: &Path, bytes: &[u8]) -> Result<()> {
 
 fn dry_run(path: &Path, job: &str, directory: &Path) -> Result<Value> {
     let source = open_read(path)?;
+    let ownership = quarantine::lock_idle(&source).map_err(|e| e.message)?;
     source.execute_batch("BEGIN")?;
-    idle(&source)?;
-    let plan = quarantine::inspect(&source, job).map_err(|e| e.message)?;
+    let plan = ownership.inspect(&source, job).map_err(|e| e.message)?;
     let before = snapshot(&source)?;
     fs::create_dir(directory)?;
     fs::set_permissions(directory, fs::Permissions::from_mode(0o700))?;
@@ -191,8 +182,8 @@ fn apply(path: &Path, job: &str, directory: &Path) -> Result<Value> {
     }
     let mut conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
     conn.busy_timeout(Duration::from_secs(5))?;
+    let ownership = quarantine::lock_idle(&conn).map_err(|e| e.message)?;
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    idle(&tx)?;
     if quarantine::contains(&tx, job).map_err(|e| e.message)? {
         let applied_path = directory.join("applied-receipt.json");
         let mut previous: Value = match fs::read(&applied_path) {
@@ -230,12 +221,13 @@ fn apply(path: &Path, job: &str, directory: &Path) -> Result<Value> {
     if snapshot(&tx)? != receipt["snapshot"] {
         return Err("Ledger changed since backup; repeat dry-run with a new directory".into());
     }
-    let applied = quarantine::apply(
-        &tx,
-        job,
-        "Bounded visual audit found wrong automatic labels; entire job provisional until audit",
-    )
-    .map_err(|e| e.message)?;
+    let applied = ownership
+        .apply(
+            &tx,
+            job,
+            "Bounded visual audit found wrong automatic labels; entire job provisional until audit",
+        )
+        .map_err(|e| e.message)?;
     let after = snapshot(&tx)?;
     let result = json!({"job_id":job,"backup_sha256":receipt["backup_sha256"],"before":receipt["snapshot"],"after":after,"result":applied,"provider_calls":0});
     // Excluded from snapshot because a receipt cannot hash its own serialized contents.
@@ -416,5 +408,108 @@ INSERT INTO review_samples VALUES('sample','Q');").unwrap();
             .unwrap_err()
             .to_string()
             .contains("Applied receipt identity mismatch"));
+    }
+
+    fn wait_for(path: &Path) {
+        let start = std::time::Instant::now();
+        while !path.exists() {
+            assert!(
+                start.elapsed() < Duration::from_secs(10),
+                "ownership child timed out"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+    struct OwnershipChild(std::process::Child);
+    impl Drop for OwnershipChild {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    fn ownership_child(path: &Path) -> OwnershipChild {
+        OwnershipChild(
+            std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "tests::preparation_ownership_child",
+                    "--nocapture",
+                ])
+                .env("POKER_QUARANTINE_OWNERSHIP_FIXTURE", path)
+                .spawn()
+                .unwrap(),
+        )
+    }
+    #[test]
+    fn preparation_ownership_child() {
+        let Some(path) = std::env::var_os("POKER_QUARANTINE_OWNERSHIP_FIXTURE") else {
+            return;
+        };
+        let path = PathBuf::from(path);
+        let conn = Connection::open(&path).unwrap();
+        match quarantine::lock_preparation(&conn) {
+            Ok(_guard) => {
+                fs::write(path.with_extension("ready"), b"ready").unwrap();
+                wait_for(&path.with_extension("release"));
+            }
+            Err(error) => {
+                assert_eq!(error.status, 409);
+                fs::write(path.with_extension("blocked"), b"blocked").unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn live_preparation_and_quarantine_exclude_each_other_across_processes_and_crash() {
+        let root = tempfile::tempdir().unwrap();
+        let path = fixture(root.path());
+        let conn = Connection::open(&path).unwrap();
+        conn.execute(
+            "INSERT INTO gameplay_ai_runs VALUES('interrupted',NULL,'{\"phase\":\"preparing\"}')",
+            [],
+        )
+        .unwrap();
+        let frozen = hash_file(&path).unwrap();
+        let backup = root.path().join("backup");
+        dry_run(&path, "job", &backup).unwrap();
+        assert_eq!(hash_file(&path).unwrap(), frozen);
+        let mut child = ownership_child(&path);
+        wait_for(&path.with_extension("ready"));
+        assert!(dry_run(&path, "job", &root.path().join("busy-backup"))
+            .unwrap_err()
+            .to_string()
+            .contains("active preparation"));
+        assert!(!root.path().join("busy-backup").exists());
+        assert!(apply(&path, "job", &backup)
+            .unwrap_err()
+            .to_string()
+            .contains("active preparation"));
+        let second = Connection::open(&path).unwrap();
+        assert_eq!(quarantine::inspect(&second, "job").unwrap_err().status, 409);
+        assert_eq!(hash_file(&path).unwrap(), frozen);
+        child.0.kill().unwrap();
+        child.0.wait().unwrap();
+        fs::remove_file(path.with_extension("ready")).unwrap();
+        let ownership = quarantine::lock_idle(&conn).unwrap();
+        let mut reverse = ownership_child(&path);
+        wait_for(&path.with_extension("blocked"));
+        assert!(ownership.inspect(&conn, "job").is_ok());
+        drop(ownership);
+        let start = std::time::Instant::now();
+        while reverse.0.try_wait().unwrap().is_none() {
+            assert!(start.elapsed() < Duration::from_secs(10));
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(
+            apply(&path, "job", &backup).unwrap()["result"]["applied"],
+            true
+        );
+        assert_eq!(conn.query_row("SELECT json_extract(scope,'$.phase') FROM gameplay_ai_runs WHERE run_id='interrupted'", [], |r| r.get::<_, String>(0)).unwrap(), "preparing");
+        assert_eq!(
+            conn.query_row("SELECT response FROM ai_review_attempts", [], |r| r
+                .get::<_, String>(0))
+                .unwrap(),
+            "paid response preserved"
+        );
     }
 }

@@ -121,7 +121,7 @@ def validate_text_with_currency_format(category, label, allow_blank=False, curre
     elif category == 'split_pot':
         item = f'{item}(?:[ \t\r\n\f\v]+{item})*' if '{0}' not in currency_format and '{value}' not in currency_format else None
         if item is None:
-            regex = re.compile('[GS] ' + pattern('amount'))
+            regex = re.compile('[GS] ' + pattern('amount') + r'(?=\s|\Z)')
             remaining, count = label, 0
             while match := regex.match(remaining):
                 remaining = remaining[match.end():]

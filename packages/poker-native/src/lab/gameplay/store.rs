@@ -105,7 +105,12 @@ impl Store {
         .map_err(err)?;
         effective::initialize(&tx)?;
         import::initialize(&tx)?;
+        tx.execute_batch(
+            "CREATE TABLE IF NOT EXISTS gameplay_prune_cleanup(frame_id TEXT PRIMARY KEY)",
+        )
+        .map_err(err)?;
         tx.commit().map_err(err)?;
+        store.finish_prune_cleanup()?;
         Ok(store)
     }
 
@@ -528,11 +533,22 @@ impl Store {
 
     /// Dry runs count evidence without changing either rows or image files.
     pub fn prune(&self, dry: bool, session: Option<&str>) -> Result<Value> {
+        self.prune_then(dry, session, || {})
+    }
+
+    fn prune_then(
+        &self,
+        dry: bool,
+        session: Option<&str>,
+        after_commit: impl FnOnce(),
+    ) -> Result<Value> {
         if let Some(id) = session {
             self.session(id)?;
         }
         let mut conn = self.connect()?;
-        let tx = conn.transaction().map_err(err)?;
+        let tx = conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(err)?;
         let ids = {
             let mut query = tx.prepare("SELECT id FROM effective_frames WHERE (hand_id IS NULL OR hand_id='' OR ocr_status!='complete') AND (?1 IS NULL OR session_id=?1)").map_err(err)?;
             let values = query
@@ -544,17 +560,45 @@ impl Store {
         };
         if !dry {
             for id in &ids {
+                tx.execute(
+                    "INSERT OR IGNORE INTO gameplay_prune_cleanup VALUES(?)",
+                    [id],
+                )
+                .map_err(err)?;
                 tx.execute("DELETE FROM frames WHERE id=?", [id])
                     .map_err(err)?;
             }
         }
         tx.commit().map_err(err)?;
+        after_commit();
         if !dry {
-            for id in &ids {
-                // Historical database IDs are checked before filesystem use.
-                if id.len() != 32 || !id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-                    continue;
-                }
+            self.finish_prune_cleanup()?;
+        }
+        Ok(json!({"dry_run":dry,"count":ids.len()}))
+    }
+
+    fn finish_prune_cleanup(&self) -> Result<()> {
+        let mut conn = self.connect()?;
+        let tx = conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(err)?;
+        let ids = tx
+            .prepare("SELECT frame_id FROM gameplay_prune_cleanup")
+            .map_err(err)?
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(err)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(err)?;
+        for id in ids {
+            let active: bool = tx
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM frames WHERE id=?)",
+                    [&id],
+                    |r| r.get(0),
+                )
+                .map_err(err)?;
+            // Import publishes under the same SQLite writer lock. A restored row owns its files.
+            if !active && id.len() == 32 && id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
                 for suffix in [".png", ".thumb.jpg", ".preview.jpg"] {
                     let path = self.root.join("frames").join(format!("{id}{suffix}"));
                     match fs::remove_file(path) {
@@ -564,8 +608,10 @@ impl Store {
                     }
                 }
             }
+            tx.execute("DELETE FROM gameplay_prune_cleanup WHERE frame_id=?", [&id])
+                .map_err(err)?;
         }
-        Ok(json!({"dry_run":dry,"count":ids.len()}))
+        tx.commit().map_err(err)
     }
 }
 
@@ -711,5 +757,199 @@ mod tests {
         assert_eq!(store.session("old").unwrap()["name"], "History");
         assert_eq!(store.session("old").unwrap()["archived"], false);
         fs::remove_dir_all(store.root()).unwrap();
+    }
+
+    fn lifecycle_batch(root: &Path) -> import::ImportBatch {
+        use image::{DynamicImage, ImageFormat};
+        use std::io::Cursor;
+        let mut png = Cursor::new(Vec::new());
+        DynamicImage::new_rgb8(3, 2)
+            .write_to(&mut png, ImageFormat::Png)
+            .unwrap();
+        let source = root.join("original.png");
+        fs::write(&source, png.get_ref()).unwrap();
+        import::ImportBatch {
+            collection: import::ImportCollection {
+                id: "legacy".into(),
+                name: "Legacy".into(),
+                kind: "gameplay".into(),
+            },
+            sessions: vec![import::ImportSession {
+                id: "legacy-session".into(),
+                name: "Legacy".into(),
+                source: "legacy".into(),
+                created_at: "then".into(),
+                stopped_at: "then".into(),
+                config: json!({}),
+                config_hash: "hash".into(),
+            }],
+            frames: vec![import::ImportFrame {
+                origin: "source:1".into(),
+                fingerprint: "fingerprint".into(),
+                id: "0123456789abcdef0123456789abcdef".into(),
+                session_id: "legacy-session".into(),
+                captured_at: "then".into(),
+                hand_id: None,
+                source_path: source,
+                image_sha256: format!("{:x}", Sha256::digest(png.get_ref())),
+                width: 3,
+                height: 2,
+                config: json!({}),
+                config_hash: "hash".into(),
+                evidence: json!({}),
+                labels: vec![],
+            }],
+            unresolved: vec![],
+        }
+    }
+
+    fn wait_marker(path: &Path) {
+        let start = std::time::Instant::now();
+        while !path.exists() {
+            assert!(
+                start.elapsed() < Duration::from_secs(10),
+                "timed out: {}",
+                path.display()
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    struct Child(std::process::Child);
+    impl Drop for Child {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    fn lifecycle_child(root: &Path, mode: &str) -> Child {
+        Child(
+            std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "lab::gameplay::store::tests::lifecycle_process_child",
+                    "--nocapture",
+                ])
+                .env("POKER_STORE_LIFECYCLE_FIXTURE", root)
+                .env("POKER_STORE_LIFECYCLE_MODE", mode)
+                .spawn()
+                .unwrap(),
+        )
+    }
+    fn wait_child(child: &mut Child, expected: i32) {
+        let start = std::time::Instant::now();
+        loop {
+            if let Some(status) = child.0.try_wait().unwrap() {
+                assert_eq!(status.code(), Some(expected));
+                break;
+            }
+            assert!(start.elapsed() < Duration::from_secs(10), "child timed out");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    #[test]
+    fn lifecycle_process_child() {
+        let Some(root) = std::env::var_os("POKER_STORE_LIFECYCLE_FIXTURE") else {
+            return;
+        };
+        let root = PathBuf::from(root);
+        let batch: import::ImportBatch =
+            serde_json::from_slice(&fs::read(root.join("batch.json")).unwrap()).unwrap();
+        let store = Store::new(root.join("store")).unwrap();
+        if std::env::var("POKER_STORE_LIFECYCLE_MODE").unwrap() == "crash" {
+            store
+                .prune_then(false, None, || std::process::exit(73))
+                .unwrap();
+        } else {
+            fs::write(root.join("ready"), b"ready").unwrap();
+            wait_marker(&root.join("go"));
+            store.import_legacy(&batch).unwrap();
+            fs::write(root.join("done"), b"done").unwrap();
+        }
+    }
+
+    #[test]
+    fn prune_cleanup_preserves_same_instance_and_process_reimports() {
+        let temp = tempfile::tempdir().unwrap();
+        let batch = lifecycle_batch(temp.path());
+        fs::write(
+            temp.path().join("batch.json"),
+            serde_json::to_vec(&batch).unwrap(),
+        )
+        .unwrap();
+        let store = Store::new(temp.path().join("store")).unwrap();
+        store.import_legacy(&batch).unwrap();
+        store
+            .prune_then(false, None, || {
+                store.import_legacy(&batch).unwrap();
+            })
+            .unwrap();
+        let image = store
+            .root()
+            .join("frames")
+            .join(format!("{}.png", batch.frames[0].id));
+        assert_eq!(
+            fs::read(&image).unwrap(),
+            fs::read(&batch.frames[0].source_path).unwrap()
+        );
+        let mut child = lifecycle_child(temp.path(), "import");
+        wait_marker(&temp.path().join("ready"));
+        store
+            .prune_then(false, None, || {
+                fs::write(temp.path().join("go"), b"go").unwrap();
+                wait_marker(&temp.path().join("done"));
+            })
+            .unwrap();
+        wait_child(&mut child, 0);
+        assert!(store.frame(&batch.frames[0].id, false).is_ok());
+        assert_eq!(
+            fs::read(&image).unwrap(),
+            fs::read(&batch.frames[0].source_path).unwrap()
+        );
+        assert_eq!(
+            store
+                .connect()
+                .unwrap()
+                .query_row("SELECT COUNT(*) FROM gameplay_prune_cleanup", [], |r| r
+                    .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn crashed_prune_cleanup_recovers_before_reimport_without_touching_originals() {
+        let temp = tempfile::tempdir().unwrap();
+        let batch = lifecycle_batch(temp.path());
+        let original = fs::read(&batch.frames[0].source_path).unwrap();
+        fs::write(
+            temp.path().join("batch.json"),
+            serde_json::to_vec(&batch).unwrap(),
+        )
+        .unwrap();
+        let store = Store::new(temp.path().join("store")).unwrap();
+        store.import_legacy(&batch).unwrap();
+        let mut child = lifecycle_child(temp.path(), "crash");
+        wait_child(&mut child, 73);
+        let image = store
+            .root()
+            .join("frames")
+            .join(format!("{}.png", batch.frames[0].id));
+        assert!(image.exists());
+        assert_eq!(
+            store
+                .connect()
+                .unwrap()
+                .query_row("SELECT COUNT(*) FROM gameplay_prune_cleanup", [], |r| r
+                    .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        let reopened = Store::new(store.root().into()).unwrap();
+        assert!(!image.exists());
+        reopened.import_legacy(&batch).unwrap();
+        assert_eq!(fs::read(&image).unwrap(), original);
+        assert_eq!(fs::read(&batch.frames[0].source_path).unwrap(), original);
     }
 }

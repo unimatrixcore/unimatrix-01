@@ -8,7 +8,7 @@ Create a fresh private plan with benchmark writers stopped:
 ./infra/scripts/pnpm-with-pinned-node.sh exec node infra/scripts/run-local-workload.mjs -- \
   cargo run -p poker-native --example legacy_benchmark -- registry-plan \
   "$HOME/.local/share/poker/collector_datasets/datasets.json" \
-  /tmp/legacy-benchmark-plan.json /path/to/private/archived-regions.json
+  /path/to/private/legacy-benchmark-plan.json /path/to/private/archived-regions.json
 ```
 
 The output path must be new. Plans contain private labels, source paths and queue/review evidence; keep them in ignored private storage. `plan <sources.json> <new-plan.json> [recovered-region-files ...]` accepts explicit `[{"id":"stable-source-id","name":"Source name","directory":"/absolute/source/path"}]` instead of the registry. Changing a source identity creates a different import identity; do not rename source identities to bypass a revision conflict.
@@ -20,7 +20,7 @@ The explicit apply command is:
 ```sh
 ./infra/scripts/pnpm-with-pinned-node.sh exec node infra/scripts/run-local-workload.mjs -- \
   cargo run -p poker-native --example legacy_benchmark -- apply \
-  /tmp/legacy-benchmark-plan.json "$HOME/.local/share/poker/gameplay_recordings" --apply
+  /path/to/private/legacy-benchmark-plan.json "$HOME/.local/share/poker/gameplay_recordings" --apply
 ```
 
 The destination must already exist and must not overlap a source. Apply checks source receipts and each PNG hash, publishes deterministic frame files, then commits native sessions/frames and unique origin records transactionally. An unchanged rerun reuses imported origins. A changed source, conflicting destination identity or corrupted published PNG fails instead of overwriting evidence. Published files left by an interrupted transaction can be reused after hash verification. Existing recordings, OCR states, user corrections and archive flags are preserved. Import opens the store without running unrelated pending-OCR startup recovery. Source annotation pixels use the content-addressed pixel-asset helper in the same transaction as their occurrence-owned labels.

@@ -165,6 +165,46 @@ function processToken(pid: number): string {
 function recordingPath(paths: LauncherPaths, pid: number, role: ActivityRole): string {
   return join(paths.cache, "recording", `${pid}-${role}.json`);
 }
+function withAdmission<T>(paths: LauncherPaths, pid: number, action: () => T): T {
+  const directory = join(paths.cache, "recording");
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  const gate = join(directory, `${pid}.admission-flock`);
+  const fd = openSync(gate, constants.O_CREAT | constants.O_RDWR | constants.O_NOFOLLOW, 0o600);
+  try {
+    const lock = spawnSync("flock", ["--exclusive", "--nonblock", "3"], {
+      stdio: ["ignore", "ignore", "pipe", fd],
+    });
+    if (lock.error) throw lock.error;
+    if (lock.status === 1) throw new AdmissionBusy();
+    if (lock.status !== 0) throw new Error("Cannot acquire launcher admission lock");
+    return action();
+  } finally {
+    closeSync(fd);
+  }
+}
+class AdmissionBusy extends Error {}
+function shutdownPath(paths: LauncherPaths, pid: number): string {
+  return join(paths.cache, "recording", `${pid}.shutdown.json`);
+}
+export function beginReplacement(pid: number, paths = launcherPaths()): (() => void) | null {
+  try {
+    return withAdmission(paths, pid, () => {
+      if (activityActive(pid, paths)) return null;
+      const marker = shutdownPath(paths, pid);
+      const existing = readJson(marker) as { token?: unknown } | null;
+      if (existing?.token === processToken(pid)) return null;
+      const owner = randomUUID();
+      atomicJson(marker, { token: processToken(pid), owner });
+      return () => {
+        const current = readJson(marker) as { owner?: unknown } | null;
+        if (current?.owner === owner) rmSync(marker, { force: true });
+      };
+    });
+  } catch (error) {
+    if (error instanceof AdmissionBusy) return null;
+    throw error;
+  }
+}
 export function setRecordingIntent(
   pid: number,
   role: RecordingRole,
@@ -182,7 +222,13 @@ export function setActivityIntent(
   if (!Number.isSafeInteger(pid) || pid < 2 || !activityRoles.includes(role))
     throw new Error("Invalid activity intent");
   const path = recordingPath(paths, pid, role);
-  if (active) atomicJson(path, { token: processToken(pid) });
+  if (active)
+    withAdmission(paths, pid, () => {
+      const token = processToken(pid);
+      const marker = readJson(shutdownPath(paths, pid)) as { token?: unknown } | null;
+      if (marker?.token === token) throw new Error("Launcher replacement is in progress");
+      atomicJson(path, { token });
+    });
   else rmSync(path, { force: true });
 }
 function anyActivity(pid: number, roles: readonly ActivityRole[], paths: LauncherPaths): boolean {
@@ -1053,6 +1099,17 @@ export async function supervise(
       await stopChild(previous);
     }
   };
+  const stopForReplacement = async () => {
+    if (!child?.pid) return true;
+    const release = beginReplacement(child.pid, paths);
+    if (!release) return false;
+    try {
+      await stopApp();
+      return true;
+    } finally {
+      release();
+    }
+  };
   process.once("SIGTERM", terminate);
   process.once("SIGINT", terminate);
   try {
@@ -1104,7 +1161,11 @@ export async function supervise(
             await runtime.pause();
             continue;
           }
-          await stopApp();
+          if (!(await stopForReplacement())) {
+            publish(`Checkout change queued; waiting for ${waiting()}`);
+            await runtime.pause();
+            continue;
+          }
           if (server) {
             await runtime.stopServer(server);
             server = null;
@@ -1153,7 +1214,12 @@ export async function supervise(
                 await runtime.pause();
                 continue;
               }
-              await stopApp();
+              if (!(await stopForReplacement())) {
+                pending = completed;
+                publish(`Native update ready; waiting for ${waiting()}`);
+                await runtime.pause();
+                continue;
+              }
               if (!stopping && !manualClose)
                 await launchRestored(current, completed.artifact, placement);
             }

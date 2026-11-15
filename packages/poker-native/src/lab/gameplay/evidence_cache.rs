@@ -559,8 +559,14 @@ fn scalar_truth_with_direct(
     for parent in parents {
         let (label, own) = match base_truth(conn, &parent)? {
             Truth::Accepted { label, human } => (label, human),
-            blocked @ Truth::Blocked(_) | blocked @ Truth::NeedsReview { .. } => {
+            blocked @ Truth::Blocked(_) => {
                 blocked_parent = Some(blocked);
+                continue;
+            }
+            review @ Truth::NeedsReview { .. } => {
+                if !matches!(blocked_parent, Some(Truth::Blocked(_))) {
+                    blocked_parent = Some(review);
+                }
                 continue;
             }
             Truth::Pending => continue,
