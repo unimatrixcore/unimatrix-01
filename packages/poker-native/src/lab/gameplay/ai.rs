@@ -61,17 +61,60 @@ pub struct PixelEvidence {
 pub struct GameplayAi {
     pub(crate) context: Arc<DatasetContext>,
     config: PathBuf,
-    projection: Mutex<()>,
+    projection: Mutex<EffectiveSync>,
     workflow_transition: Mutex<()>,
     read_snapshot: Mutex<Option<ReadSnapshot>>,
+    frame_summaries: Mutex<Option<FrameSummaries>>,
     #[cfg(test)]
     projection_hook: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
+    #[cfg(test)]
+    summary_hook: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
+    #[cfg(test)]
+    summary_full_reference: std::sync::atomic::AtomicBool,
+    #[cfg(test)]
+    summary_projection_count: std::sync::atomic::AtomicUsize,
+    #[cfg(test)]
+    summary_cache_hook: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
+    #[cfg(test)]
+    summary_end_hook: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
     #[cfg(test)]
     manual_hook: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
     #[cfg(test)]
     preparation_hook: Mutex<Option<Arc<dyn Fn(usize) + Send + Sync>>>,
     #[cfg(test)]
     handoff_hook: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
+}
+#[cfg(unix)]
+fn effective_file_identity(path: &Path) -> LabResult<Option<(u64, u64)>> {
+    use std::os::unix::fs::MetadataExt;
+    let metadata = fs::metadata(path)?;
+    Ok(Some((metadata.dev(), metadata.ino())))
+}
+#[cfg(not(unix))]
+fn effective_file_identity(path: &Path) -> LabResult<Option<(u64, u64)>> {
+    fs::metadata(path)?;
+    Ok(None)
+}
+#[derive(Default)]
+struct EffectiveSync {
+    identity: Option<(u64, u64)>,
+    observer: Option<Connection>,
+    completed: Option<(ReadSource, String, i64, i64)>,
+}
+// Bounds the resident summary set; uncached frames retain the normal read path.
+const MAX_CACHED_FRAME_SUMMARIES: usize = 4096;
+#[derive(Clone, PartialEq, Eq)]
+struct RecordingEpoch {
+    path: PathBuf,
+    identity: (u64, u64),
+    data_version: i64,
+    schema_version: i64,
+}
+struct FrameSummaries {
+    source: ReadSource,
+    profile: String,
+    recording: RecordingEpoch,
+    frames: std::collections::HashMap<String, Value>,
 }
 #[derive(Clone)]
 struct ReadSnapshot {
@@ -231,11 +274,22 @@ impl GameplayAi {
                 _archive_snapshot: None,
             }),
             config,
-            projection: Mutex::new(()),
+            projection: Mutex::new(EffectiveSync::default()),
             workflow_transition: Mutex::new(()),
             read_snapshot: Mutex::new(None),
+            frame_summaries: Mutex::new(None),
             #[cfg(test)]
             projection_hook: Mutex::new(None),
+            #[cfg(test)]
+            summary_hook: Mutex::new(None),
+            #[cfg(test)]
+            summary_full_reference: std::sync::atomic::AtomicBool::new(false),
+            #[cfg(test)]
+            summary_projection_count: std::sync::atomic::AtomicUsize::new(0),
+            #[cfg(test)]
+            summary_cache_hook: Mutex::new(None),
+            #[cfg(test)]
+            summary_end_hook: Mutex::new(None),
             #[cfg(test)]
             manual_hook: Mutex::new(None),
             #[cfg(test)]
@@ -268,26 +322,120 @@ impl GameplayAi {
         Ok((profile, hash))
     }
     pub(crate) fn sync_effective_hands(&self, service: &LabService) -> LabResult<()> {
-        let _projection = self
+        #[cfg(test)]
+        let perf_start = std::time::Instant::now();
+        let mut projection = self
             .projection
             .lock()
             .map_err(|_| conflict("Effective hand projection unavailable"))?;
-        let (profile, mut entries) = self.effective_hand_readings()?;
         let root = service.gameplay.evidence_root()?;
-        let conn = Connection::open_with_flags(
-            root.join("gameplay.sqlite3"),
-            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-        )?;
-        let mut q = conn.prepare("SELECT id FROM frames")?;
+        let path = root.join("gameplay.sqlite3");
+        let identity = effective_file_identity(&path)?;
+        if identity.is_none()
+            || projection.identity != identity
+            || projection
+                .observer
+                .as_ref()
+                .and_then(Connection::path)
+                .map(Path::new)
+                != Some(path.as_path())
+        {
+            projection.observer = Some(Connection::open_with_flags(
+                &path,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+            )?);
+            projection.identity = identity;
+            projection.completed = None;
+        }
+        let source = ReadSource::read(&*self.context.connection()?)?;
+        let (_, profile_id) = self.profile()?;
+        let observer = projection.observer.as_ref().unwrap();
+        let version: i64 = observer.query_row("PRAGMA data_version", [], |r| r.get(0))?;
+        let schema: i64 = observer.query_row("PRAGMA schema_version", [], |r| r.get(0))?;
+        if projection
+            .completed
+            .as_ref()
+            .is_some_and(|(saved, profile, v, s)| {
+                *saved == source && *profile == profile_id && *v == version && *s == schema
+            })
+        {
+            #[cfg(test)]
+            if std::env::var_os("POKER_SUMMARY_PROFILE").is_some() {
+                eprintln!("hand sync reused: {:?}", perf_start.elapsed());
+            }
+            return Ok(());
+        }
+        projection.completed = None;
+        let (profile, mut entries) = self.effective_hand_readings()?;
+        let observer = projection.observer.as_ref().unwrap();
+        let mut q = observer.prepare("SELECT id FROM frames")?;
         let frames = q
             .query_map([], |r| r.get::<_, String>(0))?
             .collect::<Result<std::collections::BTreeSet<_>, _>>()?;
+        drop(q);
         entries.retain(|entry| frames.contains(&entry.0));
         service
             .gameplay
             .evidence_store()?
             .replace_effective_hands(&profile, &entries)
-            .map_err(bad)
+            .map_err(bad)?;
+        let observer = projection.observer.as_ref().unwrap();
+        let after: i64 = observer.query_row("PRAGMA data_version", [], |r| r.get(0))?;
+        let after_schema: i64 = observer.query_row("PRAGMA schema_version", [], |r| r.get(0))?;
+        let after_source = ReadSource::read(&*self.context.connection()?)?;
+        let (_, after_profile) = self.profile()?;
+        if identity.is_some()
+            && identity == effective_file_identity(&path)?
+            && source == after_source
+            && profile == profile_id
+            && profile == after_profile
+            && version == after
+            && schema == after_schema
+        {
+            projection.completed = Some((source, profile, after, after_schema));
+        }
+        #[cfg(test)]
+        if std::env::var_os("POKER_SUMMARY_PROFILE").is_some() {
+            eprintln!("hand sync rebuilt: {:?}", perf_start.elapsed());
+        }
+        Ok(())
+    }
+    fn recording_epoch(&self, root: &Path) -> LabResult<Option<RecordingEpoch>> {
+        let path = root.join("gameplay.sqlite3");
+        if !path.is_file() {
+            return Ok(None);
+        }
+        let Some(identity) = effective_file_identity(&path)? else {
+            return Ok(None);
+        };
+        let mut projection = self
+            .projection
+            .lock()
+            .map_err(|_| conflict("Effective hand projection unavailable"))?;
+        if projection.identity != Some(identity)
+            || projection
+                .observer
+                .as_ref()
+                .and_then(Connection::path)
+                .map(Path::new)
+                != Some(path.as_path())
+        {
+            projection.observer = Some(Connection::open_with_flags(
+                &path,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+            )?);
+            projection.identity = Some(identity);
+            projection.completed = None;
+        }
+        let conn = projection.observer.as_ref().unwrap();
+        let data_version = conn.query_row("PRAGMA data_version", [], |r| r.get(0))?;
+        let schema_version = conn.query_row("PRAGMA schema_version", [], |r| r.get(0))?;
+        Ok(Some(RecordingEpoch {
+            path,
+            identity,
+            data_version,
+            schema_version,
+        }))
     }
     pub(crate) fn effective_hand_readings(
         &self,
@@ -339,6 +487,8 @@ impl GameplayAi {
         if frames.is_empty() {
             return Ok(());
         }
+        #[cfg(test)]
+        let metadata_start = std::time::Instant::now();
         let (profile, hash) = self.profile()?;
         let baseline = profile["regions"]
             .as_array()
@@ -362,10 +512,70 @@ impl GameplayAi {
             .collect::<std::collections::BTreeSet<_>>()
             .into_iter()
             .collect::<Vec<_>>();
+        #[cfg(test)]
+        if std::env::var_os("POKER_SUMMARY_PROFILE").is_some() {
+            eprintln!(
+                "summary metadata: {:?} frames={}",
+                metadata_start.elapsed(),
+                ids.len()
+            );
+        }
+        let mut initial_source = ReadSource::read(&*self.context.connection()?)?;
+        let mut recording = self.recording_epoch(recording_root)?;
+        #[cfg(test)]
+        let use_summary_cache = !self
+            .summary_full_reference
+            .load(std::sync::atomic::Ordering::SeqCst);
+        #[cfg(not(test))]
+        let use_summary_cache = true;
+        if use_summary_cache {
+            let hits = {
+                let cache = self
+                    .frame_summaries
+                    .lock()
+                    .map_err(|_| conflict("Frame summary lock poisoned"))?;
+                cache
+                    .as_ref()
+                    .filter(|entry| {
+                        entry.source == initial_source
+                            && entry.profile == hash
+                            && Some(&entry.recording) == recording.as_ref()
+                            && ids.iter().all(|id| entry.frames.contains_key(id))
+                    })
+                    .map(|entry| entry.frames.clone())
+            };
+            if let Some(hits) = hits {
+                #[cfg(test)]
+                if let Some(hook) = self.summary_cache_hook.lock().unwrap().as_ref() {
+                    hook();
+                }
+                let current = ReadSource::read(&*self.context.connection()?)?;
+                let current_recording = self.recording_epoch(recording_root)?;
+                let (_, current_profile) = self.profile()?;
+                if current == initial_source
+                    && current_recording == recording
+                    && current_profile == hash
+                {
+                    apply_frame_summaries(frames, &hits, &baseline, &profile, &hash);
+                    return Ok(());
+                }
+                if current_profile != hash {
+                    return Err(conflict("Frame profile changed during summary read; retry"));
+                }
+                initial_source = current;
+                recording = current_recording;
+            }
+        }
         let mut states =
             std::collections::BTreeMap::<String, std::collections::BTreeMap<String, String>>::new();
+        #[cfg(test)]
+        let legacy_start = std::time::Instant::now();
         let legacy = legacy_connection(recording_root)?;
-        if let Some(legacy) = &legacy {
+        let legacy_transaction = legacy
+            .as_ref()
+            .map(Connection::unchecked_transaction)
+            .transpose()?;
+        if let Some(legacy) = &legacy_transaction {
             for frame in &ids {
                 for (region, label) in super::store::import::labels(legacy, frame).map_err(bad)? {
                     if label["provenance"]["target_profile_sha256"] != hash {
@@ -378,7 +588,47 @@ impl GameplayAi {
                 }
             }
         }
-        let conn = self.context.connection()?;
+        #[cfg(test)]
+        if std::env::var_os("POKER_SUMMARY_PROFILE").is_some() {
+            eprintln!("summary legacy labels: {:?}", legacy_start.elapsed());
+        }
+        #[cfg(test)]
+        let projection_start = std::time::Instant::now();
+        drop(legacy_transaction);
+        drop(legacy);
+        // Reuse a verified AI snapshot only when it contains every occurrence
+        // needed by this chunk. Partial runs must retain the full-profile read.
+        let snapshot = self
+            .read_snapshot
+            .lock()
+            .map_err(|_| conflict("Read snapshot lock poisoned"))?
+            .clone();
+        let writer = self.context.connection()?;
+        let source = ReadSource::read(&writer)?;
+        #[cfg(test)]
+        if let Some(hook) = self.summary_hook.lock().unwrap().as_ref() {
+            hook();
+        }
+        let transaction = writer.unchecked_transaction()?;
+        // Anchor the SQLite read view before trusting rows captured at an epoch.
+        transaction.query_row("SELECT COUNT(*) FROM sqlite_master", [], |r| {
+            r.get::<_, i64>(0)
+        })?;
+        let anchored = ReadSource::read(&transaction)?;
+        let conn = &*transaction;
+        let cached = snapshot
+            .filter(|snapshot| snapshot.source == source && source == anchored)
+            .map(|snapshot| {
+                snapshot
+                    .items
+                    .iter()
+                    .filter_map(|item| item["id"].as_str().map(|id| (id.to_owned(), item.clone())))
+                    .collect::<std::collections::HashMap<_, _>>()
+            });
+        let mut truth_memo = std::collections::HashMap::new();
+        #[cfg(test)]
+        self.summary_projection_count
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         for chunk in ids.chunks(256) {
             let mut values = vec![rusqlite::types::Value::Text(hash.clone())];
             values.extend(chunk.iter().cloned().map(rusqlite::types::Value::Text));
@@ -389,7 +639,51 @@ impl GameplayAi {
                     .collect::<Vec<_>>()
                     .join(",")
             );
-            for item in read_items_where(&conn, &filter, &values)? {
+            let reused = if let Some(cached) = &cached {
+                let sql = format!("SELECT o.id,o.frame_id,o.region_id FROM gameplay_ai_occurrences o WHERE {filter} ORDER BY o.frame_id,o.region_id");
+                let rows = conn
+                    .prepare(&sql)?
+                    .query_map(rusqlite::params_from_iter(values.iter()), |r| {
+                        Ok((
+                            r.get::<_, String>(0)?,
+                            r.get::<_, String>(1)?,
+                            r.get::<_, String>(2)?,
+                        ))
+                    })?
+                    .collect::<rusqlite::Result<Vec<_>>>()?;
+                let mut seen = std::collections::BTreeSet::new();
+                if rows.iter().all(|(id, frame, region)| {
+                    cached.contains_key(id) && seen.insert((frame.clone(), region.clone()))
+                }) {
+                    Some(
+                        rows.into_iter()
+                            .map(|(id, _, _)| cached[&id].clone())
+                            .collect::<Vec<_>>(),
+                    )
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            let projected = match reused {
+                Some(rows) => rows,
+                None => {
+                    #[cfg(test)]
+                    let rows = if self
+                        .summary_full_reference
+                        .load(std::sync::atomic::Ordering::SeqCst)
+                    {
+                        read_items_where(&conn, &filter, &values)?
+                    } else {
+                        read_summary_items_where(&conn, &filter, &values, &mut truth_memo)?
+                    };
+                    #[cfg(not(test))]
+                    let rows = read_summary_items_where(&conn, &filter, &values, &mut truth_memo)?;
+                    rows.into_iter().map(Arc::new).collect()
+                }
+            };
+            for item in projected {
                 let Some(frame) = item["frame_id"].as_str() else {
                     continue;
                 };
@@ -426,25 +720,92 @@ impl GameplayAi {
                 }
             }
         }
-        for frame in frames {
-            frame["verification"] = verification_summary(
-                &hash,
-                states
-                    .get(frame["id"].as_str().unwrap_or(""))
-                    .unwrap_or(&baseline)
-                    .values()
-                    .map(String::as_str),
+        #[cfg(test)]
+        if std::env::var_os("POKER_SUMMARY_PROFILE").is_some() {
+            eprintln!(
+                "summary input+truth+state aggregation: {:?}",
+                projection_start.elapsed()
             );
-            if frame["width"]
-                .as_u64()
-                .is_some_and(|w| Some(w) != profile["viewport"]["width"].as_u64())
-                || frame["height"]
-                    .as_u64()
-                    .is_some_and(|h| Some(h) != profile["viewport"]["height"].as_u64())
-            {
-                frame["verification"] = json!({"region_profile_id":hash,"status":"unavailable","total":0,"verified":0,"unverified":0,"needs_review":0,"unsupported":0});
+        }
+        #[cfg(test)]
+        let aggregation_start = std::time::Instant::now();
+        let summaries: std::collections::HashMap<String, Value> = ids
+            .iter()
+            .map(|id| {
+                (
+                    id.clone(),
+                    verification_summary(
+                        &hash,
+                        states
+                            .get(id)
+                            .unwrap_or(&baseline)
+                            .values()
+                            .map(String::as_str),
+                    ),
+                )
+            })
+            .collect();
+        #[cfg(test)]
+        if std::env::var_os("POKER_SUMMARY_PROFILE").is_some() {
+            eprintln!(
+                "summary final aggregation: {:?}",
+                aggregation_start.elapsed()
+            );
+        }
+        drop(transaction);
+        drop(writer);
+        #[cfg(test)]
+        if let Some(hook) = self.summary_end_hook.lock().unwrap().as_ref() {
+            hook();
+        }
+        let current = ReadSource::read(&*self.context.connection()?)?;
+        let current_recording = self.recording_epoch(recording_root)?;
+        let (_, current_profile) = self.profile()?;
+        if current != anchored || current_recording != recording || current_profile != hash {
+            return Err(conflict(
+                "Frame evidence changed during summary read; retry",
+            ));
+        }
+        if use_summary_cache && source == initial_source && anchored == source {
+            if let Some(recording) = recording {
+                let mut cache = self
+                    .frame_summaries
+                    .lock()
+                    .map_err(|_| conflict("Frame summary lock poisoned"))?;
+                let entry = cache.get_or_insert_with(|| FrameSummaries {
+                    source: source.clone(),
+                    profile: hash.clone(),
+                    recording: recording.clone(),
+                    frames: Default::default(),
+                });
+                if entry.source != source || entry.profile != hash || entry.recording != recording {
+                    *entry = FrameSummaries {
+                        source,
+                        profile: hash.clone(),
+                        recording,
+                        frames: Default::default(),
+                    };
+                }
+                let new_frames = summaries
+                    .keys()
+                    .filter(|id| !entry.frames.contains_key(*id))
+                    .count();
+                if summaries.len() <= MAX_CACHED_FRAME_SUMMARIES
+                    && entry.frames.len() + new_frames > MAX_CACHED_FRAME_SUMMARIES
+                {
+                    entry.frames.clear();
+                }
+                for (id, summary) in &summaries {
+                    if entry.frames.len() >= MAX_CACHED_FRAME_SUMMARIES
+                        && !entry.frames.contains_key(id)
+                    {
+                        break;
+                    }
+                    entry.frames.insert(id.clone(), summary.clone());
+                }
             }
         }
+        apply_frame_summaries(frames, &summaries, &baseline, &profile, &hash);
         Ok(())
     }
     pub(crate) fn enrich_hands(
@@ -456,6 +817,8 @@ impl GameplayAi {
         if hands.is_empty() {
             return Ok(());
         }
+        #[cfg(test)]
+        let metadata_start = std::time::Instant::now();
         let conn = Connection::open_with_flags(
             root.join("gameplay.sqlite3"),
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
@@ -468,6 +831,14 @@ impl GameplayAi {
             .prepare("SELECT id,width,height,hand_id FROM effective_frames WHERE session_id=?")?;
         let mut frames=query.query_map([session],|r|Ok(json!({"id":r.get::<_,String>(0)?,"width":r.get::<_,u32>(1)?,"height":r.get::<_,u32>(2)?,"hand_id":r.get::<_,Option<String>>(3)?})))?.collect::<Result<Vec<_>,_>>()?;
         frames.retain(|f| selected.contains(&f["hand_id"].as_str().map(str::to_owned)));
+        #[cfg(test)]
+        if std::env::var_os("POKER_SUMMARY_PROFILE").is_some() {
+            eprintln!(
+                "hands frame metadata: {:?} frames={}",
+                metadata_start.elapsed(),
+                frames.len()
+            );
+        }
         self.enrich_summaries(&mut frames, root)?;
         for hand in hands {
             let mut summary = verification_summary(&self.profile()?.1, std::iter::empty());
@@ -2688,54 +3059,146 @@ fn read_items_where(
         eprintln!("project: {:?}", stage.elapsed());
     }
     for item in &mut rows {
-        if item["legacy_provenance"].is_object() {
-            item["crop_available"] = json!(true);
-            item["crop_url"] = json!(format!(
-                "/api/gameplay/ai/crop/{}",
-                item["id"].as_str().unwrap()
-            ));
-            item["crop_scope"] = json!("legacy_source");
-            item["guide"] = Value::Null;
-        }
-        item["source"] = json!(match item["state"].as_str().unwrap_or("") {
-            "legacy_verified" => "legacy",
-            "manual" => "human",
-            "unchanged" | "corrected" => "ai",
-            _ => "capture",
-        });
-        if item["state"] == "legacy_verified" {
-            continue;
-        }
-        if ["unchanged", "corrected", "manual", "legacy_verified"]
-            .contains(&item["state"].as_str().unwrap_or(""))
-        {
-            let label = crate::labels::normalize_region_text(
-                item["region_id"].as_str().unwrap_or(""),
-                item["category"].as_str().unwrap_or(""),
-                item["label"].as_str().unwrap_or(""),
-            );
-            let valid = crate::labels::validate_reviewed_label(
-                item["region_id"].as_str().unwrap_or(""),
-                &label,
-                if item["state"] == "manual" {
-                    "manual"
-                } else {
-                    "accepted"
-                },
-                item["state"] == "manual",
-            );
-            if let Ok(schema_valid) = valid {
-                item["label"] = json!(label);
-                item["schema_valid"] = json!(schema_valid);
-                item["outside_contract"] = json!(!schema_valid);
-            } else {
-                item["state"] = json!("conflict");
-                item["reason"]=json!("Stored reading is outside the current validation contract; human evidence is preserved");
-            }
-        }
+        finish_projected_item(item);
     }
     Ok(rows)
 }
+fn finish_projected_item(item: &mut Value) {
+    if item["legacy_provenance"].is_object() {
+        item["crop_available"] = json!(true);
+        item["crop_url"] = json!(format!(
+            "/api/gameplay/ai/crop/{}",
+            item["id"].as_str().unwrap()
+        ));
+        item["crop_scope"] = json!("legacy_source");
+        item["guide"] = Value::Null;
+    }
+    item["source"] = json!(match item["state"].as_str().unwrap_or("") {
+        "legacy_verified" => "legacy",
+        "manual" => "human",
+        "unchanged" | "corrected" => "ai",
+        _ => "capture",
+    });
+    if item["state"] == "legacy_verified" {
+        return;
+    }
+    if ["unchanged", "corrected", "manual", "legacy_verified"]
+        .contains(&item["state"].as_str().unwrap_or(""))
+    {
+        let label = crate::labels::normalize_region_text(
+            item["region_id"].as_str().unwrap_or(""),
+            item["category"].as_str().unwrap_or(""),
+            item["label"].as_str().unwrap_or(""),
+        );
+        let valid = crate::labels::validate_reviewed_label(
+            item["region_id"].as_str().unwrap_or(""),
+            &label,
+            if item["state"] == "manual" {
+                "manual"
+            } else {
+                "accepted"
+            },
+            item["state"] == "manual",
+        );
+        if let Ok(schema_valid) = valid {
+            item["label"] = json!(label);
+            item["schema_valid"] = json!(schema_valid);
+            item["outside_contract"] = json!(!schema_valid);
+        } else {
+            item["state"] = json!("conflict");
+            item["reason"]=json!("Stored reading is outside the current validation contract; human evidence is preserved");
+        }
+    }
+}
+
+fn read_summary_items_where(
+    conn: &Connection,
+    filter: &str,
+    values: &[rusqlite::types::Value],
+    truth_memo: &mut std::collections::HashMap<String, cache::Truth>,
+) -> LabResult<Vec<Value>> {
+    // The summary needs the same truth projection, but not crops, URLs, review
+    // response bodies or revision fields. Fetch context and aliases in this scan.
+    #[cfg(test)]
+    let query_start = std::time::Instant::now();
+    let has_cache = cache::enabled(conn)?;
+    let (context_column, alias_columns, cache_joins) = if has_cache {
+        ("CASE WHEN c.payload IS NULL THEN NULL ELSE json_object('guide',json_object('guideUnsupportedReason',json_extract(c.payload,'$.guide.guideUnsupportedReason'),'localization_error',json_extract(c.payload,'$.guide.localization_error')),'presence',json_object('state',json_extract(c.payload,'$.presence.state'),'target_support',json_extract(c.payload,'$.presence.target_support'),'card_evidence',json_object('target_support',json_extract(c.payload,'$.presence.card_evidence.target_support'),'policy',json_extract(c.payload,'$.presence.card_evidence.policy'),'boundary_contact',json_extract(c.payload,'$.presence.card_evidence.boundary_contact'))),'seat_occupancy',json_object('state',json_extract(c.payload,'$.seat_occupancy.state'),'source',json_extract(c.payload,'$.seat_occupancy.source'),'policy',json_extract(c.payload,'$.seat_occupancy.policy'))) END", "a.family,a.cache_key", "LEFT JOIN gameplay_ai_cache_context c ON c.occurrence_id=o.id LEFT JOIN gameplay_ai_cache_aliases a USING(sample_key)")
+    } else {
+        ("NULL", "NULL,NULL", "")
+    };
+    let latest_state = if has_cache {
+        "CASE WHEN a.sample_key IS NULL THEN (SELECT i.state FROM ai_review_items i WHERE i.sample_key=o.sample_key AND i.state!='pending' ORDER BY rowid DESC LIMIT 1) END"
+    } else {
+        "(SELECT i.state FROM ai_review_items i WHERE i.sample_key=o.sample_key AND i.state!='pending' ORDER BY rowid DESC LIMIT 1)"
+    };
+    let guide_missing_context = if has_cache { "c.payload IS NULL" } else { "1" };
+    let sql = format!("SELECT o.id,o.frame_id,o.region_id,o.category,o.original_label,o.sample_key,
+        CASE WHEN d.id IS NOT NULL THEN d.label WHEN o.state='ambiguous' THEN o.original_label ELSE COALESCE(m.label,q.label,o.original_label) END,
+        CASE WHEN o.state='absent' THEN 'absent' WHEN o.state='ambiguous' AND o.reason LIKE 'Presence contradicts occurrence-owned human evidence%' THEN 'ambiguous' WHEN d.id IS NOT NULL THEN d.state WHEN o.state='ambiguous' THEN 'ambiguous' ELSE COALESCE(m.state,{latest_state},o.state) END,
+        d.id IS NOT NULL,o.state,COALESCE(d.provenance,'{{}}'),
+        CASE WHEN {guide_missing_context} THEN CASE WHEN json_valid(q.payload) THEN CASE WHEN json_type(q.payload,'$.guide')='object' THEN json_extract(q.payload,'$.guide') END END END,
+        l.label,l.provenance,{context_column},{alias_columns}
+        FROM gameplay_ai_occurrences o LEFT JOIN queue_items q USING(sample_key)
+        LEFT JOIN gameplay_ai_manual m USING(sample_key)
+        LEFT JOIN gameplay_ai_decisions d ON d.id=(SELECT MAX(x.id) FROM gameplay_ai_decisions x WHERE x.occurrence_id=o.id)
+        LEFT JOIN gameplay_ai_legacy l ON l.occurrence_id=o.id {cache_joins}
+        WHERE {filter} ORDER BY o.frame_id,o.region_id");
+    let mut query = conn.prepare(&sql)?;
+    let mut rows=query.query_map(rusqlite::params_from_iter(values.iter()), |r| {
+        let guide: Option<String> = r.get(11)?;
+        let context: Option<String> = r.get(14)?;
+        let family: Option<String> = r.get(15)?;
+        let group: Option<String> = r.get(16)?;
+        Ok((json!({"id":r.get::<_,String>(0)?,"frame_id":r.get::<_,String>(1)?,"region_id":r.get::<_,String>(2)?,"category":r.get::<_,String>(3)?,"original_label":r.get::<_,String>(4)?,"sample_key":r.get::<_,String>(5)?,"label":r.get::<_,String>(6)?,"state":r.get::<_,String>(7)?,"has_manual_decision":r.get::<_,bool>(8)?,"_own_decision":r.get::<_,bool>(8)?,"_occurrence_state":r.get::<_,String>(9)?,"review_evidence":serde_json::from_str::<Value>(&r.get::<_,String>(10)?).unwrap_or(Value::Null),"guide":guide.and_then(|v|serde_json::from_str::<Value>(&v).ok()).unwrap_or(Value::Null)}), context, family, group, r.get::<_,Option<String>>(12)?, r.get::<_,Option<String>>(13)?))
+    })?.collect::<rusqlite::Result<Vec<_>>>()?;
+    #[cfg(test)]
+    if std::env::var_os("POKER_SUMMARY_PROFILE").is_some() {
+        eprintln!(
+            "summary input query: {:?} rows={}",
+            query_start.elapsed(),
+            rows.len()
+        );
+    }
+    #[cfg(test)]
+    let projection_start = std::time::Instant::now();
+    let mut items = Vec::with_capacity(rows.len());
+    for (mut item, context, family, group, legacy_label, legacy_provenance) in rows.drain(..) {
+        if has_cache {
+            item["_prefetched_context"] = context
+                .map(|raw| serde_json::from_str::<Value>(&raw))
+                .transpose()?
+                .unwrap_or(Value::Null);
+            item["_prefetched_alias"] = match (family, group) {
+                (Some(family), Some(group)) => json!([family, group]),
+                (None, None) => Value::Null,
+                _ => return Err(bad("Invalid cached alias")),
+            };
+        }
+        if let Some(label) = legacy_label {
+            let provenance: Value =
+                serde_json::from_str(legacy_provenance.as_deref().unwrap_or("null"))?;
+            item["legacy_provenance"] = provenance;
+            if item["has_manual_decision"] != true {
+                item["state"] = json!("legacy_verified");
+                item["label"] = json!(label);
+                item["_own_decision"] = json!(true);
+                item["review_evidence"] = json!({"source":"legacy","cache_eligible":false});
+            }
+        }
+        items.push(item);
+    }
+    cache::project_with_memo(conn, &mut items, truth_memo)?;
+    for item in &mut items {
+        finish_projected_item(item);
+    }
+    #[cfg(test)]
+    if std::env::var_os("POKER_SUMMARY_PROFILE").is_some() {
+        eprintln!("summary truth projection: {:?}", projection_start.elapsed());
+    }
+    Ok(items)
+}
+
 pub(in crate::lab) fn legacy_region_id(id: &str) -> String {
     if id == "game.id" {
         "round_id".into()
@@ -2773,6 +3236,31 @@ fn prediction_key(results: &Value, id: &str) -> String {
 }
 fn legacy_prediction(results: &Value, id: &str) -> Value {
     results[prediction_key(results, id)]["prediction"].clone()
+}
+
+fn apply_frame_summaries(
+    frames: &mut [Value],
+    summaries: &std::collections::HashMap<String, Value>,
+    baseline: &std::collections::BTreeMap<String, String>,
+    profile: &Value,
+    hash: &str,
+) {
+    for frame in frames {
+        frame["verification"] = frame["id"]
+            .as_str()
+            .and_then(|id| summaries.get(id))
+            .cloned()
+            .unwrap_or_else(|| verification_summary(hash, baseline.values().map(String::as_str)));
+        if frame["width"]
+            .as_u64()
+            .is_some_and(|w| Some(w) != profile["viewport"]["width"].as_u64())
+            || frame["height"]
+                .as_u64()
+                .is_some_and(|h| Some(h) != profile["viewport"]["height"].as_u64())
+        {
+            frame["verification"] = json!({"region_profile_id":hash,"status":"unavailable","total":0,"verified":0,"unverified":0,"needs_review":0,"unsupported":0});
+        }
+    }
 }
 
 fn verification_summary<'a>(hash: &str, states: impl Iterator<Item = &'a str>) -> Value {

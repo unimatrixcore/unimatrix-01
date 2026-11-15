@@ -29,6 +29,30 @@ fn recording(service: &LabService) -> String {
     }
     id
 }
+fn assert_summary_matches_full(conn: &Connection, filter: &str, values: &[rusqlite::types::Value]) {
+    let full = read_items_where(conn, filter, values).unwrap();
+    let slim = read_summary_items_where(conn, filter, values, &mut Default::default()).unwrap();
+    assert_eq!(full.len(), slim.len());
+    for (a, b) in full.iter().zip(&slim) {
+        for key in [
+            "id",
+            "frame_id",
+            "region_id",
+            "state",
+            "has_manual_decision",
+        ] {
+            assert_eq!(a[key], b[key], "{} field {key}", a["id"]);
+        }
+        let region = a["region_id"].as_str().unwrap();
+        assert_eq!(
+            cache::proven_empty_seat(region, a),
+            cache::proven_empty_seat(region, b),
+            "{}",
+            a["id"]
+        );
+    }
+}
+
 #[test]
 fn gameplay_uses_existing_two_read_correction_and_global_exact_reuse() {
     let (_dir, mut service) = fixture();
@@ -3537,6 +3561,11 @@ fn manual_refresh_matches_fresh_projection_and_invalidates_external_write() {
     let (conflict_items, conflict_groups) = service.gameplay_ai.read_snapshot(run).unwrap();
     let conn = service.gameplay_ai.context.connection().unwrap();
     let fresh = read_items(&conn, run).unwrap();
+    assert_summary_matches_full(
+        &conn,
+        "o.id IN (SELECT occurrence_id FROM gameplay_ai_run_items WHERE run_id=?1)",
+        &[rusqlite::types::Value::Text(run.into())],
+    );
     let fresh_groups = cache::group_work(&conn, fresh.clone()).unwrap();
     assert_read_rows(&conflict_items, &fresh);
     assert_read_rows(&conflict_groups, &fresh_groups);
@@ -3832,6 +3861,11 @@ fn incremental_refresh_preserves_suit_and_money_component_truth() {
             .is_some_and(|cached| cached.source == ReadSource::read(&conn).unwrap()
                 && Arc::ptr_eq(&cached.items, &incremental)));
         let fresh = read_items(&conn, run).unwrap();
+        assert_summary_matches_full(
+            &conn,
+            "o.id IN (SELECT occurrence_id FROM gameplay_ai_run_items WHERE run_id=?1)",
+            &[rusqlite::types::Value::Text(run.into())],
+        );
         let fresh_groups = cache::group_work(&conn, fresh.clone()).unwrap();
         assert_read_rows(&incremental, &fresh);
         assert_read_rows(&grouped, &fresh_groups);
@@ -3939,4 +3973,832 @@ fn manual_refresh_updates_cached_other_run_sharing_alias() {
     assert_read_rows(&groups, &cache::group_work(&conn, fresh.clone()).unwrap());
     assert_read_rows(&current, &fresh);
     assert!(!Arc::ptr_eq(&old, &current));
+}
+
+#[test]
+#[ignore = "Requires an immutable private acceptance snapshot"]
+fn private_acceptance_group_readout() {
+    let path = std::env::var("POKER_ACCEPTANCE_DB").unwrap();
+    let conn =
+        Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    let run = "b0199be4786f4b96ab3187d8a5024ab7";
+    let key = "bbfe3b4e80879ff7927ece3b26afc5dbcbe635c8e58549d3096318dc66556df1";
+    let items = read_items(&conn, run).unwrap();
+    let groups = cache::group_work(&conn, items.clone()).unwrap();
+    for item in items.iter().filter(|i| i["sample_key"] == key) {
+        eprintln!(
+            "occurrence {} {} {} support={} boundary={}",
+            item["id"],
+            item["state"],
+            item["label"],
+            item["presence"]["target_support"],
+            item["presence"]["card_evidence"]["boundary_contact"]
+        );
+    }
+    for item in groups.iter().filter(|i| i["work_key"] == key) {
+        eprintln!(
+            "group state={} label={} representative={} occurrences={} manual={}",
+            item["state"],
+            item["label"],
+            item["representative_occurrence_id"],
+            item["occurrence_count"],
+            item["conflicting_labels"]
+        );
+    }
+    let mut buckets = std::collections::BTreeMap::<String, usize>::new();
+    for item in &groups {
+        let state = item["state"].as_str().unwrap_or("pending");
+        let bucket = match state {
+            "unchanged" | "legacy_verified" | "corrected" | "manual" => "verified",
+            "flagged" | "conflict" => "needs_review",
+            "ambiguous" => "ambiguous",
+            _ => state,
+        };
+        *buckets.entry(bucket.into()).or_default() += 1;
+    }
+    eprintln!("group totals: {buckets:?} groups={}", groups.len());
+}
+
+#[test]
+fn manual_decision_keeps_group_needing_review_for_unsupported_alias_occurrences() {
+    use crate::lab::gameplay::{card_crop as plane, card_fields, presence};
+    use std::collections::BTreeMap;
+    let (_dir, service) = fixture();
+    let quad = [
+        plane::Point { x: 0., y: 0. },
+        plane::Point { x: 100., y: 0. },
+        plane::Point { x: 100., y: 100. },
+        plane::Point { x: 0., y: 100. },
+    ];
+    let pose = plane::CardPose {
+        policy: plane::POLICY.into(),
+        prior_quad: quad,
+        quad,
+        rank: plane::LocalRect {
+            x: 0.1,
+            y: 0.05,
+            width: 0.2,
+            height: 0.2,
+        },
+        suit: plane::LocalRect {
+            x: 0.1,
+            y: 0.23,
+            width: 0.2,
+            height: 0.25,
+        },
+        prior_angle_degrees: 0.,
+        measured_angle_degrees: 0.,
+        applied_angle_degrees: 0.,
+        adjusted: false,
+        top_edge: None,
+        left_edge: None,
+    };
+    let mut pixels = RgbImage::from_pixel(120, 120, Rgb([255; 3]));
+    for y in 8..17 {
+        for x in 10..13 {
+            pixels.put_pixel(x, y, Rgb([20; 3]));
+        }
+    }
+    let spec = json!({"id":"community_cards[0]","category":"card","ocr":true,"card_prior_id":"card","card_field":"rank","guide":{"family":"card.rank"},"bounds":{"x":10,"y":5,"width":20,"height":20}});
+    let poses = BTreeMap::from([("card".to_owned(), plane::CardResolution::Pose { pose })]);
+    let mut region = card_fields::resolve(&pixels, &json!({}), &spec, &poses).unwrap();
+    region["presence"] = presence::assess(&DynamicImage::ImageRgb8(pixels.clone()), &region);
+    assert_eq!(region["presence"]["target_support"], "ambiguous");
+    assert_eq!(
+        region["presence"]["card_evidence"]["surface"]["uniform"],
+        true
+    );
+    fs::write(
+        service.gameplay_ai.config.join("gameplay-regions.json"),
+        json!({"viewport":{"width":120,"height":120},"regions":[region]}).to_string(),
+    )
+    .unwrap();
+    let store = service.gameplay.evidence_store().unwrap();
+    let settings = json!({"regions":{}});
+    let session = store
+        .create("fixture", 1000, "Fixture", &settings, "fixture")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let png = crate::media::png(&DynamicImage::ImageRgb8(pixels)).unwrap();
+    for _ in 0..3 {
+        store
+            .admit(
+                &session,
+                &png,
+                120,
+                120,
+                "2026-11-14T00:00:00Z",
+                &settings,
+                "fixture",
+                &json!({"community_cards[0]":{"prediction":{"text":"K"}}}),
+                "fixture",
+                &json!({}),
+            )
+            .unwrap();
+    }
+    let prepared = service.gameplay_ai.prepare(&service, &session).unwrap();
+    let run = prepared["run_id"].as_str().unwrap();
+    let (before, _) = service.gameplay_ai.read_snapshot(run).unwrap();
+    let chosen = before[0].clone();
+    service.gameplay_ai.review(&service, &json!({"occurrence_id":chosen["id"],"expected_revision":chosen["revision"],"action":"manual","label":"A"})).unwrap();
+    let (cached, groups) = service.gameplay_ai.read_snapshot(run).unwrap();
+    assert_eq!(
+        cached
+            .iter()
+            .filter(|i| i["state"] == "manual" && i["label"] == "A")
+            .count(),
+        1
+    );
+    assert_eq!(cached.iter().filter(|i| i["state"] == "flagged").count(), 2);
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0]["state"], "flagged");
+    let conn = service.gameplay_ai.context.connection().unwrap();
+    let fresh = read_items(&conn, run).unwrap();
+    let fresh_groups = cache::group_work(&conn, fresh.clone()).unwrap();
+    assert_read_rows(&cached, &fresh);
+    assert_read_rows(&groups, &fresh_groups);
+}
+
+#[test]
+fn effective_hand_sync_reuses_only_unchanged_sources_and_repairs_external_changes() {
+    let (_dir, service) = fixture();
+    fs::write(service.gameplay_ai.config.join("gameplay-regions.json"),json!({"viewport":{"width":20,"height":20},"regions":[{"id":"game.id","bounds":{"x":2,"y":2,"width":6,"height":6}}]}).to_string()).unwrap();
+    let session = recording(&service);
+    let prepared = service.gameplay_ai.prepare(&service, &session).unwrap();
+    let run = prepared["run_id"].as_str().unwrap();
+    let conn = service.gameplay_ai.context.connection().unwrap();
+    let item = read_items(&conn, run).unwrap().remove(0);
+    drop(conn);
+    service.gameplay_ai.review(&service,&json!({"occurrence_id":item["id"],"expected_revision":item["revision"],"action":"manual","label":"#87654321"})).unwrap();
+    service.gameplay_ai.sync_effective_hands(&service).unwrap();
+    service.gameplay_ai.sync_effective_hands(&service).unwrap();
+    assert!(service
+        .gameplay_ai
+        .projection
+        .lock()
+        .unwrap()
+        .completed
+        .is_some());
+    let root = service.gameplay.evidence_root().unwrap();
+    let other = Connection::open(root.join("gameplay.sqlite3")).unwrap();
+    assert!(
+        other
+            .execute("DELETE FROM frame_hand_projection", [])
+            .unwrap()
+            > 0
+    );
+    service.gameplay_ai.sync_effective_hands(&service).unwrap();
+    assert!(
+        other
+            .query_row("SELECT COUNT(*) FROM frame_hand_projection", [], |r| r
+                .get::<_, i64>(0))
+            .unwrap()
+            > 0
+    );
+    service.gameplay_ai.sync_effective_hands(&service).unwrap();
+    assert!(service
+        .gameplay_ai
+        .projection
+        .lock()
+        .unwrap()
+        .completed
+        .is_some());
+    let conn = service.gameplay_ai.context.connection().unwrap();
+    let path = conn.path().unwrap().to_owned();
+    drop(conn);
+    let external = Connection::open(path).unwrap();
+    external
+        .execute(
+            "UPDATE gameplay_ai_occurrences SET revision=revision+1 WHERE id=?",
+            [item["id"].as_str().unwrap()],
+        )
+        .unwrap();
+    service.gameplay_ai.sync_effective_hands(&service).unwrap();
+    let observed: i64 = other
+        .query_row(
+            "SELECT revision FROM frame_hand_projection WHERE occurrence_id=?",
+            [item["id"].as_str().unwrap()],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(observed, item["revision"].as_i64().unwrap() + 2);
+    let profile_path = service.gameplay_ai.config.join("gameplay-regions.json");
+    let mut profile = fs::read_to_string(&profile_path).unwrap();
+    profile.push(' ');
+    fs::write(profile_path, profile).unwrap();
+    service.gameplay_ai.sync_effective_hands(&service).unwrap();
+    assert_eq!(
+        other
+            .query_row("SELECT COUNT(*) FROM frame_hand_projection", [], |r| r
+                .get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
+}
+
+#[test]
+#[ignore = "Requires copied private acceptance databases and profile"]
+fn private_effective_sync_endpoint_benchmark() {
+    let source = PathBuf::from(std::env::var("POKER_ACCEPTANCE_DIR").unwrap());
+    let temp = tempfile::tempdir_in(&source).unwrap();
+    let root = temp.path().join("data");
+    let config = temp.path().join("config");
+    fs::create_dir_all(root.join("gameplay_recordings")).unwrap();
+    fs::create_dir_all(&config).unwrap();
+    fs::copy(
+        source.join("ocr-evidence.sqlite3"),
+        root.join("ocr-evidence.sqlite3"),
+    )
+    .unwrap();
+    fs::copy(
+        source.join("gameplay.sqlite3"),
+        root.join("gameplay_recordings/gameplay.sqlite3"),
+    )
+    .unwrap();
+    fs::copy(
+        source.join("gameplay-regions.json"),
+        config.join("gameplay-regions.json"),
+    )
+    .unwrap();
+    let tools = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tools/poker");
+    let service = LabService::open_with_paths(root, config, tools, Default::default()).unwrap();
+    let session = "6882b6492be347de8fb27adcccfc021e";
+    let paths: Vec<String> = match std::env::var("POKER_BENCH_ROUTE").as_deref() {
+        Ok("games") => vec![format!("/api/gameplay/sessions/{session}")],
+        Ok("frames") => vec![format!("/api/gameplay/sessions/{session}/frames")],
+        _ => vec![
+            format!("/api/gameplay/sessions/{session}"),
+            format!("/api/gameplay/sessions/{session}/frames"),
+        ],
+    };
+    let request = |path: &str| LabRequest {
+        method: "GET".into(),
+        path: path.into(),
+        body: Value::Null,
+        query: Default::default(),
+        headers: Default::default(),
+    };
+    let mut first = Vec::new();
+    for path in &paths {
+        assert!(service.gameplay_ai.read_snapshot.lock().unwrap().is_none());
+        let start = std::time::Instant::now();
+        let response = service.request(request(path));
+        eprintln!("first without AI {path}: {:?}", start.elapsed());
+        assert_eq!(response.status, 200, "{}", response.body);
+        first.push(response.body);
+    }
+    for (path, baseline) in paths.iter().zip(&first) {
+        let before = service
+            .gameplay_ai
+            .summary_projection_count
+            .load(Ordering::SeqCst);
+        let start = std::time::Instant::now();
+        let response = service.request(request(path));
+        eprintln!("warm without AI {path}: {:?}", start.elapsed());
+        assert_eq!(response.status, 200, "{}", response.body);
+        assert_eq!(&response.body, baseline);
+        assert_eq!(
+            service
+                .gameplay_ai
+                .summary_projection_count
+                .load(Ordering::SeqCst),
+            before,
+            "warm endpoint rescanned occurrences"
+        );
+    }
+    service
+        .gameplay_ai
+        .summary_full_reference
+        .store(true, Ordering::SeqCst);
+    for (path, baseline) in paths.iter().zip(&first) {
+        let start = std::time::Instant::now();
+        let reference = service.request(request(path));
+        eprintln!(
+            "full-reference warm without AI {path}: {:?}",
+            start.elapsed()
+        );
+        assert_eq!(reference.status, 200, "{}", reference.body);
+        assert_eq!(&reference.body, baseline);
+    }
+    service
+        .gameplay_ai
+        .summary_full_reference
+        .store(false, Ordering::SeqCst);
+    let conn = service.gameplay_ai.context.connection().unwrap();
+    let (id,revision):(String,i64)=conn.query_row("SELECT o.id,o.revision FROM gameplay_ai_occurrences o JOIN gameplay_ai_run_items r ON r.occurrence_id=o.id JOIN queue_items q USING(sample_key) WHERE r.run_id=? AND o.category='card' AND q.pixel_asset_sha IS NOT NULL AND NOT EXISTS(SELECT 1 FROM gameplay_ai_decisions d WHERE d.occurrence_id=o.id) AND o.id NOT IN ('3b189af781a52d5ed9c2cca2f06382d83d3fd18548974c89c7e98ecc72c558d5','dda8bf82856c693accc676eebfcc191b536e2f974454ad1d094e53f57c458cad','745d058db5bb9d863b8d0b30bec1471428dfbc8ab336391f870ebcc5de999e3b') ORDER BY o.id LIMIT 1",["b0199be4786f4b96ab3187d8a5024ab7"],|r|Ok((r.get(0)?,r.get(1)?))).unwrap();
+    drop(conn);
+    let save=service.request(LabRequest {method:"POST".into(),path:"/api/gameplay/ai/review".into(),body:json!({"occurrence_id":id,"expected_revision":revision,"action":"manual","label":"A"}),query:Default::default(),headers:Default::default()});
+    assert_eq!(save.status, 200, "{}", save.body);
+    let mut after = Vec::new();
+    for path in &paths {
+        assert!(service.gameplay_ai.read_snapshot.lock().unwrap().is_none());
+        let start = std::time::Instant::now();
+        let response = service.request(request(path));
+        eprintln!(
+            "after copy-only manual without AI {path}: {:?}",
+            start.elapsed()
+        );
+        assert_eq!(response.status, 200, "{}", response.body);
+        after.push(response.body);
+    }
+    service
+        .gameplay_ai
+        .summary_full_reference
+        .store(true, Ordering::SeqCst);
+    let _ = service
+        .gameplay_ai
+        .read_snapshot("b0199be4786f4b96ab3187d8a5024ab7")
+        .unwrap();
+    for (path, baseline) in paths.iter().zip(&after) {
+        let reference = service.request(request(path));
+        assert_eq!(reference.status, 200, "{}", reference.body);
+        assert_eq!(&reference.body, baseline);
+    }
+}
+#[test]
+fn frame_and_game_summaries_match_with_complete_and_partial_ai_snapshots() {
+    let (_dir, service) = fixture();
+    let session = recording(&service);
+    let prepared = service.gameplay_ai.prepare(&service, &session).unwrap();
+    let run = prepared["run_id"].as_str().unwrap();
+    let request = |suffix: &str| LabRequest {
+        method: "GET".into(),
+        path: format!("/api/gameplay/sessions/{session}{suffix}"),
+        body: Value::Null,
+        query: Default::default(),
+        headers: Default::default(),
+    };
+    let _ = service.gameplay_ai.read_snapshot(run).unwrap();
+    for suffix in ["", "/frames"] {
+        let reused = service.request(request(suffix));
+        assert_eq!(reused.status, 200, "{}", reused.body);
+        *service.gameplay_ai.read_snapshot.lock().unwrap() = None;
+        service
+            .gameplay_ai
+            .summary_full_reference
+            .store(true, Ordering::SeqCst);
+        let fresh = service.request(request(suffix));
+        service
+            .gameplay_ai
+            .summary_full_reference
+            .store(false, Ordering::SeqCst);
+        assert_eq!(fresh.status, 200, "{}", fresh.body);
+        assert_eq!(reused.body, fresh.body);
+        let _ = service.gameplay_ai.read_snapshot("another-run").unwrap();
+        *service.gameplay_ai.frame_summaries.lock().unwrap() = None;
+        let partial = service.request(request(suffix));
+        assert_eq!(partial.status, 200, "{}", partial.body);
+        assert_eq!(partial.body, fresh.body);
+        let _ = service.gameplay_ai.read_snapshot(run).unwrap();
+    }
+}
+
+#[test]
+fn frame_summary_does_not_use_snapshot_after_external_commit_before_read_view() {
+    let (_dir, service) = fixture();
+    let session = recording(&service);
+    let prepared = service.gameplay_ai.prepare(&service, &session).unwrap();
+    let run = prepared["run_id"].as_str().unwrap();
+    let request = LabRequest {
+        method: "GET".into(),
+        path: format!("/api/gameplay/sessions/{session}/frames"),
+        body: Value::Null,
+        query: Default::default(),
+        headers: Default::default(),
+    };
+    assert_eq!(service.request(request.clone()).status, 200);
+    let (cached, _) = service.gameplay_ai.read_snapshot(run).unwrap();
+    let id = cached[0]["id"].as_str().unwrap().to_owned();
+    let path = service
+        .gameplay_ai
+        .context
+        .connection()
+        .unwrap()
+        .path()
+        .unwrap()
+        .to_owned();
+    *service.gameplay_ai.summary_hook.lock().unwrap() = Some(Arc::new(move || {
+        Connection::open(&path).unwrap().execute("UPDATE gameplay_ai_occurrences SET state='ambiguous',reason='external review' WHERE id=?",[&id]).unwrap();
+    }));
+    let raced = service.request(request.clone());
+    assert_eq!(raced.status, 200, "{}", raced.body);
+    *service.gameplay_ai.summary_hook.lock().unwrap() = None;
+    *service.gameplay_ai.read_snapshot.lock().unwrap() = None;
+    let fresh = service.request(request);
+    assert_eq!(fresh.status, 200, "{}", fresh.body);
+    assert_eq!(raced.body, fresh.body);
+}
+
+#[test]
+#[ignore = "Requires an immutable private acceptance snapshot"]
+fn private_summary_projection_matches_full_truth() {
+    let path = std::env::var("POKER_ACCEPTANCE_DB").unwrap();
+    let conn =
+        Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    let profile = "f3e05596327a81f75ca9ae28df3cd015cc1ef1e0cb050b9084d962db6c366755";
+    let values = [rusqlite::types::Value::Text(profile.into())];
+    let full = read_items_where(&conn, "o.profile_id=?1", &values).unwrap();
+    let slim = read_summary_items_where(&conn, "o.profile_id=?1", &values, &mut Default::default())
+        .unwrap();
+    assert_eq!(full.len(), slim.len());
+    for (a, b) in full.iter().zip(&slim) {
+        for key in [
+            "id",
+            "frame_id",
+            "region_id",
+            "state",
+            "has_manual_decision",
+        ] {
+            assert_eq!(a[key], b[key], "{} field {key}", a["id"]);
+        }
+        let region = a["region_id"].as_str().unwrap();
+        assert_eq!(
+            cache::proven_empty_seat(region, a),
+            cache::proven_empty_seat(region, b),
+            "{}",
+            a["id"]
+        );
+    }
+    eprintln!("summary/full equality: {} occurrences", full.len());
+}
+
+#[test]
+fn compact_summary_matches_full_projection_without_alias_tables() {
+    let (_dir, service) = fixture();
+    let session = recording(&service);
+    let prepared = service.gameplay_ai.prepare(&service, &session).unwrap();
+    let run = prepared["run_id"].as_str().unwrap();
+    let conn = service.gameplay_ai.context.connection().unwrap();
+    conn.execute("DROP TABLE gameplay_ai_cache_aliases", [])
+        .unwrap();
+    for payload in [r#"{"guide":false}"#, "not-json"] {
+        conn.execute("UPDATE queue_items SET payload=?", [payload])
+            .unwrap();
+        assert_summary_matches_full(
+            &conn,
+            "o.id IN (SELECT occurrence_id FROM gameplay_ai_run_items WHERE run_id=?1)",
+            &[rusqlite::types::Value::Text(run.into())],
+        );
+    }
+}
+
+#[test]
+fn frame_summary_cache_reuses_and_invalidates_for_sources_legacy_and_races() {
+    let (_dir, service) = fixture();
+    let session = recording(&service);
+    let prepared = service.gameplay_ai.prepare(&service, &session).unwrap();
+    let run = prepared["run_id"].as_str().unwrap();
+    let request = LabRequest {
+        method: "GET".into(),
+        path: format!("/api/gameplay/sessions/{session}/frames"),
+        body: Value::Null,
+        query: Default::default(),
+        headers: Default::default(),
+    };
+    let first = service.request(request.clone());
+    assert_eq!(first.status, 200, "{}", first.body);
+    let first_count = service
+        .gameplay_ai
+        .summary_projection_count
+        .load(Ordering::SeqCst);
+    assert!(first_count > 0);
+    let warm = service.request(request.clone());
+    assert_eq!(warm.body, first.body);
+    assert_eq!(
+        service
+            .gameplay_ai
+            .summary_projection_count
+            .load(Ordering::SeqCst),
+        first_count
+    );
+    service
+        .gameplay_ai
+        .summary_full_reference
+        .store(true, Ordering::SeqCst);
+    let reference = service.request(request.clone());
+    assert_eq!(reference.body, warm.body);
+    service
+        .gameplay_ai
+        .summary_full_reference
+        .store(false, Ordering::SeqCst);
+    let conn = service.gameplay_ai.context.connection().unwrap();
+    let id: String = conn
+        .query_row(
+            "SELECT occurrence_id FROM gameplay_ai_run_items WHERE run_id=? LIMIT 1",
+            [run],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let path = conn.path().unwrap().to_owned();
+    drop(conn);
+    Connection::open(&path)
+        .unwrap()
+        .execute(
+            "UPDATE gameplay_ai_occurrences SET state='ambiguous',reason='external' WHERE id=?",
+            [&id],
+        )
+        .unwrap();
+    let before = service
+        .gameplay_ai
+        .summary_projection_count
+        .load(Ordering::SeqCst);
+    let changed = service.request(request.clone());
+    assert_eq!(changed.status, 200, "{}", changed.body);
+    assert!(
+        service
+            .gameplay_ai
+            .summary_projection_count
+            .load(Ordering::SeqCst)
+            > before
+    );
+    service
+        .gameplay_ai
+        .summary_full_reference
+        .store(true, Ordering::SeqCst);
+    assert_eq!(service.request(request.clone()).body, changed.body);
+    service
+        .gameplay_ai
+        .summary_full_reference
+        .store(false, Ordering::SeqCst);
+    let root = service.gameplay.evidence_root().unwrap();
+    let recording = Connection::open(root.join("gameplay.sqlite3")).unwrap();
+    recording.execute_batch("CREATE TABLE IF NOT EXISTS gameplay_import_labels(frame_id TEXT NOT NULL,region_id TEXT NOT NULL,label TEXT NOT NULL,provenance_json TEXT NOT NULL,pixel_sha256 TEXT NOT NULL,PRIMARY KEY(frame_id,region_id))").unwrap();
+    let frame_id: String = recording
+        .query_row(
+            "SELECT id FROM frames WHERE session_id=? LIMIT 1",
+            [&session],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let png = fs::read(root.join("frames").join(format!("{frame_id}.png"))).unwrap();
+    let (_, pixel_sha) = crate::lab::review::image_identity(&png).unwrap();
+    let dimensions = image::load_from_memory(&png).unwrap();
+    recording.execute("INSERT OR IGNORE INTO pixel_assets(pixel_sha256,width,height,png_sha256,png) VALUES(?,?,?,?,?)",params![pixel_sha,dimensions.width(),dimensions.height(),sha256(&png),png]).unwrap();
+    let hash = service.gameplay_ai.profile().unwrap().1;
+    recording
+        .execute(
+            "INSERT INTO gameplay_import_labels VALUES(?,?,?,?,?)",
+            params![
+                frame_id,
+                "board.0.rank",
+                "K",
+                json!({"target_profile_sha256":hash}).to_string(),
+                pixel_sha
+            ],
+        )
+        .unwrap();
+    let before = service
+        .gameplay_ai
+        .summary_projection_count
+        .load(Ordering::SeqCst);
+    let with_legacy = service.request(request.clone());
+    assert_eq!(with_legacy.status, 200, "{}", with_legacy.body);
+    assert_ne!(
+        with_legacy.body, changed.body,
+        "legacy provenance must affect the rendered summary"
+    );
+    assert!(
+        service
+            .gameplay_ai
+            .summary_projection_count
+            .load(Ordering::SeqCst)
+            > before
+    );
+    service
+        .gameplay_ai
+        .summary_full_reference
+        .store(true, Ordering::SeqCst);
+    assert_eq!(service.request(request.clone()).body, with_legacy.body);
+    service
+        .gameplay_ai
+        .summary_full_reference
+        .store(false, Ordering::SeqCst);
+    // Repopulate, then commit between lookup and epoch recheck.
+    assert_eq!(service.request(request.clone()).body, with_legacy.body);
+    let fired = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let once = fired.clone();
+    let changed_id = id.clone();
+    *service.gameplay_ai.summary_cache_hook.lock().unwrap() = Some(Arc::new(move || {
+        if !once.swap(true, Ordering::SeqCst) {
+            Connection::open(&path)
+                .unwrap()
+                .execute(
+                    "UPDATE gameplay_ai_occurrences SET state='pending',reason='' WHERE id=?",
+                    [&changed_id],
+                )
+                .unwrap();
+        }
+    }));
+    let raced = service.request(request.clone());
+    assert_eq!(raced.status, 200, "{}", raced.body);
+    assert!(fired.load(Ordering::SeqCst));
+    *service.gameplay_ai.summary_cache_hook.lock().unwrap() = None;
+    service
+        .gameplay_ai
+        .summary_full_reference
+        .store(true, Ordering::SeqCst);
+    let fresh = service.request(request.clone());
+    assert_eq!(raced.body, fresh.body);
+    service
+        .gameplay_ai
+        .summary_full_reference
+        .store(false, Ordering::SeqCst);
+    let _ = service.request(request.clone());
+    let legacy_path = root.join("gameplay.sqlite3");
+    let legacy_frame = frame_id.clone();
+    let fired = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let once = fired.clone();
+    *service.gameplay_ai.summary_cache_hook.lock().unwrap() = Some(Arc::new(move || {
+        if !once.swap(true, Ordering::SeqCst) {
+            Connection::open(&legacy_path)
+                .unwrap()
+                .execute(
+                    "UPDATE gameplay_import_labels SET provenance_json=? WHERE frame_id=?",
+                    params![
+                        json!({"target_profile_sha256":"changed"}).to_string(),
+                        legacy_frame
+                    ],
+                )
+                .unwrap();
+        }
+    }));
+    let raced_legacy = service.request(request.clone());
+    assert_eq!(raced_legacy.status, 200, "{}", raced_legacy.body);
+    assert!(fired.load(Ordering::SeqCst));
+    *service.gameplay_ai.summary_cache_hook.lock().unwrap() = None;
+    service
+        .gameplay_ai
+        .summary_full_reference
+        .store(true, Ordering::SeqCst);
+    assert_eq!(service.request(request.clone()).body, raced_legacy.body);
+    service
+        .gameplay_ai
+        .summary_full_reference
+        .store(false, Ordering::SeqCst);
+    let path = service.gameplay_ai.config.join("gameplay-regions.json");
+    let mut profile = fs::read_to_string(&path).unwrap();
+    profile.push(' ');
+    fs::write(path, profile).unwrap();
+    let updated = service.request(request.clone());
+    assert_eq!(updated.status, 200, "{}", updated.body);
+    service
+        .gameplay_ai
+        .summary_full_reference
+        .store(true, Ordering::SeqCst);
+    assert_eq!(service.request(request).body, updated.body);
+}
+
+#[test]
+fn frame_summary_refuses_to_publish_when_evidence_changes_during_projection() {
+    for change_recording in [false, true] {
+        let (_dir, service) = fixture();
+        let session = recording(&service);
+        let prepared = service.gameplay_ai.prepare(&service, &session).unwrap();
+        let run = prepared["run_id"].as_str().unwrap();
+        let request = LabRequest {
+            method: "GET".into(),
+            path: format!("/api/gameplay/sessions/{session}/frames"),
+            body: Value::Null,
+            query: Default::default(),
+            headers: Default::default(),
+        };
+        let conn = service.gameplay_ai.context.connection().unwrap();
+        let id: String = conn
+            .query_row(
+                "SELECT occurrence_id FROM gameplay_ai_run_items WHERE run_id=? LIMIT 1",
+                [run],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let ai_path = conn.path().unwrap().to_owned();
+        drop(conn);
+        let recording_path = service
+            .gameplay
+            .evidence_root()
+            .unwrap()
+            .join("gameplay.sqlite3");
+        *service.gameplay_ai.summary_end_hook.lock().unwrap() = Some(Arc::new(move || {
+            if change_recording {
+                Connection::open(&recording_path)
+                    .unwrap()
+                    .execute("UPDATE sessions SET name=name||'x' WHERE id=?", [&session])
+                    .unwrap();
+            } else {
+                Connection::open(&ai_path)
+                    .unwrap()
+                    .execute(
+                        "UPDATE gameplay_ai_occurrences SET state='ambiguous' WHERE id=?",
+                        [&id],
+                    )
+                    .unwrap();
+            }
+        }));
+        let raced = service.request(request.clone());
+        assert_eq!(raced.status, 409, "{}", raced.body);
+        assert!(service
+            .gameplay_ai
+            .frame_summaries
+            .lock()
+            .unwrap()
+            .is_none());
+        *service.gameplay_ai.summary_end_hook.lock().unwrap() = None;
+        let fresh = service.request(request);
+        assert_eq!(fresh.status, 200, "{}", fresh.body);
+    }
+}
+
+#[test]
+fn frame_summary_cache_checks_each_requested_viewport() {
+    let (_dir, service) = fixture();
+    let session = recording(&service);
+    let _ = service.gameplay_ai.prepare(&service, &session).unwrap();
+    let root = service.gameplay.evidence_root().unwrap();
+    let conn = Connection::open(root.join("gameplay.sqlite3")).unwrap();
+    let id: String = conn
+        .query_row(
+            "SELECT id FROM frames WHERE session_id=? LIMIT 1",
+            [session],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let mut frames = vec![json!({"id":id,"width":20,"height":20})];
+    service
+        .gameplay_ai
+        .enrich_summaries(&mut frames, &root)
+        .unwrap();
+    let scans = service
+        .gameplay_ai
+        .summary_projection_count
+        .load(Ordering::SeqCst);
+    frames[0]["width"] = json!(21);
+    service
+        .gameplay_ai
+        .enrich_summaries(&mut frames, &root)
+        .unwrap();
+    assert_eq!(frames[0]["verification"]["status"], "unavailable");
+    assert_eq!(
+        service
+            .gameplay_ai
+            .summary_projection_count
+            .load(Ordering::SeqCst),
+        scans
+    );
+}
+
+#[test]
+fn frame_summary_cache_stays_bounded_and_admits_new_working_set() {
+    let (_dir, service) = fixture();
+    let session = recording(&service);
+    let _ = service.gameplay_ai.prepare(&service, &session).unwrap();
+    let root = service.gameplay.evidence_root().unwrap();
+    let db = Connection::open(root.join("gameplay.sqlite3")).unwrap();
+    let ids = db
+        .prepare("SELECT id FROM frames WHERE session_id=? ORDER BY id")
+        .unwrap()
+        .query_map([session], |r| r.get::<_, String>(0))
+        .unwrap()
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .unwrap();
+    let mut first = vec![json!({"id":ids[0],"width":20,"height":20})];
+    service
+        .gameplay_ai
+        .enrich_summaries(&mut first, &root)
+        .unwrap();
+    {
+        let mut cache = service.gameplay_ai.frame_summaries.lock().unwrap();
+        let entry = cache.as_mut().unwrap();
+        for i in 0..MAX_CACHED_FRAME_SUMMARIES {
+            if entry.frames.len() == MAX_CACHED_FRAME_SUMMARIES {
+                break;
+            }
+            entry.frames.insert(format!("unused-{i}"), json!({}));
+        }
+        assert_eq!(entry.frames.len(), MAX_CACHED_FRAME_SUMMARIES);
+    }
+    let mut next = vec![json!({"id":ids[1],"width":20,"height":20})];
+    service
+        .gameplay_ai
+        .enrich_summaries(&mut next, &root)
+        .unwrap();
+    let scans = service
+        .gameplay_ai
+        .summary_projection_count
+        .load(Ordering::SeqCst);
+    let cache = service.gameplay_ai.frame_summaries.lock().unwrap();
+    assert!(cache.as_ref().unwrap().frames.len() <= MAX_CACHED_FRAME_SUMMARIES);
+    assert!(cache.as_ref().unwrap().frames.contains_key(&ids[1]));
+    drop(cache);
+    service
+        .gameplay_ai
+        .enrich_summaries(&mut next, &root)
+        .unwrap();
+    assert_eq!(
+        service
+            .gameplay_ai
+            .summary_projection_count
+            .load(Ordering::SeqCst),
+        scans
+    );
 }

@@ -1875,6 +1875,24 @@ fn accepted_split_and_scalar_disagreement_conflicts_in_both_projections() {
         .unwrap();
     conn.execute("INSERT INTO gameplay_ai_decisions(occurrence_id,sample_key,label,state,created_at) VALUES('other-human',?,'S 4 BB','manual',0)", [scalar_key]).unwrap();
     let conflicted = read_items(&conn, run).unwrap();
+    let compact = read_summary_items_where(
+        &conn,
+        "o.id IN (SELECT occurrence_id FROM gameplay_ai_run_items WHERE run_id=?1)",
+        &[rusqlite::types::Value::Text(run.into())],
+        &mut Default::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        conflicted
+            .iter()
+            .map(|i| (&i["id"], &i["state"]))
+            .collect::<Vec<_>>(),
+        compact
+            .iter()
+            .map(|i| (&i["id"], &i["state"]))
+            .collect::<Vec<_>>()
+    );
+
     let parent = conflicted
         .iter()
         .find(|i| i["region_id"] == "split_pot")

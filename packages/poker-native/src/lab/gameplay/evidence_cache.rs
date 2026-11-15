@@ -952,6 +952,14 @@ pub fn admit_components(
 }
 
 pub fn project(conn: &Connection, items: &mut [Value]) -> LabResult<()> {
+    project_with_memo(conn, items, &mut HashMap::new())
+}
+
+pub(super) fn project_with_memo(
+    conn: &Connection,
+    items: &mut [Value],
+    memo: &mut HashMap<String, Truth>,
+) -> LabResult<()> {
     if !enabled(conn)? {
         for item in items {
             if item["_own_decision"] != true
@@ -968,19 +976,36 @@ pub fn project(conn: &Connection, items: &mut [Value]) -> LabResult<()> {
         }
         return Ok(());
     }
-    let mut memo = HashMap::<String, Truth>::new();
     for item in items {
         let own = item.as_object_mut().unwrap().remove("_own_decision") == Some(json!(true));
         let state = item.as_object_mut().unwrap().remove("_occurrence_state");
         let id = item["id"].as_str().unwrap().to_owned();
-        if let Some(context) = context_enabled(conn, &id)? {
+        let context = match item.as_object_mut().unwrap().remove("_prefetched_context") {
+            Some(Value::Null) => None,
+            Some(value) => Some(value),
+            None => context_enabled(conn, &id)?,
+        };
+        if let Some(context) = context {
             item["guide"] = context["guide"].clone();
             item["presence"] = context["presence"].clone();
             item["seat_occupancy"] = context["seat_occupancy"].clone();
             item["skip_reason"] = context["presence"]["skip_reason"].clone();
         }
         let key = item["sample_key"].as_str().unwrap().to_owned();
-        let evidence = alias(conn, &key)?;
+        let evidence = match item.as_object_mut().unwrap().remove("_prefetched_alias") {
+            Some(Value::Null) => None,
+            Some(value) => Some((
+                value[0]
+                    .as_str()
+                    .ok_or_else(|| bad("Invalid prefetched alias"))?
+                    .to_owned(),
+                value[1]
+                    .as_str()
+                    .ok_or_else(|| bad("Invalid prefetched alias"))?
+                    .to_owned(),
+            )),
+            None => alias(conn, &key)?,
+        };
         item["work_key"] = json!(evidence
             .as_ref()
             .map(|(_, group)| group.clone())
