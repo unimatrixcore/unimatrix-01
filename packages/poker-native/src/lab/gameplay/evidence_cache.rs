@@ -96,7 +96,7 @@ CREATE TABLE IF NOT EXISTS gameplay_ai_cache_context(occurrence_id TEXT PRIMARY 
     conn.execute_batch("CREATE INDEX IF NOT EXISTS gameplay_ai_cache_decision_sample ON gameplay_ai_decisions(sample_key,id)")?;
     let mut cursor: i64=conn.query_row("SELECT CAST(value AS INTEGER) FROM queue_meta WHERE key='evidence_cache_alias_cursor_v1'",[],|r|r.get(0)).optional()?.unwrap_or(0);
     loop {
-        let rows=conn.prepare("SELECT queue_id,sample_key,region_id,pixel_sha256,payload FROM queue_items WHERE queue_id>? ORDER BY queue_id LIMIT 64")?.query_map([cursor],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,r.get::<_,String>(4)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
+        let rows=conn.prepare_cached("SELECT queue_id,sample_key,region_id,pixel_sha256,payload FROM queue_items WHERE queue_id>? ORDER BY queue_id LIMIT 64")?.query_map([cursor],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,r.get::<_,String>(4)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
         if rows.is_empty() {
             break;
         }
@@ -162,7 +162,7 @@ pub fn normalized_representative(
 ) -> LabResult<Option<String>> {
     let exact_key = exact.clone();
     let mut matches = exact.into_iter().collect::<Vec<_>>();
-    let candidates=conn.prepare("SELECT n.sample_key,n.signature FROM gameplay_ai_cache_normalized n JOIN queue_items q USING(sample_key) WHERE n.bucket=? ORDER BY q.queue_id")?.query_map([money_shape::bucket(signature)],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
+    let candidates=conn.prepare_cached("SELECT n.sample_key,n.signature FROM gameplay_ai_cache_normalized n JOIN queue_items q USING(sample_key) WHERE n.bucket=? ORDER BY q.queue_id")?.query_map([money_shape::bucket(signature)],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
     for (key, raw) in candidates {
         let candidate: money_shape::Signature = serde_json::from_str(&raw)?;
         if money_shape::equivalent(signature, &candidate) && !matches.contains(&key) {
@@ -189,7 +189,7 @@ pub fn normalized_representative(
     let (_, key, canonical) = canonical.unwrap();
     let mut signatures = vec![signature.clone()];
     for group in &groups {
-        let raw = conn.prepare("SELECT DISTINCT n.signature FROM gameplay_ai_cache_normalized n JOIN gameplay_ai_cache_aliases a ON a.sample_key=n.sample_key WHERE a.cache_key=?")?.query_map([group],|r|r.get::<_,String>(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
+        let raw = conn.prepare_cached("SELECT DISTINCT n.signature FROM gameplay_ai_cache_normalized n JOIN gameplay_ai_cache_aliases a ON a.sample_key=n.sample_key WHERE a.cache_key=?")?.query_map([group],|r|r.get::<_,String>(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
         for raw in raw {
             let candidate: money_shape::Signature = serde_json::from_str(&raw)?;
             if signatures
@@ -243,11 +243,10 @@ pub enum Truth {
 
 fn alias(conn: &Connection, key: &str) -> LabResult<Option<(String, String)>> {
     Ok(conn
-        .query_row(
+        .prepare_cached(
             "SELECT family,cache_key FROM gameplay_ai_cache_aliases WHERE sample_key=?",
-            [key],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
+        )?
+        .query_row([key], |r| Ok((r.get(0)?, r.get(1)?)))
         .optional()?)
 }
 
@@ -289,9 +288,9 @@ fn base_truth(conn: &Connection, key: &str) -> LabResult<Truth> {
     let Some((kind, group)) = alias(conn, key)? else {
         return Ok(Truth::Pending);
     };
-    let decisions=conn.prepare("SELECT d.label,d.state FROM gameplay_ai_decisions d JOIN gameplay_ai_cache_aliases a USING(sample_key) WHERE a.cache_key=? AND d.id=(SELECT MAX(x.id) FROM gameplay_ai_decisions x WHERE x.occurrence_id=d.occurrence_id)")?.query_map([&group],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
+    let decisions=conn.prepare_cached("SELECT d.label,d.state FROM gameplay_ai_decisions d JOIN gameplay_ai_cache_aliases a USING(sample_key) WHERE a.cache_key=? AND d.id=(SELECT MAX(x.id) FROM gameplay_ai_decisions x WHERE x.occurrence_id=d.occurrence_id)")?.query_map([&group],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
     let decisions = if decisions.is_empty() {
-        conn.prepare("SELECT m.label,m.state FROM gameplay_ai_manual m JOIN gameplay_ai_cache_aliases a USING(sample_key) WHERE a.cache_key=?")?.query_map([&group],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?)))?.collect::<rusqlite::Result<Vec<_>>>()?
+        conn.prepare_cached("SELECT m.label,m.state FROM gameplay_ai_manual m JOIN gameplay_ai_cache_aliases a USING(sample_key) WHERE a.cache_key=?")?.query_map([&group],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?)))?.collect::<rusqlite::Result<Vec<_>>>()?
     } else {
         decisions
     };
@@ -319,7 +318,7 @@ fn base_truth(conn: &Connection, key: &str) -> LabResult<Truth> {
             }
         });
     }
-    let items=conn.prepare("SELECT i.state,i.result,i.job_id,i.pixel_sha256,a.pixel_sha256,q.pixel_sha256,q.payload,(SELECT json_extract(r.scope,'$.validation_sha256') FROM gameplay_ai_runs r WHERE r.job_id=i.job_id LIMIT 1) FROM ai_review_items i JOIN gameplay_ai_cache_aliases a USING(sample_key) JOIN queue_items q USING(sample_key) WHERE a.cache_key=? AND i.state!='pending' ORDER BY i.rowid")?.query_map([&group],|r|Ok((r.get::<_,String>(0)?,r.get::<_,Option<String>>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,r.get::<_,String>(4)?,r.get::<_,String>(5)?,r.get::<_,String>(6)?,r.get::<_,Option<String>>(7)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
+    let items=conn.prepare_cached("SELECT i.state,i.result,i.job_id,i.pixel_sha256,a.pixel_sha256,q.pixel_sha256,q.payload,(SELECT json_extract(r.scope,'$.validation_sha256') FROM gameplay_ai_runs r WHERE r.job_id=i.job_id LIMIT 1) FROM ai_review_items i JOIN gameplay_ai_cache_aliases a USING(sample_key) JOIN queue_items q USING(sample_key) WHERE a.cache_key=? AND i.state!='pending' ORDER BY i.rowid")?.query_map([&group],|r|Ok((r.get::<_,String>(0)?,r.get::<_,Option<String>>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,r.get::<_,String>(4)?,r.get::<_,String>(5)?,r.get::<_,String>(6)?,r.get::<_,Option<String>>(7)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
     let mut labels = BTreeSet::new();
     let mut review = None;
     for (state, result, job, pixels, alias_pixels, queue_pixels, payload, contract) in items {
@@ -465,7 +464,7 @@ pub fn parse_money_list(label: &str) -> Option<Vec<String>> {
 fn component_keys(conn: &Connection, parent: &str) -> LabResult<Vec<String>> {
     let mapped:Option<String>=conn.query_row("SELECT l.parent_key FROM gameplay_ai_cache_component_layouts l JOIN gameplay_ai_cache_aliases a ON a.sample_key=l.parent_key WHERE a.cache_key=(SELECT cache_key FROM gameplay_ai_cache_aliases WHERE sample_key=?) ORDER BY l.parent_key=? DESC,l.parent_key LIMIT 1",params![parent,parent],|r|r.get(0)).optional()?;
     let parent = mapped.as_deref().unwrap_or(parent);
-    Ok(conn.prepare("SELECT component_key FROM gameplay_ai_cache_components WHERE parent_key=? ORDER BY ordinal")?.query_map([parent],|r|r.get(0))?.collect::<rusqlite::Result<_>>()?)
+    Ok(conn.prepare_cached("SELECT component_key FROM gameplay_ai_cache_components WHERE parent_key=? ORDER BY ordinal")?.query_map([parent],|r|r.get(0))?.collect::<rusqlite::Result<_>>()?)
 }
 
 pub fn truth(conn: &Connection, key: &str) -> LabResult<Truth> {
@@ -531,7 +530,7 @@ fn scalar_truth_with_direct(
     if matches!(direct, Truth::Blocked(_) | Truth::NeedsReview { .. }) {
         return Ok(direct);
     }
-    let parents=conn.prepare("SELECT DISTINCT c.parent_key FROM gameplay_ai_cache_components c JOIN gameplay_ai_cache_aliases a ON a.sample_key=c.component_key WHERE a.cache_key=?")?.query_map([group],|r|r.get::<_,String>(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
+    let parents=conn.prepare_cached("SELECT DISTINCT c.parent_key FROM gameplay_ai_cache_components c JOIN gameplay_ai_cache_aliases a ON a.sample_key=c.component_key WHERE a.cache_key=?")?.query_map([group],|r|r.get::<_,String>(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
     let mut labels = BTreeSet::new();
     let mut human = false;
     let mut blocked_parent = None;
@@ -584,7 +583,7 @@ pub fn terminal(conn: &Connection, key: &str) -> LabResult<bool> {
 }
 
 pub fn coalesce_pending(conn: &Connection) -> LabResult<()> {
-    let groups=conn.prepare("SELECT DISTINCT a.cache_key FROM gameplay_ai_cache_aliases a JOIN queue_items q USING(sample_key) WHERE q.active=1")?.query_map([],|r|r.get::<_,String>(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
+    let groups=conn.prepare_cached("SELECT DISTINCT a.cache_key FROM gameplay_ai_cache_aliases a JOIN queue_items q USING(sample_key) WHERE q.active=1")?.query_map([],|r|r.get::<_,String>(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
     for group in groups {
         let (key,kind):(String,String)=conn.query_row("SELECT a.sample_key,a.family FROM gameplay_ai_cache_aliases a JOIN queue_items q USING(sample_key) WHERE a.cache_key=? AND q.active=1 ORDER BY q.queue_id LIMIT 1",[&group],|r|Ok((r.get(0)?,r.get(1)?)))?;
         let pending = !terminal(conn, &key)?
@@ -687,12 +686,13 @@ pub fn context(conn: &Connection, occurrence: &str) -> LabResult<Option<Value>> 
     if !enabled(conn)? {
         return Ok(None);
     }
+    context_enabled(conn, occurrence)
+}
+
+fn context_enabled(conn: &Connection, occurrence: &str) -> LabResult<Option<Value>> {
     let raw: Option<String> = conn
-        .query_row(
-            "SELECT payload FROM gameplay_ai_cache_context WHERE occurrence_id=?",
-            [occurrence],
-            |r| r.get(0),
-        )
+        .prepare_cached("SELECT payload FROM gameplay_ai_cache_context WHERE occurrence_id=?")?
+        .query_row([occurrence], |r| r.get(0))
         .optional()?;
     raw.map(|raw| Ok(serde_json::from_str(&raw)?)).transpose()
 }
@@ -753,7 +753,7 @@ pub fn group_work(conn: &Connection, items: Vec<Value>) -> LabResult<Vec<Value>>
             .filter_map(|item| item["label"].as_str().map(str::to_owned))
             .collect::<BTreeSet<_>>();
         if cache_enabled {
-            let historical = conn.prepare("SELECT DISTINCT d.label FROM gameplay_ai_decisions d JOIN gameplay_ai_cache_aliases a USING(sample_key) WHERE a.cache_key=? AND d.state='manual' AND d.id=(SELECT MAX(x.id) FROM gameplay_ai_decisions x WHERE x.occurrence_id=d.occurrence_id)")?.query_map([&group],|r|r.get::<_,String>(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
+            let historical = conn.prepare_cached("SELECT DISTINCT d.label FROM gameplay_ai_decisions d JOIN gameplay_ai_cache_aliases a USING(sample_key) WHERE a.cache_key=? AND d.state='manual' AND d.id=(SELECT MAX(x.id) FROM gameplay_ai_decisions x WHERE x.occurrence_id=d.occurrence_id)")?.query_map([&group],|r|r.get::<_,String>(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
             labels.extend(historical);
         }
         let components = if cache_enabled {
@@ -935,11 +935,6 @@ pub fn admit_components(
 pub fn project(conn: &Connection, items: &mut [Value]) -> LabResult<()> {
     if !enabled(conn)? {
         for item in items {
-            if let Some(context) = context(conn, item["id"].as_str().unwrap_or(""))? {
-                item["presence"] = context["presence"].clone();
-                item["seat_occupancy"] = context["seat_occupancy"].clone();
-                item["skip_reason"] = context["presence"]["skip_reason"].clone();
-            }
             if item["_own_decision"] != true
                 && !source_absent(item["region_id"].as_str().unwrap_or(""), item)
                 && !automatic_support(item["region_id"].as_str().unwrap_or(""), item)
@@ -959,7 +954,7 @@ pub fn project(conn: &Connection, items: &mut [Value]) -> LabResult<()> {
         let own = item.as_object_mut().unwrap().remove("_own_decision") == Some(json!(true));
         let state = item.as_object_mut().unwrap().remove("_occurrence_state");
         let id = item["id"].as_str().unwrap().to_owned();
-        if let Some(context) = context(conn, &id)? {
+        if let Some(context) = context_enabled(conn, &id)? {
             item["guide"] = context["guide"].clone();
             item["presence"] = context["presence"].clone();
             item["seat_occupancy"] = context["seat_occupancy"].clone();
@@ -1107,7 +1102,7 @@ pub fn propagate_revisions(
         scalar_groups.insert(group);
     }
     for group in scalar_groups {
-        let parents=conn.prepare("SELECT DISTINCT c.parent_key FROM gameplay_ai_cache_components c JOIN gameplay_ai_cache_aliases a ON a.sample_key=c.component_key WHERE a.cache_key=?")?.query_map([&group],|r|r.get::<_,String>(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
+        let parents=conn.prepare_cached("SELECT DISTINCT c.parent_key FROM gameplay_ai_cache_components c JOIN gameplay_ai_cache_aliases a ON a.sample_key=c.component_key WHERE a.cache_key=?")?.query_map([&group],|r|r.get::<_,String>(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
         for parent in parents {
             if let Some((_, group)) = alias(conn, &parent)? {
                 groups.insert(group);

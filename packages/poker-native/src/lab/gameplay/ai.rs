@@ -63,10 +63,42 @@ pub struct GameplayAi {
     config: PathBuf,
     projection: Mutex<()>,
     workflow_transition: Mutex<()>,
+    read_snapshot: Mutex<Option<ReadSnapshot>>,
+    #[cfg(test)]
+    projection_hook: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
+    #[cfg(test)]
+    manual_hook: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
     #[cfg(test)]
     preparation_hook: Mutex<Option<Arc<dyn Fn(usize) + Send + Sync>>>,
     #[cfg(test)]
     handoff_hook: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
+}
+#[derive(Clone)]
+struct ReadSnapshot {
+    run: String,
+    source: ReadSource,
+    items: Arc<Vec<Value>>,
+    grouped: Arc<Vec<Value>>,
+}
+#[derive(Clone, PartialEq, Eq)]
+struct ReadSource {
+    path: PathBuf,
+    data_version: i64,
+    schema_version: i64,
+    changes: u64,
+}
+impl ReadSource {
+    fn read(conn: &Connection) -> LabResult<Self> {
+        Ok(Self {
+            path: conn
+                .path()
+                .ok_or_else(|| bad("Read source has no database path"))?
+                .into(),
+            data_version: conn.query_row("PRAGMA data_version", [], |r| r.get(0))?,
+            schema_version: conn.query_row("PRAGMA schema_version", [], |r| r.get(0))?,
+            changes: conn.total_changes(),
+        })
+    }
 }
 struct PreparationActivity<'a>(&'a DatasetContext);
 impl Drop for PreparationActivity<'_> {
@@ -196,6 +228,11 @@ impl GameplayAi {
             config,
             projection: Mutex::new(()),
             workflow_transition: Mutex::new(()),
+            read_snapshot: Mutex::new(None),
+            #[cfg(test)]
+            projection_hook: Mutex::new(None),
+            #[cfg(test)]
+            manual_hook: Mutex::new(None),
             #[cfg(test)]
             preparation_hook: Mutex::new(None),
             #[cfg(test)]
@@ -1890,8 +1927,57 @@ impl GameplayAi {
         )?;
         Ok(json!({"job":self.status(service,&session)?}))
     }
+    fn read_snapshot(&self, run: &str) -> LabResult<(Arc<Vec<Value>>, Arc<Vec<Value>>)> {
+        loop {
+            let source = ReadSource::read(&*self.context.connection()?)?;
+            {
+                let cache = self
+                    .read_snapshot
+                    .lock()
+                    .map_err(|_| conflict("Read snapshot lock poisoned"))?;
+                if let Some(snapshot) = cache.as_ref() {
+                    if snapshot.run == run && snapshot.source == source {
+                        return Ok((snapshot.items.clone(), snapshot.grouped.clone()));
+                    }
+                }
+            }
+            let conn = Connection::open_with_flags(
+                &source.path,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+            )?;
+            let version: i64 = conn.query_row("PRAGMA data_version", [], |r| r.get(0))?;
+            conn.execute_batch("BEGIN")?;
+            let result = (|| {
+                let items = read_items(&conn, run)?;
+                let grouped = cache::group_work(&conn, items.clone())?;
+                Ok::<_, crate::lab::LabError>((Arc::new(items), Arc::new(grouped)))
+            })();
+            let end = conn.execute_batch("ROLLBACK");
+            let (items, grouped) = result?;
+            end?;
+            let after: i64 = conn.query_row("PRAGMA data_version", [], |r| r.get(0))?;
+            #[cfg(test)]
+            if let Some(hook) = self.projection_hook.lock().unwrap().as_ref() {
+                hook();
+            }
+            let current = ReadSource::read(&*self.context.connection()?)?;
+            if after != version || current != source {
+                continue;
+            }
+            let mut cache = self
+                .read_snapshot
+                .lock()
+                .map_err(|_| conflict("Read snapshot lock poisoned"))?;
+            *cache = Some(ReadSnapshot {
+                run: run.into(),
+                source,
+                items: items.clone(),
+                grouped: grouped.clone(),
+            });
+            return Ok((items, grouped));
+        }
+    }
     fn status(&self, service: &LabService, session: &str) -> LabResult<Value> {
-        self.sync_effective_hands(service)?;
         let scope = selected_run(&*self.context.connection()?, session)?;
         let Some((run, job, scope)) = scope else {
             return Ok(Value::Null);
@@ -1902,8 +1988,7 @@ impl GameplayAi {
         } else {
             Value::Null
         };
-        let conn = self.context.connection()?;
-        let items = read_items(&conn, &run)?;
+        let (items, grouped_items) = self.read_snapshot(&run)?;
         let absent_count = items
             .iter()
             .filter(|item| item["state"] == "absent")
@@ -1911,7 +1996,7 @@ impl GameplayAi {
         let mut counts = json!({"total":items.len()-absent_count,"pending":0,"verified":0,"corrected":0,"manual":0,"needs_review":0,"ambiguous":0,"error":0,"frames_completed":0,"frames_total":scope["frame_count"]});
         let mut frames = std::collections::BTreeMap::<String, (bool, usize)>::new();
         let mut revision = 0i64;
-        for item in &items {
+        for item in items.iter() {
             let state = item["state"].as_str().unwrap_or("pending");
             if state == "absent" {
                 frames
@@ -1948,7 +2033,19 @@ impl GameplayAi {
                         .as_u64()
                         .unwrap_or(usize::MAX as u64) as usize)
             .count());
-        let group_counts = cache::group_counts(&conn, &items, &counts)?;
+        let mut group_counts = json!({"total":grouped_items.len(),"pending":0,"verified":0,"corrected":0,"manual":0,"needs_review":0,"ambiguous":0,"error":0,"frames_completed":counts["frames_completed"],"frames_total":counts["frames_total"]});
+        for item in grouped_items.iter() {
+            let bucket = match item["state"].as_str().unwrap_or("pending") {
+                "unchanged" | "legacy_verified" => "verified",
+                "corrected" => "corrected",
+                "manual" => "manual",
+                "flagged" | "conflict" => "needs_review",
+                "ambiguous" => "ambiguous",
+                "error" => "error",
+                _ => "pending",
+            };
+            group_counts[bucket] = json!(group_counts[bucket].as_u64().unwrap_or(0) + 1);
+        }
         let activity = self
             .context
             .state
@@ -1977,6 +2074,7 @@ impl GameplayAi {
                 "prepared"
             })
         };
+        let conn = self.context.connection()?;
         let recovery_candidate_job_id: Option<String> = if matches!(state, "paused" | "prepared")
             && !inflight
             && scope["recover_from_job_id"].is_null()
@@ -2022,22 +2120,27 @@ impl GameplayAi {
             .ok_or_else(|| bad("Select a recording"))?;
         let conn = self.context.connection()?;
         let run = selected_run(&conn, session)?.map(|(run, _, _)| run);
-        let mut items = if let Some(run) = run {
-            read_items(&conn, &run)?
-        } else {
-            vec![]
-        };
-        items.retain(|item| item["state"] != "absent");
         let grouped = match request.query("grouped") {
             None | Some("true") => true,
             Some("false") => false,
             _ => return Err(bad("grouped must be true or false")),
         };
+        drop(conn);
+        let snapshot = if let Some(run) = run {
+            Some(self.read_snapshot(&run)?)
+        } else {
+            None
+        };
+        let source = snapshot
+            .as_ref()
+            .map(|(items, groups)| if grouped { groups } else { items });
+        let mut items: Vec<&Value> = source
+            .into_iter()
+            .flat_map(|v| v.iter())
+            .filter(|item| item["state"] != "absent")
+            .collect();
         if let Some(key) = request.query("work_key") {
             items.retain(|item| item["work_key"] == key);
-        }
-        if grouped {
-            items = cache::group_work(&conn, items)?;
         }
         let filter = request.query("filter").unwrap_or("all");
         items.retain(|item| match filter {
@@ -2054,6 +2157,7 @@ impl GameplayAi {
             .into_iter()
             .skip(offset)
             .take(limit)
+            .cloned()
             .collect::<Vec<_>>();
         let more = offset + page.len() < total;
         Ok(
@@ -2069,7 +2173,14 @@ impl GameplayAi {
         if !["manual", "ambiguous"].contains(&action) || label.chars().count() > 2000 {
             return Err(bad("Invalid manual review"));
         }
+        let cached = self
+            .read_snapshot
+            .lock()
+            .map_err(|_| conflict("Read snapshot lock poisoned"))?
+            .clone();
         let mut conn = self.context.connection()?;
+        let before = ReadSource::read(&conn)?;
+        let cached = cached.filter(|snapshot| snapshot.source == before);
         let tx = conn.transaction()?;
         let (key, revision, category, region_id): (String, i64, String,String) = tx
             .query_row(
@@ -2172,18 +2283,45 @@ impl GameplayAi {
                 tx.execute("UPDATE gameplay_ai_occurrences SET revision=revision+1 WHERE sample_key=? AND (id=? OR (state!='ambiguous' AND NOT EXISTS(SELECT 1 FROM gameplay_ai_decisions d WHERE d.occurrence_id=gameplay_ai_occurrences.id AND d.id=(SELECT MAX(x.id) FROM gameplay_ai_decisions x WHERE x.occurrence_id=d.occurrence_id) AND (d.label!=? OR d.state!=?))))",params![key,id,label,action])?
             }
         };
+        // Derive the replacement inside the same transaction as the decision, before
+        // another connection can commit a change to the evidence graph.
+        let replacement = cached
+            .as_ref()
+            .and_then(|snapshot| refresh_manual_snapshot(&tx, snapshot, id, &key).ok());
         tx.commit()?;
-        let run: String = conn.query_row(
-            "SELECT run_id FROM gameplay_ai_occurrences WHERE id=?",
-            [id],
-            |r| r.get(0),
-        )?;
-        let item = read_items(&conn, &run)?
-            .into_iter()
-            .find(|v| v["id"] == id)
-            .ok_or_else(|| bad("Reading missing"))?;
+        #[cfg(test)]
+        if let Some(hook) = self.manual_hook.lock().unwrap().as_ref() {
+            hook();
+        }
+        let after = ReadSource::read(&conn)?;
+        let replacement = replacement.filter(|_| {
+            before.data_version == after.data_version
+                && before.schema_version == after.schema_version
+                && before.path == after.path
+        });
+        let item = read_items_where(
+            &conn,
+            "o.id=?1",
+            &[rusqlite::types::Value::Text(id.to_owned())],
+        )?
+        .into_iter()
+        .find(|v| v["id"] == id)
+        .ok_or_else(|| bad("Reading missing"))?;
         drop(conn);
-        self.sync_effective_hands(service)?;
+        if let (Some(old), Some(mut updated)) = (cached, replacement) {
+            updated.source = after;
+            let mut cache = self
+                .read_snapshot
+                .lock()
+                .map_err(|_| conflict("Read snapshot lock poisoned"))?;
+            if cache.as_ref().is_some_and(|current| {
+                current.run == old.run
+                    && current.source == old.source
+                    && Arc::ptr_eq(&current.items, &old.items)
+            }) {
+                *cache = Some(updated);
+            }
+        }
         Ok(json!({"revision":item["revision"],"item":item,"affected_count":affected}))
     }
 }
@@ -2374,6 +2512,87 @@ fn selected_run(
     Ok(conn.query_row("SELECT run_id,job_id,scope FROM gameplay_ai_runs WHERE session_id=? ORDER BY (run_id=COALESCE((SELECT json_extract(value,'$') FROM queue_meta WHERE key='gameplay_selected:' || ?),'')) DESC, created_at DESC, rowid DESC LIMIT 1", params![session, session], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?)
 }
 
+fn refresh_manual_snapshot(
+    conn: &Connection,
+    old: &ReadSnapshot,
+    id: &str,
+    sample: &str,
+) -> LabResult<ReadSnapshot> {
+    use std::collections::{BTreeSet, HashMap};
+    let groups: Vec<String> = if cache::enabled(conn)? {
+        conn.prepare("WITH RECURSIVE edges(a,b) AS (SELECT p.cache_key,c.cache_key FROM gameplay_ai_cache_components x JOIN gameplay_ai_cache_aliases p ON p.sample_key=x.parent_key JOIN gameplay_ai_cache_aliases c ON c.sample_key=x.component_key UNION SELECT c.cache_key,p.cache_key FROM gameplay_ai_cache_components x JOIN gameplay_ai_cache_aliases p ON p.sample_key=x.parent_key JOIN gameplay_ai_cache_aliases c ON c.sample_key=x.component_key), related(g) AS (SELECT cache_key FROM gameplay_ai_cache_aliases WHERE sample_key=? UNION SELECT edges.b FROM edges JOIN related ON edges.a=related.g) SELECT g FROM related")?.query_map([sample], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?
+    } else {
+        Vec::new()
+    };
+    let mut values = vec![
+        rusqlite::types::Value::Text(old.run.clone()),
+        rusqlite::types::Value::Text(id.into()),
+        rusqlite::types::Value::Text(sample.into()),
+    ];
+    values.extend(groups.iter().cloned().map(rusqlite::types::Value::Text));
+    let aliases = if groups.is_empty() {
+        String::new()
+    } else {
+        format!(" OR o.sample_key IN (SELECT sample_key FROM gameplay_ai_cache_aliases WHERE cache_key IN ({}))", (0..groups.len()).map(|_| "?").collect::<Vec<_>>().join(","))
+    };
+    let filter = format!("o.id IN (SELECT occurrence_id FROM gameplay_ai_run_items WHERE run_id=?1) AND (o.id=?2 OR o.sample_key=?3{aliases})");
+    let updated = read_items_where(conn, &filter, &values)?;
+    let updates: HashMap<_, _> = updated
+        .iter()
+        .map(|item| (item["id"].as_str().unwrap().to_owned(), item.clone()))
+        .collect();
+    let mut affected: BTreeSet<String> = old
+        .items
+        .iter()
+        .filter(|item| updates.contains_key(item["id"].as_str().unwrap_or("")))
+        .filter_map(|item| item["work_key"].as_str().map(str::to_owned))
+        .collect();
+    affected.extend(
+        updated
+            .iter()
+            .filter_map(|item| item["work_key"].as_str().map(str::to_owned)),
+    );
+    let mut items = (*old.items).clone();
+    for item in &mut items {
+        if let Some(value) = updates.get(item["id"].as_str().unwrap_or("")) {
+            *item = value.clone();
+        }
+    }
+    let affected_items = items
+        .iter()
+        .filter(|item| {
+            item["work_key"]
+                .as_str()
+                .is_some_and(|key| affected.contains(key))
+        })
+        .cloned()
+        .collect();
+    let mut grouped: Vec<Value> = old
+        .grouped
+        .iter()
+        .filter(|item| {
+            !item["work_key"]
+                .as_str()
+                .is_some_and(|key| affected.contains(key))
+        })
+        .cloned()
+        .collect();
+    grouped.extend(cache::group_work(conn, affected_items)?);
+    grouped.sort_by(|a, b| {
+        a["frame_id"]
+            .as_str()
+            .cmp(&b["frame_id"].as_str())
+            .then(a["region_id"].as_str().cmp(&b["region_id"].as_str()))
+            .then(a["work_key"].as_str().cmp(&b["work_key"].as_str()))
+    });
+    Ok(ReadSnapshot {
+        run: old.run.clone(),
+        source: old.source.clone(),
+        items: Arc::new(items),
+        grouped: Arc::new(grouped),
+    })
+}
+
 fn read_items(conn: &Connection, run: &str) -> LabResult<Vec<Value>> {
     read_items_for_region(conn, run, None)
 }
@@ -2406,6 +2625,8 @@ fn read_items_where(
     filter: &str,
     values: &[rusqlite::types::Value],
 ) -> LabResult<Vec<Value>> {
+    #[cfg(test)]
+    let stage = std::time::Instant::now();
     let sql=format!("SELECT o.id,o.frame_id,o.region_id,o.category,o.original_label,o.revision,o.sample_key,
         CASE WHEN d.id IS NOT NULL THEN d.label WHEN o.state='ambiguous' THEN o.original_label ELSE COALESCE(m.label,q.label,o.original_label) END,
         CASE WHEN o.state='absent' THEN 'absent' WHEN o.state='ambiguous' AND o.reason LIKE 'Presence contradicts occurrence-owned human evidence%' THEN 'ambiguous' WHEN d.id IS NOT NULL THEN d.state WHEN o.state='ambiguous' THEN 'ambiguous' ELSE COALESCE(m.state,(SELECT i.state FROM ai_review_items i WHERE i.sample_key=o.sample_key AND i.state!='pending' ORDER BY rowid DESC LIMIT 1),o.state) END,
@@ -2413,13 +2634,20 @@ fn read_items_where(
         ,q.payload,o.cache_kind,d.id IS NOT NULL,o.state,q.sample_key IS NOT NULL,COALESCE(d.provenance,'{{}}') FROM gameplay_ai_occurrences o LEFT JOIN queue_items q USING(sample_key) LEFT JOIN gameplay_ai_manual m USING(sample_key) LEFT JOIN gameplay_ai_decisions d ON d.id=(SELECT MAX(x.id) FROM gameplay_ai_decisions x WHERE x.occurrence_id=o.id) WHERE {filter} ORDER BY o.frame_id,o.region_id");
     let mut q = conn.prepare(&sql)?;
     let mut rows=q.query_map(rusqlite::params_from_iter(values.iter()),|r|{let id:String=r.get(0)?;let frame:String=r.get(1)?;Ok(json!({"id":id,"frame_id":frame,"region_id":r.get::<_,String>(2)?,"category":r.get::<_,String>(3)?,"original_label":r.get::<_,String>(4)?,"revision":r.get::<_,i64>(5)?,"sample_key":r.get::<_,String>(6)?,"label":r.get::<_,String>(7)?,"state":r.get::<_,String>(8)?,"reason":serde_json::from_str::<Value>(&r.get::<_,String>(9)?).unwrap_or(Value::Null)["reason"].as_str().unwrap_or(""),"crop_url":if r.get::<_,bool>(14)? {json!(format!("/api/gameplay/ai/crop/{id}"))}else{Value::Null},"crop_available":r.get::<_,bool>(14)?,"review_evidence":serde_json::from_str::<Value>(&r.get::<_,String>(15)?).unwrap_or(Value::Null),"image_url":format!("/api/gameplay/frames/{frame}/image"),"guide":serde_json::from_str::<Value>(&r.get::<_,Option<String>>(10)?.unwrap_or_else(||"{}".into())).unwrap_or(Value::Null)["guide"],"cache_kind":r.get::<_,String>(11)?,"has_manual_decision":r.get::<_,bool>(12)?,"_own_decision":r.get::<_,bool>(12)?,"_occurrence_state":r.get::<_,String>(13)?}))})?.collect::<Result<Vec<_>,_>>()?;
+    #[cfg(test)]
+    if std::env::var_os("POKER_PERF_DB").is_some() {
+        eprintln!("sql rows: {:?}", stage.elapsed());
+    }
+    #[cfg(test)]
+    let stage = std::time::Instant::now();
     for item in &mut rows {
         let legacy: Option<(String, String)> = conn
-            .query_row(
+            .prepare_cached(
                 "SELECT label,provenance FROM gameplay_ai_legacy WHERE occurrence_id=?",
-                [item["id"].as_str().unwrap()],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
+            )?
+            .query_row([item["id"].as_str().unwrap()], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
             .optional()?;
         if let Some((label, provenance)) = legacy {
             item["legacy_provenance"] = serde_json::from_str(&provenance)?;
@@ -2437,7 +2665,17 @@ fn read_items_where(
             }
         }
     }
+    #[cfg(test)]
+    if std::env::var_os("POKER_PERF_DB").is_some() {
+        eprintln!("legacy: {:?}", stage.elapsed());
+    }
+    #[cfg(test)]
+    let stage = std::time::Instant::now();
     cache::project(conn, &mut rows)?;
+    #[cfg(test)]
+    if std::env::var_os("POKER_PERF_DB").is_some() {
+        eprintln!("project: {:?}", stage.elapsed());
+    }
     for item in &mut rows {
         if item["legacy_provenance"].is_object() {
             item["crop_available"] = json!(true);
