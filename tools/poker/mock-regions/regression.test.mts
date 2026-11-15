@@ -1,8 +1,34 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { existsSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
 import { extractRegions } from "./extract.mts";
 import { loopbackUrl } from "./geometry.mts";
+
+test("validation refuses normalized and symlinked output escapes before writing", () => {
+  const root = mkdtempSync("/tmp/poker-validation-boundary-");
+  try {
+    const name = root.split("/").at(-1)!;
+    const outside = join(homedir(), `${name}-output`);
+    symlinkSync(homedir(), join(root, "outside"), "dir");
+    for (const output of [`/tmp/../${outside.slice(1)}`, join(root, "outside", `${name}-output`)]) {
+      const result = spawnSync(
+        process.execPath,
+        [fileURLToPath(new URL("./validate.mts", import.meta.url)), "http://127.0.0.1:1", output],
+        { encoding: "utf8", timeout: 10000 },
+      );
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /Validation output must/);
+      assert.equal(existsSync(outside), false);
+    }
+  } finally {
+    rmSync(root, { recursive: true });
+  }
+});
 
 test(
   "excludes overlaid, flipped and vertically clipped labels",
@@ -52,8 +78,28 @@ test(
         overlaid.regions.find((r) => r.id === "seat.0.name")?.reason ?? "",
         /foreground/,
       );
+      assert.equal(overlaid.regions.find((r) => r.id === "seat.0.name")?.autoLabelEligible, false);
+      assert.equal(overlaid.regions.find((r) => r.id === "seat.0.name")?.cropLabel, null);
       await page.evaluate(() => {
         document.querySelector("#test-overlay")!.remove();
+        const parent = document.querySelector('[data-seat="0"] .r-card')!.parentElement!;
+        parent.dataset.testOriginalStyle = parent.getAttribute("style") ?? "";
+        parent.style.overflow = "hidden";
+        parent.style.width = "1px";
+        parent.style.height = "1px";
+      });
+      const clippedCard = await page.evaluate(extractRegions);
+      for (const category of ["rank", "suit"]) {
+        const region = clippedCard.regions.find((r) => r.id === `seat.0.card.0.${category}`)!;
+        assert.equal(region.visibility, "unsupported");
+        assert.match(region.reason ?? "", /clipped/);
+        assert.equal(region.autoLabelEligible, false);
+        assert.equal(region.cropLabel, null);
+      }
+      await page.evaluate(() => {
+        const parent = document.querySelector('[data-seat="0"] .r-card')!.parentElement!;
+        parent.setAttribute("style", parent.dataset.testOriginalStyle!);
+        delete parent.dataset.testOriginalStyle;
         (document.querySelector('[data-seat="0"] .r-card .face') as HTMLElement).style.transform =
           "rotateY(90deg)";
         const name = document.querySelector('[data-seat="0"] .player-name') as HTMLElement;
@@ -66,6 +112,10 @@ test(
         "unsupported",
       );
       assert.match(clipped.regions.find((r) => r.id === "seat.0.name")?.reason ?? "", /clipped/);
+      for (const id of ["seat.0.card.0.rank", "seat.0.name"]) {
+        assert.equal(clipped.regions.find((r) => r.id === id)?.autoLabelEligible, false);
+        assert.equal(clipped.regions.find((r) => r.id === id)?.cropLabel, null);
+      }
       await page.evaluate(async () => {
         const name = document.querySelector('[data-seat="0"] .player-name') as HTMLElement;
         name.style.removeProperty("height");

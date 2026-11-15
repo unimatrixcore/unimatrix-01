@@ -684,11 +684,31 @@ fn nonpaged_immediate_capture_cache_clears_with_original_session_lifecycle() {
     assert!(!third.body["regions"].as_array().unwrap().is_empty());
 }
 #[test]
-fn capture_rejects_negative_and_outside_rectangles() {
+fn capture_rejects_negative_round_id() {
     let f = Fixture::new(false);
     fs::write(
         f.temp.path().join("config/regions.json"),
         serde_json::to_vec(&json!({"round_id":{"x":-12,"y":-3,"w":2,"h":2},"seats":[{"name":{"x":100,"y":200,"w":3,"h":3}}],"screen_width":8,"screen_height":8})).unwrap(),
+    ).unwrap();
+    let capture = f.req("POST", "/api/capture", json!({"monitor":"TEST"}));
+    assert_eq!(capture.status, 400);
+    let ctx = f.service.registry.resolve("legacy").unwrap();
+    assert_eq!(
+        ctx.connection()
+            .unwrap()
+            .query_row("SELECT COUNT(*) FROM full_captures", [], |r| r
+                .get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
+}
+
+#[test]
+fn capture_rejects_outside_round_id() {
+    let f = Fixture::new(false);
+    fs::write(
+        f.temp.path().join("config/regions.json"),
+        serde_json::to_vec(&json!({"round_id":{"x":7,"y":0,"w":2,"h":2},"seats":[{"name":{"x":0,"y":0,"w":2,"h":2}}],"screen_width":8,"screen_height":8})).unwrap(),
     ).unwrap();
     let capture = f.req("POST", "/api/capture", json!({"monitor":"TEST"}));
     assert_eq!(capture.status, 400);

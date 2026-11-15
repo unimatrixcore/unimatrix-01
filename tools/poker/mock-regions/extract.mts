@@ -115,6 +115,23 @@ export async function extractRegions(): Promise<{
     }
     return el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().height > 0;
   };
+  const ancestorClipping = (el: Element, bounds: Bounds): string | null => {
+    for (let node: Element | null = el; node; node = node.parentElement) {
+      const css = getComputedStyle(node),
+        clip = node.getBoundingClientRect();
+      if (
+        ["hidden", "clip", "scroll", "auto"].includes(css.overflowX) &&
+        (bounds.x < clip.left - 0.5 || bounds.x + bounds.width > clip.right + 0.5)
+      )
+        return "rendered target horizontally clipped by ancestor";
+      if (
+        ["hidden", "clip", "scroll", "auto"].includes(css.overflowY) &&
+        (bounds.y < clip.top - 0.5 || bounds.y + bounds.height > clip.bottom + 0.5)
+      )
+        return "rendered target vertically clipped by ancestor";
+    }
+    return null;
+  };
   const rectangle = (b: Bounds): Point[] => [
     { x: b.x, y: b.y },
     { x: b.x + b.width, y: b.y },
@@ -162,24 +179,10 @@ export async function extractRegions(): Promise<{
     region.polygon = rectangle(b);
     region.visibility = "visible";
     region.reason = null;
-    for (let node: Element | null = el; node; node = node.parentElement) {
-      const css = getComputedStyle(node);
-      const clip = node.getBoundingClientRect();
-      if (
-        ["hidden", "clip", "scroll", "auto"].includes(css.overflowX) &&
-        (r.left < clip.left - 0.5 || r.right > clip.right + 0.5)
-      ) {
-        region.visibility = "unsupported";
-        region.reason =
-          "rendered text clipped by ancestor; full state text is not a valid pixel label";
-      }
-      if (
-        ["hidden", "clip", "scroll", "auto"].includes(css.overflowY) &&
-        (r.top < clip.top - 0.5 || r.bottom > clip.bottom + 0.5)
-      ) {
-        region.visibility = "unsupported";
-        region.reason = "rendered text vertically clipped by ancestor";
-      }
+    const clipping = ancestorClipping(el, r);
+    if (clipping) {
+      region.visibility = "unsupported";
+      region.reason = clipping;
     }
     if (b.x < 0 || b.y < 0 || b.x + b.width > innerWidth || b.y + b.height > innerHeight) {
       region.visibility = "unsupported";
@@ -398,6 +401,8 @@ export async function extractRegions(): Promise<{
           height: Math.max(...polygon.map((p) => p.y)) - y,
         };
         region.rotation = (Math.atan2(matrix.b * scaleY, matrix.a * scaleX) * 180) / Math.PI;
+        const clipping = ancestorClipping(face, region.inkBounds);
+        if (clipping) throw new Error(clipping);
         region.visibility = "visible";
         region.reason = null;
         if (polygon.some((p) => p.x < 0 || p.y < 0 || p.x > innerWidth || p.y > innerHeight))
@@ -543,8 +548,7 @@ export async function extractRegions(): Promise<{
         group = el.closest(".ReactPokerPotsContainer__chips");
       if (area && group) {
         const g = group.getBoundingClientRect(),
-          font = px(getComputedStyle(group).fontSize),
-          count = document.querySelectorAll("[data-pot-index]").length;
+          font = px(getComputedStyle(group).fontSize);
         const width = Math.min(area.width, px(getComputedStyle(group).maxWidth) || area.width);
         const rowHeight = Math.max(
           font * 2.5,

@@ -1,13 +1,19 @@
 import assert from "node:assert/strict";
 import { chromium } from "@playwright/test";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile, realpath } from "node:fs/promises";
+import { basename, dirname, join, resolve } from "node:path";
 import { extractRegions } from "./extract.mts";
 import { loopbackUrl } from "./geometry.mts";
 
 const url = loopbackUrl(process.argv[2] ?? "http://127.0.0.1:5173");
-const output = process.argv[3];
-if (!output?.startsWith("/tmp/"))
+const requested = process.argv[3] ? resolve(process.argv[3]) : "";
+if (!requested.startsWith("/tmp/"))
   throw new Error("Validation output must be a fresh /tmp directory");
+const temporaryRoot = await realpath("/tmp");
+const parent = await realpath(dirname(requested));
+if (parent !== temporaryRoot && !parent.startsWith(`${temporaryRoot}/`))
+  throw new Error("Validation output must resolve inside /tmp");
+const output = join(parent, basename(requested));
 await mkdir(output, { recursive: false });
 const browser = await chromium.launch({ headless: true });
 try {
