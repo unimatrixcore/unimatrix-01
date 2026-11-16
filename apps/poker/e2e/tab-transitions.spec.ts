@@ -36,7 +36,7 @@ test("retains both workspaces across rail and history transitions", async ({ pag
   await expect(page.locator(".gameplay-workspace")).toBeVisible();
   await expect(page.locator("#loading-overlay")).not.toHaveClass(/active/);
   await page.getByRole("radio", { name: "Frames view" }).click();
-  await rail.getByRole("link", { name: "OCR Data" }).click();
+  await rail.getByRole("link", { name: "OCR Benchmark" }).click();
   await expect(page.locator("#section-ocr-data")).toBeVisible();
   await expect(page.locator("#loading-overlay")).not.toHaveClass(/active/);
   await expect
@@ -62,12 +62,12 @@ test("cold Gameplay starts without initializing OCR, then retains OCR after firs
   await page.goto("/gameplay");
   await expect(page.locator("#loading-overlay")).not.toHaveClass(/active/);
   expect(await page.evaluate(() => !!window.pokerOcrReady)).toBe(false);
-  await page.getByRole("link", { name: "OCR Data" }).click();
+  await page.getByRole("link", { name: "OCR Benchmark" }).click();
   await expect(page.locator("#section-ocr-data")).toBeVisible();
   await expect(page.locator("#loading-overlay")).not.toHaveClass(/active/);
   expect(await page.evaluate(() => !!window.pokerOcrReady)).toBe(true);
   await page.getByRole("link", { name: "Gameplay" }).click();
-  await page.getByRole("link", { name: "OCR Data" }).click();
+  await page.getByRole("link", { name: "OCR Benchmark" }).click();
   await expect(page.locator("#loading-overlay")).not.toHaveClass(/active/);
 });
 
@@ -133,7 +133,7 @@ test("Back during held OCR initialization keeps Gameplay and its URL", async ({ 
   });
   await page.goto("/gameplay");
   await expect(page.locator("#loading-overlay")).not.toHaveClass(/active/);
-  await page.getByRole("link", { name: "OCR Data" }).click();
+  await page.getByRole("link", { name: "OCR Benchmark" }).click();
   await expect
     .poll(() =>
       page.evaluate(
@@ -185,7 +185,7 @@ test("restores each workspace's scroll position after a rail round trip", async 
     document.getElementById("main-content")!.scrollTop = 200;
   });
   await expect.poll(() => page.locator("#main-content").evaluate((el) => el.scrollTop)).toBe(200);
-  await page.getByRole("link", { name: "OCR Data" }).click();
+  await page.getByRole("link", { name: "OCR Benchmark" }).click();
   await expect.poll(() => page.locator("#main-content").evaluate((el) => el.scrollTop)).toBe(400);
   await page.getByRole("link", { name: "Gameplay" }).click();
   await expect.poll(() => page.locator("#main-content").evaluate((el) => el.scrollTop)).toBe(200);
@@ -245,7 +245,7 @@ test("a failed stop after in-flight session creation keeps Gameplay active", asy
       ),
     )
     .toBe(true);
-  await page.getByRole("link", { name: "OCR Data" }).click();
+  await page.getByRole("link", { name: "OCR Benchmark" }).click();
   await page.evaluate(() => {
     (window as unknown as { captureGate: { release: boolean } }).captureGate.release = true;
   });
@@ -299,7 +299,7 @@ test("a dataset switch completing behind Gameplay defers its OCR location", asyn
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/gameplay");
   await expect(page.locator("#loading-overlay")).not.toHaveClass(/active/);
-  await page.getByRole("link", { name: "OCR Data" }).click();
+  await page.getByRole("link", { name: "OCR Benchmark" }).click();
   await expect(page.locator("#collector-workspace")).toHaveClass(/ready/);
   await page.getByRole("button", { name: "Working dataset", exact: true }).click();
   await page.getByRole("menuitemradio", { name: "Second dataset", exact: true }).click();
@@ -320,7 +320,7 @@ test("a dataset switch completing behind Gameplay defers its OCR location", asyn
     .toBe("/collection");
   await expect(page).toHaveURL(/\/gameplay$/);
   await expect(page.locator(".gameplay-workspace")).toBeVisible();
-  await page.getByRole("link", { name: "OCR Data" }).click();
+  await page.getByRole("link", { name: "OCR Benchmark" }).click();
   await expect(page).toHaveURL(/\/collection$/);
   await expect(page.getByRole("button", { name: "Working dataset", exact: true })).toHaveText(
     "Second dataset",
@@ -341,7 +341,7 @@ test("failed first OCR startup offers retry", async ({ page }) => {
   });
   await page.goto("/gameplay");
   await expect(page.locator("#loading-overlay")).not.toHaveClass(/active/);
-  await page.getByRole("link", { name: "OCR Data" }).click();
+  await page.getByRole("link", { name: "OCR Benchmark" }).click();
   await expect(page.locator("#loading-overlay")).not.toHaveClass(/active/);
   await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
 });

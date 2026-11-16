@@ -428,7 +428,7 @@ function WorkspaceShell({ host, workspace }: { host: HTMLElement; workspace: HTM
           logoSrc="/static/ui/poker-chip.svg"
           accountControl={({ collapsed }) => <AppSettings collapsed={collapsed} />}
           sections={[
-            { label: "OCR Data", to: "/collection", active: current === "ocr", icon: OcrIcon },
+            { label: "OCR Benchmark", to: "/collection", active: current === "ocr", icon: OcrIcon },
             { label: "Gameplay", to: "/gameplay", active: gameplay, icon: GameplayIcon },
             {
               label: "OCR Training",

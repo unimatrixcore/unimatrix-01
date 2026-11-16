@@ -294,15 +294,10 @@ fn main() {
                 LabService::open_with_paths(data, config, tools, std::env::vars().collect())
                     .map_err(|error| std::io::Error::other(error.message))?;
             app.manage(Arc::new(service));
-            let page = if std::env::args().any(|arg| arg == "--regions") {
-                "regions.html"
-            } else {
-                ""
-            };
             let url = if cfg!(debug_assertions) && std::env::var_os("POKER_LAB_BUNDLED").is_none() {
-                format!("http://localhost:5180/{page}")
+                "http://localhost:5180/"
             } else {
-                format!("pokerlab://localhost/{page}")
+                "pokerlab://localhost/"
             };
             WebviewWindowBuilder::new(app, "main", WebviewUrl::CustomProtocol(url.parse()?))
                 .data_directory(profile)
@@ -376,7 +371,6 @@ mod tests {
         ] {
             assert_eq!(local_asset_path(path), "/index.html");
         }
-        assert_eq!(local_asset_path("/regions.html"), "/regions.html");
         assert_eq!(local_asset_path("/assets/app.js"), "/assets/app.js");
     }
 

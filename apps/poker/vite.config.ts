@@ -58,14 +58,6 @@ export const pokerAliases = [
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   clearScreen: false,
-  build: {
-    rolldownOptions: {
-      input: {
-        poker: fileURLToPath(new URL("./index.html", import.meta.url)),
-        regions: fileURLToPath(new URL("./regions.html", import.meta.url)),
-      },
-    },
-  },
   server: {
     host: "127.0.0.1",
     port: 5180,

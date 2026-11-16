@@ -57,29 +57,6 @@ The updated frontend measures 45.70% statement and 46.76% function
 coverage, with integer floors of 41 and 43. Assistant coverage separately measures
 76.07% statements and 69.64% functions, with floors of 76 and 69.
 
-## Standalone region editor
-
-The separate `regions.html` entry ports `dev_tools/region_definer.py` from the same
-`dbfd67b` baseline. Run `pnpm --filter @unimatrix/poker-app dev:regions` for the
-Vite entry, or `pnpm --filter @unimatrix/poker-app tauri:regions` for the desktop
-window. It adds no Poker Lab rail destination or toolbar action.
-
-The editor retains the 80-region ordering, first-undefined selection, source-pixel
-rectangles, cursor-anchored zoom, middle-button or Alt-drag pan, image navigation,
-video seek and 1/30-second frame steps. Tab advances to the next undefined region;
-Delete or Backspace clears the selection; Space toggles video playback. Reference
-images and videos are selected with the file picker instead of a Flask-served
-screenshot directory. Media stays in browser object URLs. Export dimensions use
-the first sorted image, or the original 1920×1080 default for video-only media.
-
-Flat drafts autosave through the typed `/api/editor/regions` native adapter.
-Saves are serialized, failures remain visible, and export waits for pending saves
-before requesting the shared active nested JSON. Browser fixtures establish editor
-interaction and request behavior; actual XDG persistence and active region export
-remain native acceptance checks.
-
-Editor drafts and exports preserve signed and out-of-image coordinates as the original tool does. Capture admission validates active rectangles before reading pixels; the editor never silently clamps a drawn box.
-
 ## Requested presentation changes
 
 Review actions use shared icon buttons and checkboxes; Shift previews enlarge

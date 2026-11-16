@@ -546,9 +546,6 @@ impl LabService {
         if let Some(response) = self.ai_review.handle_configuration(request) {
             return response;
         }
-        if request.path.starts_with("/api/editor/") {
-            return capture::editor(self, request);
-        }
         if let Some(response) = self.gameplay.handle(self, request) {
             return response;
         }

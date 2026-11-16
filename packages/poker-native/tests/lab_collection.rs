@@ -492,49 +492,7 @@ fn watch_stop_remains_responsive_and_late_model_result_cannot_admit_capture() {
     assert_eq!(fs::read_dir(ctx.captures()).unwrap().count(), 0);
 }
 #[test]
-fn editor_draft_export_epochs_media_ranges_and_python_hash_match() {
-    let f = Fixture::new(false);
-    let current = f.service.capture.config().unwrap();
-    let draft =
-        json!({"regions":{"round_id":{"x":0,"y":0,"w":2,"h":2}},"screenWidth":8,"screenHeight":8});
-    let saved = f.req("POST", "/api/editor/regions", draft.clone());
-    assert_eq!(saved.status, 200);
-    assert_eq!(f.service.capture.config().unwrap().hash, current.hash);
-    let started = f.req(
-        "POST",
-        "/api/watch/start",
-        json!({"monitor":"TEST","queue_mode":"paged"}),
-    );
-    let mut export = draft;
-    export["export"] = json!(true);
-    let saved = f.req("POST", "/api/editor/regions", export);
-    assert_eq!(saved.status, 200, "{}", saved.body);
-    assert_ne!(f.service.capture.config().unwrap().hash, current.hash);
-    let stopped = f.req(
-        "POST",
-        "/api/watch/tick",
-        json!({"lease_id":started.body["lease_id"]}),
-    );
-    assert_eq!(stopped.status, 409);
-    let root = f.temp.path().join("data/screenshots");
-    fs::create_dir_all(&root).unwrap();
-    fs::write(root.join("example.mp4"), b"0123456789").unwrap();
-    let mut request = LabRequest {
-        method: "GET".into(),
-        path: "/api/editor/media/example.mp4".into(),
-        body: Value::Null,
-        query: BTreeMap::new(),
-        headers: BTreeMap::from([("Range".into(), "bytes=2-5".into())]),
-    };
-    let ranged = f.service.request(request.clone());
-    assert_eq!(ranged.status, 206);
-    assert_eq!(ranged.headers["Content-Range"], "bytes 2-5/10");
-    assert_eq!(
-        STANDARD.decode(ranged.body_base64.unwrap()).unwrap(),
-        b"2345"
-    );
-    request.headers.insert("Range".into(), "bytes=100-".into());
-    assert_eq!(f.service.request(request).status, 416);
+fn default_region_config_retains_python_hash_compatibility() {
     let temp = TempDir::new().unwrap();
     let config =
         capture::CaptureService::with_environment(temp.path().join("config"), HashMap::new())
@@ -726,16 +684,32 @@ fn nonpaged_immediate_capture_cache_clears_with_original_session_lifecycle() {
     assert!(!third.body["regions"].as_array().unwrap().is_empty());
 }
 #[test]
-fn editor_preserves_negative_and_outside_rectangles_but_capture_rejects_them() {
+fn capture_rejects_negative_round_id() {
     let f = Fixture::new(false);
-    let draft = json!({"regions":{"round_id":{"x":-12,"y":-3,"w":2,"h":2},"seat.0.name":{"x":100,"y":200,"w":3,"h":3}},"screenWidth":8,"screenHeight":8,"export":true});
-    let response = f.req("POST", "/api/editor/regions", draft);
-    assert_eq!(response.status, 200, "{}", response.body);
-    assert_eq!(response.body["native"]["round_id"]["x"], -12);
-    assert_eq!(response.body["native"]["seats"][0]["name"]["x"], 100);
-    let loaded = f.req("GET", "/api/editor/regions", Value::Null);
-    assert_eq!(loaded.status, 200);
-    assert_eq!(loaded.body["regions"]["round_id"]["x"], -12);
+    fs::write(
+        f.temp.path().join("config/regions.json"),
+        serde_json::to_vec(&json!({"round_id":{"x":-12,"y":-3,"w":2,"h":2},"seats":[{"name":{"x":100,"y":200,"w":3,"h":3}}],"screen_width":8,"screen_height":8})).unwrap(),
+    ).unwrap();
+    let capture = f.req("POST", "/api/capture", json!({"monitor":"TEST"}));
+    assert_eq!(capture.status, 400);
+    let ctx = f.service.registry.resolve("legacy").unwrap();
+    assert_eq!(
+        ctx.connection()
+            .unwrap()
+            .query_row("SELECT COUNT(*) FROM full_captures", [], |r| r
+                .get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
+}
+
+#[test]
+fn capture_rejects_outside_round_id() {
+    let f = Fixture::new(false);
+    fs::write(
+        f.temp.path().join("config/regions.json"),
+        serde_json::to_vec(&json!({"round_id":{"x":7,"y":0,"w":2,"h":2},"seats":[{"name":{"x":0,"y":0,"w":2,"h":2}}],"screen_width":8,"screen_height":8})).unwrap(),
+    ).unwrap();
     let capture = f.req("POST", "/api/capture", json!({"monitor":"TEST"}));
     assert_eq!(capture.status, 400);
     let ctx = f.service.registry.resolve("legacy").unwrap();

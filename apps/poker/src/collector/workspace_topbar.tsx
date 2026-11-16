@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { cn } from "@unimatrix/ui/public";
 import "./workspace_topbar.css";
 
-/** OCR Data's header geometry and control groups, shared by both workspaces. */
+/** OCR Benchmark's header geometry and control groups, shared by both workspaces. */
 export function WorkspaceTopbar({
   id,
   className,

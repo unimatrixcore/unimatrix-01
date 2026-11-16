@@ -1,4 +1,4 @@
-/* These dimensions come from OCR Data's recording dock and serve both tabs. */
+/* These dimensions come from OCR Benchmark's recording dock and serve both tabs. */
 .recording-native-slot { display:contents; }
 .record-dock.recording-panel { position:fixed;left:calc(50% + var(--rail-width)/2);bottom:max(20px,env(safe-area-inset-bottom));transform:translateX(-50%);z-index:80;width:min(680px,calc(100vw - var(--rail-width) - 32px));display:flex;flex-direction:column;gap:12px;padding:14px 16px;background:var(--popover);border:0;border-radius:0;box-shadow:0 14px 52px color-mix(in oklab,var(--background) 80%,transparent); }
 .recording-panel .capture-session-state { display:flex;align-items:baseline;justify-content:space-between;gap:8px 16px;min-width:0; }

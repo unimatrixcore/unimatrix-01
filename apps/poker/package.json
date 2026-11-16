@@ -16,9 +16,7 @@
     "test": "node ../../infra/scripts/run-local-workload.mjs -- sh -c 'pnpm run test:unit && pnpm run test:legacy && pnpm run test:smoke'",
     "test:unit": "node ../../infra/scripts/run-local-workload.mjs -- vitest run",
     "test:smoke": "node ../../infra/scripts/run-local-workload.mjs -- playwright test",
-    "test:legacy": "node ../../infra/scripts/run-local-workload.mjs -- node scripts/run-legacy-tests.mjs",
-    "dev:regions": "vite --open /regions.html",
-    "tauri:regions": "tauri dev -- --regions"
+    "test:legacy": "node ../../infra/scripts/run-local-workload.mjs -- node scripts/run-legacy-tests.mjs"
   },
   "dependencies": {
     "@remixicon/react": "^4.9.0",

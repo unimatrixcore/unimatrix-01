@@ -13,7 +13,7 @@ no import, copy or additional `unimatrix` directory is required. An optional
 backup/import helper is separate from normal startup. Tests use isolated
 directories; the path contract alone does not establish live-data acceptance.
 
-Poker Lab retains the poker-chip logo, the OCR Data and Gameplay rail sections, and the Collection / Labeling / Review / Database workflow. Proven behavior modules remain in JavaScript while the Vite entry, shared UI integration and native boundary use TypeScript. The UI imports this monorepo's actual shared components and styles.
+Poker Lab retains the poker-chip logo, the OCR Benchmark and Gameplay rail sections, and the Collection / Labeling / Review / Database workflow. Proven behavior modules remain in JavaScript while the Vite entry, shared UI integration and native boundary use TypeScript. The UI imports this monorepo's actual shared components and styles.
 
 The native boundary uses `lab_request` for operations and `lab_list_page` for
 catalog reads, with request and response schemas in `@unimatrix/shared`. Dataset

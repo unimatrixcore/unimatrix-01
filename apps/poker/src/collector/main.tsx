@@ -334,7 +334,7 @@ Object.defineProperty(window, "CollectorSharedUi", {
   },
   configurable: true,
 });
-// Gameplay owns its React tree; native DOM replacement is only for OCR Data.
+// Gameplay owns its React tree; native DOM replacement is only for OCR Benchmark.
 {
   enhance();
   installCropPreview();
