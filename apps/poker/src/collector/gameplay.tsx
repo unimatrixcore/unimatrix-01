@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge, Button, Input, ToggleGroup, ToggleGroupItem } from "@unimatrix/ui/public";
 import { NativeSelect } from "@unimatrix/ui/native-select";
 import {
@@ -12,11 +12,15 @@ import {
   Radio,
   ArrowLeft,
 } from "lucide-react";
+import { TooltipProvider, Tooltip, TooltipContent, TooltipTrigger } from "@unimatrix/ui/editor";
+import { GameplayAiReview } from "./gameplay-ai-review";
+import { gameplayErrorMessage } from "./gameplay-errors";
+import { RiRobot2Line } from "@remixicon/react";
 import { RecordingPanel, RecordingSource } from "./recording_panel";
 import { CaptureEmptyState } from "./capture_empty_state";
 import { WorkspaceTopbar } from "./workspace_topbar";
 import { RecordingTools } from "./recording_tools";
-import { GameplayPreview } from "./gameplay_preview";
+import { GameplayPreview, gameplayVerificationText } from "./gameplay_preview";
 import type { GameplayPreviewFrame } from "./gameplay_preview";
 import { CaptureListCard } from "./capture_list";
 import {
@@ -28,6 +32,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@unimatrix/ui/popover";
 import {
   pokerGameplaySessionSchema,
+  type PokerGameplayHand,
   pokerGameplayHandSchema,
   pokerGameplayFrameSummarySchema,
 } from "@unimatrix/shared";
@@ -47,16 +52,17 @@ type Session = {
   frame_count: number;
   hand_count: number;
 };
-type Hand = { hand_id: string | null; frame_count: number; first_at: string; last_at: string };
+type Hand = PokerGameplayHand;
 type Frame = GameplayPreviewFrame & {
   session_id: string;
   ocr_status: string;
   error: string | null;
+  effective_region_error?: string;
   thumbnail_url?: string;
   timings?: { total_ms: number; ocr_ms: number };
 };
 type Source = { name: string; label?: string; kind?: string };
-type View = "recording" | "games" | "frames";
+type View = "recording" | "games" | "frames" | "ai";
 const handId = (item: Hand) => (item.hand_id === null ? "null" : `hand:${item.hand_id}`);
 const frameId = (item: Frame) => item.id;
 const parseHand = (value: unknown): Hand => pokerGameplayHandSchema.parse(value);
@@ -67,17 +73,20 @@ const PREVIEW_INTERVAL_MS = 2000;
 const RECORDING_KEY = "poker:gameplay-recording";
 const time = (value: string) =>
   new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
+const errorMessage = gameplayErrorMessage;
 
-async function api<T>(path: string, data?: object): Promise<T> {
+async function api<T>(path: string, data?: object, signal?: AbortSignal): Promise<T> {
   const response = await fetch(
     `/api/gameplay${path}`,
     data === undefined
-      ? undefined
+      ? signal
+        ? { signal }
+        : undefined
       : {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(data),
+          ...(signal ? { signal } : {}),
         },
   );
   const result: unknown = await response.json();
@@ -104,10 +113,14 @@ export function Gameplay({ active, onLeave }: GameplayProps) {
   const [session, setSession] = useState<Session | null>(null);
   const [sessionId, setSessionId] = useState("");
   const [initialFrameReady, setInitialFrameReady] = useState(false);
+  const [aiReadySession, setAiReadySession] = useState("");
+  const [readinessRevision, setReadinessRevision] = useState(0);
   const startupFinished = useRef(window.location.pathname !== "/gameplay");
   const activeRef = useRef(active);
   activeRef.current = active;
   const [view, setView] = useState<View>(savedPlace.current?.view || "recording");
+  const viewRef = useRef(view);
+  viewRef.current = view;
   const [sources, setSources] = useState<Source[]>([]);
   const [source, setSource] = useState("");
   const [name, setName] = useState("");
@@ -146,6 +159,15 @@ export function Gameplay({ active, onLeave }: GameplayProps) {
   });
   sessionOptions.queryKey = [...sessionOptions.queryKey, catalogRevision];
   const sessionList = useBackgroundList(sessionOptions);
+  const recordingSessions = useMemo(
+    () =>
+      [...sessionList.items].sort(
+        (left, right) =>
+          Number(left.source.startsWith("legacy-benchmark:")) -
+          Number(right.source.startsWith("legacy-benchmark:")),
+      ),
+    [sessionList.items],
+  );
   const sessionPrefetch = usePrefetchList(sessionOptions);
   const archivedOptions = labListOptions({
     path: "/api/gameplay",
@@ -180,7 +202,28 @@ export function Gameplay({ active, onLeave }: GameplayProps) {
   const games = gameList.items.filter((item) => item.hand_id);
   const hands = gameList.items;
   const frames = frameList.items;
+  const currentViewReady =
+    view === "ai"
+      ? aiReadySession === sessionId
+      : view === "games"
+        ? gameList.isSuccess || gameList.isError
+        : view === "frames"
+          ? frameList.isSuccess || frameList.isError
+          : initialFrameReady;
   const total = readLabListMeta(frameList.data?.pages ?? [])?.total ?? frames.length;
+
+  useEffect(() => {
+    if (
+      hand !== undefined &&
+      gameList.isSuccess &&
+      !gameList.isFetching &&
+      !gameList.hasNextPage &&
+      !hands.some((item) => (item.hand_id ?? "") === hand)
+    ) {
+      setHand(undefined);
+      setReviewFrame(null);
+    }
+  }, [hand, hands, gameList.isSuccess, gameList.isFetching, gameList.hasNextPage]);
 
   function pause(releaseClaim = true) {
     sessionStorage.removeItem(RECORDING_KEY);
@@ -225,6 +268,7 @@ export function Gameplay({ active, onLeave }: GameplayProps) {
     currentSession.current = selected || null;
     latest.current = null;
     setSessionId(id);
+    setInitialFrameReady(false);
     setSession(selected || null);
     setLatestFrame(null);
     setReviewFrame(null);
@@ -318,18 +362,18 @@ export function Gameplay({ active, onLeave }: GameplayProps) {
         };
         const saved = savedPlace.current;
         const selected = sessionList.items.find((item) => item.id === saved?.sessionId);
-        if (selected || !saved?.sessionId) restore(selected || sessionList.items[0]);
+        if (selected || !saved?.sessionId) restore(selected || recordingSessions[0]);
         else
           void api<{ session: Session }>(`/sessions/${encodeURIComponent(saved.sessionId)}`)
             .then(({ session: restored }) => {
               restore(parseSession(restored));
             })
             .catch(() => {
-              restore(sessionList.items[0]);
+              restore(recordingSessions[0]);
             });
       }
     }
-  }, [sessionList.items, sessionId]);
+  }, [sessionList.items, recordingSessions, sessionId]);
   useEffect(() => {
     if (sessionId)
       rememberWorkspaceState({
@@ -341,7 +385,6 @@ export function Gameplay({ active, onLeave }: GameplayProps) {
     if (!active || startupFinished.current) return;
     const timer = setTimeout(() => {
       if (startupFinished.current || !activeRef.current) return;
-      startupFinished.current = true;
       setError("Loading the first view timed out. Retry the recordings list.");
       document.getElementById("loading-overlay")?.classList.remove("active");
     }, 10000);
@@ -355,7 +398,7 @@ export function Gameplay({ active, onLeave }: GameplayProps) {
       startupFinished.current ||
       (!sessionList.isError &&
         (!sessionList.isSuccess ||
-          (sessionList.items.length > 0 && (!sessionId || !initialFrameReady))))
+          (sessionList.items.length > 0 && (!sessionId || !currentViewReady))))
     )
       return;
     const controller = new AbortController();
@@ -363,8 +406,14 @@ export function Gameplay({ active, onLeave }: GameplayProps) {
     if (host)
       void waitForViewport(host, controller.signal).then((ready) => {
         if (controller.signal.aborted || startupFinished.current) return;
-        startupFinished.current = true;
-        if (!ready) setError("Loading the first view timed out. Retry the recordings list.");
+        if (ready) {
+          startupFinished.current = true;
+          setError((current) =>
+            current === "Loading the first view timed out. Retry the recordings list."
+              ? ""
+              : current,
+          );
+        } else setError("Loading the first view timed out. Retry the recordings list.");
         document.getElementById("loading-overlay")?.classList.remove("active");
       });
     return () => {
@@ -376,13 +425,13 @@ export function Gameplay({ active, onLeave }: GameplayProps) {
     sessionList.isSuccess,
     sessionList.items.length,
     sessionId,
-    initialFrameReady,
+    currentViewReady,
+    readinessRevision,
   ]);
 
-  // Load a saved session once. A completed capture already contains its new
-  // session summary; recording must not refetch history on every frame.
+  // Other views load their own data and must not wait for the recording preview.
   useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionId || view !== "recording") return;
     let cancelled = false;
     const epoch = acceptedEpoch.current;
     Promise.all([
@@ -391,8 +440,9 @@ export function Gameplay({ active, onLeave }: GameplayProps) {
       .then(([page]) => {
         if (cancelled || epoch !== acceptedEpoch.current) return;
         if (page.frames[0]) {
-          latest.current = page.frames[0];
-          setLatestFrame(page.frames[0]);
+          const frame = parseFrame(page.frames[0]);
+          latest.current = frame;
+          setLatestFrame(frame);
         }
       })
       .catch((error) => {
@@ -404,7 +454,7 @@ export function Gameplay({ active, onLeave }: GameplayProps) {
     return () => {
       cancelled = true;
     };
-  }, [sessionId]);
+  }, [sessionId, view]);
 
   // Only the displayed frame needs region readings. Metadata pages and captures
   // stay small; a late response can never annotate a different screenshot.
@@ -414,18 +464,35 @@ export function Gameplay({ active, onLeave }: GameplayProps) {
       return;
     }
     if (!pageVisible) return;
+    const frameId = visible.id;
+    const controller = new AbortController();
     let cancelled = false;
-    api<{ frame: Frame }>(`/frames/${visible.id}`)
-      .then((result) => {
-        if (!cancelled) setDetails(result.frame);
-      })
-      .catch((error) => {
-        if (!cancelled) setError(errorMessage(error));
-      });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    async function refresh() {
+      try {
+        const result = await api<{ frame: Frame }>(
+          `/frames/${frameId}`,
+          undefined,
+          controller.signal,
+        );
+        if (!cancelled) setDetails(parseFrame(result.frame));
+      } catch (error) {
+        if (!cancelled)
+          setError((current) =>
+            current.startsWith("Frame saved, but region details could not be loaded:")
+              ? current
+              : errorMessage(error),
+          );
+      }
+      if (!cancelled) timer = setTimeout(() => void refresh(), PREVIEW_INTERVAL_MS);
+    }
+    if (active) void refresh();
     return () => {
       cancelled = true;
+      controller.abort();
+      clearTimeout(timer);
     };
-  }, [visible?.id, pageVisible]);
+  }, [visible?.id, pageVisible, active, sessionId]);
 
   function capture(): Promise<void> {
     if (pendingCapture.current) return pendingCapture.current;
@@ -504,6 +571,12 @@ export function Gameplay({ active, onLeave }: GameplayProps) {
       const saved = result.session || { ...current, frame_count: current.frame_count + 1 };
       currentSession.current = saved;
       setSession(saved);
+      if (result.frame.effective_region_error) {
+        pause();
+        setError(
+          `Frame saved, but region details could not be loaded: ${result.frame.effective_region_error}`,
+        );
+      }
     } catch (error) {
       if (alive.current && !stopRequested.current) {
         pause();
@@ -592,6 +665,7 @@ export function Gameplay({ active, onLeave }: GameplayProps) {
     const key = (event: KeyboardEvent) => {
       if (
         !activeRef.current ||
+        viewRef.current !== "recording" ||
         event.defaultPrevented ||
         document.querySelector(
           '[data-recording-source-open="true"], [data-slot=popover-content][data-state=open]',
@@ -653,458 +727,521 @@ export function Gameplay({ active, onLeave }: GameplayProps) {
     visible && details && (details.id === visible.id || view === "recording") ? details : visible;
 
   return (
-    <section className="gameplay-workspace" aria-label="Gameplay recordings">
-      <WorkspaceTopbar
-        className="gameplay-topbar"
-        ariaLabel="Gameplay navigation"
-        leading={
-          <ToggleGroup
-            type="single"
-            value={view}
-            onValueChange={(value) => {
-              if (value) {
-                setView(value as View);
-                setReviewFrame(null);
-              }
-            }}
-            size="sm"
-            spacing={1}
-            aria-label="Gameplay views"
-          >
-            <ToggleGroupItem
-              value="recording"
-              className="dataset-icon"
-              aria-label="Recording view"
-              title="Recording"
+    <TooltipProvider delayDuration={250}>
+      <section
+        className={`gameplay-workspace ${view === "recording" ? "gameplay-recording-view" : ""}`}
+        aria-label="Gameplay recordings"
+        onLoadCapture={() => {
+          if (!startupFinished.current) setReadinessRevision((current) => current + 1);
+        }}
+        onErrorCapture={() => {
+          if (!startupFinished.current) setReadinessRevision((current) => current + 1);
+        }}
+      >
+        <WorkspaceTopbar
+          className="gameplay-topbar"
+          ariaLabel="Gameplay navigation"
+          leading={
+            <ToggleGroup
+              type="single"
+              value={view}
+              onValueChange={(value) => {
+                if (value) {
+                  if (view === "ai" && value !== "ai") setRevision((old) => old + 1);
+                  setView(value as View);
+                  setReviewFrame(null);
+                }
+              }}
+              size="sm"
+              spacing={1}
+              aria-label="Gameplay views"
             >
-              <Radio size={16} />
-            </ToggleGroupItem>
-            <ToggleGroupItem
-              {...gamePrefetch}
-              value="games"
-              className="dataset-icon"
-              aria-label="Games view"
-              title={`Games · ${session?.hand_count || 0}`}
-            >
-              <Layers size={16} />
-            </ToggleGroupItem>
-            <ToggleGroupItem
-              {...framePrefetch}
-              value="frames"
-              className="dataset-icon"
-              aria-label="Frames view"
-              title={`Frames · ${session?.frame_count || 0}`}
-            >
-              <Images size={16} />
-            </ToggleGroupItem>
-          </ToggleGroup>
-        }
-        actions={
-          <>
-            <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  aria-label="Recording session"
-                  disabled={busy || recording}
-                  {...sessionPrefetch}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <ToggleGroupItem
+                    value="recording"
+                    className="dataset-icon"
+                    aria-label="Recording view"
+                    title="Recording"
+                  >
+                    <Radio size={16} />
+                  </ToggleGroupItem>
+                </TooltipTrigger>
+                <TooltipContent>Recording</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <ToggleGroupItem
+                    {...gamePrefetch}
+                    value="games"
+                    className="dataset-icon"
+                    aria-label="Games view"
+                    title={`Games · ${session?.hand_count || 0}`}
+                  >
+                    <Layers size={16} />
+                  </ToggleGroupItem>
+                </TooltipTrigger>
+                <TooltipContent>Games</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <ToggleGroupItem
+                    {...framePrefetch}
+                    value="frames"
+                    className="dataset-icon"
+                    aria-label="Frames view"
+                    title={`Frames · ${session?.frame_count || 0}`}
+                  >
+                    <Images size={16} />
+                  </ToggleGroupItem>
+                </TooltipTrigger>
+                <TooltipContent>Frames</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <ToggleGroupItem value="ai" className="dataset-icon" aria-label="AI view">
+                    <RiRobot2Line size={16} aria-hidden="true" />
+                  </ToggleGroupItem>
+                </TooltipTrigger>
+                <TooltipContent>AI</TooltipContent>
+              </Tooltip>
+            </ToggleGroup>
+          }
+          actions={
+            <>
+              <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-label="Recording session"
+                    disabled={busy || recording}
+                    {...sessionPrefetch}
+                  >
+                    {session?.name ||
+                      (sessionList.isError
+                        ? "Recordings unavailable"
+                        : sessionList.isFetching
+                          ? "Loading recordings…"
+                          : "New recording")}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                  className="recording-settings-popover gameplay-session-menu"
+                  align="end"
                 >
-                  {session?.name || "New recording"}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="recording-settings-popover" align="end">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    selectSession("");
-                    setPickerOpen(false);
-                  }}
-                >
-                  New recording
-                </Button>
-                <InstantVirtualList
-                  ariaLabel="Recording sessions"
-                  items={sessionList.items}
-                  getItemId={sessionKey}
-                  rowHeight={40}
-                  height={240}
-                  isFetching={sessionList.isFetching}
-                  error={sessionList.error}
-                  hasNextPage={sessionList.hasNextPage}
-                  onEndReached={sessionList.onEndReached}
-                  onRetry={() => {
-                    void sessionList.refetch();
-                  }}
-                  renderItem={(item) => (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        selectSession(item.id, item);
-                        setPickerOpen(false);
-                      }}
-                    >
-                      {item.name} · {item.frame_count} frames
-                    </Button>
-                  )}
-                />
-              </PopoverContent>
-            </Popover>
-            {view === "frames" && (
-              <>
-                <Popover open={handPickerOpen} onOpenChange={setHandPickerOpen}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      aria-label="Recorded hand"
-                      {...gamePrefetch}
-                    >
-                      {hand === undefined
-                        ? "All frames"
-                        : hand === ""
-                          ? "Unassigned"
-                          : `Hand #${hand}`}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="recording-settings-popover" align="end">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setHand(undefined);
-                        setReviewFrame(null);
-                        setHandPickerOpen(false);
-                      }}
-                    >
-                      All frames
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setHand("");
-                        setReviewFrame(null);
-                        setHandPickerOpen(false);
-                      }}
-                    >
-                      Unassigned
-                    </Button>
-                    <InstantVirtualList
-                      ariaLabel="Recorded hands"
-                      items={hands}
-                      getItemId={handId}
-                      rowHeight={40}
-                      height={200}
-                      isFetching={gameList.isFetching}
-                      error={gameList.error}
-                      hasNextPage={gameList.hasNextPage}
-                      onEndReached={gameList.onEndReached}
-                      onRetry={() => {
-                        void gameList.refetch();
-                      }}
-                      renderItem={(item) => (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setHand(item.hand_id ?? "");
-                            setReviewFrame(null);
-                            setHandPickerOpen(false);
-                          }}
-                        >
-                          Hand #{item.hand_id} · {item.frame_count}
-                        </Button>
-                      )}
-                    />
-                  </PopoverContent>
-                </Popover>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      selectSession("");
+                      setPickerOpen(false);
+                    }}
+                  >
+                    New recording
+                  </Button>
+                  <InstantVirtualList
+                    ariaLabel="Recording sessions"
+                    items={recordingSessions}
+                    getItemId={sessionKey}
+                    rowHeight={40}
+                    height={240}
+                    isFetching={sessionList.isFetching}
+                    isFetchingNextPage={sessionList.isFetchingNextPage}
+                    error={sessionList.error}
+                    hasNextPage={sessionList.hasNextPage}
+                    onEndReached={sessionList.onEndReached}
+                    onRetry={() => {
+                      void sessionList.refetch();
+                    }}
+                    renderItem={(item) => (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title={item.name}
+                        onClick={() => {
+                          selectSession(item.id, item);
+                          setPickerOpen(false);
+                        }}
+                      >
+                        {item.name} · {item.frame_count} frames
+                      </Button>
+                    )}
+                  />
+                </PopoverContent>
+              </Popover>
+              {view === "frames" && (
+                <>
+                  <Popover open={handPickerOpen} onOpenChange={setHandPickerOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        aria-label="Recorded hand"
+                        {...gamePrefetch}
+                      >
+                        {hand === undefined
+                          ? "All frames"
+                          : hand === ""
+                            ? "Unassigned"
+                            : `Hand #${hand}`}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="recording-settings-popover" align="end">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setHand(undefined);
+                          setReviewFrame(null);
+                          setHandPickerOpen(false);
+                        }}
+                      >
+                        All frames
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setHand("");
+                          setReviewFrame(null);
+                          setHandPickerOpen(false);
+                        }}
+                      >
+                        Unassigned
+                      </Button>
+                      <InstantVirtualList
+                        ariaLabel="Recorded hands"
+                        items={hands}
+                        getItemId={handId}
+                        rowHeight={40}
+                        height={200}
+                        isFetching={gameList.isFetching}
+                        isFetchingNextPage={gameList.isFetchingNextPage}
+                        error={gameList.error}
+                        hasNextPage={gameList.hasNextPage}
+                        onEndReached={gameList.onEndReached}
+                        onRetry={() => {
+                          void gameList.refetch();
+                        }}
+                        renderItem={(item) => (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setHand(item.hand_id ?? "");
+                              setReviewFrame(null);
+                              setHandPickerOpen(false);
+                            }}
+                          >
+                            Hand #{item.hand_id} · {item.frame_count}
+                          </Button>
+                        )}
+                      />
+                    </PopoverContent>
+                  </Popover>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="dataset-icon"
+                    aria-label="Refresh frames"
+                    title="Refresh frames"
+                    onClick={() => {
+                      setRevision((value) => value + 1);
+                    }}
+                  >
+                    <RefreshCw size={16} />
+                  </Button>
+                </>
+              )}
+              {view === "games" && (
                 <Button
                   variant="ghost"
                   size="icon-sm"
                   className="dataset-icon"
-                  aria-label="Refresh frames"
-                  title="Refresh frames"
+                  aria-label="Refresh games"
+                  title="Refresh games"
                   onClick={() => {
                     setRevision((value) => value + 1);
                   }}
                 >
                   <RefreshCw size={16} />
                 </Button>
-              </>
-            )}
-            {view === "games" && (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="dataset-icon"
-                aria-label="Refresh games"
-                title="Refresh games"
-                onClick={() => {
-                  setRevision((value) => value + 1);
-                }}
-              >
-                <RefreshCw size={16} />
-              </Button>
-            )}
-            <RecordingTools
-              current={session}
-              disabled={busy || recording}
-              onNew={() => {
-                selectSession("");
-              }}
-              onRename={(name) => manageRecording(sessionId, "rename", { name })}
-              onArchive={() => manageRecording(sessionId, "archive")}
-              onRestore={(id) => manageRecording(id, "restore")}
-              archivedOptions={archivedOptions}
-              archivedPrefetch={archivedPrefetch}
-            />
-          </>
-        }
-      />
-      {error && (
-        <div className="gameplay-error" role="alert">
-          {error}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setError("");
-            }}
-            aria-label="Dismiss error"
-          >
-            ×
-          </Button>
-        </div>
-      )}
-      {view === "recording" ? (
-        shown ? (
-          <GameplayPreview frame={shown} isLive={recording} />
-        ) : (
-          <CaptureEmptyState
-            title="Waiting for a valid frame"
-            description="Choose a source, then capture once or start recording. Only valid poker-table frames are saved."
-          />
-        )
-      ) : view === "games" ? (
-        <section className="gameplay-games-view" aria-label="Saved games">
-          <div className="gameplay-frames-heading">
-            <h2>Games</h2>
-            <Badge variant="outline">{games.length} saved</Badge>
-          </div>
-          {!games.length && !gameList.isFetching && !gameList.error ? (
-            <CaptureEmptyState
-              title="No saved games"
-              description="Recorded games appear here, grouped by game ID. Switch to Recording to capture a poker table."
-            />
-          ) : (
-            <InstantVirtualGrid
-              ariaLabel="Recorded games"
-              items={games}
-              getItemId={handId}
-              rowHeight={110}
-              minColumnWidth={220}
-              height="min(65vh, 650px)"
-              isFetching={gameList.isFetching}
-              error={gameList.error}
-              hasNextPage={gameList.hasNextPage}
-              onEndReached={gameList.onEndReached}
-              onRetry={() => {
-                void gameList.refetch();
-              }}
-              renderItem={(item) => (
-                <CaptureListCard
-                  className="gameplay-game-card"
-                  label={`Game #${item.hand_id}`}
-                  id={`${item.frame_count} ${item.frame_count === 1 ? "frame" : "frames"}`}
-                  secondaryText={`${time(item.first_at)}–${time(item.last_at)}`}
-                  openLabel={`Open game ${item.hand_id}`}
-                  onOpen={() => {
-                    setHand(item.hand_id!);
-                    setReviewFrame(null);
-                    setView("frames");
-                  }}
-                />
               )}
-            />
-          )}
-        </section>
-      ) : reviewFrame && shown ? (
-        <>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Back to frames"
-            title="Back to frames"
-            onClick={() => {
-              setReviewFrame(null);
-            }}
-          >
-            <ArrowLeft size={16} />
-          </Button>
-          <GameplayPreview frame={shown} />
-        </>
-      ) : (
-        <section className="gameplay-frames-view" aria-label="Saved frames">
-          <div className="gameplay-frames-heading">
-            <h2>Frames</h2>
-            <Badge variant="outline">{total} saved</Badge>
-          </div>
-          {!frames.length && !frameList.isFetching && !frameList.error ? (
-            <CaptureEmptyState
-              title="No saved frames"
-              description="Valid captures appear here. Switch to Recording to capture a poker table."
-            />
-          ) : (
-            <InstantVirtualGrid
-              ariaLabel="Recorded frames"
-              items={frames}
-              getItemId={frameId}
-              rowHeight={200}
-              minColumnWidth={220}
-              height="min(65vh, 650px)"
-              isFetching={frameList.isFetching}
-              error={frameList.error}
-              hasNextPage={frameList.hasNextPage}
-              onEndReached={frameList.onEndReached}
-              onRetry={() => {
-                void frameList.refetch();
-              }}
-              renderItem={(item) => (
-                <CaptureListCard
-                  className="gameplay-frame-card"
-                  imageSrc={item.thumbnail_url || item.preview_url || item.image_url}
-                  alt={`Game #${item.hand_id} captured at ${time(item.captured_at)}`}
-                  label={time(item.captured_at)}
-                  id={`Game #${item.hand_id}`}
-                  openLabel={`Inspect frame ${time(item.captured_at)}`}
-                  onOpen={() => {
-                    setReviewFrame(item);
-                  }}
-                />
-              )}
-            />
-          )}
-        </section>
-      )}
-      <RecordingPanel
-        className="gameplay-recording-panel"
-        ariaLabel="Gameplay recording controls"
-        status={
-          recording
-            ? "Recording"
-            : busy
-              ? "Capturing…"
-              : stopped
-                ? "Stopped"
-                : session
-                  ? "Paused"
-                  : "Ready"
-        }
-        state={recording ? "watching" : busy ? "busy" : stopped || session ? "paused" : "ready"}
-        detail={
-          skipReason || `${session?.frame_count || 0} frames · ${session?.hand_count || 0} hands`
-        }
-        source={
-          <RecordingSource
-            label={sources.find((item) => item.name === source)?.label || source || "Choose source"}
-          >
-            <div className="capture-source-heading">
-              <strong>Capture source</strong>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                disabled={locked}
-                onClick={() => void refreshSources()}
-                aria-label="Refresh capture sources"
-                title="Refresh monitors and windows"
-              >
-                <RefreshCw size={16} />
-              </Button>
-            </div>
-            <div className="monitor-control">
-              <NativeSelect
-                aria-label="Capture source"
-                size="sm"
-                className="w-full"
-                value={source}
-                disabled={locked}
-                onChange={(event) => {
-                  setSource(event.target.value);
+              <RecordingTools
+                current={session}
+                disabled={busy || recording}
+                onNew={() => {
+                  selectSession("");
                 }}
-              >
-                <option value="" disabled>
-                  Choose source
-                </option>
-                {sources.map((item) => (
-                  <option key={item.name} value={item.name}>
-                    {item.label || item.name}
-                  </option>
-                ))}
-              </NativeSelect>
-            </div>
-            <label className="monitor-control">
-              Recording name
-              <Input
-                placeholder="Gameplay session"
-                value={session?.name || name}
-                disabled={locked}
-                onChange={(event) => {
-                  setName(event.target.value);
-                }}
+                onRename={(name) => manageRecording(sessionId, "rename", { name })}
+                onArchive={() => manageRecording(sessionId, "archive")}
+                onRestore={(id) => manageRecording(id, "restore")}
+                archivedOptions={archivedOptions}
+                archivedPrefetch={archivedPrefetch}
               />
-            </label>
-            <div className="watch-settings-fields">
-              <label>
-                Check every
-                <NativeSelect
-                  size="sm"
-                  value={interval}
-                  disabled={locked}
-                  onChange={(event) => {
-                    setIntervalMs(Number(event.target.value));
-                  }}
-                >
-                  <option value={1000}>1 second</option>
-                  <option value={2000}>2 seconds</option>
-                  <option value={5000}>5 seconds</option>
-                </NativeSelect>
-              </label>
-            </div>
-          </RecordingSource>
-        }
-        capture={
-          <Button
-            variant="outline"
-            disabled={busy || recording || !source || stopped}
-            onClick={() => void capture()}
-          >
-            <Camera size={16} />
-            Capture
-          </Button>
-        }
-        record={
-          <div className="record-toggle-slot">
+            </>
+          }
+        />
+        {(error || sessionList.error) && (
+          <div className="gameplay-error" role="alert">
+            {error || errorMessage(sessionList.error)}
             <Button
-              disabled={!source || stopped || (busy && !recording)}
-              onClick={() => void toggle()}
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setError("");
+              }}
+              aria-label="Dismiss error"
             >
-              {recording ? <Pause size={16} /> : <Circle size={16} />}{" "}
-              {recording ? "Pause" : "Record"}
+              ×
             </Button>
           </div>
-        }
-        stop={
-          session && !stopped ? (
-            <Button variant="outline" onClick={() => void stop()}>
-              <Square size={16} />
-              Stop
+        )}
+        {view === "ai" ? (
+          <GameplayAiReview
+            key={sessionId}
+            sessionId={sessionId}
+            frameCount={session?.frame_count || 0}
+            active={active}
+            onInitialReady={() => {
+              setAiReadySession(sessionId);
+            }}
+          />
+        ) : view === "recording" ? (
+          shown ? (
+            <GameplayPreview frame={shown} isLive={recording} />
+          ) : sessionId && !initialFrameReady ? (
+            <section
+              className="gameplay-recording-loading"
+              role="status"
+              aria-label="Recording preview loading"
+            >
+              <CaptureEmptyState title="Loading frame" />
+            </section>
+          ) : (
+            <CaptureEmptyState title="Waiting for a valid frame" />
+          )
+        ) : view === "games" ? (
+          <section className="gameplay-games-view" aria-label="Saved games">
+            <div className="gameplay-frames-heading">
+              <h2>Games</h2>
+              <Badge variant="outline">{games.length} saved</Badge>
+            </div>
+            {!games.length && !gameList.isFetching && !gameList.error ? (
+              <CaptureEmptyState title="No saved games" />
+            ) : (
+              <InstantVirtualGrid
+                ariaLabel="Recorded games"
+                items={games}
+                getItemId={handId}
+                rowHeight={110}
+                minColumnWidth={220}
+                height="min(65vh, 650px)"
+                isFetching={gameList.isFetching}
+                isFetchingNextPage={gameList.isFetchingNextPage}
+                error={gameList.error}
+                hasNextPage={gameList.hasNextPage}
+                onEndReached={gameList.onEndReached}
+                onRetry={() => {
+                  void gameList.refetch();
+                }}
+                renderItem={(item) => (
+                  <CaptureListCard
+                    className="gameplay-game-card"
+                    label={`Game #${item.hand_id}`}
+                    id={`${item.frame_count} ${item.frame_count === 1 ? "frame" : "frames"}`}
+                    secondaryText={`${time(item.first_at)}–${time(item.last_at)} · ${gameplayVerificationText(item.verification)}`}
+                    openLabel={`Open game ${item.hand_id}`}
+                    onOpen={() => {
+                      setHand(item.hand_id!);
+                      setReviewFrame(null);
+                      setView("frames");
+                    }}
+                  />
+                )}
+              />
+            )}
+          </section>
+        ) : reviewFrame && shown ? (
+          <>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Back to frames"
+              title="Back to frames"
+              onClick={() => {
+                setReviewFrame(null);
+              }}
+            >
+              <ArrowLeft size={16} />
             </Button>
-          ) : undefined
-        }
-      />
-    </section>
+            <GameplayPreview frame={shown} />
+          </>
+        ) : (
+          <section className="gameplay-frames-view" aria-label="Saved frames">
+            <div className="gameplay-frames-heading">
+              <h2>Frames</h2>
+              <Badge variant="outline">{total} saved</Badge>
+            </div>
+            {!frames.length && !frameList.isFetching && !frameList.error ? (
+              <CaptureEmptyState title="No saved frames" />
+            ) : (
+              <InstantVirtualGrid
+                ariaLabel="Recorded frames"
+                items={frames}
+                getItemId={frameId}
+                rowHeight={200}
+                minColumnWidth={220}
+                height="min(65vh, 650px)"
+                isFetching={frameList.isFetching}
+                isFetchingNextPage={frameList.isFetchingNextPage}
+                error={frameList.error}
+                hasNextPage={frameList.hasNextPage}
+                onEndReached={frameList.onEndReached}
+                onRetry={() => {
+                  void frameList.refetch();
+                }}
+                renderItem={(item) => (
+                  <CaptureListCard
+                    className="gameplay-frame-card"
+                    imageSrc={item.thumbnail_url || item.preview_url || item.image_url}
+                    alt={`Game #${item.hand_id} captured at ${time(item.captured_at)}`}
+                    label={time(item.captured_at)}
+                    id={`Game #${item.hand_id}`}
+                    secondaryText={gameplayVerificationText(item.verification)}
+                    openLabel={`Inspect frame ${time(item.captured_at)}`}
+                    onOpen={() => {
+                      setReviewFrame(item);
+                    }}
+                  />
+                )}
+              />
+            )}
+          </section>
+        )}
+        {view === "recording" && (
+          <RecordingPanel
+            className="gameplay-recording-panel"
+            ariaLabel="Gameplay recording controls"
+            status={
+              recording
+                ? "Recording"
+                : busy
+                  ? "Capturing…"
+                  : stopped
+                    ? "Stopped"
+                    : session
+                      ? "Paused"
+                      : "Ready"
+            }
+            state={recording ? "watching" : busy ? "busy" : stopped || session ? "paused" : "ready"}
+            detail={
+              skipReason ||
+              `${session?.frame_count || 0} frames · ${session?.hand_count || 0} hands`
+            }
+            source={
+              <RecordingSource
+                label={
+                  sources.find((item) => item.name === source)?.label || source || "Choose source"
+                }
+              >
+                <div className="capture-source-heading">
+                  <strong>Capture source</strong>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    disabled={locked}
+                    onClick={() => void refreshSources()}
+                    aria-label="Refresh capture sources"
+                    title="Refresh monitors and windows"
+                  >
+                    <RefreshCw size={16} />
+                  </Button>
+                </div>
+                <div className="monitor-control">
+                  <NativeSelect
+                    aria-label="Capture source"
+                    size="sm"
+                    className="w-full"
+                    value={source}
+                    disabled={locked}
+                    onChange={(event) => {
+                      setSource(event.target.value);
+                    }}
+                  >
+                    <option value="" disabled>
+                      Choose source
+                    </option>
+                    {sources.map((item) => (
+                      <option key={item.name} value={item.name}>
+                        {item.label || item.name}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </div>
+                <label className="monitor-control">
+                  Recording name
+                  <Input
+                    placeholder="Gameplay session"
+                    value={session?.name || name}
+                    disabled={locked}
+                    onChange={(event) => {
+                      setName(event.target.value);
+                    }}
+                  />
+                </label>
+                <div className="watch-settings-fields">
+                  <label>
+                    Check every
+                    <NativeSelect
+                      size="sm"
+                      value={interval}
+                      disabled={locked}
+                      onChange={(event) => {
+                        setIntervalMs(Number(event.target.value));
+                      }}
+                    >
+                      <option value={1000}>1 second</option>
+                      <option value={2000}>2 seconds</option>
+                      <option value={5000}>5 seconds</option>
+                    </NativeSelect>
+                  </label>
+                </div>
+              </RecordingSource>
+            }
+            capture={
+              <Button
+                variant="outline"
+                disabled={busy || recording || !source || stopped}
+                onClick={() => void capture()}
+              >
+                <Camera size={16} />
+                Capture
+              </Button>
+            }
+            record={
+              <div className="record-toggle-slot">
+                <Button
+                  disabled={!source || stopped || (busy && !recording)}
+                  onClick={() => void toggle()}
+                >
+                  {recording ? <Pause size={16} /> : <Circle size={16} />}{" "}
+                  {recording ? "Pause" : "Record"}
+                </Button>
+              </div>
+            }
+            stop={
+              session && !stopped ? (
+                <Button variant="outline" onClick={() => void stop()}>
+                  <Square size={16} />
+                  Stop
+                </Button>
+              ) : undefined
+            }
+          />
+        )}
+      </section>
+    </TooltipProvider>
   );
 }

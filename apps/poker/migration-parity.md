@@ -16,8 +16,8 @@ same render path requires that function unconditionally.
 
 `test:legacy` rebuilds these React adapters for the original JavaScript VM tests
 and runs them against the migrated controller files in a temporary fixture.
-The fixture reconstructs the classic-script bootstrap expected by those tests;
-the app itself loads the adapters before the controllers through its Vite entry.
+The fixture reconstructs the classic-script bootstrap expected by those tests.
+The active app does not start the archived Benchmark controllers.
 The Flask route integration test is excluded from this JavaScript suite. Native
 route acceptance belongs to the Rust backend checks.
 
@@ -30,15 +30,6 @@ retains `webview/poker-lab` there. Existing datasets, model artifacts and
 configuration are reused directly, with no mandatory import or copy. Tests
 override these roots with isolated directories. Matching defaults is a storage
 contract; live-data and native WebView acceptance require their own checks.
-
-## Inherited dataset-switch limitation
-
-Creating or switching a dataset can leave Capture and Record disabled until a
-controller redraw or page reload. This reproduces with the retained controller
-in the isolated browser fixture: `switchDataset()` redraws while
-`datasetSwitching` is true, then clears the flag in `finally` without another
-redraw. The migration preserves this source behavior. Reload Collection after
-switching if the controls remain disabled.
 
 Browser fixtures and VM tests exercise the UI and its persistence requests.
 They do not establish live monitor/window capture or OCR accuracy.
@@ -53,9 +44,7 @@ bundle, and browser tests check the integrated branding, navigation, controls
 and workspace behavior. Native route and physical capture checks remain
 separate from fixture UI evidence.
 
-The updated frontend measures 45.70% statement and 46.76% function
-coverage, with integer floors of 41 and 43. Assistant coverage separately measures
-76.07% statements and 69.64% functions, with floors of 76 and 69.
+Each workspace's Vitest configuration owns its coverage floors.
 
 ## Requested presentation changes
 
@@ -65,10 +54,13 @@ the branch selector's extra active-branch line are omitted. The retained watch
 suite's summary-text assertion now checks the intentionally removed element;
 its dynamic interval-status assertion remains.
 
-Gameplay derives suit and in-play metadata from the recording's original pixels
-and saved configuration. It hides only seats classified explicitly out of play;
-unknown evidence remains visible. Ranks and recorded OCR rows are unchanged.
-These read-time annotations are cached and do not relabel recordings.
+Gameplay previews use the effective current region profile and readings when
+provided by the native service. Original frame OCR and configuration snapshots
+remain available as evidence. Legacy color metadata is mapped to the canonical
+visual seat before deciding which inactive seats to hide; unknown seats remain
+visible. Fixture checks cover geometry replacement, separate suit labels and
+Recording-only controls. Live region alignment and paid verification require
+their own acceptance run.
 
 The shared font is GeistMono Nerd Font. Browser checks verify the self-hosted
 font assets and actual Nerd glyph rendering. Native development checks verify

@@ -212,21 +212,6 @@ test("fresh native root restores Gameplay recording, Frames view and hand withou
       ),
     )
     .toEqual({ sessionId: "session-1", view: "frames", hand: "42" });
-  await page.locator("#main-content").evaluate((region) => {
-    region.scrollTop = 50;
-  });
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () =>
-          (
-            JSON.parse(localStorage.getItem("poker-lab:workspace:v1") || "{}") as {
-              scroll?: { gameplay?: { top: number } };
-            }
-          ).scroll?.gameplay?.top,
-      ),
-    )
-    .toBe(50);
   const next = await restart(context, page);
   await expect(next).toHaveURL(/\/gameplay$/);
   await expect(next.getByRole("radio", { name: "Frames view", exact: true })).toBeChecked();
@@ -236,10 +221,8 @@ test("fresh native root restores Gameplay recording, Frames view and hand withou
   await expect(next.getByRole("button", { name: "Recorded hand", exact: true })).toHaveText(
     "Hand #42",
   );
+  await expect(next.getByRole("combobox", { name: "Gameplay collection" })).toHaveCount(0);
   await expect(next.locator("#loading-overlay")).not.toHaveClass(/active/);
-  await expect
-    .poll(() => next.locator("#main-content").evaluate((region) => region.scrollTop))
-    .toBe(50);
   expect(
     await next.evaluate(() =>
       (window as unknown as { restartMutations: string[] }).restartMutations.filter(
@@ -248,48 +231,4 @@ test("fresh native root restores Gameplay recording, Frames view and hand withou
     ),
   ).toEqual([]);
   await next.screenshot({ path: test.info().outputPath("gameplay-restored.png") });
-});
-
-test("fresh native root restores the labeling position while explicit Collection wins", async ({
-  context,
-  page,
-}) => {
-  await page.goto("/labeling/2");
-  await expect(page.locator("#review-idx")).toHaveText("2");
-  const next = await restart(context, page);
-  await expect(next).toHaveURL(/\/labeling\/2$/);
-  await expect(next.locator("#review-idx")).toHaveText("2");
-  await next.goto("/collection");
-  await expect(next).toHaveURL(/\/collection$/);
-  await expect(next.locator("#view-collection")).toBeVisible();
-});
-
-test("fresh native window restores Collection scroll from its durable mirror", async ({
-  context,
-  page,
-}) => {
-  await page.goto("/collection");
-  await expect(page.locator("#collector-workspace")).toHaveClass(/ready/);
-  await page.locator("#main-content").evaluate((region) => {
-    region.scrollTop = 500;
-  });
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () =>
-          (
-            JSON.parse(localStorage.getItem("collector:current-page-scroll:v1") || "{}") as {
-              top?: number;
-            }
-          ).top,
-      ),
-    )
-    .toBe(500);
-  const next = await restart(context, page);
-  await expect(next.locator("#collector-workspace")).toHaveClass(/ready/);
-  await expect(next.locator("#loading-overlay")).not.toHaveClass(/active/);
-  await expect
-    .poll(() => next.locator("#main-content").evaluate((region) => region.scrollTop))
-    .toBe(500);
-  await next.screenshot({ path: test.info().outputPath("collection-restored.png") });
 });

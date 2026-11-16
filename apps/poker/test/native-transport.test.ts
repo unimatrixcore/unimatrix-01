@@ -21,6 +21,26 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 describe("Poker Lab native request transport", () => {
+  it("recovers summary GET conflicts but never retries review decisions", async () => {
+    const failure = {
+      status: 409,
+      headers: {},
+      body: { error: "Frame evidence changed during summary read; retry" },
+    };
+    const invoke = vi
+      .fn()
+      .mockResolvedValueOnce(failure)
+      .mockResolvedValueOnce({ status: 200, headers: {}, body: {} });
+    const nativeFetch = createLabFetch(invoke, vi.fn(), "http://tauri.localhost/");
+    expect((await nativeFetch("/api/gameplay/sessions/recording")).status).toBe(200);
+    expect(invoke).toHaveBeenCalledTimes(2);
+    invoke.mockClear();
+    invoke.mockResolvedValue(failure);
+    expect(
+      (await nativeFetch("/api/gameplay/ai/review", { method: "POST", body: "{}" })).status,
+    ).toBe(409);
+    expect(invoke).toHaveBeenCalledTimes(1);
+  });
   it("preserves path, query, dataset scope, JSON body and native response status", async () => {
     const requests: PokerLabRequest[] = [];
     const invoke = vi.fn(async (request: PokerLabRequest) => {

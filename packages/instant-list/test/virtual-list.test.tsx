@@ -244,3 +244,37 @@ it("uses an external scroll owner with a content offset and no nested viewport",
   expect(disconnect).toHaveBeenCalled();
   vi.unstubAllGlobals();
 });
+
+it("anchors initial loading and refresh locally while retaining mounted rows and scroll", async () => {
+  geometry();
+  const view = (items: number[], isFetching: boolean, isFetchingNextPage: boolean) => (
+    <InstantVirtualList
+      items={items}
+      getItemId={(item) => item}
+      renderItem={(item) => <span>Row {item}</span>}
+      rowHeight={40}
+      height={400}
+      isFetching={isFetching}
+      isFetchingNextPage={isFetchingNextPage}
+    />
+  );
+  const { rerender, container } = render(view([], true, false));
+  expect(screen.getByRole("status").textContent).toBe("Loading…");
+  expect(screen.getByRole("status").style.top).toBe("8px");
+  expect(screen.getByRole("status").style.bottom).toBe("");
+  rerender(view([1, 2], false, false));
+  await waitFor(() => {
+    expect(screen.getAllByRole("listitem").length).toBeGreaterThan(0);
+  });
+  const row = container.querySelector('[data-index="0"]');
+  screen.getByRole("list").scrollTop = 120;
+  rerender(view([1, 2], true, false));
+  expect(screen.getByRole("status").textContent).toBe("Refreshing…");
+  expect(screen.getByRole("status").style.top).toBe("8px");
+  expect(container.querySelector('[data-index="0"]')).toBe(row);
+  expect(screen.getByRole("list").scrollTop).toBe(120);
+  rerender(view([1, 2], true, true));
+  expect(screen.getByRole("status").textContent).toBe("Loading more…");
+  expect(screen.getByRole("status").style.bottom).toBe("4px");
+  expect(screen.getByRole("status").style.top).toBe("");
+});

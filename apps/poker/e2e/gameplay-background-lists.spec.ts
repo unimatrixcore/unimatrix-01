@@ -7,6 +7,118 @@ async function installFixtureWith(page: Page, setup: () => void) {
   });
 }
 
+test("Games and Frames recover from summary read conflicts without manual refresh", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await installFixtureWith(page, () => {
+    const previous = window.__POKER_LAB_TEST_INVOKE__!;
+    const calls: Record<string, number> = {};
+    const writes: string[] = [];
+    Object.assign(window, { summaryRecovery: { calls, writes } });
+    window.__POKER_LAB_TEST_INVOKE__ = async (request) => {
+      if (request.method !== "GET") writes.push(request.path);
+      const success = (body: unknown) => ({ status: 200, headers: {}, body });
+      if (request.path === "/api/gameplay/frames/retry-frame")
+        return success({
+          frame: {
+            id: "retry-frame",
+            session_id: "retry",
+            hand_id: "123",
+            captured_at: "2026-11-13T00:00:00Z",
+            ocr_status: "complete",
+            error: null,
+            width: 100,
+            height: 50,
+            image_url:
+              "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='50'/%3E",
+          },
+        });
+      if (request.path === "/api/gameplay")
+        return success({
+          sessions:
+            request.query.archived === "1"
+              ? []
+              : [
+                  {
+                    id: "retry",
+                    name: "Retry recording",
+                    source: "TEST-1",
+                    status: "stopped",
+                    interval_ms: 1000,
+                    created_at: "2026-11-13T00:00:00Z",
+                    frame_count: 1,
+                    hand_count: 1,
+                  },
+                ],
+        });
+      if (/^\/api\/gameplay\/sessions\/retry(?:\/frames)?$/.test(request.path)) {
+        const key = `${request.path}:${request.query.background_page === "1" ? "paged" : "direct"}`;
+        calls[key] = (calls[key] ?? 0) + 1;
+        if (calls[key] <= 2)
+          return {
+            status: 409,
+            headers: {},
+            body: { error: "Frame evidence changed during summary read; retry" },
+          };
+        const items = request.path.endsWith("/frames")
+          ? [
+              {
+                id: "retry-frame",
+                session_id: "retry",
+                hand_id: "123",
+                captured_at: "2026-11-13T00:00:00Z",
+                ocr_status: "complete",
+                error: null,
+                width: 100,
+                height: 50,
+                image_url:
+                  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='50'/%3E",
+              },
+            ]
+          : [
+              {
+                hand_id: "123",
+                frame_count: 1,
+                first_at: "2026-11-13T00:00:00Z",
+                last_at: "2026-11-13T00:00:00Z",
+              },
+            ];
+        return success({
+          items,
+          hands: items,
+          frames: items,
+          nextCursor: null,
+          hasMore: false,
+          total: 1,
+          meta: {},
+        });
+      }
+      return previous(request);
+    };
+  });
+  await page.goto("/gameplay");
+  await page.getByRole("radio", { name: "Games view" }).click();
+  await expect(page.getByRole("button", { name: /Open game/ }).first()).toBeVisible();
+  await page.getByRole("radio", { name: "Frames view" }).click();
+  await expect(page.getByRole("button", { name: /Inspect frame/ }).first()).toBeVisible();
+  await expect(page.locator(".gameplay-error")).toHaveCount(0);
+  const result = await page.evaluate(
+    () =>
+      (
+        window as unknown as {
+          summaryRecovery: { calls: Record<string, number>; writes: string[] };
+        }
+      ).summaryRecovery,
+  );
+  expect(result.calls["/api/gameplay/sessions/retry:paged"]).toBe(3);
+  expect(result.calls["/api/gameplay/sessions/retry/frames:paged"]).toBe(3);
+  expect(result.writes).toEqual([]);
+  await page.screenshot({ path: "test-results/summary-conflict-recovered.png" });
+  expect(errors).toEqual([]);
+});
+
 test("Gameplay pages eagerly, preserves its snapshot and manages catalogs", async ({ page }) => {
   await installFixtureWith(page, () => {
     const previous = window.__POKER_LAB_TEST_INVOKE__!;
@@ -146,14 +258,17 @@ test("Gameplay pages eagerly, preserves its snapshot and manages catalogs", asyn
     .getByRole("button", { name: /Inspect frame/ })
     .first()
     .click();
+  await expect(page.getByRole("button", { name: "Back to frames" })).toBeVisible();
+  await expect(page.getByText("Hand #h0", { exact: true }).first()).toBeVisible();
+  await page.getByRole("button", { name: "Back to frames" }).click();
+  await page.getByRole("radio", { name: "Recording view" }).click();
   await page.getByRole("button", { name: "Capture", exact: true }).click();
   await expect
     .poll(() =>
       page.evaluate(() => (window as unknown as { gameplayCaptures: number }).gameplayCaptures),
     )
     .toBe(1);
-  await expect(page.getByRole("button", { name: "Back to frames" })).toBeVisible();
-  await expect(page.getByText("Hand #h0", { exact: true }).first()).toBeVisible();
+  await page.getByRole("radio", { name: "Frames view" }).click();
   expect(
     await page.evaluate(
       () =>
@@ -162,7 +277,6 @@ test("Gameplay pages eagerly, preserves its snapshot and manages catalogs", asyn
         ).length,
     ),
   ).toBe(beforeCapture);
-  await page.getByRole("button", { name: "Back to frames" }).click();
   await page.getByRole("button", { name: "Refresh frames" }).click();
   await expect
     .poll(() =>
@@ -258,4 +372,200 @@ test("Gameplay keeps startup visible until its first recordings page resolves", 
     (window as unknown as { releaseGameplayStartup: () => void }).releaseGameplayStartup();
   });
   await expect(page.locator("#loading-overlay")).toBeHidden();
+});
+
+test("one recording menu includes Tigard and both legacy imports and preserves navigation", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") errors.push(message.text());
+  });
+  await installFixtureWith(page, () => {
+    const previous = window.__POKER_LAB_TEST_INVOKE__!;
+    const sessions = [
+      { id: "tigard", name: "11/13/26 - Tigard #17", frame_count: 332 },
+      { id: "legacy-a", name: "Legacy recording A", frame_count: 3000 },
+      {
+        id: "legacy-b",
+        name: "Legacy recording B with a deliberately long source dataset name for overflow coverage",
+        frame_count: 2545,
+      },
+      { id: "archived", name: "Archived recording", frame_count: 10 },
+      { id: "archived-2", name: "Archived recording 2", frame_count: 80 },
+      { id: "archived-3", name: "Archived recording 3", frame_count: 100 },
+      { id: "archived-4", name: "Archived recording 4", frame_count: 101 },
+    ].map((item, index) => ({
+      ...item,
+      collection_id: item.id.startsWith("legacy-") ? "legacy" : "current",
+      archived: item.id.startsWith("archived"),
+      source: item.id.startsWith("legacy-") ? `legacy-benchmark:${item.id}` : "TEST-1",
+      interval_ms: 1000,
+      status: "stopped",
+      created_at: index === 0 ? "2026-11-13T00:00:00Z" : "2026-11-15T00:00:00Z",
+      hand_count: 1,
+    }));
+    if (!localStorage.getItem("poker-lab:workspace:v1"))
+      localStorage.setItem(
+        "poker-lab:workspace:v1",
+        JSON.stringify({
+          gameplay: { sessionId: "tigard", collectionId: "legacy", view: "games" },
+        }),
+      );
+    const requests = JSON.parse(
+      localStorage.getItem("recording-menu-requests") || "[]",
+    ) as string[];
+    Object.assign(window, { recordingMenuRequests: requests });
+    window.__POKER_LAB_TEST_INVOKE__ = async (request) => {
+      const success = (body: unknown) => ({ status: 200, headers: {}, body });
+      if (!request.path.startsWith("/api/gameplay")) return previous(request);
+      requests.push(`${request.method} ${request.path} ${JSON.stringify(request.query)}`);
+      localStorage.setItem("recording-menu-requests", JSON.stringify(requests));
+      if (request.path === "/api/gameplay/collections")
+        return success({
+          collections: [
+            {
+              id: "current",
+              name: "Gameplay",
+              kind: "recordings",
+              archived: false,
+              recording_count: 1,
+              frame_count: 332,
+            },
+            {
+              id: "legacy",
+              name: "LegacyBenchmark",
+              kind: "recordings",
+              archived: false,
+              recording_count: 2,
+              frame_count: 5545,
+            },
+          ],
+          default_collection_id: "current",
+        });
+      if (request.path === "/api/gameplay") {
+        const items = [...sessions]
+          .sort((left, right) => right.created_at.localeCompare(left.created_at))
+          .filter(
+            (item) =>
+              item.archived === (request.query.archived === "1") &&
+              (!request.query.collection_id || item.collection_id === request.query.collection_id),
+          );
+        return success({ items, nextCursor: null, hasMore: false, total: items.length, meta: {} });
+      }
+      const selected = sessions.find((item) =>
+        request.path.startsWith(`/api/gameplay/sessions/${item.id}`),
+      );
+      if (selected) {
+        const frame = {
+          id: `${selected.id}-frame`,
+          session_id: selected.id,
+          hand_id: selected.id,
+          captured_at: "2026-11-13T00:00:00Z",
+          ocr_status: "complete",
+          error: null,
+          image_url:
+            "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='50'/%3E",
+          width: 100,
+          height: 50,
+        };
+        if (request.path.endsWith("/frames"))
+          return success({
+            items: [frame],
+            frames: [frame],
+            nextCursor: null,
+            hasMore: false,
+            total: 1,
+            meta: {},
+          });
+        return success({
+          session: selected,
+          items: [
+            {
+              hand_id: selected.id,
+              frame_count: 1,
+              first_at: selected.created_at,
+              last_at: selected.created_at,
+            },
+          ],
+          nextCursor: null,
+          hasMore: false,
+          total: 1,
+          meta: {},
+        });
+      }
+      return previous(request);
+    };
+  });
+  await page.goto("/gameplay");
+  const picker = page.getByRole("button", { name: "Recording session", exact: true });
+  await expect(picker).toHaveText("11/13/26 - Tigard #17");
+  await expect(page.getByLabel("Gameplay collection", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Recorded games")).toBeVisible();
+  await picker.click();
+  const menu = page.getByLabel("Recording sessions", { exact: true });
+  await expect(menu.getByRole("button")).toHaveText([
+    "11/13/26 - Tigard #17 · 332 frames",
+    "Legacy recording A · 3000 frames",
+    "Legacy recording B with a deliberately long source dataset name for overflow coverage · 2545 frames",
+  ]);
+  await expect(menu.getByText("Archived recording")).toHaveCount(0);
+  await page.screenshot({ path: ".notes/recording-menu-desktop.png" });
+  for (const name of [
+    "Legacy recording A",
+    "Legacy recording B with a deliberately long source dataset name for overflow coverage",
+  ]) {
+    await menu.getByRole("button", { name: new RegExp(name) }).click();
+    await expect(picker).toHaveText(name);
+    await expect(page.getByRole("button", { name: /Open game/ }).first()).toBeVisible();
+    await expect(
+      page.getByText(`Game #${name.endsWith("A") ? "legacy-a" : "legacy-b"}`, { exact: true }),
+    ).toBeVisible();
+    await page.getByRole("radio", { name: "Frames view" }).click();
+    await expect(page.getByRole("button", { name: /Inspect frame/ }).first()).toBeVisible();
+    await page.reload();
+    await expect(picker).toHaveText(name);
+    await expect(page.getByRole("radio", { name: "Frames view" })).toBeChecked();
+    await expect(page.getByRole("button", { name: /Inspect frame/ }).first()).toBeVisible();
+    await page.getByRole("radio", { name: "Games view" }).click();
+    await page.reload();
+    await expect(picker).toHaveText(name);
+    await expect(page.getByLabel("Recorded games")).toBeVisible();
+    await picker.click();
+  }
+  await menu.getByRole("button", { name: /11\/13\/26 - Tigard #17/ }).click();
+  await expect(picker).toHaveText("11/13/26 - Tigard #17");
+  await page.reload();
+  await expect(picker).toHaveText("11/13/26 - Tigard #17");
+  await expect(page.getByLabel("Recorded games")).toBeVisible();
+  for (const width of [700, 390]) {
+    await page.setViewportSize({ width, height: 720 });
+    await picker.click();
+    const legacyButton = menu.getByRole("button", { name: /Legacy recording B/ });
+    await expect(legacyButton).toBeVisible();
+    await expect(legacyButton).toHaveAttribute(
+      "title",
+      "Legacy recording B with a deliberately long source dataset name for overflow coverage",
+    );
+    expect(
+      await legacyButton.evaluate((element) => ({
+        clipped: element.scrollWidth > element.clientWidth,
+        overflow: getComputedStyle(element).textOverflow,
+      })),
+    ).toEqual({ clipped: true, overflow: "ellipsis" });
+    const bounds = await menu.boundingBox();
+    expect(bounds && bounds.x >= 0 && bounds.x + bounds.width <= width).toBeTruthy();
+    await page.screenshot({ path: `.notes/recording-menu-${width}.png` });
+    await page.keyboard.press("Escape");
+  }
+  await page.getByRole("radio", { name: "Recording view" }).click();
+  await expect(page.locator(".gameplay-recording-panel").getByRole("radio")).toHaveCount(0);
+  const requests = await page.evaluate(
+    () => (window as unknown as { recordingMenuRequests: string[] }).recordingMenuRequests,
+  );
+  expect(requests.some((item) => item.includes('"collection_id"'))).toBe(false);
+  expect(requests.some((item) => /\/ai\//.test(item))).toBe(false);
+  expect(requests.some((item) => item.startsWith("POST"))).toBe(false);
+  expect(errors).toEqual([]);
 });

@@ -11,14 +11,14 @@ export function CaptureEmptyState({
 }: {
   id?: string;
   title: string;
-  description: string;
+  description?: string;
   className?: string;
 }) {
   return (
     <div id={id} className={cn("placeholder-box capture-empty-state", className)}>
       <Camera size={48} strokeWidth={1.5} aria-hidden="true" />
       <h3>{title}</h3>
-      <p>{description}</p>
+      {description && <p>{description}</p>}
     </div>
   );
 }

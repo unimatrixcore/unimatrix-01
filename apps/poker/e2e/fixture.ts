@@ -133,6 +133,23 @@ export function installLabFixture() {
       });
     if (request.path === "/api/gameplay/sources")
       return success({ sources: [{ name: "TEST-1", label: "TEST-1", kind: "monitor" }] });
+    if (request.path === "/api/gameplay/collections")
+      return success({
+        collections: [
+          {
+            id: "current",
+            name: "Current games",
+            kind: "recordings",
+            archived: false,
+            recording_count: 0,
+            frame_count: 0,
+          },
+        ],
+        default_collection_id: "current",
+      });
+    if (request.path === "/api/gameplay/ai/status") return success({ job: null });
+    if (request.path === "/api/gameplay/ai/items")
+      return success({ items: [], nextCursor: null, hasMore: false, total: 0, meta: {} });
     if (request.path === "/api/gameplay") return success({ sessions: [] });
     if (request.path === "/api/capture")
       return {

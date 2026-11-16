@@ -7,12 +7,15 @@
 .gameplay-preview-surface { position:relative;width:100%;overflow:hidden;background:var(--background); }
 .gameplay-preview-surface > img { display:block;width:100%;height:100%;object-fit:contain; }
 .gameplay-region-overlay { position:absolute;inset:0;width:100%;height:100%;pointer-events:none; }
-.gameplay-region rect { fill:transparent;stroke:currentColor;stroke-width:1;opacity:.5;pointer-events:all; }
-.gameplay-region:hover rect { fill:currentColor;fill-opacity:.1;stroke-width:2;opacity:1; }
+.gameplay-region rect,.gameplay-region polygon,.gameplay-region path { fill:transparent;stroke:currentColor;stroke-width:1;opacity:.5;pointer-events:all; }
+.gameplay-region:hover rect,.gameplay-region:hover path { fill:currentColor;fill-opacity:.1;stroke-width:2;opacity:1; }
 .gameplay-region-label { display:none;fill:currentColor;stroke:var(--background);stroke-width:4;paint-order:stroke;font-size:18px;font-family:var(--font-mono); }
 .gameplay-region:hover .gameplay-region-label { display:block; }
 .suspected-game-state { margin-top:20px;min-width:0; }
-.suspected-game-state-heading { display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px; }
+.suspected-game-state-heading { display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:14px; }
+.suspected-verification { max-width:100%;white-space:normal; }
+.suspected-verification-details { max-width:min(420px,calc(100vw - 32px));overflow-wrap:anywhere; }
+.suspected-verification-details span { display:block; }
 .suspected-game-state h2 { font-size:13px;font-weight:500;text-wrap:balance; }
 .suspected-game-state-heading > [data-slot=badge] { font-size:10px;font-weight:400; }
 .suspected-table-summary { display:flex;align-items:start;gap:16px 32px;flex-wrap:wrap;margin:0 0 14px; }
@@ -20,6 +23,7 @@
 .suspected-table-summary dd { margin:0;font-size:12px;font-variant-numeric:tabular-nums; }
 .suspected-community dd { display:flex;gap:5px; }
 .suspected-community [data-slot=badge] { min-width:25px;justify-content:center; }
+.poker-suit-symbol[data-suit="h"] { font-family:"DejaVu Sans",serif; }
 .suspected-seat-grid { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px; }
 .suspected-seat[data-slot=card] { min-width:0;gap:7px;padding:12px;background:var(--popover);border:0;box-shadow:none; }
 .suspected-seat-heading { display:flex;align-items:center;gap:8px;min-height:17px; }

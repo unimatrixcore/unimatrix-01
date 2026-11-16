@@ -1,8 +1,6 @@
-# Poker Lab migration
+# Poker Lab
 
-The compatibility baseline is the Poker repository's `main` worktree at revision `dbfd67b`. The repository-root checkout is detached at an older revision and does not describe the installed app.
-
-The desktop app uses the shared Rust Lab service, with the original controller behavior and shared monorepo UI. Repository checks, original behavior suites, browser workflows and isolated native WebView checks cover the migrated application. Fresh physical capture and CUDA accuracy remain separate acceptance checks.
+The desktop app uses the shared Rust Lab service and monorepo UI. Retained controller compatibility is tracked in `migration-baseline.json` and `migration-parity.md`. Fixture checks, browser behavior, physical capture, OCR accuracy and actual recording acceptance are separate evidence requirements.
 
 The storage contract preserves the original directories: `$XDG_DATA_HOME/poker`
 for datasets, models and `gameplay_recordings`, and `$XDG_CONFIG_HOME/poker` for
@@ -13,15 +11,75 @@ no import, copy or additional `unimatrix` directory is required. An optional
 backup/import helper is separate from normal startup. Tests use isolated
 directories; the path contract alone does not establish live-data acceptance.
 
-Poker Lab retains the poker-chip logo, the OCR Benchmark and Gameplay rail sections, and the Collection / Labeling / Review / Database workflow. Proven behavior modules remain in JavaScript while the Vite entry, shared UI integration and native boundary use TypeScript. The UI imports this monorepo's actual shared components and styles.
+Gameplay and OCR Training occupy the primary rail. Settings opens the read-only
+OCR Benchmark archive; its original controllers remain covered by the retained
+VM suites. The archive does not initialize capture or labeling controllers.
+The UI uses this monorepo's shared components and styles.
+
+Gameplay keeps recording selection and editing on the right of its top bar.
+The normal recording menu includes imported recordings alongside captured ones.
+Recording controls appear only in the Recording view; switching views does not
+stop the recording controller. AI uses the Benchmark review workflow through a
+Gameplay adapter, with a focused crop queue and revision-checked corrections.
+Opening AI reads persisted state without preparing crops or requesting a review.
+Global cache reuse and manual correction propagation belong to the native ledger,
+not browser state.
+
+Start and Resume request crop preparation followed by ChatGPT review through
+persisted native intent. The manual queue appears after the AI job completes.
+Opening the view or reading status never starts provider work; API callers that
+omit `review_after_prepare` retain preparation-only behavior. Pause remains pending
+until acknowledged by the native ledger. Fake-provider tests exercise the handoff;
+fixture timing does not measure live native pause latency. Request limits are
+cumulative per review job. A run
+that reaches its limit requires an explicitly larger limit before it can continue;
+Resume can explicitly update the same job's cumulative ceiling and preserves its
+usage and saved responses; it does not create a fresh budget. Unknown provider
+outcomes block automatic retry.
+
+The current profile is fixed at 1920×1080 with 95 OCR targets and nine CV
+contexts. `tools/poker/mock-regions/profile.mts` derives geometry offline from the
+private mock DOM/CSS; native localizers resolve fields from live frame pixels.
+The bundled profile needs no running mock. Cards reach local OCR, including weak
+fits and hidden-card targets, except at seats proven empty from source-specific
+pixels. Automatic card verification additionally requires source-supported glyph
+evidence; a blank cannot override supported visible card foreground. Frame previews
+use the effective profile while retaining captured configurations and predictions.
+Other viewports require their own supported profile, never scaling this one.
+
+Gameplay stores content-addressed opaque RGB crops and occurrence context in the
+persistent app-wide `ocr-evidence.sqlite3` ledger. Exact reuse checks semantic
+family, pixels and current evidence policy. Near reuse requires unchanged pixels
+under conservative padding translation; perceptual similarity alone cannot transfer
+a label. Automatic acceptance requires two matching blind readings plus current
+contract and source-support checks. Manual occurrence decisions remain explicit.
+See `packages/poker-native/src/lab/gameplay/evidence_cache.rs` and
+`packages/poker-native/src/lab/ai_review/protocol.rs` for admission rules.
+
+Quarantined jobs cannot resume or supply automatic cache truth. Explicit recovery
+creates a new job and revalidates saved raw readings against original request-guide,
+pixel, sample, family, model and contract evidence. Missing evidence requires fresh
+bounded reads; an unknown provider outcome blocks recovery. The original job and
+paid evidence remain quarantined. See `packages/poker-native/src/lab/ai_review/recovery.rs`.
+
+Legacy Benchmark import follows `tools/poker/legacy-benchmark.md`: saved labels
+and explicit reviewed blanks remain occurrence-owned `legacy_verified` readings
+with `source: legacy` and `visually_verified: false`. Pending predictions and new
+missing fields remain unverified. Migration does not start bulk ChatGPT review;
+Import preservation and real-recording AI acceptance are validated independently.
 
 The native boundary uses `lab_request` for operations and `lab_list_page` for
 catalog reads, with request and response schemas in `@unimatrix/shared`. Dataset
 identity travels with each scoped request. Media responses use the local
 `pokerlab` protocol. The separate Poker Assistant uses the shared native crate.
 
-List cursors belong to their dataset, resource, filters and sort order. A 409
-means the catalog changed and the query must restart from its first page.
+List cursors belong to their dataset, resource, filters and sort order. A cursor
+conflict means the catalog changed and the query must restart from its first page.
+Gameplay summary reads separately retry evidence/profile conflicts at most twice,
+with cancellation-aware backoff. Review decisions and other writes are not retried.
+Unchanged Games and Frames reads reuse summaries while evidence, profile and
+recording epochs match. First loads and reads after invalidation rebuild them;
+private-copy backend measurements do not establish native UI latency.
 Gameplay hands and frames retain the first page's capture ceiling until explicit
 refresh, so recording cannot move the history being browsed. IPC pages accept at
 most 500 rows; queue, review and AI result reads retain their smaller native caps.

@@ -11,6 +11,8 @@ export default defineConfig({
       name: "poker-legacy-test-styles",
       enforce: "pre",
       transform(code, id) {
+        if (id.endsWith("/src/collector/tool_shell.tsx"))
+          return "export function mountToolShell() {}";
         if (id.endsWith("/src/collector/main.tsx"))
           return `import '../styles.css';\nwindow.startPokerOcr ??= async () => {};\n${code}`;
       },
