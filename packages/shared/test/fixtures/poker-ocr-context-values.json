@@ -1,0 +1,254 @@
+[
+  {
+    "category": "bet",
+    "region": "bet",
+    "currencyFormat": "{0}",
+    "value": "S 1.2K",
+    "valid": true
+  },
+  {
+    "category": "split_pot",
+    "region": "split_pot",
+    "currencyFormat": "{0}",
+    "value": "S 1K G 2M",
+    "valid": true
+  },
+  {
+    "category": "bank",
+    "region": "bank",
+    "currencyFormat": "{0}",
+    "value": "G 1,234.56",
+    "valid": true
+  },
+  {
+    "category": "pot",
+    "region": "pot",
+    "currencyFormat": "{0}",
+    "value": "Pot: S 12.34",
+    "valid": true
+  },
+  {
+    "category": "table_info",
+    "region": "table.info",
+    "currencyFormat": "{0}",
+    "value": "A, NLHE - S 0.01/0.02",
+    "valid": true
+  },
+  {
+    "category": "bank",
+    "region": "bank",
+    "currencyFormat": "{0}",
+    "value": "S 1K",
+    "valid": false
+  },
+  {
+    "category": "pot",
+    "region": "pot",
+    "currencyFormat": "{0}",
+    "value": "Pot: G 1K",
+    "valid": false
+  },
+  {
+    "category": "table_info",
+    "region": "table.info",
+    "currencyFormat": "{0}",
+    "value": "A, NLHE - S 1K/2",
+    "valid": false
+  },
+  {
+    "category": "bet",
+    "region": "bet",
+    "currencyFormat": "{0}",
+    "value": "S -1",
+    "valid": false
+  },
+  {
+    "category": "bet",
+    "region": "bet",
+    "currencyFormat": "{0}",
+    "value": "1.2K",
+    "valid": false
+  },
+  {
+    "category": "bet",
+    "region": "bet",
+    "currencyFormat": "{0}",
+    "value": "S 1 BB",
+    "valid": false
+  },
+  {
+    "category": "bet",
+    "region": "bet",
+    "currencyFormat": "chips {0} coins",
+    "value": "S chips 12.34 coins",
+    "valid": true
+  },
+  {
+    "category": "bank",
+    "region": "bank",
+    "currencyFormat": "chips {0} coins",
+    "value": "S chips 12.34K coins",
+    "valid": false
+  },
+  {
+    "category": "bet",
+    "region": "bet",
+    "currencyFormat": "{value}/{0}",
+    "value": "S 12.34/12.34",
+    "valid": true
+  },
+  {
+    "category": "bet",
+    "region": "bet",
+    "currencyFormat": "{value}/{0}",
+    "value": "S 12.34/56.78",
+    "valid": false
+  },
+  {
+    "category": "split_pot",
+    "region": "split_pot",
+    "currencyFormat": "{value}/{0}",
+    "value": "S 1/2 G 3/3",
+    "valid": false
+  },
+  {
+    "category": "split_pot",
+    "region": "split_pot",
+    "currencyFormat": "{value}/{0}",
+    "value": "S 1/1 G 3/3",
+    "valid": true
+  },
+  {
+    "category": "table_info",
+    "region": "table.info",
+    "currencyFormat": "€{0}",
+    "value": "A, NLHE - S €0.01/€0.02",
+    "valid": true
+  },
+  {
+    "category": "table_info",
+    "region": "table.info",
+    "currencyFormat": "{value}/{0}",
+    "value": "A, NLHE - S 1/1/2/2",
+    "valid": true
+  },
+  {
+    "category": "table_info",
+    "region": "table.info",
+    "currencyFormat": "{value}/{0}",
+    "value": "A, NLHE - S 1/3/2/2",
+    "valid": false
+  },
+  {
+    "category": "bet",
+    "region": "bet",
+    "currencyFormat": "fixed",
+    "value": "S fixed",
+    "valid": true
+  },
+  {
+    "category": "split_pot",
+    "region": "split_pot",
+    "currencyFormat": "fixed",
+    "value": "S fixed G fixed",
+    "valid": true
+  },
+  {
+    "category": "bank",
+    "region": "bank",
+    "currencyFormat": "fixed",
+    "value": "All-In",
+    "valid": true
+  },
+  {
+    "category": "pot",
+    "region": "pot",
+    "currencyFormat": "{0}",
+    "value": "Run It Twice pause (4 sec)",
+    "valid": true
+  },
+  {
+    "category": "name",
+    "region": "name",
+    "currencyFormat": "{0}",
+    "value": "Player 1",
+    "valid": true
+  },
+  {
+    "category": "unknown",
+    "region": "unknown",
+    "currencyFormat": "{0}",
+    "value": "",
+    "valid": false
+  },
+  {
+    "category": "table_info",
+    "region": "table.info",
+    "currencyFormat": "{0}",
+    "value": "A\nB, NLHE - S 1/2",
+    "valid": false
+  },
+  {
+    "category": "amount",
+    "region": "seat.0.award",
+    "currencyFormat": "{0}",
+    "value": "+S 12.34",
+    "valid": true
+  },
+  {
+    "category": "amount",
+    "region": "pot.0",
+    "currencyFormat": "{0}",
+    "value": "S 12.34",
+    "valid": true
+  },
+  {
+    "category": "amount",
+    "region": "seat.0.award",
+    "currencyFormat": "{0}",
+    "value": "++S 12.34",
+    "valid": false
+  },
+  {
+    "category": "split_pot",
+    "region": "split_pot",
+    "currencyFormat": "{0}",
+    "value": "S 1G 2",
+    "valid": false
+  },
+  {
+    "category": "split_pot",
+    "region": "split_pot",
+    "currencyFormat": "{value}/{0}",
+    "value": "S 1/1G 2/2",
+    "valid": false
+  },
+  {
+    "category": "split_pot",
+    "region": "split_pot",
+    "currencyFormat": "{0}",
+    "value": "S 1,234 G 2,345.6",
+    "valid": true
+  },
+  {
+    "category": "split_pot",
+    "region": "split_pot",
+    "currencyFormat": "${0}",
+    "value": "S $1,234 G $2,345.67",
+    "valid": true
+  },
+  {
+    "category": "split_pot",
+    "region": "split_pot",
+    "currencyFormat": "{0}",
+    "value": "S 1,234G 2",
+    "valid": false
+  },
+  {
+    "category": "split_pot",
+    "region": "split_pot",
+    "currencyFormat": "${0}",
+    "value": "S $1,23 G $2",
+    "valid": false
+  }
+]

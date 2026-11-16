@@ -1,0 +1,5486 @@
+{
+  "source": "private_mock_public_formatter_output",
+  "sourceMethod": "react/format.js amount",
+  "cases": [
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "711 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "2,469,136 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "711 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "2,469,136 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "0.02 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "2.34 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "711.2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "2,469,135.78 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "0.02 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "2.34 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "711.2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "2,469,135.78 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "0.02 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "2.34 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "711.2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "2,469,135.78 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "0.02 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "2.34 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "711.2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "2,469,135.78 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "711 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "2469136 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "711 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "2469136 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "0.02 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "2.34 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "711.2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "2469135.78 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "0.02 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "2.34 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "711.2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "2469135.78 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "0.02 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "2.34 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "711.2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "2469135.78 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "0.02 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "2.34 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "711.2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "2469135.78 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "1"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "355"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "1M"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "1"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "356"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "1,234,568"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "0.01"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "1.17"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "355.6"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "1.23M"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "0.01"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "1.17"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "355.6"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "1,234,567.89"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "0.01"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "1.17"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "355.6"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "1.23456788M"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "0.01"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "1.17"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "355.6"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "1,234,567.89"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "1"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "355"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "1M"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "1"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "356"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "1234568"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "0.01"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "1.17"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "355.6"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "1.23M"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "0.01"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "1.17"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "355.6"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "1234567.89"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "0.01"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "1.17"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "355.6"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "1.23456788M"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "0.01"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "1.17"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "355.6"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "1234567.89"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "711 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "2,469,136 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "711 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "2,469,136 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "0.02 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "2.34 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "711.2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "2,469,135.78 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "0.02 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "2.34 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "711.2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "2,469,135.78 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "0.02 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "2.34 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "711.2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "2,469,135.78 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "0.02 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "2.34 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "711.2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "2,469,135.78 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "711 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "2469136 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "711 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "2469136 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "0.02 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "2.34 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "711.2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "2469135.78 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "0.02 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "2.34 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "711.2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "2469135.78 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "0.02 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "2.34 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "711.2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "2469135.78 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "0.02 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "2.34 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "711.2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "2469135.78 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "1"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "355"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "1M"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "1"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "356"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "1,234,568"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "0.01"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "1.17"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "355.6"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "1.23M"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "0.01"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "1.17"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "355.6"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "1,234,567.89"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "0.01"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "1.17"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "355.6"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "1.23456788M"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "0.01"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "1.17"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "355.6"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "1,234,567.89"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "1"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "355"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "1M"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "1"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "356"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "1234568"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "0.01"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "1.17"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "355.6"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "1.23M"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "0.01"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "1.17"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "355.6"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "1234567.89"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "0.01"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "1.17"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "355.6"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "1.23456788M"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "0.01"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "1.17"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "355.6"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "GC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "1234567.89"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "711 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "2,469,136 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "711 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "2,469,136 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "0.02 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "2.34 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "711.2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "2,469,135.78 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "0.02 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "2.34 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "711.2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "2,469,135.78 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "0.02 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "2.34 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "711.2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "2,469,135.78 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "0.02 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "2.34 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "711.2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "2,469,135.78 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "711 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "2469136 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "711 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "2469136 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "0.02 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "2.34 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "711.2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "2469135.78 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "0.02 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "2.34 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "711.2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "2469135.78 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "0.02 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "2.34 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "711.2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "2469135.78 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "0 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "0.02 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "2.34 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "711.2 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": true,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "2469135.78 BB"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "$0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "$0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "$1"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "$355"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "$1M"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "$0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "$0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "$1"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "$356"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "$1,234,568"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "$0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "$0.01"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "$1.17"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "$355.6"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "$1.23M"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "$0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "$0.01"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "$1.17"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "$355.6"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "$1,234,567.89"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "$0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "$0.01"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "$1.17"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "$355.6"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "$1.23456788M"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "$0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "$0.01"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "$1.17"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "$355.6"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": true,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "$1,234,567.89"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "$0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "$0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "$1"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "$355"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "$1M"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "$0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "$0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "$1"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "$356"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 0,
+        "decimals": 0,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "$1234568"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "$0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "$0.01"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "$1.17"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "$355.6"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "$1.23M"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "$0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "$0.01"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "$1.17"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "$355.6"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "$1234567.89"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0,
+      "output": "$0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 0.01,
+      "output": "$0.01"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1.17,
+      "output": "$1.17"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 355.6,
+      "output": "$355.6"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": true,
+      "value": 1234567.89,
+      "output": "$1.23456788M"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0,
+      "output": "$0"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 0.01,
+      "output": "$0.01"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1.17,
+      "output": "$1.17"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 355.6,
+      "output": "$355.6"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "$",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 8,
+        "decimals": 8,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5]
+      },
+      "short": false,
+      "value": 1234567.89,
+      "output": "$1234567.89"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5],
+        "currencyFormat": "G {0}"
+      },
+      "short": false,
+      "value": 12.34,
+      "output": "G 12.34"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5],
+        "currencyFormat": "€{0}"
+      },
+      "short": false,
+      "value": 12.34,
+      "output": "€12.34"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5],
+        "currencyFormat": "chips {0} coins"
+      },
+      "short": false,
+      "value": 12.34,
+      "output": "chips 12.34 coins"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5],
+        "currencyFormat": "{value}/{0}"
+      },
+      "short": false,
+      "value": 12.34,
+      "output": "12.34/12.34"
+    },
+    {
+      "region": "seat.0.bet",
+      "state": {
+        "currency": "SC",
+        "displayInBB": false,
+        "grouping": false,
+        "bbPrecision": 2,
+        "decimals": 2,
+        "currencyPrecision": 2,
+        "blinds": [0.25, 0.5],
+        "currencyFormat": "{0}{value}"
+      },
+      "short": false,
+      "value": 12.34,
+      "output": "12.3412.34"
+    }
+  ]
+}

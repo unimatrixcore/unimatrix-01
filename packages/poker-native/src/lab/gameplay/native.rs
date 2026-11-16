@@ -96,7 +96,7 @@ impl Gameplay {
 
     /// Initialize one store without holding a recorder/model lock. Stop and
     /// image reads can therefore proceed while a capture is performing OCR.
-    fn store(&self) -> Result<&Store> {
+    pub(super) fn store(&self) -> Result<&Store> {
         if let Some(store) = self.store.get() {
             return Ok(store);
         }
@@ -119,6 +119,22 @@ impl Gameplay {
     ) -> Result<Value> {
         self.store()?
             .list_page(kind, session, hand, order, archived, cursor, limit)
+    }
+
+    pub fn list_page_collection(
+        &self,
+        kind: &str,
+        session: Option<&str>,
+        hand: Option<&str>,
+        order: &str,
+        archived: bool,
+        cursor: Option<&str>,
+        limit: usize,
+        collection: Option<&str>,
+    ) -> Result<Value> {
+        self.store()?.list_page_collection(
+            kind, session, hand, order, archived, cursor, limit, collection,
+        )
     }
 
     pub fn shutdown(&self) {
@@ -158,12 +174,29 @@ impl Gameplay {
         }
         let store = self.store()?;
         let value = match (method, parts.as_slice()) {
+            ("GET", ["collections"]) => {
+                store.collections(query.get("archived").is_some_and(|v| v == "1"))?
+            }
+            ("POST", ["collections"]) => {
+                json!({"collection":store.create_collection(body(request)?["name"].as_str().ok_or("400:Collection name required")?)?})
+            }
+            ("PATCH", ["collections", id]) => {
+                json!({"collection":store.update_collection(id,&body(request)?)?})
+            }
             ("GET", []) => {
                 let archived = query.get("archived").map(String::as_str).unwrap_or("0");
                 if !["0", "1"].contains(&archived) {
                     return Err("400:archived must be 0 or 1".into());
                 }
-                json!({"sessions":store.sessions(archived=="1")?})
+                let mut sessions = store.sessions(archived == "1")?;
+                if let Some(collection) = query.get("collection_id") {
+                    sessions.as_array_mut().unwrap().retain(|s| {
+                        store
+                            .session_collection(s["id"].as_str().unwrap())
+                            .is_ok_and(|id| id == *collection)
+                    });
+                }
+                json!({"sessions":sessions})
             }
             ("POST", ["sessions"]) => {
                 let body = body(request)?;
@@ -189,10 +222,13 @@ impl Gameplay {
                     .transpose()?
                     .unwrap_or("");
                 let (config, hash) = self.config()?;
-                return Ok(json_response(
-                    201,
-                    json!({"session":store.create(source,interval,name.trim(),&config,&hash)?}),
-                ));
+                let session = store.create(source, interval, name.trim(), &config, &hash)?;
+                let session = if let Some(collection) = body["collection_id"].as_str() {
+                    store.move_session(session["id"].as_str().unwrap(), collection)?
+                } else {
+                    session
+                };
+                return Ok(json_response(201, json!({"session":session})));
             }
             ("GET", ["sessions", id]) => {
                 json!({"session":store.session(id)?,"hands":store.hands(id)?})
@@ -280,10 +316,12 @@ impl Gameplay {
     }
 
     fn config(&self) -> Result<(Value, String)> {
-        let regions: Value = serde_json::from_slice(
-            &fs::read(self.config_path("regions.json")).map_err(|e| e.to_string())?,
-        )
-        .map_err(|e| e.to_string())?;
+        let current = self.config_root.join("gameplay-regions.json");
+        if !current.is_file() {
+            return Err("Current Gameplay region profile is missing; synchronize the source-derived profile".into());
+        }
+        let regions: Value = serde_json::from_slice(&fs::read(current).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
         let colors: Value = serde_json::from_slice(
             &fs::read(self.config_path("colors.json")).map_err(|e| e.to_string())?,
         )
@@ -334,6 +372,17 @@ impl Gameplay {
             .map_err(|e| e.to_string())?;
         let capture_ms = started.elapsed().as_secs_f64() * 1000.;
         let regions = &config["regions"];
+        if regions["viewport"]["width"]
+            .as_u64()
+            .is_some_and(|v| v != image.width() as u64)
+            || regions["viewport"]["height"]
+                .as_u64()
+                .is_some_and(|v| v != image.height() as u64)
+        {
+            return Ok(
+                json!({"skipped":true,"reason":"Capture dimensions do not match the verified current region profile"}),
+            );
+        }
         if regions["screen_width"]
             .as_u64()
             .is_some_and(|v| v != image.width() as u64)
@@ -385,6 +434,9 @@ impl Gameplay {
             let _ = self.contract.set(Contract::parse(&raw)?);
         }
         let contract = self.contract.get().expect("contract initialized");
+        if regions["regions"].is_array() {
+            return self.read_profile_frame(image, regions, contract);
+        }
         let mut fields = Vec::new();
         walk(regions, "", &mut fields);
         fields.retain(|(id, _)| {
@@ -400,11 +452,12 @@ impl Gameplay {
         // Reject non-table pixels after encoding only the hand-ID crop.
         let first_crop = (crop(image, &fields[0].1)?, fields[0].0.clone());
         let mut model = self.ocr.lock().map_err(|_| "OCR worker lock poisoned")?;
-        let first = model
+        let mut first = model
             .predict_many(vec![first_crop])?
             .into_iter()
             .next()
             .ok_or("Missing hand ID prediction")?;
+        normalize_model_prediction(regions, "round_id", "round_id", &mut first, contract)?;
         if !contract.valid("round_id", first["text"].as_str().unwrap_or("")) {
             return Ok(None);
         }
@@ -428,7 +481,8 @@ impl Gameplay {
         let mut results = serde_json::Map::new();
         for ((id, rect), mut prediction) in fields.iter().zip(predictions) {
             let category = contract.category(id).ok_or("Unsupported OCR field")?;
-            let schema_valid = contract.valid(category, prediction["text"].as_str().unwrap_or(""));
+            normalize_model_prediction(regions, id, category, &mut prediction, contract)?;
+            let schema_valid = prediction["schema_valid"].as_bool().unwrap_or(false);
             let object = prediction.as_object_mut().ok_or("Invalid OCR prediction")?;
             object.insert("schema_valid".into(), json!(schema_valid));
             object.insert("validation_contract_sha256".into(), json!(contract.digest));
@@ -438,6 +492,162 @@ impl Gameplay {
             );
         }
         Ok(Some((Value::Object(results), hand, fields.len())))
+    }
+
+    fn read_profile_frame(
+        &self,
+        image: &DynamicImage,
+        profile: &Value,
+        contract: &Contract,
+    ) -> Result<Option<(Value, String, usize)>> {
+        let resolved_profile =
+            super::panels::resolve_profile(image, profile).map_err(|error| error.message)?;
+        let profile = &resolved_profile;
+        let mut results = serde_json::Map::new();
+        let mut crops = Vec::new();
+        let mut crop_targets = Vec::new();
+        for region in profile["regions"]
+            .as_array()
+            .ok_or("Invalid current region profile")?
+        {
+            if region["ocr"] == false {
+                continue;
+            }
+            let id = region["id"].as_str().ok_or("Region identity missing")?;
+            let Some(category) = contract.category(id) else {
+                continue;
+            };
+            let b = &region["bounds"];
+            let rect = json!({"x":b["x"],"y":b["y"],"w":b["width"],"h":b["height"]});
+            if super::regions::seat_is_empty(region) {
+                results.insert(id.to_string(), json!({"prediction":null,"error":null,"rect":rect,"presence":region["presence"],"seat_occupancy":region["seat_occupancy"]}));
+                continue;
+            }
+            let card_field = ["card", "suit"].contains(&category);
+            if !card_field && region["presence"]["state"] == "absent" {
+                results.insert(id.to_string(), json!({"prediction":null,"error":null,"rect":rect,"presence":region["presence"]}));
+                continue;
+            }
+            let error = if !card_field && region["presence"]["state"] == "ambiguous" {
+                Some(format!(
+                    "Target presence is ambiguous: {}",
+                    region["presence"]["reason"]
+                        .as_str()
+                        .unwrap_or("unresolved")
+                ))
+            } else {
+                match super::regions::crop(image, region) {
+                    Ok(png) => match split_component_crops(&png, region) {
+                        Ok(Some(parts)) => {
+                            for part in parts {
+                                crops.push((part, "bet".to_string()));
+                                crop_targets.push((id.to_string(), true));
+                            }
+                            None
+                        }
+                        Ok(None) => {
+                            crops.push((png, id.to_string()));
+                            crop_targets.push((id.to_string(), false));
+                            None
+                        }
+                        Err(error) => Some(error),
+                    },
+                    Err(error) => Some(error.message),
+                }
+            };
+            results.insert(
+                id.to_string(),
+                json!({"prediction":null,"error":error,"rect":rect}),
+            );
+        }
+        let Some(first) = crops
+            .iter()
+            .position(|(_, id)| id == "round_id" || id == "game.id")
+        else {
+            return Ok(None);
+        };
+        let first_crop = crops.remove(first);
+        crop_targets.remove(first);
+        let first_id = first_crop.1.clone();
+        let mut first_prediction = self
+            .ocr
+            .lock()
+            .map_err(|_| "OCR worker lock poisoned")?
+            .predict_many(vec![first_crop])?
+            .into_iter()
+            .next()
+            .ok_or("Missing hand ID prediction")?;
+        normalize_model_prediction(
+            profile,
+            &first_id,
+            "round_id",
+            &mut first_prediction,
+            contract,
+        )?;
+        if !contract.valid("round_id", first_prediction["text"].as_str().unwrap_or("")) {
+            return Ok(None);
+        }
+        first_prediction["schema_valid"] = json!(true);
+        first_prediction["validation_contract_sha256"] = json!(contract.digest);
+        results.get_mut(&first_id).ok_or("Missing hand ID output")?["prediction"] =
+            first_prediction;
+        let count = crops.len() + 1;
+        let ids = crop_targets;
+        if !crops.is_empty() {
+            let predictions = self
+                .ocr
+                .lock()
+                .map_err(|_| "OCR worker lock poisoned")?
+                .predict_many(crops);
+            match predictions {
+                Ok(predictions) => {
+                    if predictions.len() != ids.len() {
+                        return Err("Incomplete OCR crop batch".into());
+                    }
+                    let mut split_parts = Vec::new();
+                    for ((id, component), mut prediction) in ids.iter().zip(predictions) {
+                        let category = if *component {
+                            "bet"
+                        } else {
+                            contract.category(id).ok_or("Unknown OCR field")?
+                        };
+                        normalize_model_prediction(
+                            profile,
+                            if *component { "bet" } else { id },
+                            category,
+                            &mut prediction,
+                            contract,
+                        )?;
+                        if *component {
+                            split_parts.push(prediction);
+                        } else {
+                            results.get_mut(id).unwrap()["prediction"] = prediction;
+                        }
+                    }
+                    if !split_parts.is_empty() {
+                        results
+                            .get_mut("split_pot")
+                            .ok_or("Missing split pot output")?["prediction"] =
+                            compose_split_prediction(profile, split_parts, contract)?;
+                    }
+                }
+                Err(error) => {
+                    for (id, _) in ids {
+                        results.get_mut(&id).unwrap()["error"] = json!(error);
+                    }
+                }
+            }
+        }
+        let hand = results
+            .get("round_id")
+            .or_else(|| results.get("game.id"))
+            .and_then(|r| r["prediction"]["text"].as_str())
+            .filter(|text| contract.valid("round_id", text))
+            .unwrap_or("")
+            .trim_start_matches('#')
+            .trim()
+            .to_string();
+        Ok(Some((Value::Object(results), hand, count)))
     }
 
     /// Deliver raw binary directly to WebKit. Conditional requests skip image
@@ -557,6 +767,129 @@ fn walk(value: &Value, key: &str, fields: &mut Vec<(String, Value)>) {
 }
 /// Compile schema patterns once per backend. Recording never rebuilds hundreds
 /// of regex automata for the same configuration on each captured frame.
+// Component coordinates are relative to the canonical masked parent crop.
+fn split_component_crops(png: &[u8], region: &Value) -> Result<Option<Vec<Vec<u8>>>> {
+    if region["id"] != "split_pot" {
+        return Ok(None);
+    }
+    let Some(panels) = region["crop_mask"]["panels"].as_array() else {
+        return Ok(None);
+    };
+    if panels.len() <= 1 {
+        return Ok(None);
+    }
+    if panels.len() > 10 {
+        return Err("Too many split pot panels".into());
+    }
+    let image = image::load_from_memory(png).map_err(|e| e.to_string())?;
+    let mut parts = Vec::with_capacity(panels.len());
+    for panel in panels {
+        let b = &panel["bounds"];
+        let number = |key: &str| {
+            b[key]
+                .as_f64()
+                .filter(|v| v.is_finite())
+                .ok_or_else(|| "Invalid split pot panel bounds".to_string())
+        };
+        let (x, y, w, h) = (
+            number("x")?,
+            number("y")?,
+            number("width")?,
+            number("height")?,
+        );
+        let (left, top, right, bottom) = (x.floor(), y.floor(), (x + w).ceil(), (y + h).ceil());
+        if left < 0.
+            || top < 0.
+            || right > f64::from(image.width())
+            || bottom > f64::from(image.height())
+            || right <= left
+            || bottom <= top
+        {
+            return Err("Split pot panel outside its crop".into());
+        }
+        let rect =
+            json!({"x":left as u32,"y":top as u32,"w":(right-left) as u32,"h":(bottom-top) as u32});
+        parts.push(crop(&image, &rect)?);
+    }
+    Ok(Some(parts))
+}
+
+fn compose_split_prediction(
+    profile: &Value,
+    parts: Vec<Value>,
+    contract: &Contract,
+) -> Result<Value> {
+    let text = parts
+        .iter()
+        .filter_map(|p| p["text"].as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let raw = parts
+        .iter()
+        .filter_map(|p| p["raw_text"].as_str().or_else(|| p["text"].as_str()))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let confidence = parts
+        .iter()
+        .map(|p| p["confidence"].as_f64())
+        .collect::<Option<Vec<_>>>()
+        .and_then(|values| values.into_iter().reduce(f64::min));
+    let complete = parts.iter().all(|p| {
+        p["schema_valid"] == true && p["text"].as_str().is_some_and(|t| !t.trim().is_empty())
+    });
+    let mut result = json!({"text":text,"raw_text":raw,"confidence":confidence,"components":parts});
+    normalize_model_prediction(profile, "split_pot", "split_pot", &mut result, contract)?;
+    if !complete {
+        result["schema_valid"] = json!(false);
+    }
+    Ok(result)
+}
+
+fn normalize_model_prediction(
+    profile: &Value,
+    id: &str,
+    category: &str,
+    prediction: &mut Value,
+    contract: &Contract,
+) -> Result<()> {
+    let original = prediction["text"].as_str().unwrap_or("").to_owned();
+    let raw = prediction["raw_text"].as_str().unwrap_or(&original);
+    let context = profile["style_profile"]["currency_format"].as_str();
+    let text = if contract.digest == crate::lab::sha256(crate::labels::CONTRACT_BYTES) {
+        crate::labels::normalize_region_text_with_currency_format(id, category, raw, context)
+    } else {
+        original.clone()
+    };
+    let valid = if contract.digest == crate::lab::sha256(crate::labels::CONTRACT_BYTES) {
+        crate::labels::validate_text_with_currency_format(
+            category,
+            &text,
+            category == "dealer",
+            context,
+        )
+    } else {
+        contract.valid(category, &text)
+    };
+    let object = prediction.as_object_mut().ok_or("Invalid OCR prediction")?;
+    if !object.contains_key("worker_text") {
+        object.insert("worker_text".into(), json!(original));
+    }
+    if !object.contains_key("worker_validation_contract") {
+        if let Some(previous) = object.get("validation_contract").cloned() {
+            object.insert("worker_validation_contract".into(), previous);
+        }
+    }
+    object.insert("text".into(), json!(text));
+    object.insert("schema_valid".into(), json!(valid));
+    object.insert(
+        "validation_contract".into(),
+        json!({"version":crate::labels::contract_version(),"sha256":contract.digest}),
+    );
+    object.insert("validation_contract_sha256".into(), json!(contract.digest));
+    object.insert("normalization_context".into(),json!({"currency_format":context,"source":if context.is_some(){"explicit_profile"}else{"default_bb_contract"}}));
+    Ok(())
+}
+
 struct Contract {
     digest: String,
     regions: Vec<(Regex, String)>,
@@ -618,6 +951,9 @@ impl Contract {
             .map(|(_, category)| category.as_str())
     }
     fn valid(&self, category: &str, text: &str) -> bool {
+        if self.digest == crate::lab::sha256(crate::labels::CONTRACT_BYTES) {
+            return crate::labels::validate_text(category, text, category == "dealer");
+        }
         self.values
             .get(category)
             .is_some_and(|choices| choices.iter().any(|v| v == text))
@@ -722,6 +1058,111 @@ mod tests {
     }
 
     #[test]
+    fn split_components_keep_visual_order_and_incomplete_results_unverified() {
+        let contract = Contract::parse(crate::labels::CONTRACT_BYTES).unwrap();
+        let mut parts = vec![
+            json!({"text":"S 40 BB","raw_text":"S 40 BB","confidence":0.9,"model_sha256":"model-a"}),
+            json!({"text":"G 80 BB","raw_text":"G 80 BB","confidence":0.7,"model_sha256":"model-b"}),
+        ];
+        for part in &mut parts {
+            normalize_model_prediction(&json!({}), "bet", "bet", part, &contract).unwrap();
+        }
+        let composed = compose_split_prediction(&json!({}), parts.clone(), &contract).unwrap();
+        assert_eq!(composed["text"], "S 40 BB G 80 BB");
+        assert_eq!(composed["schema_valid"], true);
+        assert_eq!(composed["confidence"], 0.7);
+        assert_eq!(composed["components"][1]["model_sha256"], "model-b");
+        parts[1] = json!({"text":"", "raw_text":"", "schema_valid":false});
+        let partial = compose_split_prediction(&json!({}), parts, &contract).unwrap();
+        assert_eq!(partial["schema_valid"], false);
+        assert!(partial["confidence"].is_null());
+        assert_eq!(partial["components"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn split_component_crop_obeys_mask_order_and_rejects_bad_bounds() {
+        let mut image = image::RgbImage::new(12, 8);
+        image.put_pixel(1, 1, image::Rgb([255, 0, 0]));
+        image.put_pixel(7, 5, image::Rgb([0, 255, 0]));
+        let png = crate::media::png(&DynamicImage::ImageRgb8(image)).unwrap();
+        let mut region = json!({"id":"split_pot","crop_mask":{"panels":[{"bounds":{"x":0,"y":0,"width":3,"height":3}},{"bounds":{"x":6,"y":4,"width":3,"height":3}}]}});
+        let parts = split_component_crops(&png, &region).unwrap().unwrap();
+        assert_eq!(
+            image::load_from_memory(&parts[0])
+                .unwrap()
+                .to_rgb8()
+                .get_pixel(1, 1)
+                .0,
+            [255, 0, 0]
+        );
+        assert_eq!(
+            image::load_from_memory(&parts[1])
+                .unwrap()
+                .to_rgb8()
+                .get_pixel(1, 1)
+                .0,
+            [0, 255, 0]
+        );
+        region["crop_mask"]["panels"][1]["bounds"]["x"] = json!(20);
+        assert!(split_component_crops(&png, &region).is_err());
+        region["crop_mask"]["panels"] = json!([{"bounds":{"x":0,"y":0,"width":3,"height":3}}]);
+        assert!(split_component_crops(&png, &region).unwrap().is_none());
+    }
+
+    #[test]
+    fn current_prediction_boundary_preserves_raw_display_text_and_explicit_money_context() {
+        let contract = Contract::parse(crate::labels::CONTRACT_BYTES).unwrap();
+        let mut name = json!({"text":"JohnSmith","raw_text":"John Smith","confidence":0.9,"model_sha256":"original-model","validation_contract":{"version":1}});
+        normalize_model_prediction(&json!({}), "seats[0].name", "name", &mut name, &contract)
+            .unwrap();
+        assert_eq!(name["text"], "John Smith");
+        assert_eq!(name["raw_text"], "John Smith");
+        assert_eq!(name["worker_text"], "JohnSmith");
+        assert_eq!(name["model_sha256"], "original-model");
+        assert_eq!(name["schema_valid"], true);
+        normalize_model_prediction(&json!({}), "seats[0].name", "name", &mut name, &contract)
+            .unwrap();
+        assert_eq!(name["worker_text"], "JohnSmith");
+        assert_eq!(name["worker_validation_contract"]["version"], 1);
+        let mut amount = json!({"text":"S2.34B","raw_text":"S 2.34 B"});
+        normalize_model_prediction(&json!({}), "seats[0].bet", "bet", &mut amount, &contract)
+            .unwrap();
+        assert_eq!(amount["schema_valid"], false);
+        let mut cash = json!({"text":"G2.34K","raw_text":"G 2.34K"});
+        normalize_model_prediction(
+            &json!({"style_profile":{"currency_format":"{0}"}}),
+            "seats[0].bet",
+            "bet",
+            &mut cash,
+            &contract,
+        )
+        .unwrap();
+        assert_eq!(cash["schema_valid"], true);
+        assert_eq!(cash["normalization_context"]["source"], "explicit_profile");
+        let mut table = json!({"text":"Tigard #17, NLHE - S 0.01/0.02", "raw_text":"Tigard #17, NLHE - S 0.01/0.02"});
+        normalize_model_prediction(
+            &json!({}),
+            "table.info",
+            "table_info",
+            &mut table,
+            &contract,
+        )
+        .unwrap();
+        assert_eq!(table["text"], "Tigard #17, NLHE - S 0.01/0.02");
+        assert_eq!(table["schema_valid"], true);
+        let mut bad_table = json!({"text":"Tigard #17. NLHE -S 0.010.02", "raw_text":"Tigard #17. NLHE -S 0.010.02"});
+        normalize_model_prediction(
+            &json!({}),
+            "table.info",
+            "table_info",
+            &mut bad_table,
+            &contract,
+        )
+        .unwrap();
+        assert_eq!(bad_table["text"], "Tigard #17. NLHE -S 0.010.02");
+        assert_eq!(bad_table["schema_valid"], false);
+    }
+    #[test]
     fn native_routes_read_existing_evidence_and_deliver_binary() {
         let fixture = Fixture::new();
         let (session, frame, png) = fixture.seed();
@@ -824,12 +1265,316 @@ mod tests {
         assert!(contract.valid("round_id", "#123456"));
         assert!(!contract.valid("round_id", "123456"));
         assert!(contract.valid("dealer", ""));
-        assert!(!contract.valid("bank", "G 2.34 BB"));
+        assert!(contract.valid("bank", "G 2.34 BB"));
+        assert!(!contract.valid("bank", "G 2.34 B"));
         let image = DynamicImage::new_rgb8(10, 10);
         assert!(crop(&image, &json!({"x":9,"y":0,"w":2,"h":2})).is_err());
         assert!(crop(&image, &json!({"x":true,"y":0,"w":2,"h":2})).is_err());
         assert!(crop(&image, &json!({"x":0,"y":0,"w":2,"h":2})).is_ok());
     }
+    #[test]
+    fn profile_reader_batches_split_components_as_one_logical_result() {
+        let fixture = Fixture::new();
+        fs::create_dir_all(fixture.repo.join("dev_tools/training")).unwrap();
+        fs::write(
+            fixture.repo.join("dev_tools/ocr_contract.json"),
+            crate::labels::CONTRACT_BYTES,
+        )
+        .unwrap();
+        fs::write(fixture.repo.join("dev_tools/training/collector_inference.py"), r#"
+import json,sys
+print(json.dumps({'ready':True}),flush=True)
+for line in sys.stdin:
+    items=json.loads(line)['items']
+    def predict(i,item):
+        text = '# 123456' if item['region_id']=='game.id' else (['S 40 BB','G 80 BB'][i] if item['region_id']=='bet' and i < 2 else ('bad table text' if item['region_id']=='table.info' else ('s' if item['region_id'].endswith('.suit') else 'A')))
+        return {'text':text,'raw_text':text,'confidence':0.8,'model_sha256':'fake','region_seen':item['region_id']}
+    print(json.dumps({'ok':True,'predictions':[predict(i,item) for i,item in enumerate(items)]}),flush=True)
+"#).unwrap();
+        *fixture.gameplay.ocr.lock().unwrap() = Ocr::new(
+            &fixture.repo,
+            &HashMap::from([("OCR_MODEL_PYTHON".into(), "/usr/bin/python3".into())]),
+        );
+        let mask = super::super::crop_mask::from_resolved_panels(
+            super::super::crop_mask::SourcePanel::UpperPot,
+            [0., 0.],
+            &[
+                super::super::crop_mask::Rect {
+                    x: 0.,
+                    y: 0.,
+                    width: 4.,
+                    height: 4.,
+                },
+                super::super::crop_mask::Rect {
+                    x: 5.,
+                    y: 5.,
+                    width: 4.,
+                    height: 4.,
+                },
+            ],
+        )
+        .unwrap();
+        let mut fields = vec![
+            json!({"id":"game.id","bounds":{"x":0,"y":0,"width":4,"height":4}}),
+            json!({"id":"split_pot","bounds":{"x":0,"y":0,"width":10,"height":10},"crop_mask":mask}),
+        ];
+        let mut card_ids = Vec::new();
+        for base in (0..5)
+            .map(|i| format!("board.{i}"))
+            .chain((0..9).flat_map(|i| (0..2).map(move |j| format!("seat.{i}.card.{j}"))))
+        {
+            for suffix in ["rank", "suit"] {
+                let id = format!("{base}.{suffix}");
+                fields.push(json!({"id":id,"bounds":{"x":0,"y":0,"width":4,"height":4},"presence":{"state":if suffix == "rank" {"absent"} else {"ambiguous"}}}));
+                card_ids.push(id);
+            }
+        }
+        let mut other_ids = Vec::new();
+        for seat in 0..9 {
+            for field in ["name", "bank", "bet", "dealer", "status"] {
+                let id = format!("seat.{seat}.{field}");
+                fields.push(json!({"id":id,"bounds":{"x":0,"y":0,"width":4,"height":4}}));
+                other_ids.push(id);
+            }
+            fields.push(json!({"id":format!("seat.{seat}.nameplate"),"ocr":false,"bounds":{"x":0,"y":0,"width":4,"height":4}}));
+        }
+        for id in ["pot.total", "table.info"] {
+            fields.push(json!({"id":id,"bounds":{"x":0,"y":0,"width":4,"height":4}}));
+            other_ids.push(id.to_string());
+        }
+        let profile = json!({"regions":fields});
+        let (results, hand, count) = fixture
+            .gameplay
+            .read_frame(&DynamicImage::new_rgb8(10, 10), &profile)
+            .unwrap()
+            .unwrap();
+        assert_eq!(hand, "123456");
+        assert_eq!(card_ids.len(), 46);
+        assert_eq!(count, 96);
+        assert_eq!(results.as_object().unwrap().len(), 95);
+        for id in &other_ids {
+            assert_eq!(results[id]["prediction"]["region_seen"], *id);
+        }
+        assert_eq!(
+            results["table.info"]["prediction"]["raw_text"],
+            "bad table text"
+        );
+        assert_eq!(results["table.info"]["prediction"]["schema_valid"], false);
+        assert!(results.get("seat.0.nameplate").is_none());
+        for id in &card_ids {
+            assert_eq!(results[id]["prediction"]["region_seen"], *id);
+        }
+        assert_eq!(
+            results["split_pot"]["prediction"]["text"],
+            "S 40 BB G 80 BB"
+        );
+        assert_eq!(results["split_pot"]["prediction"]["schema_valid"], true);
+        assert_eq!(
+            results["split_pot"]["prediction"]["components"][0]["region_seen"],
+            "bet"
+        );
+    }
+
+    #[test]
+    #[ignore = "requires external source-derived occupancy controls"]
+    fn source_empty_seats_skip_all_fields_before_crop_or_worker() {
+        let root = PathBuf::from(std::env::var("POKER_OCCUPANCY_FIXTURE").unwrap());
+        let image = image::open(root.join("frames/empty.png")).unwrap();
+        let mut profile: Value = serde_json::from_slice(
+            &fs::read(std::env::var("POKER_SOURCE_PROFILE").unwrap()).unwrap(),
+        )
+        .unwrap();
+        let fixture = Fixture::new();
+        fs::create_dir_all(fixture.repo.join("dev_tools/training")).unwrap();
+        fs::write(
+            fixture.repo.join("dev_tools/ocr_contract.json"),
+            crate::labels::CONTRACT_BYTES,
+        )
+        .unwrap();
+        fs::write(fixture.repo.join("dev_tools/training/collector_inference.py"), r#"
+import json,sys
+print(json.dumps({'ready':True}),flush=True)
+for line in sys.stdin:
+    items=json.loads(line)['items']
+    assert all(not item['region_id'].startswith(('seats[','seat.')) for item in items)
+    print(json.dumps({'ok':True,'predictions':[{'text':'# 123456' if i['region_id']=='game.id' else 'A','region_seen':i['region_id']} for i in items]}),flush=True)
+"#).unwrap();
+        *fixture.gameplay.ocr.lock().unwrap() = Ocr::new(
+            &fixture.repo,
+            &HashMap::from([("OCR_MODEL_PYTHON".into(), "/usr/bin/python3".into())]),
+        );
+        profile["cv_regions"] = Value::Null;
+        let fields = profile["regions"].as_array_mut().unwrap();
+        fields.retain(|r| r["id"].as_str().unwrap().starts_with("seats["));
+        let mut seat_ids = Vec::new();
+        for region in fields.iter_mut().filter(|r| r["ocr"] != false) {
+            seat_ids.push(region["id"].as_str().unwrap().to_string());
+            region["bounds"] = json!({"x":100000,"y":100000,"width":4,"height":4});
+            region["localizer"] = json!({"kind":"unsupported_empty_must_not_localize"});
+        }
+        assert_eq!(seat_ids.len(), 81);
+        fields.push(json!({"id":"game.id","bounds":{"x":0,"y":0,"width":4,"height":4}}));
+        fields.push(json!({"id":"board.0.rank","category":"card","bounds":{"x":0,"y":0,"width":4,"height":4}}));
+        let (results, hand, count) = fixture
+            .gameplay
+            .read_frame(&image, &profile)
+            .unwrap()
+            .unwrap();
+        assert_eq!(hand, "123456");
+        assert_eq!(count, 2);
+        assert_eq!(results.as_object().unwrap().len(), 83);
+        for id in seat_ids {
+            assert_eq!(results[&id]["seat_occupancy"]["state"], "empty", "{id}");
+            assert_eq!(results[&id]["presence"]["state"], "absent", "{id}");
+            assert!(results[&id]["prediction"].is_null(), "{id}");
+            assert!(results[&id]["error"].is_null(), "{id}");
+        }
+        assert_eq!(
+            results["board.0.rank"]["prediction"]["region_seen"],
+            "board.0.rank"
+        );
+    }
+
+    #[test]
+    #[ignore = "requires the external source-derived screenshot and finalized profile"]
+    fn source_split_and_all_cards_reach_fake_worker() {
+        let root =
+            PathBuf::from(std::env::var("POKER_SOURCE_FIXTURE").expect("set POKER_SOURCE_FIXTURE"));
+        let image = image::open(root.join("0000000000000000000000000000abcd.png")).unwrap();
+        let source_profile: Value = serde_json::from_slice(
+            &fs::read(std::env::var("POKER_SOURCE_PROFILE").expect("set POKER_SOURCE_PROFILE"))
+                .unwrap(),
+        )
+        .unwrap();
+        let split = source_profile["regions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["id"] == "split_pot")
+            .unwrap()
+            .clone();
+        let resolved =
+            super::super::panels::resolve_profile(&image, &json!({"regions":[split.clone()]}))
+                .unwrap();
+        let resolved_split = &resolved["regions"][0];
+        assert_eq!(
+            resolved_split["crop_mask"]["panels"]
+                .as_array()
+                .unwrap()
+                .len(),
+            10
+        );
+        let canonical = super::super::regions::crop(&image, resolved_split).unwrap();
+        let parts = split_component_crops(&canonical, resolved_split)
+            .unwrap()
+            .unwrap();
+        // Cache admission crops the already-masked RGB parent using these same
+        // floor/ceil panel coordinates, then hashes width/height and RGB bytes.
+        let parent = image::load_from_memory(&canonical).unwrap().to_rgb8();
+        for (part, panel) in parts
+            .iter()
+            .zip(resolved_split["crop_mask"]["panels"].as_array().unwrap())
+        {
+            let b = &panel["bounds"];
+            let (x, y) = (
+                b["x"].as_f64().unwrap().floor() as u32,
+                b["y"].as_f64().unwrap().floor() as u32,
+            );
+            let (right, bottom) = (
+                (b["x"].as_f64().unwrap() + b["width"].as_f64().unwrap()).ceil() as u32,
+                (b["y"].as_f64().unwrap() + b["height"].as_f64().unwrap()).ceil() as u32,
+            );
+            let expected =
+                image::imageops::crop_imm(&parent, x, y, right - x, bottom - y).to_image();
+            assert_eq!(image::load_from_memory(part).unwrap().to_rgb8(), expected);
+        }
+        for mode in ["valid", "blank", "error"] {
+            let fixture = Fixture::new();
+            fs::create_dir_all(fixture.repo.join("dev_tools/training")).unwrap();
+            fs::write(
+                fixture.repo.join("dev_tools/ocr_contract.json"),
+                crate::labels::CONTRACT_BYTES,
+            )
+            .unwrap();
+            fs::write(fixture.repo.join("dev_tools/training/collector_inference.py"), r#"
+import base64,hashlib,json,os,sys
+print(json.dumps({'ready':True}),flush=True)
+for line in sys.stdin:
+    items=json.loads(line)['items']
+    if len(items)>1 and os.environ['POKER_TEST_MODE']=='error':
+        print(json.dumps({'ok':False,'error':'fake batch error'}),flush=True); continue
+    n=0; out=[]
+    for item in items:
+        region=item['region_id']
+        if region=='game.id': text='# 123456'
+        elif region=='bet':
+            n+=1; text=f'S {n*40} BB'
+            if n==5 and os.environ['POKER_TEST_MODE']=='blank': text=''
+        else: text='s' if region.endswith('.suit') else 'A'
+        out.append({'text':text,'raw_text':text,'confidence':0.8,'model_sha256':'fake','region_seen':region,'png_sha256':hashlib.sha256(base64.b64decode(item['png_base64'])).hexdigest()})
+    print(json.dumps({'ok':True,'predictions':out}),flush=True)
+"#).unwrap();
+            let env = HashMap::from([
+                ("OCR_MODEL_PYTHON".into(), "/usr/bin/python3".into()),
+                ("POKER_TEST_MODE".into(), mode.into()),
+            ]);
+            *fixture.gameplay.ocr.lock().unwrap() = Ocr::new(&fixture.repo, &env);
+            let mut fields = vec![
+                json!({"id":"game.id","bounds":{"x":0,"y":0,"width":4,"height":4}}),
+                split.clone(),
+            ];
+            let mut card_ids = Vec::new();
+            for base in (0..5)
+                .map(|i| format!("board.{i}"))
+                .chain((0..9).flat_map(|i| (0..2).map(move |j| format!("seat.{i}.card.{j}"))))
+            {
+                for suffix in ["rank", "suit"] {
+                    let id = format!("{base}.{suffix}");
+                    fields.push(json!({"id":id,"bounds":{"x":10,"y":10,"width":4,"height":4},"presence":{"state":if suffix=="rank" {"absent"} else {"ambiguous"}}}));
+                    card_ids.push(id);
+                }
+            }
+            assert_eq!(card_ids.len(), 46);
+            let (results, _, count) = fixture
+                .gameplay
+                .read_frame(&image, &json!({"regions":fields}))
+                .unwrap()
+                .unwrap();
+            assert_eq!(count, 57);
+            assert_eq!(results.as_object().unwrap().len(), 48);
+            if mode == "error" {
+                assert!(results["split_pot"]["error"]
+                    .as_str()
+                    .unwrap()
+                    .contains("fake batch error"));
+                assert!(results["split_pot"]["prediction"].is_null());
+            } else {
+                let prediction = &results["split_pot"]["prediction"];
+                assert_eq!(prediction["components"].as_array().unwrap().len(), 10);
+                assert_eq!(prediction["schema_valid"], mode == "valid");
+                if mode == "valid" {
+                    assert_eq!(
+                        prediction["text"],
+                        (1..=10)
+                            .map(|n| format!("S {} BB", n * 40))
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    );
+                }
+                for (i, part) in parts.iter().enumerate() {
+                    assert_eq!(prediction["components"][i]["region_seen"], "bet");
+                    assert_eq!(
+                        prediction["components"][i]["png_sha256"],
+                        crate::lab::sha256(part)
+                    );
+                }
+                for id in &card_ids {
+                    assert_eq!(results[id]["prediction"]["region_seen"], *id);
+                }
+            }
+        }
+    }
+
     #[test]
     fn invalid_hand_gate_skips_other_crops_and_shutdown_cancels_work() {
         let fixture = Fixture::new();

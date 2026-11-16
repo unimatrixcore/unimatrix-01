@@ -1,5 +1,13 @@
 import type { Bounds, Point } from "./geometry.mts";
 
+export type RegionGuide = {
+  slot: Bounds;
+  anchor: Point;
+  alignment: "left" | "center" | "right";
+  family: string;
+  source: "css_slot" | "deck_glyph_union";
+};
+
 export type Region = {
   id: string;
   category: string;
@@ -18,10 +26,21 @@ export type Region = {
   inkBounds?: Bounds | null;
   inkPolygon?: Point[] | null;
   cropBounds?: Bounds | null;
+  cvBounds?: Bounds;
+  cardPrior?: {
+    quad: Point[];
+    rank: { x: number; y: number; w: number; h: number };
+    suit: { x: number; y: number; w: number; h: number };
+    search_radius_px: number;
+    max_angle_delta_degrees: number;
+    foreground_polarity?: string;
+  };
   cropLabel?: string | null;
   autoLabelEligible?: boolean;
   cropOverlaps?: string[];
   envelope?: { policy: string; limit: string; clippedToViewport: boolean };
+  guide?: RegionGuide;
+  guideUnsupportedReason?: string;
 };
 
 type MockState = {
@@ -239,7 +258,7 @@ export async function extractRegions(): Promise<{
     false,
   ).semanticValue = state.timer?.remaining ?? null;
 
-  const glyphCache = new Map<string, { rank: Bounds; suit: Bounds }>();
+  const glyphCache = new Map<string, { rank: Bounds; suit: Bounds; foregroundPolarity: string }>();
   const glyphs = async (face: Element | string) => {
     const url =
       typeof face === "string"
@@ -262,6 +281,26 @@ export async function extractRegions(): Promise<{
     document.body.append(svg);
     try {
       const candidates: Bounds[] = [];
+      const paints: { bounds: Bounds; fill: string }[] = [];
+      let background: { area: number; fill: string } | undefined;
+      const fillOf = (path: Element) =>
+        path.getAttribute("fill") ?? path.closest("[fill]")?.getAttribute("fill") ?? "black";
+      const lightness = (fill: string) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 1;
+        const ctx = canvas.getContext("2d")!;
+        ctx.fillStyle = fill;
+        ctx.fillRect(0, 0, 1, 1);
+        const rgb = ctx.getImageData(0, 0, 1, 1).data;
+        return (rgb[0]! + rgb[1]! + rgb[2]!) / 3;
+      };
+      for (const rect of source.querySelectorAll("rect")) {
+        if (rect.closest("defs")) continue;
+        const width = parseFloat(rect.getAttribute("width") ?? "0"),
+          height = parseFloat(rect.getAttribute("height") ?? "0");
+        const area = width * height;
+        if (!background || area > background.area) background = { area, fill: fillOf(rect) };
+      }
       for (const path of source.querySelectorAll("path")) {
         if (path.closest("defs")) continue;
         if (path.parentElement?.getAttribute("transform") || path.getAttribute("transform"))
@@ -270,8 +309,12 @@ export async function extractRegions(): Promise<{
         clone.setAttribute("d", path.getAttribute("d") ?? "");
         svg.append(clone);
         const b = clone.getBBox();
+        const fill = fillOf(path);
+        if (!background || b.width * b.height > background.area)
+          background = { area: b.width * b.height, fill };
         if (b.x >= 0 && b.x + b.width <= 13 && b.y >= 0 && b.y + b.height <= 24) {
           candidates.push({ x: b.x, y: b.y, width: b.width, height: b.height });
+          paints.push({ bounds: { x: b.x, y: b.y, width: b.width, height: b.height }, fill });
         }
       }
       const group = (suit: boolean): Bounds => {
@@ -286,7 +329,14 @@ export async function extractRegions(): Promise<{
           height: (Math.max(...found.map((b) => b.y + b.height)) + 0.5 - y) / 44,
         };
       };
-      const result = { rank: group(false), suit: group(true) };
+      const rankPaint = paints.find((p) => p.bounds.y + p.bounds.height <= 13);
+      const foregroundPolarity =
+        rankPaint && background
+          ? lightness(rankPaint.fill) > lightness(background.fill)
+            ? "light"
+            : "dark"
+          : "mixed";
+      const result = { rank: group(false), suit: group(true), foregroundPolarity };
       glyphCache.set(url, result);
       return result;
     } finally {
@@ -307,6 +357,8 @@ export async function extractRegions(): Promise<{
       height: Math.max(...items.map((b) => b.y + b.height)) - y,
     };
   };
+  const polarities = [...new Set(deckGlyphs.map((g) => g.foregroundPolarity))];
+  const deckPolarity = polarities.length === 1 ? polarities[0]! : "mixed";
   const glyphEnvelope = {
     rank: union(deckGlyphs.map((g) => g.rank)),
     suit: union(deckGlyphs.map((g) => g.suit)),
@@ -359,6 +411,26 @@ export async function extractRegions(): Promise<{
             r.height / 2 +
             ((x - 0.5) * width * matrix.b + (y - 0.5) * height * matrix.d) * outerScaleY,
         });
+        const faceRadius =
+          parseFloat(getComputedStyle(face).borderTopLeftRadius) || glyphEnvelope.rank.x * width;
+        region.cardPrior = {
+          quad: [map(0, 0), map(1, 0), map(1, 1), map(0, 1)],
+          rank: {
+            x: glyphEnvelope.rank.x,
+            y: glyphEnvelope.rank.y,
+            w: glyphEnvelope.rank.width,
+            h: glyphEnvelope.rank.height,
+          },
+          suit: {
+            x: glyphEnvelope.suit.x,
+            y: glyphEnvelope.suit.y,
+            w: glyphEnvelope.suit.width,
+            h: glyphEnvelope.suit.height,
+          },
+          search_radius_px: Math.max(1, Math.ceil(faceRadius * outerScaleX)),
+          max_angle_delta_degrees: (Math.abs(Math.atan2(matrix.b, matrix.a)) * 180) / Math.PI,
+          foreground_polarity: deckPolarity,
+        };
         const polygon = [
           map(b.x, b.y),
           map(b.x + b.width, b.y),
@@ -380,6 +452,74 @@ export async function extractRegions(): Promise<{
           width: Math.max(...inkPolygon.map((p) => p.x)) - ix,
           height: Math.max(...inkPolygon.map((p) => p.y)) - iy,
         };
+        const rankPoints = [
+          map(glyphEnvelope.rank.x, glyphEnvelope.rank.y),
+          map(glyphEnvelope.rank.x + glyphEnvelope.rank.width, glyphEnvelope.rank.y),
+          map(
+            glyphEnvelope.rank.x + glyphEnvelope.rank.width,
+            glyphEnvelope.rank.y + glyphEnvelope.rank.height,
+          ),
+          map(glyphEnvelope.rank.x, glyphEnvelope.rank.y + glyphEnvelope.rank.height),
+        ];
+        const cx = Math.min(...rankPoints.map((p) => p.x));
+        const cy = Math.min(...rankPoints.map((p) => p.y));
+        region.cvBounds = {
+          x: cx,
+          y: cy,
+          width: Math.max(...rankPoints.map((p) => p.x)) - cx + (width * outerScaleX) / 2,
+          height: Math.max(...rankPoints.map((p) => p.y)) - cy,
+        };
+        if (seat !== null) {
+          const later = [...document.querySelectorAll(`[data-seat="${seat}"] .r-card`)].slice(
+            slot + 1,
+          );
+          for (const cover of later) {
+            const style = getComputedStyle(cover),
+              rect = cover.getBoundingClientRect();
+            const transform = new DOMMatrix(
+              style.transform === "none" ? undefined : style.transform,
+            );
+            const cw = parseFloat(style.width),
+              ch = parseFloat(style.height);
+            const sx = rect.width / (Math.abs(transform.a * cw) + Math.abs(transform.c * ch));
+            const sy = rect.height / (Math.abs(transform.b * cw) + Math.abs(transform.d * ch));
+            const points = [
+              [0, 0],
+              [1, 0],
+              [1, 1],
+              [0, 1],
+            ].map(([x, y]) => ({
+              x:
+                rect.x +
+                rect.width / 2 +
+                ((x! - 0.5) * cw * transform.a + (y! - 0.5) * ch * transform.c) * sx,
+              y:
+                rect.y +
+                rect.height / 2 +
+                ((x! - 0.5) * cw * transform.b + (y! - 0.5) * ch * transform.d) * sy,
+            }));
+            const top = region.cvBounds.y,
+              bottom = top + region.cvBounds.height;
+            const intersections = points.filter((p) => p.y >= top && p.y <= bottom).map((p) => p.x);
+            for (let edge = 0; edge < 4; edge++) {
+              const from = points[edge]!,
+                to = points[(edge + 1) % 4]!;
+              for (const y of [top, bottom])
+                if ((from.y - y) * (to.y - y) <= 0 && from.y !== to.y) {
+                  const ratio = (y - from.y) / (to.y - from.y);
+                  intersections.push(from.x + ratio * (to.x - from.x));
+                }
+            }
+            if (intersections.length) {
+              const boundary = Math.min(...intersections);
+              if (
+                boundary > region.cvBounds.x &&
+                boundary < region.cvBounds.x + region.cvBounds.width
+              )
+                region.cvBounds.width = boundary - region.cvBounds.x;
+            }
+          }
+        }
         region.envelope = {
           policy: "complete_deck_glyph_union",
           limit: "52card faces in the selected deck",
@@ -390,7 +530,7 @@ export async function extractRegions(): Promise<{
             ? value.slice(0, -1) === "T"
               ? "10"
               : value.slice(0, -1)
-            : ({ s: "♠", h: "♥", d: "♦", c: "♣" }[value.slice(-1)] ?? null);
+            : value.slice(-1);
         region.polygon = polygon;
         const x = Math.min(...polygon.map((p) => p.x)),
           y = Math.min(...polygon.map((p) => p.y));
@@ -399,6 +539,16 @@ export async function extractRegions(): Promise<{
           y,
           width: Math.max(...polygon.map((p) => p.x)) - x,
           height: Math.max(...polygon.map((p) => p.y)) - y,
+        };
+        region.guide = {
+          slot: region.bounds,
+          anchor: {
+            x: region.bounds.x + region.bounds.width / 2,
+            y: region.bounds.y + region.bounds.height / 2,
+          },
+          alignment: "center",
+          family: `card.${category}`,
+          source: "deck_glyph_union",
         };
         region.rotation = (Math.atan2(matrix.b * scaleY, matrix.a * scaleX) * 180) / Math.PI;
         const clipping = ancestorClipping(face, region.inkBounds);
@@ -507,6 +657,9 @@ export async function extractRegions(): Promise<{
     const el = targets.get(region.id);
     if (!el) continue;
     let b: Bounds | null = null;
+    let guideSlot: Bounds | null = null;
+    let guideAlignment: RegionGuide["alignment"] = "center";
+    let guideFamily = region.category;
     let policy = "fixed_css_allocation";
     let limit = "current layout allocation; content beyond it is unsupported";
     const css = getComputedStyle(el);
@@ -518,6 +671,9 @@ export async function extractRegions(): Promise<{
         const r = anchor.getBoundingClientRect(),
           justify = getComputedStyle(anchor).justifyContent,
           width = moneyWidth(el);
+        guideSlot = asBounds(r);
+        guideAlignment =
+          justify === "flex-start" ? "left" : justify === "flex-end" ? "right" : "center";
         b = {
           x:
             justify === "flex-start"
@@ -548,6 +704,7 @@ export async function extractRegions(): Promise<{
         group = el.closest(".ReactPokerPotsContainer__chips");
       if (area && group) {
         const g = group.getBoundingClientRect(),
+          container = el.closest(".ReactPokerPotsContainer")?.getBoundingClientRect(),
           font = px(getComputedStyle(group).fontSize);
         const width = Math.min(area.width, px(getComputedStyle(group).maxWidth) || area.width);
         const rowHeight = Math.max(
@@ -556,10 +713,21 @@ export async function extractRegions(): Promise<{
         );
         b = {
           x: area.x + (area.width - width) / 2,
-          y: g.y,
+          y:
+            (container ? container.y + container.height / 2 : g.y + g.height / 2) -
+            (rowHeight * 10) / 2,
           width,
           height: rowHeight * 10,
         };
+        const chip = el.closest(".ReactPokerPotsContainer__chip")?.getBoundingClientRect();
+        if (container && chip)
+          guideSlot = {
+            x: b.x,
+            y: container.y + container.height / 2 - chip.height / 2,
+            width: b.width,
+            height: chip.height,
+          };
+        guideFamily = "split_pot_group";
       }
       policy = "shared_wrapping_pot_allocation";
       limit = "up to10pots;CSS max-width and one row per pot;slots can share potential bounds";
@@ -585,6 +753,23 @@ export async function extractRegions(): Promise<{
           width,
           height,
         };
+        if (region.category === "game_id") {
+          const left = px(css.paddingLeft),
+            right = px(css.paddingRight);
+          guideSlot = {
+            x: r.x + left,
+            y: r.y,
+            width: Math.max(0, r.width - left - right),
+            height: r.height,
+          };
+          guideAlignment =
+            css.justifyContent === "center" || css.textAlign === "center"
+              ? "center"
+              : ["flex-end", "end"].includes(css.justifyContent) ||
+                  ["right", "end"].includes(css.textAlign)
+                ? "right"
+                : "left";
+        } else guideAlignment = "right";
       }
       policy = "visible_header_allocation";
       limit =
@@ -608,31 +793,141 @@ export async function extractRegions(): Promise<{
       limit =
         "single line inside the seat CSS allocation;uncapped custom strings that overflow are unsupported";
     } else if (region.category === "popup") {
-      const message = el.closest(".message");
-      if (message) {
-        const m = message.getBoundingClientRect(),
-          max = px(getComputedStyle(message).maxWidth);
-        const typed = (message as HTMLElement).computedStyleMap();
-        if (typed.get("width")?.toString() !== "auto" && typed.get("height")?.toString() !== "auto")
-          b = asBounds(m);
-        else if (max && css.whiteSpace === "nowrap")
-          b = { x: m.x + (m.width - max) / 2, y: m.y, width: max, height: m.height };
+      const message = el.closest(".message") as HTMLElement | null;
+      if (message && css.whiteSpace === "nowrap") {
+        const savedStyle = message.getAttribute("style"),
+          savedClass = message.className;
+        try {
+          const max = px(getComputedStyle(message).maxWidth);
+          if (!(max > 0)) throw new Error("Popup has no finite CSS max-width");
+          message.style.setProperty("transition", "none", "important");
+          message.style.setProperty("animation", "none", "important");
+          message.style.setProperty("width", `${max}px`, "important");
+          const phases = [
+            "bubble-animation-enter",
+            "bubble-animation-enter-active",
+            "bubble-animation-enter-done",
+            "bubble-animation-exit-active",
+          ];
+          const samples = phases.map((phase) => {
+            message.className = `message ${phase}`;
+            const style = getComputedStyle(message),
+              matrix = new DOMMatrix(style.transform);
+            const origin = style.transformOrigin.split(" ").map(px);
+            if (
+              matrix.b !== 0 ||
+              matrix.c !== 0 ||
+              matrix.a <= 0 ||
+              matrix.a > 1 ||
+              matrix.d <= 0 ||
+              matrix.d > 1
+            )
+              throw new Error("Unsupported popup transform");
+            return { matrix, origin };
+          });
+          message.style.setProperty("transform", "none", "important");
+          const layout = message.getBoundingClientRect(),
+            row = el.getBoundingClientRect();
+          const done = samples[2]!;
+          guideSlot = {
+            x: layout.x + done.matrix.e,
+            y: row.y + done.matrix.f,
+            width: layout.width,
+            height: row.height,
+          };
+          const xs: number[] = [],
+            ys: number[] = [];
+          // The source interpolates both transform and origin. Independent endpoint
+          // ranges conservatively enclose their product throughout either transition.
+          for (const point of [0, layout.width])
+            for (const origin of samples.map((s) => s.origin[0]!))
+              for (const scale of samples.map((s) => s.matrix.a))
+                for (const translate of samples.map((s) => s.matrix.e))
+                  xs.push(layout.x + origin + scale * (point - origin) + translate);
+          for (const point of [0, layout.height])
+            for (const origin of samples.map((s) => s.origin[1]!))
+              for (const scale of samples.map((s) => s.matrix.d))
+                for (const translate of samples.map((s) => s.matrix.f))
+                  ys.push(layout.y + origin + scale * (point - origin) + translate);
+          b = {
+            x: Math.min(...xs),
+            y: Math.min(...ys),
+            width: Math.max(...xs) - Math.min(...xs),
+            height: Math.max(...ys) - Math.min(...ys),
+          };
+        } finally {
+          message.className = savedClass;
+          if (savedStyle === null) message.removeAttribute("style");
+          else message.setAttribute("style", savedStyle);
+        }
       }
-      policy = "bounded_popup_allocation";
+      policy = "source_popup_motion_envelope";
       limit =
-        "only CSS-nowrap bubbles with finite max-width;wrapping bubble height has no isolated maximum";
+        "CSS-nowrap finite max-width;source enter/done/exit translate-scale and transform-origin ranges;wrapping unsupported";
     } else if (region.category === "combination") {
       const allocation = el.closest(".seat-combination-names");
       if (allocation) b = asBounds(allocation.getBoundingClientRect());
       limit =
         "fixed CSS combination slot;uncapped fragments/rows beyond its visible allocation are unsupported";
     } else if (region.category === "award") {
-      const seat = el.closest("[data-seat]")?.getBoundingClientRect(),
-        r = el.getBoundingClientRect(),
-        width = moneyWidth(el);
-      if (seat) b = { x: seat.x + (seat.width - width) / 2, y: r.y, width, height: r.height };
-      policy = "safe_funds_formatter";
-      limit = "safe integer native funds;built-in BB/currency formats";
+      const wrapper = el.closest(".r-seat__won_message") as HTMLElement | null;
+      const message = el.closest(".PlayerWonContainer__message");
+      if (wrapper && message) {
+        const translations = wrapper
+          .getAnimations()
+          .flatMap((animation) =>
+            animation.effect instanceof KeyframeEffect
+              ? animation.effect
+                  .getKeyframes()
+                  .map((frame) => new DOMMatrix(String(frame.transform ?? "none")))
+              : [],
+          );
+        if (
+          !translations.length ||
+          translations.some((m) => m.a !== 1 || m.d !== 1 || m.b !== 0 || m.c !== 0)
+        ) {
+          region.visibility = "unsupported";
+          region.reason = "Award source requires linear translation keyframes";
+        } else {
+          const saved = wrapper.getAttribute("style");
+          try {
+            wrapper.style.setProperty("transform", "none", "important");
+            const savedTextStyle = el.getAttribute("style");
+            (el as HTMLElement).style.setProperty("white-space", "nowrap", "important");
+            const row = el.getBoundingClientRect();
+            if (savedTextStyle === null) el.removeAttribute("style");
+            else el.setAttribute("style", savedTextStyle);
+            const slot = message.getBoundingClientRect(),
+              width = moneyWidth(el),
+              align = getComputedStyle(message).alignItems;
+            guideAlignment =
+              align === "flex-start" ? "left" : align === "flex-end" ? "right" : "center";
+            guideSlot = { x: slot.x, y: row.y, width: slot.width, height: row.height };
+            const x =
+              guideAlignment === "left"
+                ? slot.x
+                : guideAlignment === "right"
+                  ? slot.right - width
+                  : slot.x + (slot.width - width) / 2;
+            const minX = Math.min(0, ...translations.map((m) => m.e)),
+              maxX = Math.max(0, ...translations.map((m) => m.e));
+            const minY = Math.min(0, ...translations.map((m) => m.f)),
+              maxY = Math.max(0, ...translations.map((m) => m.f));
+            b = {
+              x: x + minX,
+              y: row.y + minY,
+              width: width + maxX - minX,
+              height: row.height * (css.whiteSpace === "nowrap" ? 1 : 2) + maxY - minY,
+            };
+          } finally {
+            if (saved === null) wrapper.removeAttribute("style");
+            else wrapper.setAttribute("style", saved);
+          }
+        }
+      }
+      policy = "source_award_motion_envelope";
+      limit =
+        "safe funds formatter;at most two lines at the single BB separator;full source linear translation keyframe extrema;nominal fixed CSS parent first-line slot";
     } else if (region.label === null) b = asBounds(el.getBoundingClientRect());
     if (!b) {
       region.bounds = null;
@@ -649,7 +944,11 @@ export async function extractRegions(): Promise<{
       continue;
     }
     if (
-      ["safe_funds_formatter", "shared_wrapping_pot_allocation"].includes(policy) &&
+      [
+        "safe_funds_formatter",
+        "shared_wrapping_pot_allocation",
+        "source_award_motion_envelope",
+      ].includes(policy) &&
       state.currencyFormat !== undefined &&
       !["{0}", "${0}", "{value}", "${value}"].includes(state.currencyFormat)
     ) {
@@ -658,6 +957,34 @@ export async function extractRegions(): Promise<{
     }
     region.bounds = b;
     region.polygon = rectangle(b);
+    const nominal = guideSlot ?? b;
+    const slot = {
+      x: Math.max(b.x, nominal.x),
+      y: Math.max(b.y, nominal.y),
+      width: Math.max(
+        0,
+        Math.min(b.x + b.width, nominal.x + nominal.width) - Math.max(b.x, nominal.x),
+      ),
+      height: Math.max(
+        0,
+        Math.min(b.y + b.height, nominal.y + nominal.height) - Math.max(b.y, nominal.y),
+      ),
+    };
+    region.guide = {
+      slot,
+      anchor: {
+        x:
+          guideAlignment === "left"
+            ? slot.x
+            : guideAlignment === "right"
+              ? slot.x + slot.width
+              : slot.x + slot.width / 2,
+        y: slot.y + slot.height / 2,
+      },
+      alignment: guideAlignment,
+      family: guideFamily,
+      source: "css_slot",
+    };
     const clipped =
       b.x < 0 || b.y < 0 || b.x + b.width > innerWidth || b.y + b.height > innerHeight;
     region.envelope = { policy, limit, clippedToViewport: clipped };

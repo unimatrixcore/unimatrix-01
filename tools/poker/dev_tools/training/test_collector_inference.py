@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import patch
 import cv2
 import numpy as np
-from collector_inference import suggest, suggest_many
+from collector_inference import prediction_for, suggest, suggest_many
 
 class Model:
     def __init__(self,text):
@@ -23,6 +23,77 @@ class SuggestionTests(unittest.TestCase):
     def setUp(self):
         _,image=cv2.imencode('.png',np.full((12,40,3),(53,42,25),np.uint8));self.png=image.tobytes()
         self.models={'names':Model('Player 1'),'general':Model('G10.5BB')};self.freeze={'weights':{'names':'a'*64,'general':'b'*64}}
+    def test_active_normalizer_preserves_display_name_spaces(self):
+        image = np.full((12, 40, 3), (53, 42, 25), np.uint8)
+        for raw in ('John Smith', 'JohnSmith', 'A  B', 'maxhamme...'):
+            with self.subTest(raw=raw):
+                result = prediction_for(self.freeze, self.png, image, 'name', raw, .875)
+                self.assertEqual((result['raw_text'], result['text']), (raw, raw))
+                self.assertTrue(result['schema_valid'])
+                self.assertEqual(result['model_sha256'], self.freeze['weights']['names'])
+                self.assertEqual(result['model_id'], 'names:' + 'a' * 12)
+                self.assertEqual(result['confidence'], .875)
+                self.assertEqual(result['image_sha256'], hashlib.sha256(self.png).hexdigest())
+                self.assertNotIn('format_context', result)
+
+    def test_active_normalizer_handles_current_money_and_timer_contract(self):
+        image = np.full((12, 40, 3), (53, 42, 25), np.uint8)
+        cases = [
+            ('bet', 'S355.6BB', 'S 355.6 BB'),
+            ('bank', 'G1,234.12345678BB', 'G 1,234.12345678 BB'),
+            ('pot', 'Pot:S1,234.12345678BB', 'Pot: S 1,234.12345678 BB'),
+            ('pot', 'RunItTwicepause(7sec)', 'Run It Twice pause (7 sec)'),
+            ('split_pot', 'S235.5BBG37.5BB', 'S 235.5 BB G 37.5 BB'),
+            ('card', '10', '10'),
+            ('suit', 'D', 'd'),
+        ]
+        for category, raw, expected in cases:
+            with self.subTest(category=category, raw=raw):
+                result = prediction_for(self.freeze, self.png, image, category, raw, .9)
+                self.assertEqual(result['text'], expected)
+                self.assertEqual(result['raw_text'], raw)
+                self.assertTrue(result['schema_valid'])
+                self.assertEqual(result['model_sha256'], self.freeze['weights']['general'])
+                self.assertEqual(result['confidence'], .9)
+                expected_pixels = hashlib.sha256(b'40x12:RGB:' + cv2.cvtColor(image, cv2.COLOR_BGR2RGB).tobytes()).hexdigest()
+                self.assertEqual(result['pixel_sha256'], expected_pixels)
+                self.assertTrue(result['suggestion_only'])
+
+    def test_active_normalizer_does_not_repair_invalid_glyphs_or_missing_units(self):
+        image = np.full((12, 40, 3), (53, 42, 25), np.uint8)
+        for category, raw in [('bet', 'S355.6BE'), ('bet', 'S355.6B'), ('bet', '355.6BB'), ('card', 'T'), ('status', 'Made Up Action')]:
+            with self.subTest(category=category, raw=raw):
+                result = prediction_for(self.freeze, self.png, image, category, raw, .95)
+                self.assertEqual((result['raw_text'], result['text']), (raw, raw))
+                self.assertFalse(result['schema_valid'])
+
+    def test_known_cash_context_is_optional_and_never_inferred(self):
+        image = np.full((12, 40, 3), (53, 42, 25), np.uint8)
+        raw = 'S 1K'
+        default = prediction_for(self.freeze, self.png, image, 'bet', raw, .9)
+        contextual = prediction_for(self.freeze, self.png, image, 'bet', raw, .9, '{0}')
+        self.assertFalse(default['schema_valid'])
+        self.assertTrue(contextual['schema_valid'])
+        self.assertEqual(contextual['format_context'], {'currency_format': '{0}', 'source': 'explicit_request'})
+        for key in ('raw_text', 'text', 'model_sha256', 'model_id', 'image_sha256', 'pixel_sha256', 'confidence'):
+            self.assertEqual(default[key], contextual[key])
+        with self.assertRaisesRegex(ValueError, 'currency_format'):
+            prediction_for(self.freeze, self.png, image, 'bet', raw, .9, {})
+
+    def test_explicit_context_reaches_single_and_batched_suggestions(self):
+        image = np.full((12, 40, 3), (53, 42, 25), np.uint8)
+        image[0, 0] = 255
+        _, encoded = cv2.imencode('.png', image)
+        raw = encoded.tobytes()
+        self.models['general'] = Model('S 1K')
+        single = suggest(self.models, self.freeze, raw, 'seats[0].bet', currency_format='{0}')
+        many = suggest_many(self.models, self.freeze, [(raw, 'seats[0].bet'), (raw, 'seats[1].bet')], currency_format='{0}')
+        self.assertTrue(single['schema_valid'])
+        self.assertEqual(many, [single, single])
+        self.assertEqual(single['raw_text'], 'S 1K')
+        self.assertEqual(single['format_context']['source'], 'explicit_request')
+        self.assertEqual(self.models['general'].batch_sizes, [2])
+
     def test_role_raw_text_and_image_provenance(self):
         names=suggest(self.models,self.freeze,self.png,'seats[0].name')
         self.assertEqual((names['raw_text'],names['text']),('Player 1','Player 1'))

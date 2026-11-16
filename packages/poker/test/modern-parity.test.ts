@@ -48,7 +48,7 @@ describe("current Poker Lab contract", () => {
     ["name", "Player 1", true],
     ["name", "*RESERVED*", true],
     ["name", "Player 9", true],
-    ["name", "Player 10", false],
+    ["name", "Player 10", true],
     ["status", "Fold", true],
     ["status", "Hide Cards", true],
     ["status", "Away", true],
@@ -61,7 +61,7 @@ describe("current Poker Lab contract", () => {
     ["card", "T", false],
     ["dealer", "D", true],
     ["dealer", "", true],
-  ] as const)("keeps %s / %s behavior", (category, value, expected) => {
+  ] as const)("validates source-supported %s / %s", (category, value, expected) => {
     expect(validateOcrText(category, value)).toBe(expected);
   });
   it("recognizes whole configured IDs and separates manual status transcription", () => {

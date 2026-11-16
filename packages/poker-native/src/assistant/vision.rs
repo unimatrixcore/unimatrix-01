@@ -744,6 +744,15 @@ pub fn compose_validated_image(
             include_str!("../../assets/colors.json"),
         )?)
         .map_err(|e| e.to_string())?;
+    compose_validated_image_config(img, value, target_username, &config, &colors)
+}
+fn compose_validated_image_config(
+    img: &DynamicImage,
+    value: &serde_json::Value,
+    target_username: &str,
+    config: &RegionConfig,
+    colors: &ColorConfig,
+) -> Result<GameState, String> {
     if (img.width(), img.height()) != (config.screen_width, config.screen_height) {
         return Err("Source dimensions changed".into());
     }
@@ -774,7 +783,7 @@ pub fn compose_validated_image(
     if state.game_id.is_none() {
         return Err("Game ID is not confirmed".into());
     }
-    if let Some(cards) = config.community_cards {
+    if let Some(cards) = config.community_cards.as_ref() {
         for (index, rect) in cards.iter().enumerate() {
             // Preserve every board position even when an earlier rank is unknown.
             state.community_cards.push(validated_card(
@@ -788,7 +797,7 @@ pub fn compose_validated_image(
     // Keep every candidate until the full frame has been examined. Two turn
     // highlights during a transition are ambiguous, so neither may win by order.
     let mut turn_candidates = Vec::new();
-    if let Some(seats) = config.seats {
+    if let Some(seats) = config.seats.as_ref() {
         for (index, seat) in seats.iter().enumerate() {
             let Some(seat) = seat else { continue };
             let id = index as u32;
@@ -923,7 +932,14 @@ mod validated_tests {
             }
         }
         let value = serde_json::json!({"active_seats":admitted,"regions":{"round_id":{"decision":{"state":"text","text":"#123456"}}}});
-        compose_validated_image(&DynamicImage::ImageRgb8(image), &value, "").unwrap()
+        compose_validated_image_config(
+            &DynamicImage::ImageRgb8(image),
+            &value,
+            "",
+            &config,
+            &serde_json::from_str(include_str!("../../assets/colors.json")).unwrap(),
+        )
+        .unwrap()
     }
 
     #[test]
@@ -980,7 +996,14 @@ mod validated_tests {
             let image = image::open(root.join(&filename)).unwrap();
             let value = serde_json::json!({"active_seats":truth["active_seats"],"regions":{"round_id":{"decision":{"state":"text","text":"#123456"}}}});
             let start = std::time::Instant::now();
-            let state = compose_validated_image(&image, &value, "").unwrap();
+            let state = compose_validated_image_config(
+                &image,
+                &value,
+                "",
+                &serde_json::from_str(include_str!("../../assets/regions.json")).unwrap(),
+                &serde_json::from_str(include_str!("../../assets/colors.json")).unwrap(),
+            )
+            .unwrap();
             let milliseconds = start.elapsed().as_secs_f64() * 1000.0;
             observations.push(serde_json::json!({"frame_index":index,"file":filename,"source_sha256":truth["source_sha256"],"expected_turn_seat":expected[index],"observed_turn_seat":state.active_seat,"canonical_color":state.active_seat_color,"compose_ms":milliseconds,"matches":state.active_seat==expected[index]}));
         }
@@ -1042,7 +1065,14 @@ mod validated_tests {
         ]);
         let image = DynamicImage::ImageRgb8(image::RgbImage::from_pixel(1920, 1080, rgb));
         let value = serde_json::json!({"active_seats":[],"regions":{"round_id":{"decision":{"state":"text","text":"#123456"}},"community_cards[0]":{"decision":{"state":"unknown","text":"A"}},"community_cards[1]":{"decision":{"state":"text","text":"Q"}}}});
-        let state = compose_validated_image(&image, &value, "").unwrap();
+        let state = compose_validated_image_config(
+            &image,
+            &value,
+            "",
+            &serde_json::from_str(include_str!("../../assets/regions.json")).unwrap(),
+            &colors,
+        )
+        .unwrap();
         assert_eq!(state.community_cards.len(), 5);
         assert!(state.community_cards[0].is_none());
         assert!(state.community_cards[1]

@@ -1,11 +1,11 @@
-import contract from "../ocr-contract.json" with { type: "json" };
+import { pokerOcrValueContract as contract, isPokerOcrValue } from "@unimatrix/shared";
 
 export const pokerOcrContract = contract;
 export const pokerOcrContractSha256 =
-  "1b8d39e829724c061055fe173c0ad0a1e023f8f4b7f6349ea89921074b8559bf";
+  "357e45ae936a3617a34d48b0fe26dd3ea1d5465aecafdfcc5b48badeb4dd6417";
 export type PokerOcrCategory = keyof typeof contract.categories;
 const rules = contract.region_rules.map((rule) => ({
-  category: rule.category as PokerOcrCategory,
+  category: rule.category,
   pattern: new RegExp(`^(?:${rule.pattern})$`),
 }));
 
@@ -18,11 +18,7 @@ export function validateOcrText(
   text: string,
   allowBlank = false,
 ): boolean {
-  if (text === "" && allowBlank) return true;
-  const rule = contract.categories[category];
-  return "values" in rule
-    ? rule.values.includes(text)
-    : new RegExp(`^(?:${rule.pattern})$`).exec(text)?.[0] === text;
+  return isPokerOcrValue(category, text, allowBlank);
 }
 
 export function validateReviewedLabel(regionId: string, label: string): string | null {

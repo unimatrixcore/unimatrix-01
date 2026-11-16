@@ -11,7 +11,14 @@ use std::{
 };
 use uuid::Uuid;
 
+#[path = "store/import.rs"]
+pub mod import;
+
 type Result<T> = std::result::Result<T, String>;
+#[path = "store/collections.rs"]
+mod collections;
+#[path = "store/effective.rs"]
+mod effective;
 
 pub struct Store {
     root: PathBuf,
@@ -28,6 +35,14 @@ fn now() -> String {
 impl Store {
     /// Additive migrations preserve existing Python-created recording evidence.
     pub fn new(root: PathBuf) -> Result<Self> {
+        Self::open(root, true)
+    }
+
+    pub(in crate::lab) fn for_import(root: PathBuf) -> Result<Self> {
+        Self::open(root, false)
+    }
+
+    fn open(root: PathBuf, recover_pending: bool) -> Result<Self> {
         fs::create_dir_all(root.join("frames")).map_err(err)?;
         let store = Self { root };
         let mut conn = store.connect()?;
@@ -41,12 +56,19 @@ impl Store {
                 captured_at TEXT NOT NULL,hand_id TEXT,ocr_status TEXT NOT NULL,error TEXT,
                 width INTEGER NOT NULL,height INTEGER NOT NULL,image_sha256 TEXT NOT NULL,
                 results_json TEXT NOT NULL,config_hash TEXT NOT NULL,config_json TEXT NOT NULL);
-            CREATE INDEX IF NOT EXISTS frames_session_hand ON frames(session_id,hand_id,captured_at);")
+            CREATE INDEX IF NOT EXISTS frames_session_hand ON frames(session_id,hand_id,captured_at);
+            CREATE TABLE IF NOT EXISTS collections(id TEXT PRIMARY KEY,name TEXT NOT NULL,kind TEXT NOT NULL DEFAULT 'gameplay',archived INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL);
+            INSERT OR IGNORE INTO collections(id,name,kind,created_at) VALUES('current','Gameplay','gameplay',datetime('now'));")
             .map_err(err)?;
         let tx = conn
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
             .map_err(err)?;
         for (table, column, migration) in [
+            (
+                "sessions",
+                "collection_id",
+                "ALTER TABLE sessions ADD COLUMN collection_id TEXT REFERENCES collections(id)",
+            ),
             (
                 "sessions",
                 "archived",
@@ -71,10 +93,24 @@ impl Store {
                 tx.execute_batch(migration).map_err(err)?;
             }
         }
-        tx.execute("UPDATE frames SET ocr_status='error',error='OCR interrupted by server restart' WHERE ocr_status='pending'", []).map_err(err)?;
+        if recover_pending {
+            tx.execute("UPDATE frames SET ocr_status='error',error='OCR interrupted by server restart' WHERE ocr_status='pending'", []).map_err(err)?;
+        }
         tx.execute_batch("CREATE TABLE IF NOT EXISTS list_frame_revision(id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL); INSERT OR IGNORE INTO list_frame_revision VALUES(1,0); CREATE TRIGGER IF NOT EXISTS list_frame_delete AFTER DELETE ON frames BEGIN UPDATE list_frame_revision SET revision=revision+1 WHERE id=1; END; CREATE TRIGGER IF NOT EXISTS list_frame_update AFTER UPDATE OF session_id,hand_id,captured_at ON frames WHEN OLD.session_id IS NOT NEW.session_id OR OLD.hand_id IS NOT NEW.hand_id OR OLD.captured_at IS NOT NEW.captured_at BEGIN UPDATE list_frame_revision SET revision=revision+1 WHERE id=1; END;").map_err(err)?;
-        tx.execute_batch("CREATE TABLE IF NOT EXISTS list_session_revision(id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL); INSERT OR IGNORE INTO list_session_revision VALUES(1,0); CREATE TRIGGER IF NOT EXISTS list_session_insert AFTER INSERT ON sessions BEGIN UPDATE list_session_revision SET revision=revision+1 WHERE id=1; END; CREATE TRIGGER IF NOT EXISTS list_session_delete AFTER DELETE ON sessions BEGIN UPDATE list_session_revision SET revision=revision+1 WHERE id=1; END; CREATE TRIGGER IF NOT EXISTS list_session_update AFTER UPDATE OF name,archived,created_at ON sessions WHEN OLD.name IS NOT NEW.name OR OLD.archived IS NOT NEW.archived OR OLD.created_at IS NOT NEW.created_at BEGIN UPDATE list_session_revision SET revision=revision+1 WHERE id=1; END;").map_err(err)?;
+        tx.execute_batch("CREATE TABLE IF NOT EXISTS list_session_revision(id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL); INSERT OR IGNORE INTO list_session_revision VALUES(1,0); CREATE TRIGGER IF NOT EXISTS list_session_insert AFTER INSERT ON sessions BEGIN UPDATE list_session_revision SET revision=revision+1 WHERE id=1; END; CREATE TRIGGER IF NOT EXISTS list_session_delete AFTER DELETE ON sessions BEGIN UPDATE list_session_revision SET revision=revision+1 WHERE id=1; END; DROP TRIGGER IF EXISTS list_session_update; CREATE TRIGGER list_session_update AFTER UPDATE OF name,archived,created_at,collection_id ON sessions WHEN OLD.name IS NOT NEW.name OR OLD.archived IS NOT NEW.archived OR OLD.created_at IS NOT NEW.created_at OR OLD.collection_id IS NOT NEW.collection_id BEGIN UPDATE list_session_revision SET revision=revision+1 WHERE id=1; END;").map_err(err)?;
+        tx.execute(
+            "UPDATE sessions SET collection_id='current' WHERE collection_id IS NULL",
+            [],
+        )
+        .map_err(err)?;
+        effective::initialize(&tx)?;
+        import::initialize(&tx)?;
+        tx.execute_batch(
+            "CREATE TABLE IF NOT EXISTS gameplay_prune_cleanup(frame_id TEXT PRIMARY KEY)",
+        )
+        .map_err(err)?;
         tx.commit().map_err(err)?;
+        store.finish_prune_cleanup()?;
         Ok(store)
     }
 
@@ -96,8 +132,8 @@ impl Store {
         let conn = self.connect()?;
         conn.query_row(
             "SELECT s.id,s.name,s.source,s.interval_ms,s.status,s.created_at,s.stopped_at,
-            s.config_hash,s.archived,COUNT(f.id),COUNT(DISTINCT f.hand_id)
-            FROM sessions s LEFT JOIN frames f ON f.session_id=s.id WHERE s.id=? GROUP BY s.id",
+            s.config_hash,s.archived,COUNT(f.id),COUNT(DISTINCT f.hand_id),s.collection_id
+            FROM sessions s LEFT JOIN effective_frames f ON f.session_id=s.id WHERE s.id=? GROUP BY s.id",
             [id],
             |row| {
                 Ok(
@@ -106,7 +142,7 @@ impl Store {
                 "status":row.get::<_,String>(4)?,"created_at":row.get::<_,String>(5)?,
                 "stopped_at":row.get::<_,Option<String>>(6)?,"config_hash":row.get::<_,String>(7)?,
                 "archived":row.get::<_,i64>(8)? != 0,"frame_count":row.get::<_,i64>(9)?,
-                "hand_count":row.get::<_,i64>(10)?}),
+                "hand_count":row.get::<_,i64>(10)?,"collection_id":row.get::<_,String>(11)?}),
                 )
             },
         )
@@ -143,6 +179,22 @@ impl Store {
         cursor: Option<&str>,
         limit: usize,
     ) -> Result<Value> {
+        self.list_page_collection(kind, session, hand, order, archived, cursor, limit, None)
+    }
+    pub fn list_page_collection(
+        &self,
+        kind: &str,
+        session: Option<&str>,
+        hand: Option<&str>,
+        order: &str,
+        archived: bool,
+        cursor: Option<&str>,
+        limit: usize,
+        collection: Option<&str>,
+    ) -> Result<Value> {
+        if let Some(id) = collection {
+            self.collection(id)?;
+        }
         let mut conn = self.connect()?;
         let tx = conn.transaction().map_err(err)?;
         let revision_table = if kind == "sessions" {
@@ -160,7 +212,7 @@ impl Store {
         let table = if kind == "sessions" {
             "sessions"
         } else {
-            "frames"
+            "effective_frames"
         };
         let (ceiling, offset) = if let Some(cursor) = cursor {
             let value: Value = serde_json::from_str(cursor).map_err(err)?;
@@ -194,19 +246,19 @@ impl Store {
             "sessions" => {
                 let total = tx
                     .query_row(
-                        "SELECT COUNT(*) FROM sessions WHERE archived=?1 AND rowid<=?2",
-                        params![archived as i64, ceiling],
+                        "SELECT COUNT(*) FROM sessions WHERE archived=?1 AND rowid<=?2 AND (?3 IS NULL OR collection_id=?3)",
+                        params![archived as i64, ceiling,collection],
                         |r| r.get(0),
                     )
                     .map_err(err)?;
-                let mut q = tx.prepare("SELECT id,name,source,interval_ms,status,created_at,stopped_at,config_hash,archived,(SELECT COUNT(*) FROM frames WHERE session_id=sessions.id),(SELECT COUNT(DISTINCT hand_id) FROM frames WHERE session_id=sessions.id) FROM sessions WHERE archived=?1 AND rowid<=?2 ORDER BY created_at DESC,id DESC LIMIT ?3 OFFSET ?4").map_err(err)?;
-                let rows = q.query_map(params![archived as i64,ceiling,(limit+1) as i64,offset], |r| Ok(json!({"id":r.get::<_,String>(0)?,"name":r.get::<_,String>(1)?,"source":r.get::<_,String>(2)?,"interval_ms":r.get::<_,i64>(3)?,"status":r.get::<_,String>(4)?,"created_at":r.get::<_,String>(5)?,"stopped_at":r.get::<_,Option<String>>(6)?,"config_hash":r.get::<_,String>(7)?,"archived":r.get::<_,i64>(8)? != 0,"frame_count":r.get::<_,i64>(9)?,"hand_count":r.get::<_,i64>(10)?}))).map_err(err)?.collect::<std::result::Result<Vec<_>,_>>().map_err(err)?;
+                let mut q = tx.prepare("SELECT id,name,source,interval_ms,status,created_at,stopped_at,config_hash,archived,(SELECT COUNT(*) FROM effective_frames WHERE session_id=sessions.id),(SELECT COUNT(DISTINCT hand_id) FROM effective_frames WHERE session_id=sessions.id) FROM sessions WHERE archived=?1 AND rowid<=?2 AND (?3 IS NULL OR collection_id=?3) ORDER BY created_at DESC,id DESC LIMIT ?4 OFFSET ?5").map_err(err)?;
+                let rows = q.query_map(params![archived as i64,ceiling,collection,(limit+1) as i64,offset], |r| Ok(json!({"id":r.get::<_,String>(0)?,"name":r.get::<_,String>(1)?,"source":r.get::<_,String>(2)?,"interval_ms":r.get::<_,i64>(3)?,"status":r.get::<_,String>(4)?,"created_at":r.get::<_,String>(5)?,"stopped_at":r.get::<_,Option<String>>(6)?,"config_hash":r.get::<_,String>(7)?,"archived":r.get::<_,i64>(8)? != 0,"frame_count":r.get::<_,i64>(9)?,"hand_count":r.get::<_,i64>(10)?}))).map_err(err)?.collect::<std::result::Result<Vec<_>,_>>().map_err(err)?;
                 (rows, total)
             }
             "hands" => {
                 let id = session.ok_or("400:Missing session")?;
-                let total = tx.query_row("SELECT COUNT(*) FROM (SELECT hand_id FROM frames WHERE session_id=?1 AND rowid<=?2 GROUP BY hand_id)",params![id,ceiling],|r|r.get(0)).map_err(err)?;
-                let mut q = tx.prepare("SELECT hand_id,COUNT(*),MIN(captured_at),MAX(captured_at) FROM frames WHERE session_id=?1 AND rowid<=?2 GROUP BY hand_id ORDER BY MAX(captured_at) DESC,hand_id DESC LIMIT ?3 OFFSET ?4").map_err(err)?;
+                let total = tx.query_row("SELECT COUNT(*) FROM (SELECT hand_id FROM effective_frames WHERE session_id=?1 AND rowid<=?2 GROUP BY hand_id)",params![id,ceiling],|r|r.get(0)).map_err(err)?;
+                let mut q = tx.prepare("SELECT hand_id,COUNT(*),MIN(captured_at),MAX(captured_at) FROM effective_frames WHERE session_id=?1 AND rowid<=?2 GROUP BY hand_id ORDER BY MAX(captured_at) DESC,hand_id DESC LIMIT ?3 OFFSET ?4").map_err(err)?;
                 let rows = q.query_map(params![id,ceiling,(limit+1) as i64,offset],|r|Ok(json!({"hand_id":r.get::<_,Option<String>>(0)?,"frame_count":r.get::<_,i64>(1)?,"first_at":r.get::<_,String>(2)?,"last_at":r.get::<_,String>(3)?}))).map_err(err)?.collect::<std::result::Result<Vec<_>,_>>().map_err(err)?;
                 (rows, total)
             }
@@ -223,12 +275,12 @@ impl Store {
                 let selected = hand.filter(|s| !s.is_empty());
                 let total = tx
                     .query_row(
-                        &format!("SELECT COUNT(*) FROM frames WHERE {predicate}"),
+                        &format!("SELECT COUNT(*) FROM effective_frames WHERE {predicate}"),
                         params![id, ceiling, selected],
                         |r| r.get(0),
                     )
                     .map_err(err)?;
-                let mut q = tx.prepare(&format!("SELECT id,session_id,captured_at,hand_id,ocr_status,error,width,height,image_sha256,config_hash,timings_json FROM frames WHERE {predicate} ORDER BY captured_at {order},id {order} LIMIT ?4 OFFSET ?5")).map_err(err)?;
+                let mut q = tx.prepare(&format!("SELECT id,session_id,captured_at,hand_id,ocr_status,error,width,height,image_sha256,config_hash,timings_json,captured_hand_id FROM effective_frames WHERE {predicate} ORDER BY captured_at {order},id {order} LIMIT ?4 OFFSET ?5")).map_err(err)?;
                 let rows = q
                     .query_map(
                         params![id, ceiling, selected, (limit + 1) as i64, offset],
@@ -275,7 +327,7 @@ impl Store {
         } else {
             name.trim()
         };
-        self.connect()?.execute("INSERT INTO sessions (id,name,source,interval_ms,status,created_at,config_hash,config_json) VALUES (?,?,?,?,'ready',?,?,?)",
+        self.connect()?.execute("INSERT INTO sessions (id,name,source,interval_ms,status,created_at,config_hash,config_json,collection_id) VALUES (?,?,?,?,'ready',?,?,?,'current')",
             params![id,name,source,interval as i64,now(),hash,config.to_string()]).map_err(err)?;
         self.session(&id)
     }
@@ -284,7 +336,7 @@ impl Store {
     pub fn hands(&self, id: &str) -> Result<Value> {
         self.session(id)?;
         let conn = self.connect()?;
-        let mut query = conn.prepare("SELECT hand_id,COUNT(*),MIN(captured_at),MAX(captured_at) FROM frames WHERE session_id=? GROUP BY hand_id ORDER BY MIN(captured_at)").map_err(err)?;
+        let mut query = conn.prepare("SELECT hand_id,COUNT(*),MIN(captured_at),MAX(captured_at) FROM effective_frames WHERE session_id=? GROUP BY hand_id ORDER BY MIN(captured_at)").map_err(err)?;
         let values = query.query_map([id], |row| Ok(json!({"hand_id":row.get::<_,Option<String>>(0)?,
             "frame_count":row.get::<_,i64>(1)?,"first_at":row.get::<_,String>(2)?,"last_at":row.get::<_,String>(3)?}))).map_err(err)?
             .collect::<std::result::Result<Vec<_>,_>>().map_err(err)?;
@@ -339,7 +391,7 @@ impl Store {
         let id: String = row.get("id")?;
         let timings: String = row.get("timings_json")?;
         let mut value = json!({"id":id,"session_id":row.get::<_,String>("session_id")?,
-            "captured_at":row.get::<_,String>("captured_at")?,"hand_id":row.get::<_,Option<String>>("hand_id")?,
+            "captured_at":row.get::<_,String>("captured_at")?,"hand_id":row.get::<_,Option<String>>("hand_id")?,"captured_hand_id":row.get::<_,Option<String>>("captured_hand_id")?,
             "ocr_status":row.get::<_,String>("ocr_status")?,"error":row.get::<_,Option<String>>("error")?,
             "width":row.get::<_,u32>("width")?,"height":row.get::<_,u32>("height")?,
             "image_sha256":row.get::<_,String>("image_sha256")?,"config_hash":row.get::<_,String>("config_hash")?,
@@ -353,13 +405,16 @@ impl Store {
                 ("config_json", "config_snapshot"),
             ] {
                 let raw: String = row.get(column)?;
-                value[key] = serde_json::from_str(&raw).map_err(|error| {
+                let parsed: Value = serde_json::from_str(&raw).map_err(|error| {
                     rusqlite::Error::FromSqlConversionFailure(
                         0,
                         rusqlite::types::Type::Text,
                         Box::new(error),
                     )
                 })?;
+                if key != "config_snapshot" || !parsed.is_null() {
+                    value[key] = parsed;
+                }
             }
         }
         Ok(value)
@@ -370,11 +425,11 @@ impl Store {
         let columns = if detail {
             "*"
         } else {
-            "id,session_id,captured_at,hand_id,ocr_status,error,width,height,image_sha256,config_hash,timings_json"
+            "id,session_id,captured_at,hand_id,ocr_status,error,width,height,image_sha256,config_hash,timings_json,captured_hand_id"
         };
         self.connect()?
             .query_row(
-                &format!("SELECT {columns} FROM frames WHERE id=?"),
+                &format!("SELECT {columns} FROM effective_frames WHERE id=?"),
                 [id],
                 |row| Self::row_frame(row, detail),
             )
@@ -408,12 +463,12 @@ impl Store {
         let selected = hand.flatten();
         let total: i64 = conn
             .query_row(
-                &format!("SELECT COUNT(*) FROM frames WHERE {where_sql}"),
+                &format!("SELECT COUNT(*) FROM effective_frames WHERE {where_sql}"),
                 params![id, selected],
                 |row| row.get(0),
             )
             .map_err(err)?;
-        let mut query = conn.prepare(&format!("SELECT id,session_id,captured_at,hand_id,ocr_status,error,width,height,image_sha256,config_hash,timings_json FROM frames WHERE {where_sql} ORDER BY captured_at {order},id {order} LIMIT ?3 OFFSET ?4")).map_err(err)?;
+        let mut query = conn.prepare(&format!("SELECT id,session_id,captured_at,hand_id,ocr_status,error,width,height,image_sha256,config_hash,timings_json,captured_hand_id FROM effective_frames WHERE {where_sql} ORDER BY captured_at {order},id {order} LIMIT ?3 OFFSET ?4")).map_err(err)?;
         let frames = query
             .query_map(params![id, selected, limit as i64, offset as i64], |row| {
                 Self::row_frame(row, false)
@@ -440,14 +495,28 @@ impl Store {
         timings: &Value,
     ) -> Result<Value> {
         let id = Uuid::new_v4().simple().to_string();
+        let ocr_status = if hand_id.is_empty()
+            || results
+                .as_object()
+                .is_some_and(|fields| fields.values().any(|r| !r["error"].is_null()))
+        {
+            "partial"
+        } else {
+            "complete"
+        };
+        let hand_id = if hand_id.is_empty() {
+            None
+        } else {
+            Some(hand_id)
+        };
         let destination = self.root.join("frames").join(format!("{id}.png"));
         let temporary = destination.with_extension("tmp");
         let save = || -> Result<()> {
             fs::write(&temporary, png).map_err(err)?;
             fs::rename(&temporary, &destination).map_err(err)?;
             let rows = self.connect()?.execute("INSERT INTO frames (id,session_id,captured_at,hand_id,ocr_status,error,width,height,image_sha256,results_json,config_hash,config_json,timings_json)
-                SELECT ?,?,?,?,'complete',NULL,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM sessions WHERE id=? AND status!='stopped' AND archived=0)",
-                params![id,session_id,captured_at,hand_id,width,height,format!("{:x}",Sha256::digest(png)),results.to_string(),hash,config.to_string(),timings.to_string(),session_id]).map_err(err)?;
+                SELECT ?,?,?,?,?,NULL,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM sessions WHERE id=? AND status!='stopped' AND archived=0)",
+                params![id,session_id,captured_at,hand_id,ocr_status,width,height,format!("{:x}",Sha256::digest(png)),results.to_string(),hash,config.to_string(),timings.to_string(),session_id]).map_err(err)?;
             if rows != 1 {
                 return Err("409:Recording session has stopped".into());
             }
@@ -464,13 +533,24 @@ impl Store {
 
     /// Dry runs count evidence without changing either rows or image files.
     pub fn prune(&self, dry: bool, session: Option<&str>) -> Result<Value> {
+        self.prune_then(dry, session, || {})
+    }
+
+    fn prune_then(
+        &self,
+        dry: bool,
+        session: Option<&str>,
+        after_commit: impl FnOnce(),
+    ) -> Result<Value> {
         if let Some(id) = session {
             self.session(id)?;
         }
         let mut conn = self.connect()?;
-        let tx = conn.transaction().map_err(err)?;
+        let tx = conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(err)?;
         let ids = {
-            let mut query = tx.prepare("SELECT id FROM frames WHERE (hand_id IS NULL OR hand_id='' OR ocr_status!='complete') AND (?1 IS NULL OR session_id=?1)").map_err(err)?;
+            let mut query = tx.prepare("SELECT id FROM effective_frames WHERE (hand_id IS NULL OR hand_id='' OR ocr_status!='complete') AND (?1 IS NULL OR session_id=?1)").map_err(err)?;
             let values = query
                 .query_map([session], |row| row.get::<_, String>(0))
                 .map_err(err)?
@@ -480,17 +560,45 @@ impl Store {
         };
         if !dry {
             for id in &ids {
+                tx.execute(
+                    "INSERT OR IGNORE INTO gameplay_prune_cleanup VALUES(?)",
+                    [id],
+                )
+                .map_err(err)?;
                 tx.execute("DELETE FROM frames WHERE id=?", [id])
                     .map_err(err)?;
             }
         }
         tx.commit().map_err(err)?;
+        after_commit();
         if !dry {
-            for id in &ids {
-                // Historical database IDs are checked before filesystem use.
-                if id.len() != 32 || !id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-                    continue;
-                }
+            self.finish_prune_cleanup()?;
+        }
+        Ok(json!({"dry_run":dry,"count":ids.len()}))
+    }
+
+    fn finish_prune_cleanup(&self) -> Result<()> {
+        let mut conn = self.connect()?;
+        let tx = conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(err)?;
+        let ids = tx
+            .prepare("SELECT frame_id FROM gameplay_prune_cleanup")
+            .map_err(err)?
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(err)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(err)?;
+        for id in ids {
+            let active: bool = tx
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM frames WHERE id=?)",
+                    [&id],
+                    |r| r.get(0),
+                )
+                .map_err(err)?;
+            // Import publishes under the same SQLite writer lock. A restored row owns its files.
+            if !active && id.len() == 32 && id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
                 for suffix in [".png", ".thumb.jpg", ".preview.jpg"] {
                     let path = self.root.join("frames").join(format!("{id}{suffix}"));
                     match fs::remove_file(path) {
@@ -500,8 +608,10 @@ impl Store {
                     }
                 }
             }
+            tx.execute("DELETE FROM gameplay_prune_cleanup WHERE frame_id=?", [&id])
+                .map_err(err)?;
         }
-        Ok(json!({"dry_run":dry,"count":ids.len()}))
+        tx.commit().map_err(err)
     }
 }
 
@@ -647,5 +757,199 @@ mod tests {
         assert_eq!(store.session("old").unwrap()["name"], "History");
         assert_eq!(store.session("old").unwrap()["archived"], false);
         fs::remove_dir_all(store.root()).unwrap();
+    }
+
+    fn lifecycle_batch(root: &Path) -> import::ImportBatch {
+        use image::{DynamicImage, ImageFormat};
+        use std::io::Cursor;
+        let mut png = Cursor::new(Vec::new());
+        DynamicImage::new_rgb8(3, 2)
+            .write_to(&mut png, ImageFormat::Png)
+            .unwrap();
+        let source = root.join("original.png");
+        fs::write(&source, png.get_ref()).unwrap();
+        import::ImportBatch {
+            collection: import::ImportCollection {
+                id: "legacy".into(),
+                name: "Legacy".into(),
+                kind: "gameplay".into(),
+            },
+            sessions: vec![import::ImportSession {
+                id: "legacy-session".into(),
+                name: "Legacy".into(),
+                source: "legacy".into(),
+                created_at: "then".into(),
+                stopped_at: "then".into(),
+                config: json!({}),
+                config_hash: "hash".into(),
+            }],
+            frames: vec![import::ImportFrame {
+                origin: "source:1".into(),
+                fingerprint: "fingerprint".into(),
+                id: "0123456789abcdef0123456789abcdef".into(),
+                session_id: "legacy-session".into(),
+                captured_at: "then".into(),
+                hand_id: None,
+                source_path: source,
+                image_sha256: format!("{:x}", Sha256::digest(png.get_ref())),
+                width: 3,
+                height: 2,
+                config: json!({}),
+                config_hash: "hash".into(),
+                evidence: json!({}),
+                labels: vec![],
+            }],
+            unresolved: vec![],
+        }
+    }
+
+    fn wait_marker(path: &Path) {
+        let start = std::time::Instant::now();
+        while !path.exists() {
+            assert!(
+                start.elapsed() < Duration::from_secs(10),
+                "timed out: {}",
+                path.display()
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    struct Child(std::process::Child);
+    impl Drop for Child {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    fn lifecycle_child(root: &Path, mode: &str) -> Child {
+        Child(
+            std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "lab::gameplay::store::tests::lifecycle_process_child",
+                    "--nocapture",
+                ])
+                .env("POKER_STORE_LIFECYCLE_FIXTURE", root)
+                .env("POKER_STORE_LIFECYCLE_MODE", mode)
+                .spawn()
+                .unwrap(),
+        )
+    }
+    fn wait_child(child: &mut Child, expected: i32) {
+        let start = std::time::Instant::now();
+        loop {
+            if let Some(status) = child.0.try_wait().unwrap() {
+                assert_eq!(status.code(), Some(expected));
+                break;
+            }
+            assert!(start.elapsed() < Duration::from_secs(10), "child timed out");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    #[test]
+    fn lifecycle_process_child() {
+        let Some(root) = std::env::var_os("POKER_STORE_LIFECYCLE_FIXTURE") else {
+            return;
+        };
+        let root = PathBuf::from(root);
+        let batch: import::ImportBatch =
+            serde_json::from_slice(&fs::read(root.join("batch.json")).unwrap()).unwrap();
+        let store = Store::new(root.join("store")).unwrap();
+        if std::env::var("POKER_STORE_LIFECYCLE_MODE").unwrap() == "crash" {
+            store
+                .prune_then(false, None, || std::process::exit(73))
+                .unwrap();
+        } else {
+            fs::write(root.join("ready"), b"ready").unwrap();
+            wait_marker(&root.join("go"));
+            store.import_legacy(&batch).unwrap();
+            fs::write(root.join("done"), b"done").unwrap();
+        }
+    }
+
+    #[test]
+    fn prune_cleanup_preserves_same_instance_and_process_reimports() {
+        let temp = tempfile::tempdir().unwrap();
+        let batch = lifecycle_batch(temp.path());
+        fs::write(
+            temp.path().join("batch.json"),
+            serde_json::to_vec(&batch).unwrap(),
+        )
+        .unwrap();
+        let store = Store::new(temp.path().join("store")).unwrap();
+        store.import_legacy(&batch).unwrap();
+        store
+            .prune_then(false, None, || {
+                store.import_legacy(&batch).unwrap();
+            })
+            .unwrap();
+        let image = store
+            .root()
+            .join("frames")
+            .join(format!("{}.png", batch.frames[0].id));
+        assert_eq!(
+            fs::read(&image).unwrap(),
+            fs::read(&batch.frames[0].source_path).unwrap()
+        );
+        let mut child = lifecycle_child(temp.path(), "import");
+        wait_marker(&temp.path().join("ready"));
+        store
+            .prune_then(false, None, || {
+                fs::write(temp.path().join("go"), b"go").unwrap();
+                wait_marker(&temp.path().join("done"));
+            })
+            .unwrap();
+        wait_child(&mut child, 0);
+        assert!(store.frame(&batch.frames[0].id, false).is_ok());
+        assert_eq!(
+            fs::read(&image).unwrap(),
+            fs::read(&batch.frames[0].source_path).unwrap()
+        );
+        assert_eq!(
+            store
+                .connect()
+                .unwrap()
+                .query_row("SELECT COUNT(*) FROM gameplay_prune_cleanup", [], |r| r
+                    .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn crashed_prune_cleanup_recovers_before_reimport_without_touching_originals() {
+        let temp = tempfile::tempdir().unwrap();
+        let batch = lifecycle_batch(temp.path());
+        let original = fs::read(&batch.frames[0].source_path).unwrap();
+        fs::write(
+            temp.path().join("batch.json"),
+            serde_json::to_vec(&batch).unwrap(),
+        )
+        .unwrap();
+        let store = Store::new(temp.path().join("store")).unwrap();
+        store.import_legacy(&batch).unwrap();
+        let mut child = lifecycle_child(temp.path(), "crash");
+        wait_child(&mut child, 73);
+        let image = store
+            .root()
+            .join("frames")
+            .join(format!("{}.png", batch.frames[0].id));
+        assert!(image.exists());
+        assert_eq!(
+            store
+                .connect()
+                .unwrap()
+                .query_row("SELECT COUNT(*) FROM gameplay_prune_cleanup", [], |r| r
+                    .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        let reopened = Store::new(store.root().into()).unwrap();
+        assert!(!image.exists());
+        reopened.import_legacy(&batch).unwrap();
+        assert_eq!(fs::read(&image).unwrap(), original);
+        assert_eq!(fs::read(&batch.frames[0].source_path).unwrap(), original);
     }
 }

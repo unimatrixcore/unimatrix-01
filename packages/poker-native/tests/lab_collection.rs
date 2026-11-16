@@ -12,6 +12,7 @@ use serde_json::{json, Value};
 use std::{
     collections::{BTreeMap, HashMap},
     fs,
+    path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -149,11 +150,70 @@ fn immutable_predictions_reviews_bind_pixels_dataset_region_and_contract() {
     assert!(conn.execute("DELETE FROM label_review_events", []).is_err());
     drop(conn);
     let status = input("status", "seat.0.status", 10);
-    assert!(review::review(&ctx, &status, "Waiting For Players", "manual", None, false).is_err());
-    let outside =
+    let free_text =
         review::review(&ctx, &status, "Waiting For Players", "manual", None, true).unwrap();
-    assert_eq!(outside["outside_contract"], 1);
-    assert!(review::review(&ctx, &status, "Waiting For Players", "accepted", None, true).is_err());
+    assert_eq!(free_text["outside_contract"], 1);
+    let money = input("invalid-money", "seat.0.bank", 10);
+    assert!(review::review(&ctx, &money, "$1.123456789", "manual", None, false).is_err());
+    assert!(review::review(&ctx, &money, "$1.123456789", "manual", None, true).is_err());
+    assert!(review::review(&ctx, &money, "$1.123456789", "accepted", None, true).is_err());
+}
+#[test]
+fn source_contract_recomputes_model_validity_and_never_overrides_invalid_money_or_categories() {
+    let (_temp, ctx) = context();
+    assert_eq!(review::validation_contract()["version"].as_u64(), Some(5));
+    assert_eq!(
+        review::validation_contract()["sha256"],
+        "357e45ae936a3617a34d48b0fe26dd3ea1d5465aecafdfcc5b48badeb4dd6417"
+    );
+    for (index, region, text) in [
+        (0, "seat.0.bank", "$1.123456789"),
+        (1, "seat.0.bank", "1,23"),
+        (2, "seat.0.card.0.rank", "B"),
+    ] {
+        let sample = input(&format!("invalid-{index}"), region, 10);
+        let prediction =
+            review::prediction(&ctx, &sample, json!({"text":text,"schema_valid":true})).unwrap();
+        assert_eq!(prediction["schema_valid"], false, "{region}: {text}");
+        for allow in [false, true] {
+            assert!(review::review(
+                &ctx,
+                &sample,
+                text,
+                "accepted",
+                prediction["id"].as_str(),
+                allow
+            )
+            .is_err());
+            assert!(review::review(&ctx, &sample, text, "manual", None, allow).is_err());
+        }
+        assert!(
+            review::history(&ctx, Some(&sample.key), None).unwrap()["events"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+    }
+    let unsupported = input("unsupported", "not_a_source_region", 10);
+    assert_eq!(
+        review::prediction(
+            &ctx,
+            &unsupported,
+            json!({"text":"Alice","schema_valid":true})
+        )
+        .unwrap_err()
+        .status,
+        400
+    );
+    for allow in [false, true] {
+        assert!(review::review(&ctx, &unsupported, "Alice", "manual", None, allow).is_err());
+    }
+    assert!(
+        review::history(&ctx, Some(&unsupported.key), None).unwrap()["events"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
 }
 #[test]
 fn queue_identity_cursors_tombstones_and_checkpoints_keep_server_review_truth() {
@@ -393,6 +453,15 @@ impl Fixture {
         fs::write(root.join("config/regions.json"),json!({"screen_width":8,"screen_height":8,"round_id":{"x":0,"y":0,"w":2,"h":2},"pot":{"x":2,"y":0,"w":2,"h":2},"seats":[{"nameplate":{"x":0,"y":4,"w":2,"h":2},"name":{"x":0,"y":6,"w":2,"h":2},"bet":{"x":4,"y":6,"w":2,"h":2}},{"nameplate":{"x":2,"y":4,"w":2,"h":2},"name":{"x":2,"y":6,"w":2,"h":2},"bet":{"x":4,"y":4,"w":2,"h":2}}]}).to_string()).unwrap();
         Self { temp, service }
     }
+    fn new_engine(block: bool) -> Self {
+        let fixture = Self::new(block);
+        fs::copy(
+            fixture.temp.path().join("config/regions.json"),
+            fixture.temp.path().join("config/gameplay-regions.json"),
+        )
+        .unwrap();
+        fixture
+    }
     fn req(&self, method: &str, path: &str, body: Value) -> poker_native::lab::LabResponse {
         self.service.request(LabRequest {
             method: method.into(),
@@ -402,11 +471,266 @@ impl Fixture {
             headers: BTreeMap::from([("X-Dataset-ID".into(), "legacy".into())]),
         })
     }
+    fn engine_request(
+        &self,
+        method: &str,
+        path: &str,
+        body: Value,
+    ) -> poker_native::lab::LabResponse {
+        engine_request(&self.service, method, path, body)
+    }
+}
+fn engine_request(
+    service: &LabService,
+    method: &str,
+    path: &str,
+    body: Value,
+) -> poker_native::lab::LabResponse {
+    let ctx = service.registry.resolve("legacy").unwrap();
+    let request = LabRequest {
+        method: method.into(),
+        path: path.into(),
+        body,
+        query: BTreeMap::new(),
+        headers: BTreeMap::new(),
+    };
+    let result = review::handle(service, &ctx, &request)
+        .or_else(|| lab::watch::handle(service, &ctx, &request))
+        .or_else(|| capture::handle(service, &ctx, &request))
+        .expect("writable fixture engine route");
+    result.unwrap_or_else(poker_native::lab::LabResponse::error)
+}
+fn source_manifest(root: &Path) -> BTreeMap<PathBuf, Option<String>> {
+    fn visit(root: &Path, path: &Path, files: &mut BTreeMap<PathBuf, Option<String>>) {
+        for entry in fs::read_dir(path).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            let key = path.strip_prefix(root).unwrap().to_owned();
+            if entry.file_type().unwrap().is_dir() {
+                files.insert(key, None);
+                visit(root, &path, files);
+            } else {
+                files.insert(key, Some(lab::sha256(&fs::read(path).unwrap())));
+            }
+        }
+    }
+    let mut files = BTreeMap::new();
+    visit(root, root, &mut files);
+    files
 }
 #[test]
+fn archived_mutations_fail_before_resolving_or_changing_any_source_files() {
+    let f = Fixture::new(true);
+    let source = f.temp.path().join("data/collector_datasets/legacy");
+    fs::create_dir_all(source.join("images")).unwrap();
+    fs::write(source.join("data.db"), b"deliberately unreadable database").unwrap();
+    fs::write(source.join("data.db-wal"), b"untouched WAL").unwrap();
+    fs::write(source.join("data.db-shm"), b"untouched SHM").unwrap();
+    fs::write(source.join("images/source.png"), png(10)).unwrap();
+    let before = source_manifest(&f.temp.path().join("data"));
+    for (path, body) in [
+        (
+            "/api/capture",
+            json!({"monitor":"TEST", "queue_mode":"paged"}),
+        ),
+        (
+            "/api/watch/start",
+            json!({"monitor":"TEST", "queue_mode":"paged"}),
+        ),
+        ("/api/watch/tick", json!({"lease_id":"unknown"})),
+        ("/api/watch/stop", json!({"lease_id":"unknown"})),
+        ("/api/watch/claim", json!({})),
+        ("/api/watch/discard", json!({"all":true})),
+        (
+            "/api/review_label",
+            json!({"sample_key":"x", "label":"Alice"}),
+        ),
+        ("/api/model_suggestion", json!({"sample_key":"x"})),
+        ("/api/add_to_db", json!({"entries":[]})),
+        ("/api/db_delete", json!({"filenames":["source.png"]})),
+        ("/api/clear_session", json!({})),
+        ("/api/save_session_progress", json!({"pool":[]})),
+        ("/api/save_session_history", json!({})),
+        ("/api/save_settings", json!({"last_monitor":"TEST"})),
+    ] {
+        let response = f.req("POST", path, body);
+        assert_eq!(response.status, 409, "{path}: {}", response.body);
+        assert!(response.body["error"]
+            .as_str()
+            .unwrap()
+            .contains("read-only"));
+        assert_eq!(
+            source_manifest(&f.temp.path().join("data")),
+            before,
+            "{path}"
+        );
+    }
+    assert!(!f.temp.path().join("started").exists());
+}
+fn install_synthetic_current_profile(f: &Fixture) -> Value {
+    let legacy: Value =
+        serde_json::from_slice(&fs::read(f.temp.path().join("config/regions.json")).unwrap())
+            .unwrap();
+    let profile = json!({"schema_version":2,"cv_regions":legacy,"regions":[
+        {"id":"round_id","ocr":true,"bounds":{"x":0,"y":0,"width":2,"height":2}},
+        {"id":"seats[0].name","ocr":true,"bounds":{"x":0,"y":6,"width":2,"height":2}},
+        {"id":"seats[1].name","ocr":true,"bounds":{"x":2,"y":6,"width":2,"height":2}},
+        {"id":"seats[1].bet","ocr":true,"bounds":{"x":4,"y":4,"width":2,"height":2}},
+        {"id":"ignored","ocr":false,"bounds":{"x":6,"y":6,"width":2,"height":2}}
+    ]});
+    fs::write(
+        f.temp.path().join("config/gameplay-regions.json"),
+        profile.to_string(),
+    )
+    .unwrap();
+    profile
+}
+
+#[test]
+fn current_profile_capture_and_watch_share_gate_seats_and_layout_hash() {
+    for watch in [false, true] {
+        let f = Fixture::new_engine(false);
+        let profile = install_synthetic_current_profile(&f);
+        let layout = f.service.capture.config().unwrap();
+        assert_eq!(layout.regions, profile["cv_regions"]);
+        let expected_hash = capture::region_hash(&layout).unwrap();
+        let ctx = f.service.registry.resolve("legacy").unwrap();
+        let response = if watch {
+            let started = f.engine_request(
+                "POST",
+                "/api/watch/start",
+                json!({"monitor":"TEST","interval_seconds":1}),
+            );
+            assert_eq!(started.status, 200, "{}", started.body);
+            assert_eq!(
+                ctx.state.lock().unwrap()["watch_runtime"]["config_hash"],
+                layout.hash
+            );
+            let lease = started.body["lease_id"].clone();
+            let result = f.engine_request("POST", "/api/watch/tick", json!({"lease_id":lease}));
+            let mut changed = profile.clone();
+            changed["regions"][1]["bounds"]["x"] = json!(1);
+            fs::write(
+                f.temp.path().join("config/gameplay-regions.json"),
+                changed.to_string(),
+            )
+            .unwrap();
+            let stale = f.engine_request("POST", "/api/watch/tick", json!({"lease_id":lease}));
+            assert_eq!(stale.status, 409, "{}", stale.body);
+            assert!(stale.body["error"]
+                .as_str()
+                .unwrap()
+                .contains("configuration changed"));
+            result
+        } else {
+            f.engine_request("POST", "/api/capture", json!({"monitor":"TEST"}))
+        };
+        assert_eq!(response.status, 200, "{}", response.body);
+        let regions = if watch {
+            &response.body["frames"][0]["regions"]
+        } else {
+            &response.body["regions"]
+        };
+        let ids = regions
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["id"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert!(ids.contains(&"round_id"), "{ids:?}");
+        assert!(ids.contains(&"seats[0].name"), "{ids:?}");
+        assert!(!ids.contains(&"seats[1].name"), "{ids:?}");
+        assert!(ids.contains(&"seats[1].bet"), "{ids:?}");
+        assert!(!ids.contains(&"ignored"));
+        let state = ctx.state.lock().unwrap();
+        assert_eq!(state["last_game_text"], "# 123456");
+        assert_eq!(state["last_gate_binding"][2], layout.hash);
+        drop(state);
+        let saved: String = ctx
+            .connection()
+            .unwrap()
+            .query_row("SELECT regions_hash FROM full_captures", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(saved, expected_hash);
+    }
+}
+
+#[test]
+fn current_profile_capture_and_watch_reject_invalid_game_id() {
+    for watch in [false, true] {
+        let f = Fixture::new_engine(false);
+        install_synthetic_current_profile(&f);
+        let script = f
+            .temp
+            .path()
+            .join("tools/dev_tools/training/collector_inference.py");
+        let source = fs::read_to_string(&script).unwrap();
+        fs::write(
+            &script,
+            source.replace(
+                "text=os.environ.get('POKER_TEST_TEXT','# 123456')",
+                "text='invalid'",
+            ),
+        )
+        .unwrap();
+        let response = if watch {
+            let started = f.engine_request("POST", "/api/watch/start", json!({"monitor":"TEST"}));
+            assert_eq!(started.status, 200);
+            let lease = started.body["lease_id"].clone();
+            let result = f.engine_request("POST", "/api/watch/tick", json!({"lease_id":lease}));
+            assert_eq!(
+                f.engine_request("POST", "/api/watch/stop", json!({"lease_id":lease}))
+                    .status,
+                200
+            );
+            result
+        } else {
+            f.engine_request("POST", "/api/capture", json!({"monitor":"TEST"}))
+        };
+        assert_eq!(response.status, 400, "{}", response.body);
+        assert!(response.body["error"]
+            .as_str()
+            .unwrap()
+            .contains("Game ID not verified"));
+        let ctx = f.service.registry.resolve("legacy").unwrap();
+        assert_eq!(
+            ctx.connection()
+                .unwrap()
+                .query_row("SELECT COUNT(*) FROM full_captures", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+    }
+}
+
+#[test]
+fn bundled_profile_is_unchanged_and_adapts_cv_and_current_fields() {
+    let bytes = include_bytes!("../assets/gameplay-regions.json");
+    assert_eq!(
+        lab::sha256(bytes),
+        "f3e05596327a81f75ca9ae28df3cd015cc1ef1e0cb050b9084d962db6c366755"
+    );
+    let f = Fixture::new_engine(false);
+    fs::write(f.temp.path().join("config/gameplay-regions.json"), bytes).unwrap();
+    let profile: Value = serde_json::from_slice(bytes).unwrap();
+    let adapted = f.service.capture.config().unwrap();
+    assert_eq!(adapted.regions, profile["cv_regions"]);
+    assert_eq!(adapted.hash, f.service.capture.config().unwrap().hash);
+    assert!(adapted.order.iter().any(|(id, _)| id == "round_id"));
+    assert!(adapted.order.iter().any(|(id, _)| id.starts_with("seats[")));
+    assert!(adapted
+        .order
+        .iter()
+        .all(|(id, _)| !id.starts_with("cv_regions") && !id.starts_with("regions[")));
+}
+
+#[test]
 fn manual_capture_uses_model_gate_inactive_bets_queue_dedup_and_no_orphans() {
-    let f = Fixture::new(false);
-    let response = f.req(
+    let f = Fixture::new_engine(false);
+    let response = f.engine_request(
         "POST",
         "/api/capture",
         json!({"monitor":"TEST","queue_mode":"paged"}),
@@ -423,7 +747,7 @@ fn manual_capture_uses_model_gate_inactive_bets_queue_dedup_and_no_orphans() {
         .iter()
         .all(|r| r["label"] == "" && r["reviewed"] == false));
     assert!(regions.iter().find(|r| r["id"] == "round_id").unwrap()["prediction_id"].is_string());
-    let second = f.req(
+    let second = f.engine_request(
         "POST",
         "/api/capture",
         json!({"monitor":"TEST","queue_mode":"paged"}),
@@ -445,8 +769,8 @@ fn manual_capture_uses_model_gate_inactive_bets_queue_dedup_and_no_orphans() {
 }
 #[test]
 fn watch_stop_remains_responsive_and_late_model_result_cannot_admit_capture() {
-    let f = Fixture::new(true);
-    let started = f.req(
+    let f = Fixture::new_engine(true);
+    let started = f.engine_request(
         "POST",
         "/api/watch/start",
         json!({"monitor":"TEST","queue_mode":"paged","interval_seconds":1}),
@@ -456,13 +780,12 @@ fn watch_stop_remains_responsive_and_late_model_result_cannot_admit_capture() {
     let service = f.service.clone();
     let tick_lease = lease.clone();
     let worker = std::thread::spawn(move || {
-        service.request(LabRequest {
-            method: "POST".into(),
-            path: "/api/watch/tick".into(),
-            body: json!({"lease_id":tick_lease}),
-            query: BTreeMap::new(),
-            headers: BTreeMap::from([("X-Dataset-ID".into(), "legacy".into())]),
-        })
+        engine_request(
+            &service,
+            "POST",
+            "/api/watch/tick",
+            json!({"lease_id":tick_lease}),
+        )
     });
     let until = Instant::now() + Duration::from_secs(3);
     while !f.temp.path().join("started").exists() && Instant::now() < until {
@@ -471,7 +794,7 @@ fn watch_stop_remains_responsive_and_late_model_result_cannot_admit_capture() {
     assert!(f.temp.path().join("started").exists());
     let clock = Instant::now();
     assert_eq!(
-        f.req("POST", "/api/watch/stop", json!({"lease_id":lease}))
+        f.engine_request("POST", "/api/watch/stop", json!({"lease_id":lease}))
             .status,
         200
     );
@@ -543,8 +866,8 @@ fn interrupted_stream_commit_rehydrates_its_original_run_and_receipt() {
 }
 #[test]
 fn failed_watch_persistence_releases_global_scan_reservation() {
-    let f = Fixture::new(false);
-    let started = f.req(
+    let f = Fixture::new_engine(false);
+    let started = f.engine_request(
         "POST",
         "/api/watch/start",
         json!({"monitor":"TEST","queue_mode":"paged"}),
@@ -552,7 +875,7 @@ fn failed_watch_persistence_releases_global_scan_reservation() {
     assert_eq!(started.status, 200);
     let ctx = f.service.registry.resolve("legacy").unwrap();
     ctx.connection().unwrap().execute_batch("CREATE TRIGGER fail_watch_state BEFORE INSERT ON settings WHEN NEW.key='watch_state' BEGIN SELECT RAISE(ABORT,'fixture watch failure'); END;").unwrap();
-    let failed = f.req(
+    let failed = f.engine_request(
         "POST",
         "/api/watch/tick",
         json!({"lease_id":started.body["lease_id"]}),
@@ -672,25 +995,25 @@ fn malformed_labels_predictions_and_archived_contexts_fail_without_blank_writes(
 
 #[test]
 fn nonpaged_immediate_capture_cache_clears_with_original_session_lifecycle() {
-    let f = Fixture::new(false);
-    let first = f.req("POST", "/api/capture", json!({"monitor":"TEST"}));
+    let f = Fixture::new_engine(false);
+    let first = f.engine_request("POST", "/api/capture", json!({"monitor":"TEST"}));
     assert_eq!(first.status, 200, "{}", first.body);
     assert!(!first.body["regions"].as_array().unwrap().is_empty());
-    let second = f.req("POST", "/api/capture", json!({"monitor":"TEST"}));
+    let second = f.engine_request("POST", "/api/capture", json!({"monitor":"TEST"}));
     assert_eq!(second.status, 200);
     assert!(second.body["regions"].as_array().unwrap().is_empty());
-    f.req("POST", "/api/clear_session", json!({}));
-    let third = f.req("POST", "/api/capture", json!({"monitor":"TEST"}));
+    f.engine_request("POST", "/api/clear_session", json!({}));
+    let third = f.engine_request("POST", "/api/capture", json!({"monitor":"TEST"}));
     assert!(!third.body["regions"].as_array().unwrap().is_empty());
 }
 #[test]
 fn capture_rejects_negative_round_id() {
-    let f = Fixture::new(false);
+    let f = Fixture::new_engine(false);
     fs::write(
-        f.temp.path().join("config/regions.json"),
+        f.temp.path().join("config/gameplay-regions.json"),
         serde_json::to_vec(&json!({"round_id":{"x":-12,"y":-3,"w":2,"h":2},"seats":[{"name":{"x":100,"y":200,"w":3,"h":3}}],"screen_width":8,"screen_height":8})).unwrap(),
     ).unwrap();
-    let capture = f.req("POST", "/api/capture", json!({"monitor":"TEST"}));
+    let capture = f.engine_request("POST", "/api/capture", json!({"monitor":"TEST"}));
     assert_eq!(capture.status, 400);
     let ctx = f.service.registry.resolve("legacy").unwrap();
     assert_eq!(
@@ -705,12 +1028,12 @@ fn capture_rejects_negative_round_id() {
 
 #[test]
 fn capture_rejects_outside_round_id() {
-    let f = Fixture::new(false);
+    let f = Fixture::new_engine(false);
     fs::write(
-        f.temp.path().join("config/regions.json"),
+        f.temp.path().join("config/gameplay-regions.json"),
         serde_json::to_vec(&json!({"round_id":{"x":7,"y":0,"w":2,"h":2},"seats":[{"name":{"x":0,"y":0,"w":2,"h":2}}],"screen_width":8,"screen_height":8})).unwrap(),
     ).unwrap();
-    let capture = f.req("POST", "/api/capture", json!({"monitor":"TEST"}));
+    let capture = f.engine_request("POST", "/api/capture", json!({"monitor":"TEST"}));
     assert_eq!(capture.status, 400);
     let ctx = f.service.registry.resolve("legacy").unwrap();
     assert_eq!(
@@ -725,8 +1048,8 @@ fn capture_rejects_outside_round_id() {
 
 #[test]
 fn nonpaged_review_does_not_initialize_or_migrate_the_disk_queue() {
-    let f = Fixture::new(false);
-    let result=f.req("POST","/api/review_label",json!({"sample_key":"nonpaged","id":"seat.0.name","base64_image":STANDARD.encode(png(10)),"label":"Alice","action":"manual"}));
+    let f = Fixture::new_engine(false);
+    let result=f.engine_request("POST","/api/review_label",json!({"sample_key":"nonpaged","id":"seat.0.name","base64_image":STANDARD.encode(png(10)),"label":"Alice","action":"manual"}));
     assert_eq!(result.status, 200, "{}", result.body);
     assert!(result.body["summary"].is_null());
     let ctx = f.service.registry.resolve("legacy").unwrap();
@@ -756,7 +1079,7 @@ fn legacy_numeric_frame_id_keeps_source_string_identity() {
 
 #[test]
 fn db_delete_preserves_active_queue_masters_and_removes_unreferenced() {
-    let f = Fixture::new(false);
+    let f = Fixture::new_engine(false);
     let ctx = f.service.registry.resolve("legacy").unwrap();
     queue::session(&ctx).unwrap();
     let conn = ctx.connection().unwrap();
@@ -770,7 +1093,7 @@ fn db_delete_preserves_active_queue_masters_and_removes_unreferenced() {
     fs::write(ctx.images().join("crop.png"), png(2)).unwrap();
     conn.execute("INSERT INTO queue_items(sample_key,frame_id,source,region_id,payload,crop,pixel_sha256,created_at) VALUES('a','frame.png','active.png','r','{\"source\":\"active.png\",\"frame_id\":\"frame.png\"}',x'00','x',0)", []).unwrap();
     drop(conn);
-    let response = f.req("POST", "/api/db_delete", json!({"filenames":["crop.png"]}));
+    let response = f.engine_request("POST", "/api/db_delete", json!({"filenames":["crop.png"]}));
     assert_eq!(response.status, 200, "{}", response.body);
     assert!(ctx.captures().join("active.png").exists());
     assert!(ctx.captures().join("frame.png").exists());
@@ -786,7 +1109,7 @@ fn db_delete_preserves_active_queue_masters_and_removes_unreferenced() {
     fs::write(ctx.captures().join("unknown.png"), png(3)).unwrap();
     drop(conn);
     assert_eq!(
-        f.req("POST", "/api/db_delete", json!({"filenames":[]}))
+        f.engine_request("POST", "/api/db_delete", json!({"filenames":[]}))
             .status,
         200
     );
@@ -961,7 +1284,7 @@ fn gameplay_list_snapshot_excludes_new_frames_and_scopes_cursors() {
     assert_eq!(f.req("GET", "/api/gameplay", Value::Null).status, 200);
     let conn = rusqlite::Connection::open(f.temp.path().join("gameplay/gameplay.sqlite3")).unwrap();
     for i in 0..205 {
-        conn.execute("INSERT INTO sessions(id,name,source,interval_ms,status,created_at,config_hash,config_json,archived) VALUES (?1,'test','monitor',1000,'ready',?2,'hash','{}',0)",rusqlite::params![format!("session{i:03}"),format!("{i:04}")]).unwrap();
+        conn.execute("INSERT INTO sessions(id,name,source,interval_ms,status,created_at,config_hash,config_json,archived,collection_id) VALUES (?1,'test','monitor',1000,'ready',?2,'hash','{}',0,'current')",rusqlite::params![format!("session{i:03}"),format!("{i:04}")]).unwrap();
     }
     for i in 0..65 {
         conn.execute("INSERT INTO frames(id,session_id,captured_at,hand_id,ocr_status,width,height,image_sha256,results_json,config_hash,config_json) VALUES (?1,'session000',?2,?3,'complete',1,1,'hash','{}','hash','{}')",rusqlite::params![format!("frame{i:03}"),format!("{i:04}"),format!("hand{i:03}")]).unwrap();
@@ -1149,7 +1472,7 @@ fn paged_database_and_names_match_unicode_case_insensitively() {
 }
 
 #[test]
-fn filename_history_rejects_mapping_changes_between_pages() {
+fn archived_filename_history_keeps_complete_frozen_mapping_between_pages() {
     let f = Fixture::new(false);
     let ctx = f.service.registry.resolve("legacy").unwrap();
     review::ensure(&ctx).unwrap();
@@ -1176,20 +1499,28 @@ fn filename_history_rejects_mapping_changes_between_pages() {
             [],
         )
         .unwrap();
+    assert_eq!(external.query_row("SELECT COUNT(*) FROM label_review_events JOIN review_samples USING(sample_key) WHERE review_samples.filename='shared.png'", [], |row| row.get::<_,i64>(0)).unwrap(), 3);
+    let before = source_manifest(&ctx.directory);
+    let second = f
+        .service
+        .list_page(
+            request.clone(),
+            first.body["nextCursor"].as_str().map(str::to_owned),
+            Some(1),
+        )
+        .unwrap();
+    assert_eq!(second.status, 200);
+    assert_eq!(second.body["total"], 2);
+    assert_eq!(second.body["items"].as_array().unwrap().len(), 1);
+    assert_eq!(second.body["items"][0]["payload"]["created_at"], 20);
+    assert_eq!(second.body["hasMore"], false);
+    let frozen = f.service.list_page(request, None, Some(10)).unwrap();
+    assert_eq!(frozen.body["total"], 2);
     assert_eq!(
-        f.service
-            .list_page(
-                request.clone(),
-                first.body["nextCursor"].as_str().map(str::to_owned),
-                Some(1)
-            )
-            .unwrap()
-            .status,
-        409
+        frozen.body["items"],
+        json!([first.body["items"][0], second.body["items"][0]])
     );
-    let refreshed = f.service.list_page(request, None, Some(10)).unwrap();
-    assert_eq!(refreshed.body["total"], 3);
-    assert_eq!(refreshed.body["items"][0]["payload"]["created_at"], 40);
+    assert_eq!(source_manifest(&ctx.directory), before);
 }
 
 #[test]
@@ -1197,7 +1528,7 @@ fn paged_gameplay_hands_preserve_unidentified_groups() {
     let f = Fixture::new(false);
     assert_eq!(f.req("GET", "/api/gameplay", Value::Null).status, 200);
     let conn = rusqlite::Connection::open(f.temp.path().join("gameplay/gameplay.sqlite3")).unwrap();
-    conn.execute("INSERT INTO sessions(id,name,source,interval_ms,status,created_at,config_hash,config_json,archived) VALUES ('legacy-hands','test','monitor',1000,'ready','0','hash','{}',0)", []).unwrap();
+    conn.execute("INSERT INTO sessions(id,name,source,interval_ms,status,created_at,config_hash,config_json,archived,collection_id) VALUES ('legacy-hands','test','monitor',1000,'ready','0','hash','{}',0,'current')", []).unwrap();
     for (i, hand) in [None, Some(""), Some("known"), None]
         .into_iter()
         .enumerate()
@@ -1245,7 +1576,7 @@ fn paged_gameplay_hands_preserve_unidentified_groups() {
 }
 
 #[test]
-fn database_paging_rejects_external_mutations() {
+fn archived_database_paging_preserves_all_original_rows_after_source_mutations() {
     let f = Fixture::new(false);
     let ctx = f.service.registry.resolve("legacy").unwrap();
     {
@@ -1261,6 +1592,8 @@ fn database_paging_rejects_external_mutations() {
         query: BTreeMap::new(),
         headers: BTreeMap::from([("X-Dataset-ID".into(), "legacy".into())]),
     };
+    let original = f.service.list_page(req.clone(), None, Some(10)).unwrap();
+    assert_eq!(original.body["total"], 3);
     let first = f.service.list_page(req.clone(), None, Some(1)).unwrap();
     let cursor = first.body["nextCursor"].as_str().unwrap().to_owned();
     let external = rusqlite::Connection::open(ctx.directory.join("data.db")).unwrap();
@@ -1270,13 +1603,48 @@ fn database_paging_rejects_external_mutations() {
             [],
         )
         .unwrap();
+    external
+        .execute("DELETE FROM images WHERE filename='1.png'", [])
+        .unwrap();
+    external.execute("INSERT INTO images(filename,label,region_id,timestamp) VALUES('new.png','new','seat',4)", []).unwrap();
     assert_eq!(
-        f.service
-            .list_page(req, Some(cursor), Some(1))
-            .unwrap()
-            .status,
-        409
+        external
+            .query_row(
+                "SELECT label FROM images WHERE filename='0.png'",
+                [],
+                |row| row.get::<_, String>(0)
+            )
+            .unwrap(),
+        "changed"
     );
+    let before = source_manifest(&ctx.directory);
+    let mut rows = first.body["items"].as_array().unwrap().clone();
+    let mut next = Some(cursor);
+    while let Some(cursor) = next {
+        let page = f
+            .service
+            .list_page(req.clone(), Some(cursor), Some(1))
+            .unwrap();
+        assert_eq!(page.status, 200);
+        assert_eq!(page.body["total"], 3);
+        rows.extend(page.body["items"].as_array().unwrap().iter().cloned());
+        next = page.body["nextCursor"].as_str().map(str::to_owned);
+    }
+    assert_eq!(json!(rows), original.body["items"]);
+    let ids = rows
+        .iter()
+        .map(|row| row["filename"].as_str().unwrap())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        ids,
+        std::collections::BTreeSet::from(["0.png", "1.png", "2.png"])
+    );
+    assert!(rows.iter().all(|row| row["label"] == "label"));
+    assert_eq!(
+        f.service.list_page(req, None, Some(10)).unwrap().body["items"],
+        original.body["items"]
+    );
+    assert_eq!(source_manifest(&ctx.directory), before);
 }
 
 #[test]

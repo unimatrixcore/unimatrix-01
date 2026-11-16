@@ -1,11 +1,46 @@
 {
-  "version": 1,
+  "version": 5,
+  "format": {
+    "locale": "en-US",
+    "maximum_fraction_digits": 8,
+    "short_suffixes": [
+      "K",
+      "M",
+      "B",
+      "T",
+      "Q",
+      "P"
+    ],
+    "custom_currency_requires_context": true,
+    "number_pattern": "(?:0|[1-9][0-9]*|[1-9][0-9]{0,2}(?:,[0-9]{3})+)(?:\\.[0-9]{1,8})?",
+    "cash_pattern": "(?:0|[1-9][0-9]*|[1-9][0-9]{0,2}(?:,[0-9]{3})+)(?:\\.[0-9]{1,8})?",
+    "amount_pattern": "[GS] (?:0|[1-9][0-9]*|[1-9][0-9]{0,2}(?:,[0-9]{3})+)(?:\\.[0-9]{1,8})? BB",
+    "short_cash_categories": [
+      "bet",
+      "split_pot",
+      "amount"
+    ]
+  },
+  "normalization": {
+    "decorative_currency_prefixes": [],
+    "region_display_prefixes": [],
+    "suit_aliases": {
+      "♦": "d",
+      "♥": "h",
+      "♣": "c",
+      "♠": "s"
+    },
+    "rank_aliases": {},
+    "amount_tokens": "([GS])([0-9][0-9,]*(?:\\.[0-9]{1,8})?(?:BB|[KMBTQP])?|NoChips)",
+    "pause_tokens": "RunItTwicepause\\(([0-9]+)sec\\)"
+  },
   "categories": {
     "name": {
-      "pattern": "(?:[a-zA-Z0-9]+(?:\\.\\.\\.)?|Player [1-9]|\\*RESERVED\\*)"
+      "pattern": "\\S(?:[^\\r\\n]*\\S)?"
     },
     "status": {
       "review_pattern": "(?=[A-Za-z -]*[A-Za-z])[A-Za-z -]{1,64}",
+      "values_exhaustive": true,
       "values": [
         "Call",
         "Fold",
@@ -20,7 +55,17 @@
         "Bet",
         "Show Cards",
         "Straddle",
-        "Away"
+        "Away",
+        "Ante",
+        "Muck",
+        "Sit out",
+        "Time",
+        "Disconnected"
+      ]
+    },
+    "winner": {
+      "values": [
+        "Winner"
       ]
     },
     "card": {
@@ -40,6 +85,14 @@
         "K"
       ]
     },
+    "suit": {
+      "values": [
+        "d",
+        "h",
+        "c",
+        "s"
+      ]
+    },
     "dealer": {
       "values": [
         "D",
@@ -47,22 +100,99 @@
       ]
     },
     "bank": {
-      "pattern": "(?:[GS] [0-9]+(?:\\.[0-9])? BB|[GS] No Chips|All-In)"
+      "pattern": "(?:[GS] (?:0|[1-9][0-9]*|[1-9][0-9]{0,2}(?:,[0-9]{3})+)(?:\\.[0-9]{1,8})? BB|[GS] No Chips|All-In)",
+      "partial_pattern": "[GS] ?[0-9,]*(?:\\.[0-9]{0,8})?(?: ?B{0,2}|[KMBTQP]?)",
+      "partial_values": [
+        "All-In",
+        "S No Chips",
+        "G No Chips"
+      ]
     },
     "bet": {
-      "pattern": "[GS] [0-9]+(?:\\.[0-9])? BB"
+      "pattern": "[GS] (?:0|[1-9][0-9]*|[1-9][0-9]{0,2}(?:,[0-9]{3})+)(?:\\.[0-9]{1,8})? BB",
+      "partial_pattern": "[GS] ?[0-9,]*(?:\\.[0-9]{0,8})?(?: ?B{0,2}|[KMBTQP]?)"
+    },
+    "amount": {
+      "pattern": "(?:\\+?[GS] (?:0|[1-9][0-9]*|[1-9][0-9]{0,2}(?:,[0-9]{3})+)(?:\\.[0-9]{1,8})? BB|(?:All-In|No Chips))",
+      "partial_pattern": "[GS] ?[0-9,]*(?:\\.[0-9]{0,8})?(?: ?B{0,2}|[KMBTQP]?)"
     },
     "pot": {
-      "pattern": "(?:Pot: [GS] [0-9]+(?:\\.[0-9])? BB|Run It Twice pause \\([0-9]+ sec\\))"
+      "pattern": "(?:Pot: [GS] (?:0|[1-9][0-9]*|[1-9][0-9]{0,2}(?:,[0-9]{3})+)(?:\\.[0-9]{1,8})? BB|Run It Twice pause \\([0-9]+ sec\\))",
+      "partial_pattern": "(?:Pot: ?[GS] ?[0-9,]*(?:\\.[0-9]{0,8})?(?: ?B{0,2}|[KMBTQP]?)|Run It Twice pause \\([0-9]*(?: s(?:e(?:c\\)?)?)?)?)",
+      "partial_values": [
+        "Pot:",
+        "Run It Twice pause ("
+      ]
     },
     "split_pot": {
-      "pattern": "(?:[GS] [0-9]+(?:\\.[0-9])? BB[ \\t\\r\\n\\f\\v]*)+"
+      "pattern": "[GS] (?:0|[1-9][0-9]*|[1-9][0-9]{0,2}(?:,[0-9]{3})+)(?:\\.[0-9]{1,8})? BB(?:[ \\t\\r\\n\\f\\v]+[GS] (?:0|[1-9][0-9]*|[1-9][0-9]{0,2}(?:,[0-9]{3})+)(?:\\.[0-9]{1,8})? BB)*",
+      "partial_pattern": "(?:[GS] (?:0|[1-9][0-9]*|[1-9][0-9]{0,2}(?:,[0-9]{3})+)(?:\\.[0-9]{1,8})? BB +)*[GS] ?[0-9,]*(?:\\.[0-9]{0,8})?(?: ?B{0,2}|[KMBTQP]?)"
     },
     "round_id": {
       "pattern": "#[ \\t\\r\\n\\f\\v]*[0-9]{6,15}"
+    },
+    "table_info": {
+      "pattern": "\\S[^\\r\\n]*, NLHE - [GS] (?:0|[1-9][0-9]*|[1-9][0-9]{0,2}(?:,[0-9]{3})+)(?:\\.[0-9]{1,8})?/(?:0|[1-9][0-9]*|[1-9][0-9]{0,2}(?:,[0-9]{3})+)(?:\\.[0-9]{1,8})?"
+    },
+    "timer": {
+      "pattern": "(?:0|[1-9][0-9]*|[1-9](?:\\.[0-9]+)?e\\+[0-9]+)"
+    },
+    "popup": {
+      "pattern": "[\\s\\S]*"
+    },
+    "combination": {
+      "pattern": "[\\s\\S]*"
     }
   },
   "region_rules": [
+    {
+      "category": "pot",
+      "pattern": "pot\\.total"
+    },
+    {
+      "category": "winner",
+      "pattern": "seat\\.[0-8]\\.winner"
+    },
+    {
+      "category": "status",
+      "pattern": "seat\\.[0-8]\\.(?:action|status)"
+    },
+    {
+      "category": "round_id",
+      "pattern": "game\\.id"
+    },
+    {
+      "category": "card",
+      "pattern": "(?:board\\.[0-4]|seat\\.[0-8]\\.card\\.[0-5])\\.rank"
+    },
+    {
+      "category": "suit",
+      "pattern": "(?:board\\.[0-4]|seat\\.[0-8]\\.card\\.[0-5]|community_cards\\[[0-4]\\]|seats\\[[0-8]\\]\\.cards\\[[01]\\])\\.suit"
+    },
+    {
+      "category": "table_info",
+      "pattern": "table\\.info"
+    },
+    {
+      "category": "amount",
+      "pattern": "(?:seat\\.[0-8]\\.award|pot\\.[0-9])"
+    },
+    {
+      "category": "timer",
+      "pattern": "(?:seat\\.[0-8]\\.timer|header\\.timer)"
+    },
+    {
+      "category": "popup",
+      "pattern": "(?:seat\\.[0-8]\\.popup|game\\.high_hand)"
+    },
+    {
+      "category": "combination",
+      "pattern": "seat\\.[0-8]\\.combination"
+    },
+    {
+      "category": "dealer",
+      "pattern": "dealer"
+    },
     {
       "category": "round_id",
       "pattern": "round_id"
@@ -89,11 +219,11 @@
     },
     {
       "category": "split_pot",
-      "pattern": "(?:split_pot|pot\\.split)"
+      "pattern": "(?:split_pot(?:\\[[1-9]\\])?|pot\\.split)"
     },
     {
       "category": "pot",
-      "pattern": "pot(?:\\.main)?"
+      "pattern": "(?:pot(?:\\.main)?|main_pot)"
     },
     {
       "category": "card",

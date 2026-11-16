@@ -3,6 +3,7 @@ pub mod capture;
 pub mod cv_utils;
 pub mod lab;
 pub mod labels;
+pub mod launcher_activity;
 pub mod media;
 mod session;
 pub mod statistics;

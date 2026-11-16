@@ -266,6 +266,7 @@ pub fn ingest_conn(
     item["frame_id"] = json!(frame_id);
     item["watch"] = json!(watch);
     conn.execute("INSERT INTO queue_items(sample_key,frame_id,source,region_id,phash,game_id,payload,crop,pixel_sha256,created_at,reviewed,discarded,label,prediction_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",params![key,frame_id,item["source"].as_str(),text(&item,"id"),item["phash"].as_str(),item["game_id"].as_str(),item.to_string(),raw,pixels,now_ms(),i64::from(reviewed),i64::from(item["discarded"].as_bool().unwrap_or(false)),label,prediction_id])?;
+    super::pixel_assets::attach(conn, "queue_items", &key, &raw, &pixels)?;
     Ok(())
 }
 pub fn metadata(ctx: &DatasetContext, row: &Value) -> LabResult<Value> {
@@ -330,7 +331,16 @@ pub fn get_conn(
     id: Option<i64>,
     include_crop: bool,
 ) -> LabResult<Option<Value>> {
-    let columns = if include_crop { "*" } else { METADATA_COLUMNS };
+    let columns = if include_crop && super::pixel_assets::enabled(conn)? {
+        format!(
+            "*,{} AS crop",
+            super::pixel_assets::expression(conn, "queue_items")?
+        )
+    } else if include_crop {
+        "*".into()
+    } else {
+        METADATA_COLUMNS.into()
+    };
     Ok(if let Some(key) = key {
         conn.query_row(
             &format!("SELECT {columns} FROM queue_items WHERE sample_key=? AND active=1"),
@@ -1377,7 +1387,10 @@ pub fn handle(
                 ctx.ensure_active()?;
                 let png: Option<Vec<u8>> = conn
                     .query_row(
-                        "SELECT crop FROM queue_items WHERE queue_id=? AND active=1",
+                        &format!(
+                            "SELECT {} FROM queue_items WHERE queue_id=? AND active=1",
+                            super::pixel_assets::expression(&conn, "queue_items")?
+                        ),
                         [id],
                         |r| r.get(0),
                     )
