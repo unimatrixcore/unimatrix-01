@@ -15,6 +15,13 @@ pub struct DatasetContext {
     pub db: Mutex<Connection>,
     pub operation: Mutex<()>,
     pub state: Mutex<Value>,
+    pub(super) _archive_snapshot: Option<ArchiveSnapshot>,
+}
+pub(super) struct ArchiveSnapshot(PathBuf);
+impl Drop for ArchiveSnapshot {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
 }
 impl DatasetContext {
     pub fn lock_operation(&self) -> LabResult<std::sync::MutexGuard<'_, ()>> {
@@ -84,6 +91,78 @@ pub fn atomic_json(path: &Path, value: &Value) -> LabResult<()> {
     Ok(())
 }
 impl DatasetRegistry {
+    pub fn readonly_source(&self, id: &str) -> LabResult<PathBuf> {
+        if !self.read()?.iter().any(|row| row.id == id) {
+            return Err(not_found("Unknown benchmark collection"));
+        }
+        let path = self.root.join(id);
+        plain(&path)?;
+        Ok(path)
+    }
+    pub fn resolve_readonly(&self, id: &str) -> LabResult<Arc<DatasetContext>> {
+        self.resolve_readonly_in(id, &std::env::temp_dir())
+    }
+    fn resolve_readonly_in(
+        &self,
+        id: &str,
+        snapshot_root: &Path,
+    ) -> LabResult<Arc<DatasetContext>> {
+        let source = self.readonly_source(id)?;
+        let mut contexts = self
+            .contexts
+            .lock()
+            .map_err(|_| conflict("Dataset context lock poisoned"))?;
+        let cache_key = format!("readonly:{id}");
+        if let Some(ctx) = contexts.get(&cache_key) {
+            return Ok(ctx.clone());
+        }
+        let snapshot = snapshot_root.join(format!("poker-benchmark-{}", uuid()));
+        let snapshot_owner = ArchiveSnapshot(snapshot.clone());
+        crate::storage_paths::ensure_directory(&snapshot)?;
+        let mut stable = false;
+        for _ in 0..3 {
+            let mut before = Vec::new();
+            for suffix in ["", "-wal"] {
+                let path = source.join(format!("data.db{suffix}"));
+                match fs::read(&path) {
+                    Ok(bytes) => {
+                        before.push((suffix, super::sha256(&bytes)));
+                        fs::write(snapshot.join(format!("data.db{suffix}")), bytes)?;
+                    }
+                    Err(error)
+                        if suffix == "-wal" && error.kind() == std::io::ErrorKind::NotFound =>
+                    {
+                        let _ = fs::remove_file(snapshot.join("data.db-wal"));
+                    }
+                    Err(error) => return Err(error.into()),
+                }
+            }
+            stable = before.iter().all(|(suffix, hash)| {
+                fs::read(source.join(format!("data.db{suffix}")))
+                    .is_ok_and(|bytes| super::sha256(&bytes) == *hash)
+            });
+            if stable {
+                break;
+            }
+        }
+        if !stable {
+            return Err(conflict(
+                "Benchmark source changed during read-only snapshot",
+            ));
+        }
+        let conn = Connection::open(snapshot.join("data.db"))?;
+        init_database(&conn)?;
+        let ctx = Arc::new(DatasetContext {
+            id: id.into(),
+            directory: snapshot,
+            db: Mutex::new(conn),
+            operation: Mutex::new(()),
+            state: Mutex::new(json!({"_readonly_archive":true})),
+            _archive_snapshot: Some(snapshot_owner),
+        });
+        contexts.insert(cache_key, ctx.clone());
+        Ok(ctx)
+    }
     pub fn new(root: PathBuf) -> LabResult<Self> {
         if !root.is_absolute()
             || root
@@ -310,13 +389,14 @@ impl DatasetRegistry {
             db: Mutex::new(conn),
             operation: Mutex::new(()),
             state: Mutex::new(json!({})),
+            _archive_snapshot: None,
         });
         contexts.insert(id.into(), ctx.clone());
         Ok(ctx)
     }
 }
 
-fn init_database(conn: &Connection) -> LabResult<()> {
+pub(super) fn init_database(conn: &Connection) -> LabResult<()> {
     conn.execute_batch("PRAGMA journal_mode=WAL;CREATE TABLE IF NOT EXISTS full_captures(id INTEGER PRIMARY KEY AUTOINCREMENT,filename TEXT UNIQUE,monitor TEXT,timestamp INTEGER,regions_hash TEXT);CREATE TABLE IF NOT EXISTS images(id INTEGER PRIMARY KEY AUTOINCREMENT,filename TEXT UNIQUE,phash TEXT,label TEXT,region_id TEXT,source_id INTEGER,timestamp INTEGER,FOREIGN KEY(source_id) REFERENCES full_captures(id));CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT);CREATE TABLE IF NOT EXISTS session_progress(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT);CREATE TABLE IF NOT EXISTS session_history(id INTEGER PRIMARY KEY AUTOINCREMENT,timestamp INTEGER,data TEXT);CREATE INDEX IF NOT EXISTS idx_images_phash ON images(phash);CREATE INDEX IF NOT EXISTS idx_images_region_id ON images(region_id);")?;
     let columns: Vec<String> = conn
         .prepare("PRAGMA table_info(images)")?
@@ -328,4 +408,69 @@ fn init_database(conn: &Connection) -> LabResult<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn readonly_snapshot_lives_until_the_last_context_is_released() {
+        let root = tempfile::tempdir().unwrap();
+        let snapshots = tempfile::tempdir().unwrap();
+        let registry = DatasetRegistry::new(root.path().join("datasets")).unwrap();
+        let row = registry.create("Benchmark").unwrap();
+        let id = row["id"].as_str().unwrap();
+        let source = registry.resolve(id).unwrap();
+        source
+            .connection()
+            .unwrap()
+            .execute(
+                "INSERT INTO images(filename,label) VALUES('crop.png','A')",
+                [],
+            )
+            .unwrap();
+        let original = fs::read(source.directory.join("data.db")).unwrap();
+        let ctx = registry.resolve_readonly_in(id, snapshots.path()).unwrap();
+        let directory = ctx.directory.clone();
+        assert_eq!(
+            ctx.connection()
+                .unwrap()
+                .query_row("SELECT label FROM images", [], |r| r.get::<_, String>(0))
+                .unwrap(),
+            "A"
+        );
+        assert!(Arc::ptr_eq(
+            &ctx,
+            &registry.resolve_readonly_in(id, snapshots.path()).unwrap()
+        ));
+        assert_eq!(
+            fs::read(source.directory.join("data.db")).unwrap(),
+            original
+        );
+        drop(registry);
+        assert!(directory.is_dir());
+        drop(ctx);
+        assert!(!directory.exists());
+        assert!(source.directory.join("data.db").is_file());
+        assert_eq!(fs::read_dir(snapshots.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn readonly_snapshot_initialization_errors_remove_temporary_copies() {
+        let root = tempfile::tempdir().unwrap();
+        let snapshots = tempfile::tempdir().unwrap();
+        let registry = DatasetRegistry::new(root.path().join("datasets")).unwrap();
+        let row = registry.create("Broken benchmark").unwrap();
+        let id = row["id"].as_str().unwrap();
+        let source = registry.root.join(id);
+        fs::create_dir(&source).unwrap();
+        fs::write(source.join("data.db"), b"invalid sqlite database").unwrap();
+        assert!(registry.resolve_readonly_in(id, snapshots.path()).is_err());
+        assert_eq!(fs::read_dir(snapshots.path()).unwrap().count(), 0);
+        assert_eq!(
+            fs::read(source.join("data.db")).unwrap(),
+            b"invalid sqlite database"
+        );
+    }
 }

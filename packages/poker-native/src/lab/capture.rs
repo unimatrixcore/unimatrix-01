@@ -29,6 +29,7 @@ pub struct CaptureConfig {
     pub colors: Value,
     pub hash: String,
     pub order: Vec<(String, Value)>,
+    current_profile: bool,
 }
 pub struct CaptureService {
     root: PathBuf,
@@ -149,6 +150,9 @@ impl CaptureService {
                 include_bytes!("../../assets/colors.json").as_slice(),
             ),
         ] {
+            if name == "regions.json" && root.join("gameplay-regions.json").is_file() {
+                continue;
+            }
             let path = root.join(name);
             if !path.exists() {
                 fs::write(&path, contents)?;
@@ -166,18 +170,65 @@ impl CaptureService {
         })
     }
     pub fn config(&self) -> LabResult<CaptureConfig> {
-        let regions = fs::read(self.root.join("regions.json"))?;
+        let current = self.root.join("gameplay-regions.json");
+        let regions = fs::read(if current.is_file() {
+            current
+        } else {
+            self.root.join("regions.json")
+        })?;
         let ordered: Ordered = serde_json::from_slice(&regions)?;
-        let regions = ordered.value();
+        let profile = ordered.value();
         let colors: Value = serde_json::from_slice(&fs::read(self.root.join("colors.json"))?)?;
-        let hash = sha256(python_json(&json!([regions, colors]), false)?.as_bytes());
         let mut order = Vec::new();
-        ordered_regions(&ordered, "", &mut order)?;
+        let current_profile = profile.get("cv_regions").is_some_and(Value::is_object)
+            && profile.get("regions").is_some_and(Value::is_array);
+        let regions = if let (Some(cv), Some(fields)) = (
+            profile.get("cv_regions").filter(|v| v.is_object()),
+            profile.get("regions").and_then(Value::as_array),
+        ) {
+            for field in fields {
+                if field["ocr"] == false {
+                    continue;
+                }
+                let Some(id) = field["id"].as_str() else {
+                    continue;
+                };
+                let bounds = &field["bounds"];
+                let (Some(x), Some(y), Some(w), Some(h)) = (
+                    bounds["x"].as_f64(),
+                    bounds["y"].as_f64(),
+                    bounds["width"].as_f64(),
+                    bounds["height"].as_f64(),
+                ) else {
+                    continue;
+                };
+                if ![x, y, w, h].iter().all(|v| v.is_finite())
+                    || x < 0.0
+                    || y < 0.0
+                    || w <= 0.0
+                    || h <= 0.0
+                {
+                    continue;
+                }
+                order.push((id.to_owned(), json!({"x":x.floor() as u32,"y":y.floor() as u32,"w":((x+w).ceil()-x.floor()) as u32,"h":((y+h).ceil()-y.floor()) as u32})));
+            }
+            cv.clone()
+        } else {
+            ordered_regions(&ordered, "", &mut order)?;
+            profile
+        };
+        let hash_input = if current_profile {
+            json!([regions, colors, order])
+        } else {
+            json!([regions, colors])
+        };
+        let hash = sha256(python_json(&hash_input, false)?.as_bytes());
         Ok(CaptureConfig {
             regions,
             colors,
             hash,
             order,
+            current_profile,
         })
     }
     pub fn sources(&self) -> LabResult<Value> {
@@ -354,7 +405,17 @@ pub fn region_hash(config: &CaptureConfig) -> LabResult<String> {
     use md5::{Digest, Md5};
     Ok(format!(
         "{:x}",
-        Md5::digest(python_json(&config.regions, false)?.as_bytes())
+        Md5::digest(
+            python_json(
+                &if config.current_profile {
+                    json!([config.regions, config.order])
+                } else {
+                    config.regions.clone()
+                },
+                false
+            )?
+            .as_bytes()
+        )
     ))
 }
 pub fn saved_hashes(ctx: &DatasetContext) -> LabResult<BTreeMap<String, Vec<String>>> {
@@ -1347,5 +1408,38 @@ pub fn handle(
             })())
         }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod adapted_profile_tests {
+    use super::*;
+    #[test]
+    fn current_profile_uses_cv_gate_and_selected_ocr_fields_in_identity() {
+        let temp = tempfile::tempdir().unwrap();
+        let service = CaptureService::with_paths(
+            temp.path().join("config"),
+            temp.path().join("data"),
+            HashMap::new(),
+        )
+        .unwrap();
+        let path = temp.path().join("config/gameplay-regions.json");
+        let mut profile = json!({"cv_regions":{"round_id":{"x":1,"y":2,"w":3,"h":4},"seats":[]},"regions":[{"id":"seats[0].name","ocr":true,"bounds":{"x":1.0,"y":2.0,"width":3.0,"height":4.0}},{"id":"seats[1].name","ocr":true,"bounds":{"x":5.0,"y":6.0,"width":7.0,"height":8.0}}]});
+        fs::write(&path, profile.to_string()).unwrap();
+        let first = service.config().unwrap();
+        assert_eq!(first.regions["round_id"]["w"], 3);
+        assert_eq!(
+            regions_for_seats(&first, &[1])
+                .iter()
+                .map(|(id, _)| id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["seats[1].name"]
+        );
+        assert_eq!(first.hash, service.config().unwrap().hash);
+        profile["regions"][1]["bounds"]["x"] = json!(9.0);
+        fs::write(&path, profile.to_string()).unwrap();
+        let changed = service.config().unwrap();
+        assert_ne!(first.hash, changed.hash);
+        assert_ne!(region_hash(&first).unwrap(), region_hash(&changed).unwrap());
     }
 }

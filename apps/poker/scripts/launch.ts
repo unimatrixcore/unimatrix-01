@@ -156,12 +156,54 @@ function alive(pid: number) {
   }
 }
 type RecordingRole = "gameplay" | "collector";
+type ActivityRole = RecordingRole | "preparation" | "review";
+const activityRoles = ["gameplay", "collector", "preparation", "review"] as const;
 function processToken(pid: number): string {
   const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
   return stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19]!;
 }
-function recordingPath(paths: LauncherPaths, pid: number, role: RecordingRole): string {
+function recordingPath(paths: LauncherPaths, pid: number, role: ActivityRole): string {
   return join(paths.cache, "recording", `${pid}-${role}.json`);
+}
+function withAdmission<T>(paths: LauncherPaths, pid: number, action: () => T): T {
+  const directory = join(paths.cache, "recording");
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  const gate = join(directory, `${pid}.admission-flock`);
+  const fd = openSync(gate, constants.O_CREAT | constants.O_RDWR | constants.O_NOFOLLOW, 0o600);
+  try {
+    const lock = spawnSync("flock", ["--exclusive", "--nonblock", "3"], {
+      stdio: ["ignore", "ignore", "pipe", fd],
+    });
+    if (lock.error) throw lock.error;
+    if (lock.status === 1) throw new AdmissionBusy();
+    if (lock.status !== 0) throw new Error("Cannot acquire launcher admission lock");
+    return action();
+  } finally {
+    closeSync(fd);
+  }
+}
+class AdmissionBusy extends Error {}
+function shutdownPath(paths: LauncherPaths, pid: number): string {
+  return join(paths.cache, "recording", `${pid}.shutdown.json`);
+}
+export function beginReplacement(pid: number, paths = launcherPaths()): (() => void) | null {
+  try {
+    return withAdmission(paths, pid, () => {
+      if (activityActive(pid, paths)) return null;
+      const marker = shutdownPath(paths, pid);
+      const existing = readJson(marker) as { token?: unknown } | null;
+      if (existing?.token === processToken(pid)) return null;
+      const owner = randomUUID();
+      atomicJson(marker, { token: processToken(pid), owner });
+      return () => {
+        const current = readJson(marker) as { owner?: unknown } | null;
+        if (current?.owner === owner) rmSync(marker, { force: true });
+      };
+    });
+  } catch (error) {
+    if (error instanceof AdmissionBusy) return null;
+    throw error;
+  }
 }
 export function setRecordingIntent(
   pid: number,
@@ -169,22 +211,41 @@ export function setRecordingIntent(
   active: boolean,
   paths = launcherPaths(),
 ): void {
-  if (!Number.isSafeInteger(pid) || pid < 2 || !["gameplay", "collector"].includes(role))
-    throw new Error("Invalid recording intent");
+  setActivityIntent(pid, role, active, paths);
+}
+export function setActivityIntent(
+  pid: number,
+  role: ActivityRole,
+  active: boolean,
+  paths = launcherPaths(),
+): void {
+  if (!Number.isSafeInteger(pid) || pid < 2 || !activityRoles.includes(role))
+    throw new Error("Invalid activity intent");
   const path = recordingPath(paths, pid, role);
-  if (active) atomicJson(path, { token: processToken(pid) });
+  if (active)
+    withAdmission(paths, pid, () => {
+      const token = processToken(pid);
+      const marker = readJson(shutdownPath(paths, pid)) as { token?: unknown } | null;
+      if (marker?.token === token) throw new Error("Launcher replacement is in progress");
+      atomicJson(path, { token });
+    });
   else rmSync(path, { force: true });
 }
-export function recordingActive(pid: number, paths = launcherPaths()): boolean {
+function anyActivity(pid: number, roles: readonly ActivityRole[], paths: LauncherPaths): boolean {
   const token = processToken(pid);
-  return (["gameplay", "collector"] as const).some((role) => {
+  return roles.some((role) => {
     const claim = readJson(recordingPath(paths, pid, role)) as { token?: unknown } | null;
     return claim?.token === token;
   });
 }
+export function recordingActive(pid: number, paths = launcherPaths()): boolean {
+  return anyActivity(pid, ["gameplay", "collector"], paths);
+}
+export function activityActive(pid: number, paths = launcherPaths()): boolean {
+  return anyActivity(pid, activityRoles, paths);
+}
 function clearRecording(pid: number, paths: LauncherPaths): void {
-  for (const role of ["gameplay", "collector"] as const)
-    rmSync(recordingPath(paths, pid, role), { force: true });
+  for (const role of activityRoles) rmSync(recordingPath(paths, pid, role), { force: true });
 }
 function activeState(paths: LauncherPaths): ActiveState | null {
   const state = readJson(paths.state) as ActiveState | null;
@@ -963,7 +1024,9 @@ export async function supervise(
   }
   atomicJson(join(paths.lock, "owner.json"), { pid: process.pid });
   let child: ChildProcess | null = null;
-  const isRecording = () => Boolean(child?.pid && recordingActive(child.pid, paths));
+  const isBusy = () => Boolean(child?.pid && activityActive(child.pid, paths));
+  const waiting = () =>
+    child?.pid && recordingActive(child.pid, paths) ? "recording to stop" : "AI work to finish";
   const capturePlacement = () => (child?.pid ? runtime.capturePlacement(child.pid) : null);
   let server: DevServer | null = null;
   let current: Worktree | null = null;
@@ -1036,6 +1099,17 @@ export async function supervise(
       await stopChild(previous);
     }
   };
+  const stopForReplacement = async () => {
+    if (!child?.pid) return true;
+    const release = beginReplacement(child.pid, paths);
+    if (!release) return false;
+    try {
+      await stopApp();
+      return true;
+    } finally {
+      release();
+    }
+  };
   process.once("SIGTERM", terminate);
   process.once("SIGINT", terminate);
   try {
@@ -1053,8 +1127,8 @@ export async function supervise(
           preferenceVersion = version;
         }
         if (!child || current?.id !== desired.id) {
-          if (isRecording()) {
-            publish("Checkout change queued until recording stops");
+          if (isBusy()) {
+            publish(`Checkout change queued; waiting for ${waiting()}`);
             await runtime.pause();
             continue;
           }
@@ -1074,20 +1148,24 @@ export async function supervise(
             }
           }
           if (stopping || manualClose || runtime.shouldStop()) break;
-          if (isRecording()) {
-            publish("Checkout change queued until recording stops");
+          if (isBusy()) {
+            publish(`Checkout change queued; waiting for ${waiting()}`);
             await runtime.pause();
             continue;
           }
           const previous = current,
             previousArtifact = active.artifact;
           const placement = capturePlacement();
-          if (isRecording()) {
-            publish("Checkout change queued until recording stops");
+          if (isBusy()) {
+            publish(`Checkout change queued; waiting for ${waiting()}`);
             await runtime.pause();
             continue;
           }
-          await stopApp();
+          if (!(await stopForReplacement())) {
+            publish(`Checkout change queued; waiting for ${waiting()}`);
+            await runtime.pause();
+            continue;
+          }
           if (server) {
             await runtime.stopServer(server);
             server = null;
@@ -1106,12 +1184,12 @@ export async function supervise(
           current = desired;
           if (pending?.done) {
             if (
-              isRecording() &&
+              isBusy() &&
               pending.artifact &&
               pending.tree.id === current.id &&
               nativeFingerprint(current) === pending.fingerprint
             ) {
-              publish("Native update ready; waiting for recording to stop");
+              publish(`Native update ready; waiting for ${waiting()}`);
               await runtime.pause();
               continue;
             }
@@ -1130,13 +1208,18 @@ export async function supervise(
                 pending = completed;
                 throw error;
               }
-              if (isRecording()) {
+              if (isBusy()) {
                 pending = completed;
-                publish("Native update ready; waiting for recording to stop");
+                publish(`Native update ready; waiting for ${waiting()}`);
                 await runtime.pause();
                 continue;
               }
-              await stopApp();
+              if (!(await stopForReplacement())) {
+                pending = completed;
+                publish(`Native update ready; waiting for ${waiting()}`);
+                await runtime.pause();
+                continue;
+              }
               if (!stopping && !manualClose)
                 await launchRestored(current, completed.artifact, placement);
             }
@@ -1203,26 +1286,31 @@ export async function main(args = process.argv.slice(2)) {
   if (!supplied || !isAbsolute(supplied))
     throw new Error("--git-dir requires an absolute Git common directory");
   const common = realpathSync(supplied);
+  const rest = args.filter((_, index) => index !== commonIndex && index !== commonIndex + 1);
+  if (
+    rest.length === 4 &&
+    rest[0] === "--recording" &&
+    (rest[2] === "gameplay" ||
+      rest[2] === "collector" ||
+      rest[2] === "preparation" ||
+      rest[2] === "review") &&
+    (rest[3] === "on" || rest[3] === "off")
+  ) {
+    setActivityIntent(Number(rest[1]), rest[2], rest[3] === "on");
+    console.log(JSON.stringify({ ok: true }));
+    return;
+  }
   const origin =
     process.env.POKER_LAB_PREFERRED_WORKTREE ||
     resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
   const trees = discoverWorktrees(common);
   const preferred =
     trees.find((tree) => tree.path === resolve(origin))?.path || trees[0]?.path || origin;
-  const rest = args.filter((_, index) => index !== commonIndex && index !== commonIndex + 1);
   if (rest.length === 1 && rest[0] === "--status")
     console.log(JSON.stringify(launcherStatus(common, preferred)));
   else if (rest.length === 2 && rest[0] === "--select" && rest[1])
     console.log(JSON.stringify(selectWorktree(common, preferred, rest[1])));
-  else if (
-    rest.length === 4 &&
-    rest[0] === "--recording" &&
-    (rest[2] === "gameplay" || rest[2] === "collector") &&
-    (rest[3] === "on" || rest[3] === "off")
-  ) {
-    setRecordingIntent(Number(rest[1]), rest[2], rest[3] === "on");
-    console.log(JSON.stringify({ ok: true }));
-  } else if (rest.length === 2 && rest[0] === "--seed-native" && rest[1] && isAbsolute(rest[1])) {
+  else if (rest.length === 2 && rest[0] === "--seed-native" && rest[1] && isAbsolute(rest[1])) {
     const tree = chooseWorktree(common, trees, selectionAt(launcherPaths()), preferred);
     console.log(JSON.stringify(seedNativeCache(tree, rest[1])));
   } else if (!rest.length) await supervise(common, preferred);

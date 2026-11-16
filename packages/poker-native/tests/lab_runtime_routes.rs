@@ -1,4 +1,4 @@
-use poker_native::lab::{LabRequest, LabResponse, LabService};
+use poker_native::lab::{capture, queue, LabRequest, LabResponse, LabService};
 use serde_json::{json, Value};
 use std::{
     collections::{BTreeMap, HashMap},
@@ -105,7 +105,7 @@ fn ai_success_and_early_errors_are_private_and_never_echo_credentials() {
     assert!(!configured.body.to_string().contains("fixture-secret-token"));
 }
 #[test]
-fn all_collection_commit_routes_block_while_ai_job_is_active() {
+fn archive_commit_routes_are_readonly_and_writable_engines_block_active_ai_jobs() {
     let root = tempfile::tempdir().unwrap();
     let service = service(root.path(), HashMap::new());
     let ctx = service.registry.resolve("legacy").unwrap();
@@ -127,6 +127,22 @@ fn all_collection_commit_routes_block_while_ai_job_is_active() {
         assert!(response.body["error"]
             .as_str()
             .unwrap()
-            .contains("Pause AI review"));
+            .contains("read-only"));
+        let engine_request = LabRequest {
+            method: "POST".into(),
+            path: path.into(),
+            body: json!({"run_id":"run","sample_keys":[],"entries":[]}),
+            query: BTreeMap::new(),
+            headers: BTreeMap::new(),
+        };
+        let result = queue::handle(&service, &ctx, &engine_request)
+            .or_else(|| capture::handle(&service, &ctx, &engine_request))
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(result.status, 409, "{path}: {result}");
+        assert!(
+            result.message.contains("Pause AI review"),
+            "{path}: {result}"
+        );
     }
 }

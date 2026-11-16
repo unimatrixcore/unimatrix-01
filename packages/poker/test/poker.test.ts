@@ -90,15 +90,16 @@ describe("label semantics", () => {
     ["seat.0.dealer", "D", "dealer", "dealer"],
     ["seats[0].cards[1]", "10", "T", "card"],
     ["community.card_2", "K", "10s", "card"],
-    ["seat.0.bet", "G 10.5 BB", "G 10.55 BB", "money"],
+    ["seat.0.bet", "S 10.55 BB", "S 10.123456789 BB", "money"],
     ["seat.0.bank", "All-In", "All in", "bank"],
     ["pot", "Pot: S 3 BB", "G 1 BB", "pot"],
-    ["split_pot", "G 3 BB S 2.5 BB", "3 2", "split"],
+    ["split_pot", "S 3 BB G 2.5 BB", "S 3 BB G 2 B", "split"],
     ["round_id", "#123456", "prefix #123456 suffix", "game"],
   ])("validates %s independently of UI", (id, valid, invalid, category) => {
     expect(labelCategory(id)).toBe(category);
     expect(validateLabel(id, valid)).toBeNull();
-    expect(validateLabel(id, invalid)).toBeTypeOf("string");
+    if (category === "name") expect(validateLabel(id, invalid)).toBeNull();
+    else expect(validateLabel(id, invalid)).toBeTypeOf("string");
     expect(validateLabel(id, "")).toBeNull();
   });
 
@@ -112,16 +113,16 @@ describe("label semantics", () => {
   it("normalizes casing and spacing without fabricating username letters", () => {
     expect(normalizeLabel("seat.0.name", " PlayerOne... ")).toBe("PlayerOne...");
     expect(normalizeLabel("seat.0.status", "all-in")).toBe("All-In");
-    expect(normalizeLabel("seat.0.bank", "all-in")).toBe("All-In");
-    expect(normalizeLabel("pot", "pot:  g 2.5 bb")).toBe("Pot: G 2.5 BB");
-    expect(normalizeLabel("seat.0.bet", "s 3 bb")).toBe("S 3 BB");
+    expect(normalizeLabel("seat.0.bank", "All-In")).toBe("All-In");
+    expect(normalizeLabel("pot.total", "Pot: S 2.5 bb")).toBe("Pot: S 2.5 BB");
+    expect(normalizeLabel("seat.0.bet", "S 3 bb")).toBe("S 3 BB");
     expect(normalizeLabel("seat.0.dealer", "d")).toBe("D");
     expect(normalizeLabel("seat.0.hand_0", "a")).toBe("A");
   });
 
   it("rejects long invalid amount suffixes without repeated digit scanning", () => {
     expect(completeLabel("seat.0.bet", "G " + "0".repeat(100_000) + "!")).toBeNull();
-    expect(completeLabel("split_pot", "G 2 BB S 3.5 B")).toBe("G 2 BB S 3.5 BB");
+    expect(completeLabel("split_pot", "S 2 BB G 3.5 B")).toBe("S 2 BB G 3.5 BB");
     expect(completeLabel("seat.0.bet", "G 3.55")).toBeNull();
   });
 
@@ -136,8 +137,8 @@ describe("label semantics", () => {
     ["seat.0.name", "Pyr", ["Player1"], "Player1"],
     ["seat.0.name", "User.", [], "User..."],
     ["seat.0.bank", "al", [], "All-In"],
-    ["seat.0.bet", "g 3", [], "G 3 BB"],
-    ["pot.main", "Pot: S 3 B", [], "Pot: S 3 BB"],
+    ["seat.0.bet", "S 3 B", [], "S 3 BB"],
+    ["pot.total", "Pot: S 3 B", [], "Pot: S 3 BB"],
     ["seat.0.bet", "nonsense", [], null],
     ["seat.0.name", "", [], null],
     ["unknown", "value", [], null],

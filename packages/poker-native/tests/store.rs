@@ -1,6 +1,6 @@
 use image::{DynamicImage, Rgba, RgbaImage};
 use poker_native::{
-    labels::validate_label,
+    labels::{normalize_legacy_text, normalize_region_text, validate_label},
     media,
     types::{canonical_id, RegionSettings},
     NativeStore,
@@ -329,28 +329,63 @@ fn validates_flat_regions_and_recrop_resets_changed_pixels_without_renaming_regi
     );
 }
 #[test]
-fn labels_match_legacy_validation_and_dhash_uses_little_endian_bits() {
+fn labels_match_source_contract_and_dhash_uses_little_endian_bits() {
     for (id, label) in [
         ("seat.0.name", "Alice..."),
+        ("seat.0.name", "bad name — 玩家 🃏"),
+        ("seat.0.status", "Disconnected"),
+        ("seat.0.popup", "Check / Raise — 确认"),
         ("seat.0.status", "Decline Straddle"),
         ("seat.0.dealer", "D"),
         ("community.card_1", "10"),
         ("seat.0.bank", "All-In"),
+        ("pot.total", "Pot: S 12.3 BB"),
         ("pot.main", "Pot: S 12.3 BB"),
-        ("pot.split", "G 1 BB S 4.2 BB"),
+        ("pot.split", "S 1 BB G 4.2 BB"),
+        ("seat.0.bet", "S 1,234.12345678 BB"),
+        ("board.0.suit", "d"),
+        ("board.1.suit", "h"),
+        ("board.2.suit", "c"),
+        ("board.3.suit", "s"),
         ("round_id", "# 123456"),
     ] {
         validate_label(id, label).unwrap();
     }
     for (id, label) in [
-        ("seat.0.name", "bad name"),
-        ("seat.0.status", "Invalid#Status"),
+        ("seat.0.bank", "1.123456789"),
+        ("seat.0.bank", "1,23"),
+        ("seat.0.bank", "1e3"),
+        ("board.0.suit", "spades"),
+        ("pot.main", "Pot: 12.3 BB"),
+        ("pot.total", "Pot: 12.3 BB"),
+        ("unsupported_source_region", "Alice"),
         ("community.card_1", "As"),
-        ("seat.0.bet", "G 1.23 BB"),
+        ("seat.0.bet", "G 1.23 B"),
         ("round_id", "123456"),
     ] {
         assert!(validate_label(id, label).is_err(), "{id}: {label}");
     }
+    for digits in 0..=8 {
+        let amount = if digits == 0 {
+            "12".into()
+        } else {
+            format!("12.{}", "3".repeat(digits))
+        };
+        validate_label("seat.0.bet", &format!("S {amount} BB")).unwrap();
+    }
+    for region in ["pot.total", "main_pot"] {
+        let normalized = normalize_region_text(
+            region,
+            "pot",
+            &normalize_legacy_text("pot", "Pot: S 12.3 BB"),
+        );
+        assert_eq!(normalized, "Pot: S 12.3 BB");
+        validate_label(region, &normalized).unwrap();
+    }
+    assert_eq!(
+        normalize_region_text("pot.main", "pot", "Pot: 12.3 BB"),
+        "Pot: 12.3 BB"
+    );
     let mut gradient = RgbaImage::new(17, 16);
     for y in 0..16 {
         for x in 0..17 {

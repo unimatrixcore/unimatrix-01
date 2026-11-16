@@ -158,23 +158,12 @@ fn training_request_rejects_unsafe_or_ambiguous_selections() {
             404
         );
     }
-    let created = request(
-        &service,
-        "POST",
-        "/api/datasets",
-        json!({"name":"Archived"}),
-    );
-    let id = created.body["dataset"]["id"].as_str().unwrap();
-    assert_eq!(
-        request(
-            &service,
-            "DELETE",
-            &format!("/api/datasets/{id}"),
-            Value::Null
-        )
-        .status,
-        200
-    );
+    let created = service.registry.create("Archived").unwrap();
+    let id = created["id"].as_str().unwrap();
+    service
+        .registry
+        .update(id, &json!({"archived":true}))
+        .unwrap();
     assert_eq!(
         request(
             &service,
@@ -222,20 +211,16 @@ fn durable_history_recovers_dead_supervisors_but_keeps_recent_launches() {
 fn active_run_blocks_a_second_native_service_and_stops_only_its_supervisor() {
     let root = tempfile::tempdir().unwrap();
     let service = fixture(root.path(), true);
-    let archived = request(
-        &service,
-        "POST",
-        "/api/datasets",
-        json!({"name":"Archived reservation source"}),
-    );
-    let archived_id = archived.body["dataset"]["id"].as_str().unwrap();
+    let archived = service
+        .registry
+        .create("Archived reservation source")
+        .unwrap();
+    let archived_id = archived["id"].as_str().unwrap();
     service.registry.resolve(archived_id).unwrap();
-    request(
-        &service,
-        "DELETE",
-        &format!("/api/datasets/{archived_id}"),
-        Value::Null,
-    );
+    service
+        .registry
+        .update(archived_id, &json!({"archived":true}))
+        .unwrap();
     let started = request(
         &service,
         "POST",

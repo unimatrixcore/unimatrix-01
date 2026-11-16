@@ -11,9 +11,8 @@ import cv2
 import numpy as np
 
 from collector_frame_policy import _category
-from ocr_output import canonicalize_output
 from portable_ocr import PortableModel, decode_ctc, normalize_crop
-from schemas import valid, CONTRACT, CONTRACT_SHA256
+from schemas import CONTRACT, CONTRACT_SHA256, _contract as value_contract
 
 
 def load_models(release, device):
@@ -53,30 +52,35 @@ def decode_crop(raw, region_id):
     return image, category
 
 
-def prediction_for(freeze, raw, image, category, original, confidence):
+def prediction_for(freeze, raw, image, category, original, confidence, currency_format=None):
     height, width = image.shape[:2]
     role = 'names' if category == 'name' else 'general'
-    text = canonicalize_output(original, category)
-    return {'raw_text': original, 'text': text, 'confidence': confidence,
+    if currency_format is not None and not isinstance(currency_format, str):
+        raise ValueError('currency_format must be a known string or null')
+    text = value_contract.normalize_region_text('', category, original, currency_format=currency_format)
+    result = {'raw_text': original, 'text': text, 'confidence': confidence,
             'validation_contract': {'version': CONTRACT['version'], 'sha256': CONTRACT_SHA256},
-            'schema_valid': (not original and not text) or (bool(text) and valid({'category': category, 'label': text})),
+            'schema_valid': (not original and not text) or (bool(text) and value_contract.validate_text_with_currency_format(category, text, False, currency_format)),
             'model_id': role + ':' + freeze['weights'][role][:12],
             'model_sha256': freeze['weights'][role], 'category': category,
             'image_sha256': hashlib.sha256(raw).hexdigest(),
             'pixel_sha256': hashlib.sha256(f'{width}x{height}:RGB:'.encode() + cv2.cvtColor(image, cv2.COLOR_BGR2RGB).tobytes()).hexdigest(),
             'input_profile': 'raw', 'suggestion_only': True}
+    if currency_format is not None:
+        result['format_context'] = {'currency_format': currency_format, 'source': 'explicit_request'}
+    return result
 
 
 
-def suggest(models, freeze, raw, region_id):
+def suggest(models, freeze, raw, region_id, currency_format=None):
     image, category = decode_crop(raw, region_id)
     role = 'names' if category == 'name' else 'general'
     model = models[role]
     original, confidence = decode_ctc(model.probabilities(image), model.characters)
-    return prediction_for(freeze, raw, image, category, original, confidence)
+    return prediction_for(freeze, raw, image, category, original, confidence, currency_format)
 
 
-def suggest_many(models, freeze, items, batch_size=8, stats=None):
+def suggest_many(models, freeze, items, batch_size=8, stats=None, currency_format=None):
     """Group bounded, same-padding crops by model while preserving item order.
 
     Flat crops keep the single-image recognizer's exact blank shortcut. Mixed
@@ -98,7 +102,7 @@ def suggest_many(models, freeze, items, batch_size=8, stats=None):
         if np.all(image == image[0, 0]) or batch_size == 1:
             model = models[role]
             text, confidence = decode_ctc(model.probabilities(image), model.characters)
-            outputs[index] = prediction_for(freeze, items[index][0], image, category, text, confidence)
+            outputs[index] = prediction_for(freeze, items[index][0], image, category, text, confidence, currency_format)
             calls += 1
         else:
             shape = normalize_crop(image).shape
@@ -115,7 +119,7 @@ def suggest_many(models, freeze, items, batch_size=8, stats=None):
             for batch_index, index in enumerate(chunk):
                 image, category = prepared[index]
                 text, confidence = decode_ctc(probabilities[batch_index:batch_index + 1], model.characters)
-                outputs[index] = prediction_for(freeze, items[index][0], image, category, text, confidence)
+                outputs[index] = prediction_for(freeze, items[index][0], image, category, text, confidence, currency_format)
     if stats is not None:
         stats.update(model_calls=calls, crop_count=len(items), batch_size=batch_size)
     return outputs
@@ -140,6 +144,9 @@ def main():
             break
         try:
             request = json.loads(line)
+            currency_format = request.get('currency_format')
+            if currency_format is not None and not isinstance(currency_format, str):
+                raise ValueError('currency_format must be a known string or null')
             if 'items' in request:
                 items = request['items']
                 if not isinstance(items, list) or not 1 <= len(items) <= 192:
@@ -147,12 +154,12 @@ def main():
                 decoded = [(base64.b64decode(item['png_base64'], validate=True), item['region_id']) for item in items]
                 stats = {}
                 with contextlib.redirect_stdout(sys.stderr):
-                    predictions = suggest_many(models, freeze, decoded, args.batch_size, stats)
+                    predictions = suggest_many(models, freeze, decoded, args.batch_size, stats, currency_format)
                 reply({'ok': True, 'predictions': predictions, 'stats': stats})
             else:
                 raw = base64.b64decode(request['png_base64'], validate=True)
                 with contextlib.redirect_stdout(sys.stderr):
-                    prediction = suggest(models, freeze, raw, request['region_id'])
+                    prediction = suggest(models, freeze, raw, request['region_id'], currency_format)
                 reply({'ok': True, 'prediction': prediction})
         except Exception as exc:
             reply({'ok': False, 'error': str(exc)})
