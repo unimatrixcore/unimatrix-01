@@ -16,6 +16,14 @@ function setup({
   eligible = true,
   baselineBenchmark = false,
 } = {}) {
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
   vi.mocked(launcherRequest).mockResolvedValue({
     selection: "latest",
     current,

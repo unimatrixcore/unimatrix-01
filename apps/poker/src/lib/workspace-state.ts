@@ -34,7 +34,7 @@ export function rememberWorkspaceLocation(): void {
 export function restoreWorkspaceLocation(): () => void {
   if (["/", "/index.html"].includes(window.location.pathname)) {
     const saved = readWorkspaceState().path;
-    if (saved) history.replaceState(null, "", saved);
+    history.replaceState(null, "", saved || "/gameplay");
   }
   rememberWorkspaceLocation();
   for (const event of ["poker-workspace-change", "poker-ocr-location", "pagehide"])

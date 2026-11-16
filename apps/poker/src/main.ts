@@ -50,7 +50,6 @@ async function start(): Promise<void> {
       })());
   })();
   await import("./collector/main.js");
-  if (!["/gameplay", "/training"].includes(window.location.pathname)) await window.startPokerOcr();
 }
 const startupOverlay = document.getElementById("loading-overlay");
 const startupWatchdog = window.setTimeout(() => {

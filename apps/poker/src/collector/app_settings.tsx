@@ -19,6 +19,8 @@ import {
   pokerTrainingVersionsSchema,
 } from "@unimatrix/shared";
 import { BranchSelector } from "./branch_selector";
+import { Archive } from "lucide-react";
+import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "@unimatrix/ui/editor";
 import "./app_settings.css";
 
 type AiConfig = ReturnType<typeof pokerAiReviewConfigSchema.parse>;
@@ -197,6 +199,24 @@ export function AppSettings({ collapsed }: { collapsed: boolean }) {
         </DialogTrigger>
         <DialogContent className="poker-app-settings" aria-describedby={undefined}>
           <DialogTitle>Settings</DialogTitle>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Archived OCR Benchmark"
+                  onClick={() => {
+                    setOpen(false);
+                    window.dispatchEvent(new Event("poker-open-benchmark-archive"));
+                  }}
+                >
+                  <Archive size={16} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Archived OCR Benchmark</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
           <section className="app-settings-checkout" aria-label="Checkout">
             <h3>Checkout</h3>
             <BranchSelector />

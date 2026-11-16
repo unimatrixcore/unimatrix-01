@@ -1,0 +1,61 @@
+.gameplay-ai { font-size:12px;min-width:0; }
+.gameplay-ai-job { background:var(--popover);padding:14px 16px;margin-bottom:18px; }
+.gameplay-ai-job-line,.gameplay-ai-actions,.gameplay-ai-counts,.gameplay-ai-inspector-heading,.gameplay-ai-inspector-actions { display:flex;align-items:center;gap:12px; }
+.gameplay-ai-job-line,.gameplay-ai-inspector-heading { justify-content:space-between; }
+.gameplay-ai-state { display:flex;align-items:center;gap:8px;text-transform:capitalize; }
+.gameplay-ai-state i { width:6px;height:6px;background:var(--muted-foreground); }
+.gameplay-ai-state i[data-running=true] { background:var(--primary); }
+.gameplay-ai progress { width:100%;height:3px;appearance:none;display:block;margin:12px 0;background:var(--border);border:0; }
+.gameplay-ai progress::-webkit-progress-bar { background:var(--border); }
+.gameplay-ai progress::-webkit-progress-value { background:var(--primary); }
+.gameplay-ai progress::-moz-progress-bar { background:var(--primary); }
+.gameplay-ai-counts { flex-wrap:wrap;gap:6px 18px;font-size:10px;color:var(--muted-foreground);font-variant-numeric:tabular-nums; }
+.gameplay-ai-details { color:var(--muted-foreground);font-size:10px;line-height:1.7;margin-top:10px; }
+.gameplay-ai-details summary { cursor:pointer;width:fit-content; }
+.gameplay-ai-review-grid { display:grid;grid-template-columns:minmax(240px,.9fr) minmax(290px,1.1fr);gap:16px;align-items:start; }
+.gameplay-ai-queue { min-width:0; }
+.gameplay-ai-filters { display:flex;gap:2px;padding-bottom:10px;overflow-x:auto; }
+.gameplay-ai-filters button { width:auto;min-width:36px;padding:0 6px;gap:5px;font-size:10px; }
+.gameplay-ai-crop-row { display:flex;align-items:center;gap:10px;width:100%;min-width:0;height:84px;padding:10px 8px;text-align:left;background:transparent;border:0;border-bottom:1px solid var(--border);color:var(--foreground);cursor:pointer; }
+.gameplay-ai-crop-row[aria-pressed=true] { background:var(--popover);box-shadow:inset 2px 0 var(--primary); }
+.gameplay-ai-crop-row:focus-visible { outline:1px solid var(--ring);outline-offset:-2px; }
+.gameplay-ai-crop-row img { width:76px;height:50px;object-fit:contain;background:var(--secondary);flex-shrink:0; }
+.gameplay-ai-crop-unavailable { display:flex;align-items:center;gap:8px;color:var(--muted-foreground);font-size:11px; }
+.gameplay-ai-crop-row>span:not([data-slot=badge]) { flex:1;min-width:0; }
+.gameplay-ai-crop-row>span.gameplay-ai-thumbnail-unavailable { display:flex;align-items:center;justify-content:center;width:76px;height:50px;min-width:76px;flex:0 0 76px;background:var(--secondary);color:var(--muted-foreground); }
+.gameplay-ai-crop-row strong,.gameplay-ai-crop-row small { display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.gameplay-ai-crop-row strong { font-size:11px;font-weight:500; }
+.gameplay-ai-crop-row small { margin-top:5px;color:var(--muted-foreground);font-size:10px; }
+.gameplay-ai-crop-row [data-slot=badge] { max-width:90px;font-size:9px;white-space:normal; }
+.gameplay-ai-inspector { background:var(--popover);padding:16px;min-width:0; }
+.gameplay-ai-inspector-heading { font-size:12px;margin-bottom:16px; }
+.gameplay-ai-inspector-heading>strong { overflow-wrap:anywhere;font-weight:500; }
+.gameplay-ai-crop { display:flex;align-items:center;justify-content:center;min-height:124px;padding:16px;background:var(--background);border:1px solid var(--border); }
+.gameplay-ai-crop img { max-width:100%;max-height:230px;object-fit:contain; }
+.gameplay-ai-guided-crop { display:block;width:100%;max-height:230px;overflow:visible; }
+.gameplay-ai-guided-crop path { fill:var(--primary); }
+.gameplay-ai-guided-crop:focus-visible { outline:1px solid var(--ring);outline-offset:4px; }
+.gameplay-ai-comparison { display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:20px 0; }
+.gameplay-ai-comparison small { display:block;color:var(--muted-foreground);font-size:10px;margin-bottom:8px; }
+.gameplay-ai-comparison span { display:block;overflow-wrap:anywhere; }
+.gameplay-ai-reason { padding-left:10px;border-left:2px solid var(--border);color:var(--muted-foreground);font-size:11px;line-height:1.6;margin:0 0 18px; }
+.gameplay-ai-blank { display:flex;align-items:center;gap:6px;color:var(--muted-foreground);font-size:10px;margin:12px 0; }
+.gameplay-ai-inspector-actions { gap:8px; }
+.gameplay-ai-inspector-actions button { min-width:44px; }
+.gameplay-ai-suits { display:flex;gap:4px;margin-top:8px; }
+.gameplay-ai-suits button { font-size:20px; }
+.gameplay-ai-suits [data-suit="h"] { font-family:"DejaVu Sans",serif; }
+.gameplay-ai-crop-row>.gameplay-ai-occurrence-count { flex:0 0 auto;min-width:auto;color:var(--muted-foreground);font-size:10px; }
+.gameplay-ai-occurrences { margin:0 0 16px;color:var(--muted-foreground);font-size:10px; }
+.gameplay-ai-occurrences summary { cursor:pointer;margin-bottom:8px; }
+.gameplay-ai-occurrence-row { display:flex;justify-content:space-between;gap:8px;width:100%;height:46px;padding:6px;border:0;border-bottom:1px solid var(--border);background:transparent;color:var(--foreground);text-align:left;font-size:10px; }
+.gameplay-ai-occurrence-row[aria-pressed=true] { background:var(--secondary); }
+.gameplay-ai-occurrence-row span { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.gameplay-ai-occurrence-row small { display:block;color:var(--muted-foreground);margin-top:3px;font-size:9px; }
+.gameplay-ai-occurrence-row:focus-visible { outline:1px solid var(--ring);outline-offset:-2px; }
+.gameplay-ai-frame-context { display:block;width:100%;height:auto;margin-top:16px; }
+.gameplay-ai-empty { display:block;color:var(--muted-foreground);text-align:center;padding:48px 0; }
+.gameplay-ai-error,.gameplay-ai-notice { font-size:11px;padding:10px 0;margin-bottom:12px;overflow-wrap:anywhere; }
+.gameplay-ai-error { color:var(--destructive); }
+.gameplay-ai-notice { color:var(--muted-foreground); }
+@media(max-width:720px) { .gameplay-ai-review-grid { grid-template-columns:minmax(0,1fr); }.gameplay-ai-crop-row img { width:64px; }.gameplay-ai-inspector { padding:12px; }.gameplay-ai-inspector-heading { flex-wrap:wrap;justify-content:flex-start; }.gameplay-ai-inspector-heading>strong { flex-basis:100%;min-width:0; } }

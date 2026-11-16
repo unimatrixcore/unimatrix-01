@@ -97,7 +97,7 @@ for (const failure of [false, true]) {
         )
         .toBe(2);
     } else {
-      await expect(page.locator("#section-ocr-data")).toBeVisible();
+      await expect(page.getByLabel("Archived OCR Benchmark", { exact: true })).toBeVisible();
       await page.goForward();
       await expect(page.locator(".gameplay-workspace")).toBeVisible();
       await expect(page.locator(".gameplay-recording-panel .recording-status")).toHaveText(
@@ -110,5 +110,76 @@ for (const failure of [false, true]) {
       await expect(page.getByRole("button", { name: "Capture", exact: true })).toBeEnabled();
       await expect(page.getByRole("button", { name: "Record", exact: true })).toBeEnabled();
     }
+  });
+}
+
+for (const viewport of [
+  { width: 1440, height: 900 },
+  { width: 390, height: 844 },
+]) {
+  test(`saved capture warning pauses recording at ${viewport.width}px`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await page.addInitScript({
+      content: `(${installLabFixture.toString()})(); (${(() => {
+        const previous = window.__POKER_LAB_TEST_INVOKE__!;
+        const state = { captures: 0 };
+        Object.assign(window, { warningFixture: state });
+        const session = {
+          id: "saved",
+          name: "Saved recording",
+          source: "TEST-1",
+          interval_ms: 1000,
+          status: "paused",
+          created_at: "2026-11-12T00:00:00Z",
+          frame_count: 1,
+          hand_count: 0,
+        };
+        const success = (body: unknown) => ({ status: 200, headers: {}, body });
+        window.__POKER_LAB_TEST_INVOKE__ = async (request) => {
+          if (request.path === "/api/gameplay")
+            return success({ sessions: request.query.archived === "1" ? [] : [session] });
+          if (request.path === "/api/gameplay/sessions/saved/capture") {
+            state.captures++;
+            return success({
+              session,
+              frame: {
+                id: "saved-frame",
+                session_id: "saved",
+                hand_id: null,
+                captured_at: "2026-11-12T00:00:00Z",
+                image_url:
+                  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/aZkAAAAASUVORK5CYII=",
+                width: 1,
+                height: 1,
+                ocr_status: "partial",
+                error: null,
+                effective_region_error: "Fixture enrichment failure",
+              },
+            });
+          }
+          if (request.path === "/api/gameplay/sessions/saved/frames")
+            return success({ frames: [] });
+          if (request.path === "/api/gameplay/sessions/saved") return success({ hands: [] });
+          return previous(request);
+        };
+      }).toString()})();`,
+    });
+    await page.goto("/gameplay");
+    await expect(page.locator("#loading-overlay")).not.toHaveClass(/active/);
+    await expect(page.getByRole("button", { name: "Record", exact: true })).toBeEnabled();
+    await page.clock.install();
+    await page.getByRole("button", { name: "Record", exact: true }).click();
+    await expect(page.locator(".gameplay-error")).toContainText(
+      "Frame saved, but region details could not be loaded: Fixture enrichment failure",
+    );
+    await expect(page.getByRole("button", { name: "Record", exact: true })).toBeVisible();
+    await page.clock.fastForward(5000);
+    expect(
+      await page.evaluate(
+        () =>
+          (window as unknown as { warningFixture: { captures: number } }).warningFixture.captures,
+      ),
+    ).toBe(1);
+    await page.screenshot({ path: `/tmp/poker-capture-warning-${viewport.width}.png` });
   });
 }

@@ -1,5 +1,6 @@
 import { clearLabPageHandoff } from "./lab-page-handoff";
 import { labQueryClient } from "./background-lists";
+import { readWithSummaryRetry } from "./summary-read";
 import { convertFileSrc, invoke, isTauri } from "@tauri-apps/api/core";
 import {
   pokerLabRequestSchema,
@@ -65,7 +66,10 @@ export function createLabFetch(
           (query.queryKey[1] === "/api/queue" || query.queryKey[1] === "/api/gameplay"),
       });
     }
-    const response = pokerLabResponseSchema.parse(await invoker(request));
+    const response =
+      request.method === "GET"
+        ? await readWithSummaryRetry(() => invoker(request), request.path, signal)
+        : pokerLabResponseSchema.parse(await invoker(request));
     if (
       response.status >= 200 &&
       response.status < 300 &&
