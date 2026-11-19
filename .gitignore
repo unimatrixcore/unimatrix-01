@@ -15,6 +15,9 @@ dist/
 build/
 coverage/
 bin/
+!packages/poker-native/src/bin/
+packages/poker-native/src/bin/*
+!packages/poker-native/src/bin/ocr-visible-runs.rs
 obj/
 apps/web/test-results/
 apps/cflop/test-results/

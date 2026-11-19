@@ -624,8 +624,15 @@ impl TrainingManager {
                 .ok_or_else(|| conflict("Collection identity is invalid"))?;
             let ctx = self.registry.resolve(id)?;
             let connection = ctx.connection()?;
-            let saved: i64 =
+            let mut saved: i64 =
                 connection.query_row("SELECT COUNT(*) FROM images", [], |row| row.get(0))?;
+            let has_synthetic: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type='table' AND name='synthetic_regions')", [], |row| row.get(0))?;
+            if has_synthetic {
+                saved +=
+                    connection.query_row("SELECT COUNT(*) FROM synthetic_regions", [], |row| {
+                        row.get::<_, i64>(0)
+                    })?;
+            }
             let has_queue: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type='table' AND name='queue_items')", [], |row| row.get(0))?;
             let (queued, reviewed, pending): (i64, i64, i64) = if has_queue {
                 connection.query_row("SELECT COUNT(*),COALESCE(SUM(reviewed=1),0),COALESCE(SUM(reviewed=0),0) FROM queue_items WHERE active=1 AND discarded=0",[],|row| Ok((row.get(0)?,row.get(1)?,row.get(2)?)))?
@@ -1136,6 +1143,29 @@ use std::os::unix::ffi::OsStrExt;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn full_screenshot_annotations_are_counted_without_claiming_review() {
+        let root = tempfile::tempdir().unwrap();
+        let registry =
+            Arc::new(datasets::DatasetRegistry::new(root.path().join("collections")).unwrap());
+        let context = registry.resolve("legacy").unwrap();
+        context.connection().unwrap().execute_batch(
+            "CREATE TABLE synthetic_regions(id INTEGER PRIMARY KEY,filename TEXT,label TEXT,region_id TEXT,source_id INTEGER,timestamp INTEGER,x INTEGER,y INTEGER,w INTEGER,h INTEGER); INSERT INTO synthetic_regions(id,filename,label,region_id) VALUES(1,'virtual.png','Name','seat.0.name');"
+        ).unwrap();
+        assert!(!context.images().join("virtual.png").exists());
+        let manager = TrainingManager::new(
+            root.path().join("data"),
+            root.path().join("tools"),
+            registry,
+            HashMap::new(),
+        )
+        .unwrap();
+        let counts = manager.collection_counts().unwrap();
+        assert_eq!(counts[0]["saved"], 1);
+        assert_eq!(counts[0]["reviewed_queue"], 0);
+        assert!(counts[0]["reviewed"].is_null());
+    }
 
     #[test]
     fn preparation_names_obey_the_frontend_utf16_boundary() {

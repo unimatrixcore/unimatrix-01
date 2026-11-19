@@ -528,6 +528,42 @@ impl Gameplay {
                 results.insert(id.to_string(), json!({"prediction":null,"error":null,"rect":rect,"presence":region["presence"]}));
                 continue;
             }
+            let isolated_partial_bet = category == "bet"
+                && region["localization"]["state"] == "partially_occluded"
+                && region["guide"]["occlusion"]["partial"] == true
+                && region["crop_mask_source"] == "chip_columns_value"
+                && region["crop_mask"].is_object()
+                && region["localization_error"].is_null();
+            if isolated_partial_bet {
+                let extracted = (|| -> crate::lab::LabResult<_> {
+                    let runs = super::visible_runs::extract_region(image, region)?;
+                    runs.into_iter()
+                        .map(|run| {
+                            let png = run.png()?;
+                            Ok((png, serde_json::to_value(run)?))
+                        })
+                        .collect::<crate::lab::LabResult<Vec<_>>>()
+                })();
+                let mut observed = Vec::new();
+                let mut error = None;
+                match extracted {
+                    Ok(runs) => {
+                        for (index, (png, metadata)) in runs.into_iter().enumerate() {
+                            observed.push(metadata);
+                            crops.push((png, id.to_string()));
+                            crop_targets.push((id.to_string(), false, Some(index)));
+                        }
+                    }
+                    Err(e) => error = Some(e.message),
+                }
+                results.insert(id.to_string(), json!({
+                    "prediction":null,"error":error,"rect":rect,"presence":region["presence"],
+                    "occlusion":region["guide"]["occlusion"],"recognition_task":"visible_run",
+                    "visible_run_policy":super::visible_runs::POLICY,"coordinate_space":"parent_local",
+                    "visible_runs":observed
+                }));
+                continue;
+            }
             let error = if !card_field && region["presence"]["state"] == "ambiguous" {
                 Some(format!(
                     "Target presence is ambiguous: {}",
@@ -541,13 +577,13 @@ impl Gameplay {
                         Ok(Some(parts)) => {
                             for part in parts {
                                 crops.push((part, "bet".to_string()));
-                                crop_targets.push((id.to_string(), true));
+                                crop_targets.push((id.to_string(), true, None));
                             }
                             None
                         }
                         Ok(None) => {
                             crops.push((png, id.to_string()));
-                            crop_targets.push((id.to_string(), false));
+                            crop_targets.push((id.to_string(), false, None));
                             None
                         }
                         Err(error) => Some(error),
@@ -605,7 +641,14 @@ impl Gameplay {
                         return Err("Incomplete OCR crop batch".into());
                     }
                     let mut split_parts = Vec::new();
-                    for ((id, component), mut prediction) in ids.iter().zip(predictions) {
+                    for ((id, component, run_index), mut prediction) in ids.iter().zip(predictions)
+                    {
+                        if let Some(index) = run_index {
+                            prediction["schema_valid"] = json!(false);
+                            results.get_mut(id).unwrap()["visible_runs"][*index]["prediction"] =
+                                prediction;
+                            continue;
+                        }
                         let category = if *component {
                             "bet"
                         } else {
@@ -632,7 +675,7 @@ impl Gameplay {
                     }
                 }
                 Err(error) => {
-                    for (id, _) in ids {
+                    for (id, _, _) in ids {
                         results.get_mut(&id).unwrap()["error"] = json!(error);
                     }
                 }
@@ -1373,6 +1416,107 @@ for line in sys.stdin:
             results["split_pot"]["prediction"]["components"][0]["region_seen"],
             "bet"
         );
+    }
+
+    #[test]
+    fn isolated_partial_bet_reaches_local_worker_with_occlusion_and_clean_pixels() {
+        let fixture = Fixture::new();
+        let training = fixture.repo.join("dev_tools/training");
+        fs::create_dir_all(&training).unwrap();
+        fs::write(
+            fixture.repo.join("dev_tools/ocr_contract.json"),
+            crate::labels::CONTRACT_BYTES,
+        )
+        .unwrap();
+        fs::write(
+            training.join("collector_inference.py"),
+            r#"
+import base64,json,sys
+from pathlib import Path
+root=Path(__file__).parent/'received'
+root.mkdir()
+print(json.dumps({'ready':True}),flush=True)
+for line in sys.stdin:
+    items=json.loads(line)['items']
+    out=[]
+    for item in items:
+        region=item['region_id']
+        (root/(region+'.png')).write_bytes(base64.b64decode(item['png_base64']))
+        text='# 123456' if region=='game.id' else '42'
+        out.append({'text':text,'raw_text':text,'region_seen':region})
+    print(json.dumps({'ok':True,'predictions':out}),flush=True)
+"#,
+        )
+        .unwrap();
+        *fixture.gameplay.ocr.lock().unwrap() = Ocr::new(
+            &fixture.repo,
+            &HashMap::from([("OCR_MODEL_PYTHON".into(), "/usr/bin/python3".into())]),
+        );
+        let corners = vec![json!({"x":0.0,"y":0.0}); 4];
+        let mut partial = json!({
+            "id":"seats[0].bet","category":"bet",
+            "bounds":{"x":0.0,"y":0.0,"width":20.0,"height":20.0},
+            "crop_mask_source":"chip_columns_value",
+            "presence":{"state":"ambiguous","reason":"Target is partly occluded"},
+            "guide":{"source":"pixel_panel","family":"bet","slot":{"x":0.0,"y":0.0,"width":20.0,"height":20.0},"occlusion":{"partial":true,"occluder_region_ids":["seats[1].bet"]}},
+            "localization":{"state":"partially_occluded","panels":[{"x":0.0,"y":0.0,"width":20.0,"height":20.0}],"visible_panels":[{"bounds":{"x":0.0,"y":0.0,"width":10.0,"height":20.0},"corners":corners}]}
+        });
+        let mut ordinary_ambiguous = partial.clone();
+        ordinary_ambiguous["id"] = json!("seats[1].bet");
+        ordinary_ambiguous["localization"]["state"] = json!("unresolved");
+        let mut wrong_category = partial.clone();
+        wrong_category["id"] = json!("seats[0].name");
+        wrong_category["category"] = json!("name");
+        let mut invalid_mask = partial.clone();
+        invalid_mask["id"] = json!("seats[2].bet");
+        invalid_mask["localization"]["visible_panels"][0]["bounds"]["width"] = json!(-1.0);
+        partial["crop_mask"] = json!({});
+        let profile = json!({"regions":[
+            {"id":"game.id","bounds":{"x":0,"y":0,"width":4,"height":4}},
+            partial,ordinary_ambiguous,wrong_category,invalid_mask
+        ]});
+        let mut image = image::RgbImage::from_pixel(20, 20, image::Rgb([15, 33, 46]));
+        for y in 0..20 {
+            for x in 10..20 {
+                image.put_pixel(x, y, image::Rgb([250, 205, 0]));
+            }
+        }
+        for y in 4..14 {
+            for x in 3..7 {
+                image.put_pixel(x, y, image::Rgb([240, 240, 240]));
+            }
+        }
+        // A different glyph continues underneath the occluder. Its visible
+        // fragment must be absent even though the surviving prefix parses.
+        for y in 4..14 {
+            image.put_pixel(9, y, image::Rgb([244, 244, 244]));
+        }
+        let (results, hand, count) = fixture
+            .gameplay
+            .read_frame(&DynamicImage::ImageRgb8(image), &profile)
+            .unwrap()
+            .unwrap();
+        assert_eq!(hand, "123456");
+        assert_eq!(count, 2);
+        let result = &results["seats[0].bet"];
+        assert!(result["prediction"].is_null());
+        let run = &result["visible_runs"][0];
+        assert_eq!(run["prediction"]["region_seen"], "seats[0].bet");
+        assert_eq!(run["prediction"]["raw_text"], "42");
+        assert_eq!(run["prediction"]["schema_valid"], false);
+        assert_eq!(result["presence"]["state"], "ambiguous");
+        assert_eq!(result["occlusion"]["partial"], true);
+        for id in ["seats[1].bet", "seats[0].name", "seats[2].bet"] {
+            assert!(results[id]["error"].is_string(), "{id}");
+            assert!(!training.join("received").join(format!("{id}.png")).exists());
+        }
+        let input = image::open(training.join("received/seats[0].bet.png"))
+            .unwrap()
+            .to_rgb8();
+        assert_eq!(input.dimensions(), (6, 20));
+        assert_eq!(input.get_pixel(1, 8).0, [240, 240, 240]);
+        assert_eq!(run["rect"]["x"], 2);
+        assert_eq!(run["right_boundary"], "open");
     }
 
     #[test]

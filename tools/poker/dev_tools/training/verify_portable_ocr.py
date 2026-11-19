@@ -12,6 +12,7 @@ import paddle.inference as infer
 import yaml
 
 from portable_ocr import PortableModel, decode_ctc, normalize_crop
+from ocr_dictionary import validate_characters, profile_metadata
 
 
 def main():
@@ -19,8 +20,9 @@ def main():
     p.add_argument('--bundle',type=Path,required=True);p.add_argument('--manifest',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
     a=p.parse_args()
     chars=['blank']+yaml.safe_load((a.native/'inference.yml').read_text())['PostProcess']['character_dict']+[' ']
-    assert len(chars)==70
-    (a.portable/'characters.json').write_text(json.dumps(chars))
+    profile=validate_characters(chars)
+    if json.loads((a.portable/'characters.json').read_text()) != chars:
+        raise ValueError('Native and portable OCR dictionaries differ')
     portable=PortableModel(a.portable)
     cfg=infer.Config(str(a.native/'inference.json'),str(a.native/'inference.pdiparams'));cfg.disable_gpu();cfg.disable_glog_info();cfg.set_cpu_math_library_num_threads(4);cfg.switch_ir_optim(False)
     native=infer.create_predictor(cfg)
@@ -32,6 +34,7 @@ def main():
         x=np.random.default_rng(width).uniform(-1,1,(1,3,48,width)).astype(np.float32)
         expected=reference(x);actual=portable.session.run(None,{portable.input_name:x})[0]
         error=float(np.max(np.abs(expected-actual)));assert error<.00005,(width,error)
+        assert decode_ctc(expected,chars)[0]==decode_ctc(actual,chars)[0],width
         checks.append({'width':width,'shape':list(actual.shape),'max_probability_error':error})
     from paddlex.inference.models.text_recognition.processors import OCRReisizeNormImg
     processor=OCRReisizeNormImg()
@@ -57,7 +60,7 @@ def main():
         before=decode_ctc(expected,chars);after=decode_ctc(actual,chars)
         if before[0]!=after[0]:mismatches.append({'sample_id':row['sample_id'],'native':before[0],'onnx':after[0]})
     assert not input_differences and not mismatches,(input_differences,mismatches)
-    report={'random_shape_checks':checks,'real_crop_samples':len(selected),'sample_ids':[r['sample_id'] for r in selected],
+    report={'dictionary_profile':profile_metadata(profile),'random_shape_checks':checks,'real_crop_samples':len(selected),'sample_ids':[r['sample_id'] for r in selected],
             'normalization_pixel_mismatches':input_differences,'decoded_mismatches':mismatches,'maximum_real_crop_probability_error':maximum,
             'real_probability_tolerance':.001,'per_crop_probability_differences':probability_differences,
             'cpu_latency_ms':{'p50':float(np.percentile(latencies,50)),'p95':float(np.percentile(latencies,95)),'maximum':max(latencies),'threads':4,'includes_resize':True,'concurrent_training_may_affect_timing':True},

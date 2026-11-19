@@ -14,11 +14,14 @@ import time
 
 from export_reviewed_dataset import export_datasets, readonly_database
 from prepare_named_collection_training import (
-    collection_rows, digest, pixels, prepare_records, read_jsonl, source_bytes, Groups, exact_key,
+    collection_rows, digest, pixels, prepare_records, read_jsonl, iter_jsonl, source_bytes, Groups, exact_key,
     write_jsonl, write_recipe,
 )
 from lib.ocr_contract import CONTRACT, CONTRACT_SHA256, validate_text
 from lab_training_curriculum import build_curriculum
+from visible_run_evidence import verified_training_target
+from ocr_dictionary import (DEFAULT_PROFILE, LEGACY_PROFILE, clean_start_directory,
+                            read_dictionary, profile_metadata, characters_for_profile)
 
 
 class DataProgress:
@@ -181,6 +184,14 @@ def reserve_splits(root, baseline, named, inventory, collections, scope='all_reg
                         'collections': report, 'existing_versions_changed': False}
 
 
+class ReservationInventory:
+    def __init__(self, path):
+        self.path = Path(path)
+
+    def __iter__(self):
+        return iter_jsonl(self.path)
+
+
 def _reserve_catalog(request, collections, exported, baseline, characters):
     catalog = request.get('reservation_collections', collections)
     scope = 'all_registry_collections' if 'reservation_collections' in request else 'selected_collections_legacy_request'
@@ -194,7 +205,7 @@ def _reserve_catalog(request, collections, exported, baseline, characters):
     named, blocked, _ = collection_rows(global_export)
     named = [row for row in named if set(row['label']) <= characters and not any(char in row['label'] for char in '\t\r\n')]
     components, report = reserve_splits(request['training_root'], baseline, named,
-                                       read_jsonl(global_export / 'samples.jsonl'), catalog, scope)
+                                       ReservationInventory(global_export / 'samples.jsonl'), catalog, scope)
     roles_by_token = defaultdict(set)
     for component in components:
         for token in component['tokens']:
@@ -217,16 +228,16 @@ def _proof_digest(value):
     return digest(json.dumps(value, sort_keys=True, separators=(',', ':')).encode())
 
 
-def _architecture_digest(template):
+def _architecture_digest(template, class_count=70):
     import yaml
     architecture = deepcopy(yaml.safe_load(Path(template).read_text())['Architecture'])
-    architecture['Head']['out_channels'] = 70
+    architecture['Head']['out_channels'] = class_count
     return _proof_digest(architecture)
 
 
-def _original_initialization(root, dictionary, templates):
+def _original_initialization(root, dictionary, templates, profile=LEGACY_PROFILE):
     import yaml
-    directory = root / 'production-clean-start'
+    directory = clean_start_directory(root, profile)
     checkpoint = _existing([directory / 'initial.pdparams'], 'Original pretrained initialization')
     record_path = directory / 'provenance.json'
     record = json.loads(record_path.read_text())
@@ -253,16 +264,16 @@ def _original_initialization(root, dictionary, templates):
             or model_source.get('repository') != 'PaddlePaddle/PP-OCRv6_small_rec'
             or (model_source.get('sha256') or {}).get('inference.yml') != artifacts['source_dictionary_sha256']):
         raise ValueError('Original pretrained source or mapped initialization differs from its provenance')
-    classes = ['blank'] + dictionary.read_text().splitlines() + [' ']
+    classes = read_dictionary(dictionary, profile)
     original_classes = ['blank'] + yaml.safe_load(source_dictionary.read_text())['PostProcess']['character_dict'] + [' ']
-    if len(classes) != 70 or len(set(classes)) != 70 or any(original_classes.count(char) != 1 for char in classes):
+    if any(original_classes.count(char) != 1 for char in classes):
         raise ValueError('Original pretrained character mapping is incompatible with the training dictionary')
     indices = [original_classes.index(char) for char in classes]
     for role, template in templates.items():
         config = yaml.safe_load(Path(template).read_text())
         if bool(config['Global'].get('collector_name_high_resolution')) != (role == 'names'):
             raise ValueError('Original pretrained role geometry disagrees with its training recipe')
-    policies = {role: {'architecture_sha256': _architecture_digest(template), 'width_pool': 1,
+    policies = {role: {'architecture_sha256': _architecture_digest(template, len(classes)), 'width_pool': 1,
                        'temporal_stride': 2 if role == 'names' else 4}
                 for role, template in templates.items()}
     if (record.get('classes') != classes or record.get('class_indices') != indices
@@ -286,7 +297,7 @@ def _original_initialization(root, dictionary, templates):
     return checkpoint, lineage
 
 
-def discover(root):
+def discover(root, profile=DEFAULT_PROFILE):
     root = Path(root).resolve()
     baseline = root / 'named-continuation' / 'final'
     release = Path(os.environ.get('OCR_MODEL_RELEASE', root / 'release-candidate')).resolve()
@@ -302,8 +313,9 @@ def discover(root):
         model_paths['baseline_' + role + '_model'] = model
     templates = {role: _existing([baseline / role / 'train.yml'], role.capitalize() + ' training recipe')
                  for role in ('general', 'names')}
-    dictionary = _existing([baseline / 'dictionary.txt'], 'Training character dictionary')
-    initial, lineage = _original_initialization(root, dictionary, templates)
+    dictionary = _existing([baseline / 'dictionary.txt' if profile == LEGACY_PROFILE else
+                            clean_start_directory(root, profile) / 'dictionary.txt'], 'Training character dictionary')
+    initial, lineage = _original_initialization(root, dictionary, templates, profile)
     return {
         'baseline': baseline,
         'general_template': templates['general'],
@@ -312,6 +324,7 @@ def discover(root):
         'names_checkpoint': initial,
         'starting_lineage': lineage,
         'dictionary': dictionary,
+        'candidate_dictionary': profile_metadata(profile),
         'python': _existing([root / 'desktop-train-gpu/bin/python'], 'GPU training Python interpreter'),
         'inference_python': _existing([root / 'desktop-gpu/bin/python', root / 'runtime-venv/bin/python'], 'GPU benchmark Python interpreter'),
         **model_paths,
@@ -379,7 +392,9 @@ def _baseline(root):
         pixel_hash, shape = pixels(raw)
         if pixel_hash != original.get('pixel_sha256') or shape != original.get('image_dimensions'):
             raise ValueError('The inherited baseline decoded pixels changed')
-        if not validate_text(original.get('category'), original.get('label'), allow_blank=True):
+        valid = (verified_training_target(original) if original.get('recognition_task') == 'visible_run'
+                 else validate_text(original.get('category'), original.get('label'), allow_blank=True))
+        if not valid:
             raise ValueError('The inherited baseline labels violate the current OCR contract')
         control = bool(original.get('constructed_control'))
         if control:
@@ -414,33 +429,43 @@ def _request(request):
 
 
 def _collection_counts(collections, samples, accepted_ids, reserved_ids=(), duplicate_ids=()):
+    stats = {collection['id']: Counter() for collection in collections}
+    represented = {collection['id']: set() for collection in collections}
+    for row in samples:
+        dataset = row['dataset_id']
+        if dataset not in stats:
+            continue
+        count = stats[dataset]
+        represented[dataset].update(row['sample_key_aliases'])
+        identity = 'named:' + dataset + ':' + row['sample_key']
+        eligible = identity in accepted_ids
+        reserved = (not eligible and identity not in duplicate_ids
+                    and (identity in reserved_ids
+                         or ('exact_duplicate_component_contains_holdout' in row.get('training_eligibility_limitations', [])
+                             and row['reviewed'] and row['image_integrity_valid'] and not row.get('ai_review_blocked'))))
+        count['total'] += 1
+        count['reviewed'] += bool(row['reviewed'])
+        count['eligible'] += eligible
+        count['names'] += eligible and row['category'] == 'name'
+        count['reserved'] += reserved
+        count['blanks'] += eligible and row['label'] == ''
+        count['pending'] += not row['reviewed'] and not row['queue_discarded']
+        count['blocked'] += bool(row.get('ai_review_blocked'))
     counts = []
     for collection in collections:
-        rows = [row for row in samples if row['dataset_id'] == collection['id']]
-        represented = {alias for row in rows for alias in row['sample_key_aliases']}
         missing_active = set()
         with readonly_database(Path(collection['directory']) / 'data.db') as connection:
             tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             if 'queue_items' in tables:
                 missing_active = {row['sample_key'] for row in connection.execute(
                     'SELECT sample_key FROM queue_items WHERE active=1 AND discarded=0')
-                    if row['sample_key'] not in represented}
-        eligible = [row for row in rows if 'named:' + row['dataset_id'] + ':' + row['sample_key'] in accepted_ids]
-        reserved = [row for row in rows
-                    if 'named:' + row['dataset_id'] + ':' + row['sample_key'] not in accepted_ids
-                    and 'named:' + row['dataset_id'] + ':' + row['sample_key'] not in duplicate_ids
-                    and (('named:' + row['dataset_id'] + ':' + row['sample_key'] in reserved_ids)
-                         or ('exact_duplicate_component_contains_holdout' in row.get('training_eligibility_limitations', [])
-                             and row['reviewed'] and row['image_integrity_valid'] and not row.get('ai_review_blocked')))]
-        counts.append({
-            'id': collection['id'], 'name': collection.get('name', collection['id']),
-            'total': len(rows) + len(missing_active), 'reviewed': sum(bool(row['reviewed']) for row in rows),
-            'eligible': len(eligible), 'names': sum(row['category'] == 'name' for row in eligible),
-            'reserved': len(reserved),
-            'blanks': sum(row['label'] == '' for row in eligible),
-            'pending': len(missing_active) + sum(not row['reviewed'] and not row['queue_discarded'] for row in rows),
-            'blocked': sum(bool(row.get('ai_review_blocked')) for row in rows),
-        })
+                    if row['sample_key'] not in represented[collection['id']]}
+        count = stats[collection['id']]
+        count['total'] += len(missing_active)
+        count['pending'] += len(missing_active)
+        counts.append({'id': collection['id'], 'name': collection.get('name', collection['id']),
+                       **{key: count[key] for key in ('total', 'reviewed', 'eligible', 'names', 'reserved',
+                                                     'blanks', 'pending', 'blocked')}})
     return counts
 
 
@@ -464,6 +489,7 @@ def _export(request, collections, output, baseline=None):
     ledger = Path(request['training_root']) / 'split-reservations.json'
     reservations = json.loads(ledger.read_text()) if ledger.is_file() else None
     return export_datasets(collections, output, audited_baseline=historical,
+                           candidate_profile=request.get('candidate_profile', DEFAULT_PROFILE),
                            partition_baseline=baseline or (), split_reservations=reservations,
                            progress=DataProgress(request['run_dir']),
                            materialize_images=request.get('_materialize_training', True))
@@ -474,7 +500,7 @@ def _prepare(request, export=None, materialize_training=True):
     collections, ids, epochs, run = _request(request)
     progress = DataProgress(run)
     progress('validating')
-    config = discover(request['training_root'])
+    config = discover(request['training_root'], request.get('candidate_profile', DEFAULT_PROFILE))
     baseline = _baseline(config['baseline'])
     exported = run / 'collections'
     if export is None:
@@ -546,9 +572,9 @@ def _prepare(request, export=None, materialize_training=True):
     }
     reserved_ids = {alias['sample_id'] for row in selected_records if row['split'] != 'train'
                     for alias in row['aliases'] if alias['sample_id'] in selected_ids}
-    duplicate_ids = {'named:' + row['sample'] for row in read_jsonl(exported / 'superseded_exact_duplicates.jsonl')}
+    duplicate_ids = {'named:' + row['sample'] for row in iter_jsonl(exported / 'superseded_exact_duplicates.jsonl')}
     selected_counts['collections'] = _collection_counts(
-        collections, read_jsonl(exported / 'samples.jsonl'), set(selected_counts['accepted_identities']), reserved_ids, duplicate_ids)
+        collections, iter_jsonl(exported / 'samples.jsonl'), set(selected_counts['accepted_identities']), reserved_ids, duplicate_ids)
     total = sum(row['total'] for row in selected_counts['collections'])
     selected_counts['reserved'] = sum(row['reserved'] for row in selected_counts['collections'])
     selected_counts['rejected'] = total - selected_counts['accepted'] - selected_counts['duplicates'] - selected_counts['reserved']
@@ -577,10 +603,12 @@ def _prepare(request, export=None, materialize_training=True):
             'collection_ids': ids, 'source_manifest_sha256': export['manifest_sha256'],
             'baseline_manifest_sha256': digest((config['baseline'] / 'manifest.jsonl').read_bytes()),
             'dictionary_sha256': digest(config['dictionary'].read_bytes()),
+            'candidate_dictionary': config['candidate_dictionary'],
             'manifest_sha256': digest((bundle / 'manifest.jsonl').read_bytes()),
             'unrelated_baseline_training_used': False,
             'partition': partition, 'summary': summary, 'roles': roles}, indent=2) + '\n')
-        return {'bundle': str(bundle), 'dictionary': str(config['dictionary']), 'summary': summary, 'roles': roles}
+        return {'bundle': str(bundle), 'dictionary': str(config['dictionary']), 'summary': summary, 'roles': roles,
+                'candidate_dictionary': config['candidate_dictionary']}
     (bundle / 'images').mkdir(parents=True)
     (bundle / 'starting').mkdir()
     for row in records:
@@ -600,6 +628,7 @@ def _prepare(request, export=None, materialize_training=True):
         'baseline_manifest_sha256': digest((config['baseline'] / 'manifest.jsonl').read_bytes()),
         'baseline_audit_sha256': digest((config['baseline'] / 'audit.json').read_bytes()),
         'dictionary_sha256': digest(dictionary.read_bytes()), 'partition': partition,
+        'candidate_dictionary': config['candidate_dictionary'],
         'baseline_release': str(config['model_release']),
         'starting_lineage': config['starting_lineage'],
         'semantic_review_sha256': sorted({row['semantic_review_sha256'] for row in baseline if row.get('semantic_review_sha256')}),
@@ -643,7 +672,8 @@ def _prepare(request, export=None, materialize_training=True):
     return {'bundle': str(bundle), 'source': str(config['source']), 'python': str(config['python']),
             'inference_python': str(config['inference_python']),
             'baseline_general_model': str(config['baseline_general_model']),
-            'baseline_names_model': str(config['baseline_names_model']), 'roles': roles, 'summary': summary}
+            'baseline_names_model': str(config['baseline_names_model']), 'roles': roles, 'summary': summary,
+            'candidate_dictionary': config['candidate_dictionary']}
 
 
 def prepare(request):
@@ -670,14 +700,20 @@ def prepared_analysis(request, prepared, blockers=None):
     collections, _, _, run = _request(request)
     exported = run / 'collections'
     export = json.loads((exported / 'summary.json').read_text())
-    samples = read_jsonl(exported / 'samples.jsonl')
-    candidates = read_jsonl(exported / 'training_candidates.jsonl')
-    dictionary = (Path(prepared.get('dictionary', str(Path(prepared['bundle']) / 'dictionary.txt'))) if prepared else
-                  Path(request['training_root']) / 'named-continuation/final/dictionary.txt')
-    characters = set(dictionary.read_text().splitlines()) | {' '} if dictionary.is_file() else None
-    supported = [row for row in candidates if not any(char in row['label'] for char in '\t\r\n')
-                 and (characters is None or set(row['label']) <= characters)]
-    accepted_ids = {'named:' + row['dataset_id'] + ':' + row['sample_key'] for row in supported}
+    samples = ReservationInventory(exported / 'samples.jsonl')
+    candidates = iter_jsonl(exported / 'training_candidates.jsonl')
+    if prepared:
+        dictionary = Path(prepared.get('dictionary', str(Path(prepared['bundle']) / 'dictionary.txt')))
+        characters = set(dictionary.read_text().splitlines()) | {' '}
+    else:
+        characters = set(characters_for_profile(request.get('candidate_profile', DEFAULT_PROFILE))[1:])
+    accepted_ids = set()
+    candidate_count = supported_count = 0
+    for row in candidates:
+        candidate_count += 1
+        if not any(char in row['label'] for char in '\t\r\n') and (characters is None or set(row['label']) <= characters):
+            supported_count += 1
+            accepted_ids.add('named:' + row['dataset_id'] + ':' + row['sample_key'])
     blockers = list(blockers or [])
     partial_path = run / 'preparation-counts.json'
     partial = json.loads(partial_path.read_text()) if partial_path.is_file() else {}
@@ -685,7 +721,7 @@ def prepared_analysis(request, prepared, blockers=None):
         accepted_ids = set(partial['accepted_identities'])
     if export.get('ai_review_in_progress') and not any('review in progress' in reason for reason in blockers):
         blockers.append('A selected collection has a visual review in progress. Wait for it to finish before training.')
-    duplicate_ids = {'named:' + row['sample'] for row in read_jsonl(exported / 'superseded_exact_duplicates.jsonl')}
+    duplicate_ids = {'named:' + row['sample'] for row in iter_jsonl(exported / 'superseded_exact_duplicates.jsonl')}
     collection_counts = partial.get('collections') or _collection_counts(collections, samples, accepted_ids, duplicate_ids=duplicate_ids)
     reasons = Counter()
     reasons['no_current_review_evidence'] = sum(row['pending'] for row in collection_counts)
@@ -699,14 +735,14 @@ def prepared_analysis(request, prepared, blockers=None):
                 reasons[reason] += 1
     for conflict in read_jsonl(exported / 'exact_pixel_conflicts.jsonl'):
         reasons[conflict['reason']] += len(conflict['members'])
-    reasons['target_not_encodable_by_frozen_checkpoint'] += len(candidates) - len(supported)
+    reasons['target_not_encodable_by_frozen_checkpoint'] += candidate_count - supported_count
     exclusions = run / 'preparation-exclusions.jsonl'
     if exclusions.is_file():
         for row in read_jsonl(exclusions):
             if row['sample_id'].startswith('named:') and row['reason'] != 'target_not_encodable_by_frozen_checkpoint':
                 reasons[row['reason']] += 1
     total = sum(row['total'] for row in collection_counts)
-    accepted = partial.get('accepted', len(supported))
+    accepted = partial.get('accepted', supported_count)
     duplicates = export['counts']['superseded_exact_duplicates']
     reserved = sum(row['reserved'] for row in collection_counts)
     reasons['protected_holdout'] = reserved

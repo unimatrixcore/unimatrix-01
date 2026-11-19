@@ -12,8 +12,10 @@ from unittest.mock import patch
 from PIL import Image
 import yaml
 
-from lab_training_data import analyze, discover, prepare, prepared_analysis, reserve_splits, DataProgress
+from lab_training_data import analyze, discover, prepare, prepared_analysis, reserve_splits, DataProgress, ReservationInventory
 from prepare_named_collection_training import digest, pixels, read_jsonl, write_jsonl
+from ocr_dictionary import (DEFAULT_PROFILE, LEGACY_PROFILE, characters_for_profile,
+                            clean_start_directory, dictionary_text, profile_metadata)
 
 
 def png(color):
@@ -62,7 +64,7 @@ class PreparationTest(unittest.TestCase):
                          'optimize': True, 'label_evidence': 'synthetic_constructed_blank' if control else 'audited_baseline'})
         write_jsonl(baseline / 'manifest.jsonl', rows)
         (baseline / 'audit.json').write_text(json.dumps({'training_ready': True, 'blank_retention': {'enabled': True}}))
-        (baseline / 'dictionary.txt').write_text('\n'.join('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.#:-()'))
+        (baseline / 'dictionary.txt').write_text(dictionary_text(LEGACY_PROFILE))
         template = {
             'Global': {}, 'Optimizer': {'lr': {}}, 'Loss': {}, 'Metric': {},
             'Architecture': {'model_type': 'rec', 'Backbone': {'name': 'PPLCNetV4', 'model_size': 'small'}, 'Head': {'name': 'CTCHead'}},
@@ -99,31 +101,34 @@ class PreparationTest(unittest.TestCase):
         source.mkdir(parents=True)
         official = source / 'pretrained.pdparams'
         official.write_bytes(b'untouched official pretrained')
-        output = self.training / 'production-clean-start'
-        output.mkdir()
-        checkpoint = output / 'initial.pdparams'
-        checkpoint.write_bytes(b'mapped original pretrained')
-        dictionary = baseline / 'dictionary.txt'
-        classes = ['blank'] + dictionary.read_text().splitlines() + [' ']
-        (source / 'inference.yml').write_text(yaml.safe_dump({'PostProcess': {'character_dict': classes[1:-1]}}))
+        original_classes = characters_for_profile(DEFAULT_PROFILE)
+        (source / 'inference.yml').write_text(yaml.safe_dump({'PostProcess': {'character_dict': original_classes[1:-1]}}))
         (source / 'PRETRAINED-SOURCE.json').write_text(json.dumps({'sha256': digest(official.read_bytes()),
             'bytes': official.stat().st_size,
             'url': 'https://paddle-model-ecology.bj.bcebos.com/paddlex/official_pretrained_model/PP-OCRv6_small_rec_pretrained.pdparams'}))
         (source / 'MODEL-SOURCE.json').write_text(json.dumps({'repository': 'PaddlePaddle/PP-OCRv6_small_rec',
             'sha256': {'inference.yml': digest((source / 'inference.yml').read_bytes())}}))
-        artifacts = {'official_source_sha256': digest(official.read_bytes()), 'mapped_sha256': digest(checkpoint.read_bytes()),
+        for profile in (LEGACY_PROFILE, DEFAULT_PROFILE):
+            output = clean_start_directory(self.training, profile)
+            output.mkdir()
+            checkpoint = output / 'initial.pdparams'
+            checkpoint.write_bytes(b'mapped original pretrained ' + profile.encode())
+            dictionary = baseline / 'dictionary.txt' if profile == LEGACY_PROFILE else output / 'dictionary.txt'
+            dictionary.write_text(dictionary_text(profile))
+            classes = characters_for_profile(profile)
+            artifacts = {'official_source_sha256': digest(official.read_bytes()), 'mapped_sha256': digest(checkpoint.read_bytes()),
             'source_dictionary_sha256': digest((source / 'inference.yml').read_bytes()),
             'training_dictionary_sha256': digest(dictionary.read_bytes()),
             'download_record_sha256': digest((source / 'PRETRAINED-SOURCE.json').read_bytes()),
             'source_model_record_sha256': digest((source / 'MODEL-SOURCE.json').read_bytes())}
-        indices = list(range(70))
-        proof = {'method': 'original_pretrained_tensor_mapping_v1', 'artifacts': artifacts,
-            'policies': {role: {'architecture_sha256': _architecture_digest(baseline / role / 'train.yml'),
+            indices = [original_classes.index(char) for char in classes]
+            proof = {'method': 'original_pretrained_tensor_mapping_v1', 'artifacts': artifacts,
+            'policies': {role: {'architecture_sha256': _architecture_digest(baseline / role / 'train.yml', len(classes)),
                 'width_pool': 1, 'temporal_stride': 2 if role == 'names' else 4} for role in ('general', 'names')},
             'classes_sha256': _proof_digest(classes), 'class_indices_sha256': _proof_digest(indices),
             'mapped_tensors': 338, 'bitwise_equal_tensors': 338, 'mismatches': 0,
             'collector_tuned_tensors_used': 0, 'strict_architecture_shapes': True}
-        (output / 'provenance.json').write_text(json.dumps({'official_source_sha256': artifacts['official_source_sha256'],
+            (output / 'provenance.json').write_text(json.dumps({'official_source_sha256': artifacts['official_source_sha256'],
             'mapped_sha256': artifacts['mapped_sha256'], 'collector_tuned_weights_used': False,
             'classes': classes, 'class_indices': indices, 'mapped_tensors': 338,
             'verification': proof, 'verification_sha256': _proof_digest(proof)}))
@@ -289,7 +294,7 @@ class PreparationTest(unittest.TestCase):
         candidate.mkdir(parents=True)
         (candidate / 'best_accuracy.pdparams').write_bytes(b'rejected newer checkpoint')
         config = discover(self.training)
-        original = self.training / 'production-clean-start/initial.pdparams'
+        original = clean_start_directory(self.training) / 'initial.pdparams'
         self.assertEqual(config['general_checkpoint'], original)
         self.assertEqual(config['names_checkpoint'], original)
         self.assertEqual(config['starting_lineage']['names']['origin'], 'original_pretrained')
@@ -297,14 +302,34 @@ class PreparationTest(unittest.TestCase):
         self.assertEqual(config['starting_lineage']['general']['policy']['temporal_stride'], 4)
         self.assertEqual(config['starting_lineage']['names']['policy']['temporal_stride'], 2)
 
+    def test_new_candidates_use_73_classes_and_legacy_initialization_stays_available(self):
+        active = self.training / 'release-candidate'
+        before = {str(path): path.read_bytes() for path in active.rglob('*') if path.is_file()}
+        config = discover(self.training)
+        self.assertEqual(config['candidate_dictionary'], profile_metadata(DEFAULT_PROFILE))
+        self.assertEqual(config['dictionary'].read_text(), dictionary_text(DEFAULT_PROFILE))
+        legacy = discover(self.training, LEGACY_PROFILE)
+        self.assertEqual(legacy['candidate_dictionary']['class_count'], 70)
+        self.assertEqual(legacy['general_checkpoint'], self.training / 'production-clean-start/initial.pdparams')
+        self.assertEqual(before, {str(path): path.read_bytes() for path in active.rglob('*') if path.is_file()})
+
+    def test_candidate_dictionary_cannot_be_reordered_or_cross_paired(self):
+        path = clean_start_directory(self.training) / 'dictionary.txt'
+        original = path.read_text()
+        for changed in (dictionary_text(LEGACY_PROFILE), original.replace(',\n/\n', '/\n,\n')):
+            path.write_text(changed)
+            with self.assertRaisesRegex(ValueError, 'ordered profile'):
+                discover(self.training)
+        path.write_text(original)
+
     def test_missing_original_initialization_never_falls_back_to_fine_tuned_candidates(self):
-        (self.training / 'production-clean-start/initial.pdparams').unlink()
+        (clean_start_directory(self.training) / 'initial.pdparams').unlink()
         with self.assertRaisesRegex(ValueError, 'Original pretrained initialization is missing'):
             discover(self.training)
 
     def test_original_source_and_derived_hash_changes_fail_closed(self):
         for path in [self.training / 'benchmark-models/PP-OCRv6_small_rec/pretrained.pdparams',
-                     self.training / 'production-clean-start/initial.pdparams']:
+                     clean_start_directory(self.training) / 'initial.pdparams']:
             original = path.read_bytes()
             path.write_bytes(b'changed checkpoint')
             with self.assertRaisesRegex(ValueError, 'differs from its provenance'):
@@ -313,7 +338,7 @@ class PreparationTest(unittest.TestCase):
 
     def test_original_proof_mapping_policy_and_tuned_ancestry_are_required(self):
         from lab_training_data import _proof_digest
-        receipt = self.training / 'production-clean-start/provenance.json'
+        receipt = clean_start_directory(self.training) / 'provenance.json'
         original = json.loads(receipt.read_text())
         for mutation in ('proof_hash', 'missing_tensor', 'learned_tensor', 'class_mapping', 'role_policy'):
             record = json.loads(json.dumps(original)); proof = record['verification']
@@ -430,18 +455,32 @@ class PreparationTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'differs from its release freeze'):
                 discover(self.training)
 
-    def test_valid_reserved_label_outside_checkpoint_dictionary_is_quarantined(self):
+    def test_legacy_reserved_label_outside_checkpoint_dictionary_is_quarantined(self):
         collection = self.collection('a' * 32, [
             ('Alpha', png('yellow'), 1790000000000),
             ('*RESERVED*', png('purple'), 1790000001000),
         ])
-        result = prepare(self.request([collection]))
+        result = prepare(dict(self.request([collection]), candidate_profile=LEGACY_PROFILE))
         bundle = Path(result['bundle'])
         self.assertNotIn('*RESERVED*', {row['label'] for row in read_jsonl(bundle / 'manifest.jsonl')})
         self.assertEqual(result['summary']['rejected'], 1)
         record = read_jsonl(bundle / 'quarantined.jsonl')[0]
         self.assertEqual(record['unsupported_characters'], ['*'])
         self.assertEqual(record['label'], '*RESERVED*')
+
+    def test_new_candidate_prepares_reserved_grouping_and_table_info_labels(self):
+        labels = [('*RESERVED*', 'seats[0].name', 'yellow'),
+                  ('S 1,234 BB', 'seats[0].bank', 'purple'),
+                  ('OCR Table, NLHE - S 0.5/1', 'table.info', 'orange')]
+        collection = self.collection('a' * 32, [
+            (label, png(color), 1790000000000 + index * 1000, True, region)
+            for index, (label, region, color) in enumerate(labels)])
+        result = prepare(self.request([collection]))
+        records = read_jsonl(Path(result['bundle']) / 'manifest.jsonl')
+        self.assertTrue({label for label, _, _ in labels} <= {row['label'] for row in records})
+        self.assertEqual(result['candidate_dictionary']['class_count'], 73)
+        self.assertEqual(result['summary']['rejected'], 0)
+        self.assertEqual((Path(result['bundle']) / 'dictionary.txt').read_text(), dictionary_text())
 
     def test_analysis_verifies_data_once_without_gpu_or_processes(self):
         raw = png('yellow')
@@ -540,7 +579,7 @@ class PreparationTest(unittest.TestCase):
             ('Alpha', png('yellow'), 1790000000000),
             ('*RESERVED*', png('purple'), 1790000001000),
         ])
-        result = analyze(self.request([collection]))
+        result = analyze(dict(self.request([collection]), candidate_profile=LEGACY_PROFILE))
         self.assertTrue(result['ready'])
         self.assertEqual((result['accepted'], result['rejected']), (1, 1))
         self.assertIn({'reason': 'target_not_encodable_by_frozen_checkpoint', 'count': 1}, result['exclusions'])
@@ -550,7 +589,7 @@ class PreparationTest(unittest.TestCase):
             ('Alpha', png('yellow'), 1790000000000),
             ('*RESERVED*', png('purple'), 1790000001000),
         ])
-        request = self.request([collection])
+        request = dict(self.request([collection]), candidate_profile=LEGACY_PROFILE)
         prepared = prepare(request)
         with patch('lab_training_data.export_datasets', side_effect=AssertionError('Must reuse export')), \
                 patch('lab_training_data._prepare', side_effect=AssertionError('Must reuse preparation')), \
@@ -559,6 +598,19 @@ class PreparationTest(unittest.TestCase):
         analysis_request = dict(request, run_dir=str(self.root / 'analysis'))
         self.assertEqual(training_readiness, analyze(analysis_request))
         self.assertIn({'reason': 'target_not_encodable_by_frozen_checkpoint', 'count': 1}, training_readiness['exclusions'])
+
+    def test_preparation_and_readiness_stream_large_inventory_manifests(self):
+        collection = self.collection('a' * 32, [('Alpha', png('yellow'), 1790000000000)])
+        request = self.request([collection])
+        def small_manifest(path):
+            if Path(path).name in {'samples.jsonl', 'training_candidates.jsonl', 'superseded_exact_duplicates.jsonl'}:
+                raise AssertionError('Large inventory must not be eagerly loaded')
+            return read_jsonl(path)
+        with patch('lab_training_data.read_jsonl', side_effect=small_manifest):
+            prepared = prepare(request)
+            readiness = prepared_analysis(request, prepared)
+        self.assertTrue(readiness['ready'])
+        self.assertEqual(readiness['accepted'], 1)
 
     def test_legacy_reuses_exact_audited_pixels_and_preserves_holdouts(self):
         collection = self.legacy([('Unused', png('red')), ('Hold', png('green')), ('Test', png('blue')), ('New', png('yellow'))])
@@ -681,6 +733,33 @@ class ReservationTest(unittest.TestCase):
     def reserve(self, rows, baseline=(), inventory=None, ids=('collection',)):
         return reserve_splits(self.root, list(baseline), rows, inventory or rows,
                               [{'id': identity} for identity in ids])
+
+    def test_streamed_inventory_preserves_global_reservations(self):
+        rows = [self.row(str(index), dataset=dataset)
+                for dataset in ('selected', 'archived') for index in range(3)]
+        rows[3]['pixel_sha256'] = rows[0]['pixel_sha256']
+        rows[0]['known_splits'] = ['test']
+        inventory = json.loads(json.dumps(rows))
+        inventory.extend([
+            dict(self.row('flagged', dataset='selected'), ai_review_blocked=True),
+            dict(self.row('blank', dataset='selected'), label='', quarantined_empty_partition_alias=True),
+        ])
+        baseline = [dict(self.row('baseline', pixel=rows[1]['pixel_sha256']),
+                         origin='baseline', pinned_split='val')]
+        path = self.root / 'inventory.jsonl'
+        write_jsonl(path, inventory)
+        collections = [{'id': 'selected'}, {'id': 'archived', 'archived': True}]
+        expected_rows = json.loads(json.dumps(rows))
+        expected_components, expected_report = reserve_splits(
+            self.root / 'eager', baseline, expected_rows, inventory, collections)
+        actual_components, actual_report = reserve_splits(
+            self.root / 'streamed', baseline, rows, ReservationInventory(path), collections)
+        self.assertEqual(actual_components, expected_components)
+        self.assertEqual(actual_report['collections'], expected_report['collections'])
+        self.assertEqual(actual_report['sha256'], expected_report['sha256'])
+        self.assertEqual(rows, expected_rows)
+        self.assertEqual((self.root / 'streamed/split-reservations.json').read_bytes(),
+                         (self.root / 'eager/split-reservations.json').read_bytes())
 
     def test_whole_components_reserve_benchmark_validation_and_training(self):
         rows = [self.row(str(index)) for index in range(3)]

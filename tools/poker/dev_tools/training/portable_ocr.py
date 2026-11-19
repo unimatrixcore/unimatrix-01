@@ -12,6 +12,8 @@ import tempfile
 import cv2
 import numpy as np
 
+from ocr_dictionary import validate_characters, validate_output_width
+
 
 def normalize_crop(image):
     if not isinstance(image,np.ndarray) or image.dtype!=np.uint8 or image.ndim!=3 or image.shape[2]!=3 or not image.size:
@@ -53,8 +55,7 @@ class PortableModel:
         import onnxruntime as ort
         path=Path(model_dir)
         self.characters=json.loads((path/'characters.json').read_text())
-        if len(self.characters)!=70 or self.characters[0]!='blank':
-            raise ValueError('Unexpected compact character dictionary')
+        self.dictionary_profile=validate_characters(self.characters)
         options=ort.SessionOptions();options.intra_op_num_threads=threads;options.inter_op_num_threads=1;options.enable_profiling=profile
         if device in ('gpu:0','cuda'):
             probe=tempfile.TemporaryDirectory(prefix='poker-ocr-cuda-probe-')
@@ -71,6 +72,10 @@ class PortableModel:
         elif device=='cpu':providers=['CPUExecutionProvider']
         else:raise ValueError('Supported devices: cpu, gpu:0')
         self.session=ort.InferenceSession(str(path/'model.onnx'),sess_options=options,providers=providers)
+        outputs=self.session.get_outputs()
+        if len(outputs)!=1 or len(outputs[0].shape)!=3:
+            raise ValueError('Expected one three-dimensional CTC output')
+        validate_output_width(self.characters,outputs[0].shape[-1])
         if device!='cpu' and self.session.get_providers()[0]!='CUDAExecutionProvider':raise RuntimeError('CUDA provider failed; CPU fallback is not accepted')
         self.device=device
         inputs=self.session.get_inputs()
