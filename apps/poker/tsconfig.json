@@ -3,6 +3,7 @@
   "compilerOptions": {
     "jsx": "react-jsx",
     "paths": {
+      "@unimatrix/ui/editor": ["../../packages/ui/src/editor.ts"],
       "@unimatrix/chrome/tool": ["../../packages/chrome/src/tool.ts"],
       "@unimatrix/ui/scroll-area": ["../../packages/ui/src/components/ui/scroll-area.tsx"],
       "@unimatrix/ui/public": ["../../packages/ui/src/public.ts"],
