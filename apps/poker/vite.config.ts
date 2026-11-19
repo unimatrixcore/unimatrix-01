@@ -5,6 +5,10 @@ import { defineConfig } from "vite";
 
 export const pokerAliases = [
   {
+    find: /^@unimatrix\/ui\/editor$/,
+    replacement: fileURLToPath(new URL("../../packages/ui/src/editor.ts", import.meta.url)),
+  },
+  {
     find: /^@unimatrix\/instant-list$/,
     replacement: fileURLToPath(
       new URL("../../packages/instant-list/src/index.ts", import.meta.url),
