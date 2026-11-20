@@ -5,7 +5,7 @@ import math
 from pathlib import Path
 import re
 
-from PIL import Image
+from PIL import Image, ImageChops
 
 
 def _box(value):
@@ -85,7 +85,12 @@ def verify_name_display(image, rect, proof, label, directory, capture_sha256, so
                     raise ValueError('Name display reference viewport differs')
                 references.append(decoded.convert('RGB'))
         cache.clear()
-        cache.update(key=key, image=references[0], blank=references[1])
+        cache.update(key=key, image=references[0], blank=references[1],
+                     ink_bounds=ImageChops.difference(references[0], references[1]).getbbox())
+    ink_bounds = cache['ink_bounds']
+    if ink_bounds and not _contains(crop_box, (ink_bounds[0], ink_bounds[1],
+                                             ink_bounds[2] - ink_bounds[0], ink_bounds[3] - ink_bounds[1])):
+        raise ValueError('Name display literal ink extends outside the crop')
     x, y, w, h = (rect[key] for key in ('x', 'y', 'w', 'h'))
     source_crop = image.crop((x, y, x + w, y + h)).convert('RGB').tobytes()
     reference_crop = cache['image'].crop((x, y, x + w, y + h)).tobytes()

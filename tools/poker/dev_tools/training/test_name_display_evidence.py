@@ -89,6 +89,30 @@ class NameDisplayEvidenceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'pixels differ'):
             self.verify()
 
+    def test_rejects_reference_ink_below_crop_even_when_crop_pixels_match(self):
+        changed = self.image.copy()
+        changed.putpixel((5, 18), (255, 255, 255))
+        raw = self.png(changed)
+        (self.root / 'reference.png').write_bytes(raw)
+        self.proof['reference_capture_sha256'] = hashlib.sha256(raw).hexdigest()
+        with self.assertRaisesRegex(ValueError, 'outside the crop'):
+            self.verify()
+
+    def test_target_blank_preserves_other_name_ink_outside_its_crop(self):
+        self.image.putpixel((5, 18), (255, 255, 255))
+        raw = self.png(self.image)
+        (self.root / 'reference.png').write_bytes(raw)
+        self.source_sha = hashlib.sha256(raw).hexdigest()
+        self.proof.update(source_capture_sha256=self.source_sha, reference_capture_sha256=self.source_sha)
+        with self.assertRaisesRegex(ValueError, 'outside the crop'):
+            self.verify()
+        blank = Image.new('RGB', self.image.size, (15, 33, 46))
+        blank.putpixel((5, 18), (255, 255, 255))
+        raw = self.png(blank)
+        (self.root / 'blank.png').write_bytes(raw)
+        self.proof['blank_reference_capture_sha256'] = hashlib.sha256(raw).hexdigest()
+        self.assertTrue(self.verify()['name_display_verified'])
+
     def test_rejects_wrong_prefix_and_reference_path_escape(self):
         proof = deepcopy(self.proof)
         proof['visible_prefix'] = 'Aa2'
