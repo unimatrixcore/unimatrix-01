@@ -146,6 +146,9 @@ class VisibleRunTest(unittest.TestCase):
         self.assertFalse(row['synthetic_evidence_valid'])
         self.assertIn('declared extent', row['synthetic_evidence_error'])
         self.assertEqual(summary['counts']['training_candidates'], 0)
+        self.assert_no_training_recipe(output)
+
+    def assert_no_training_recipe(self, output):
         selected, blocked, _ = collection_rows(output)
         prepared, _, _, _ = prepare_records([], selected, blocked)
         self.assertEqual(prepared, [])
@@ -160,6 +163,30 @@ class VisibleRunTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'nonempty training'):
             stage_recipe(self.root, self.root / 'short-stage', dict(seed=1), prepared, path,
                          self.root / 'weights', self.root / 'dictionary')
+
+    def test_unretained_neighbor_box_cannot_supply_a_shortened_retained_digit(self):
+        self.clean.paste((240, 240, 240), (46, 43, 49, 48))
+        self.save_reference()
+        self.label = self.evidence['recognition_target'] = '12'
+        self.evidence['source_label'] = '123'
+        oracle = self.evidence['oracle']
+        oracle['baseline_source_label'] = '123'
+        oracle['reference_sha256'] = self.reference_hash
+        oracle['reference_parent_rect']['w'] = 20
+        oracle['glyphs'][1].update(retained=True, rect=dict(x=10, y=3, w=1, h=5))
+        oracle['glyphs'].append(dict(source_index=2, character='3', retained=False,
+                                    rect=dict(x=11, y=3, w=8, h=5)))
+        self.rect['w'] = self.evidence['run_rect']['width'] = 11
+        self.evidence['coverage_rle'] = [[16, 132]]
+        self.sync()
+        with mock.patch('visible_run_evidence._verify_reference_glyph_extents'):
+            unchecked, _, _ = self.export()
+        self.assertTrue(unchecked['synthetic_evidence_valid'])
+        row, summary, output = self.export()
+        self.assertFalse(row['synthetic_evidence_valid'])
+        self.assertIn('retained glyph ink exceeds', row['synthetic_evidence_error'])
+        self.assertEqual(summary['counts']['training_candidates'], 0)
+        self.assert_no_training_recipe(output)
 
     def test_visual_confirmation_preserves_verified_fragment_contract_through_spool(self):
         ai = dict(successful_current_check=False, state='flagged', job_id='job', job_state='complete')

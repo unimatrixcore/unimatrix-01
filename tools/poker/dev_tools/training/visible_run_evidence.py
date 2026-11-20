@@ -91,20 +91,44 @@ def _verify_reference_glyph_extents(reference, parent, glyphs, source_label):
             raise ValueError('Visible-run source glyph must be an object')
         box = rectangle(glyph.get('rect'), allow_empty=True)
         if not source_label[index].isspace() and box[2] and box[3]:
-            boxes.append(box)
+            boxes.append((box, glyph.get('retained', True)))
     covered = bytearray(fw * fh)
-    for gx, gy, gw, gh in boxes:
+    retained = bytearray(fw * fh)
+    for (gx, gy, gw, gh), kept in boxes:
         for y in range(gy, min(fh, gy + gh)):
             for x in range(gx, min(fw, gx + gw)):
                 covered[y * fw + x] = 1
+                if kept:
+                    retained[y * fw + x] = 1
     pixels = reference.crop((fx, fy, fx + fw, fy + fh)).tobytes()
-    badge_right = (min(fh, min((box[0] for box in boxes), default=0))
+    badge_right = (min(fh, min((box[0] for box, _ in boxes), default=0))
                    if source_label.startswith(('G ', 'S ')) else 0)
+    ink = bytearray(fw * fh)
     for index in range(fw * fh):
         color = pixels[index * 3:index * 3 + 3]
-        if (index % fw >= badge_right and min(color) >= 90 and max(color) - min(color) < 45
-                and not covered[index]):
-            raise ValueError('Visible-run clean-reference glyph ink exceeds its declared extent')
+        if index % fw >= badge_right and min(color) >= 90 and max(color) - min(color) < 45:
+            ink[index] = 1
+            if not covered[index]:
+                raise ValueError('Visible-run clean-reference glyph ink exceeds its declared extent')
+    for start in range(fw * fh):
+        if not ink[start]:
+            continue
+        pending = [start]
+        ink[start] = 0
+        has_retained = has_unretained = False
+        while pending:
+            index = pending.pop()
+            has_retained |= bool(retained[index])
+            has_unretained |= not retained[index]
+            x, y = index % fw, index // fw
+            for ny in range(max(0, y - 1), min(fh, y + 2)):
+                for nx in range(max(0, x - 1), min(fw, x + 2)):
+                    adjacent = ny * fw + nx
+                    if ink[adjacent]:
+                        ink[adjacent] = 0
+                        pending.append(adjacent)
+        if has_retained and has_unretained:
+            raise ValueError('Visible-run retained glyph ink exceeds its declared extent')
 
 
 def verify_visible_run(full, rect, evidence, label, directory, reference_cache=None):
