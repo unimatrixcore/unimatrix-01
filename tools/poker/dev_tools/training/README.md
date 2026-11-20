@@ -100,6 +100,21 @@ poker fine-tunes are never selected as starting weights. The active frozen
 release supplies the benchmark baseline. Each version records its starting
 lineage, dictionary profile and dataset audit hash.
 
+Selecting renderer data also retains eligible audited real training crops from
+the baseline partition. Conflicts, semantic exclusions and global holdout pins
+still exclude those rows. The preparation audit reports this replay separately
+from the selected collection counts; a synthetic-only clean start does not
+retain the prior reader's learned handling of real names and neighboring artwork.
+
+Renderer stages use a frozen exposure schedule balanced against real training
+variants. Category, name-length and label buckets prevent repeated short names
+from dominating; source repetition is capped. Full stage manifests retain the
+inventory, including renderer rows with zero scheduled exposure. `sampling.json`
+records the actual multiplicities and portable input hash, and
+`validate_stage_sampling` checks them before execution. Fixed controls keep their
+original multiplicity. This preparation policy requires a fresh paired benchmark
+after training; balanced inputs alone do not establish improved recognition.
+
 `lab_training_curriculum.py` builds the recovered training schedule: shared
 general adaptation, separate general and high-resolution name branches, then
 real-name reweighting. It preserves audited glyph controls, train-only crop

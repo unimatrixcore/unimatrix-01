@@ -421,6 +421,42 @@ print('best metric, acc: 0.9, is_float16: False, best_epoch: 1')
     def stage(self, identity):
         return next(stage for stage in job.validate_curriculum(self.bundle)['stages'] if stage['id'] == identity)
 
+    def test_balanced_sampling_is_bound_to_training_inventory_and_survives_relocation(self):
+        import shutil
+        stage = dict(self.stage('base'))
+        directory = Path(stage['directory'])
+        image = next((self.bundle / 'images').iterdir())
+        relative = image.relative_to(self.bundle).as_posix()
+        rows = [dict(sample_id='real', split='train', label='A', image_path=relative),
+                dict(sample_id='renderer', split='train', label='', image_path=relative,
+                     synthetic_evidence_valid=True,
+                     synthetic_ground_truth=dict(generator='poker-offline-renderer', crop_reconstruction_verified=True)),
+                dict(sample_id='heldout', split='val', label='B', image_path=relative)]
+        (directory / 'manifest.jsonl').write_text(''.join(json.dumps(row) + '\n' for row in rows))
+        portable = relative + '\tA\n' + relative + '\t\n'
+        sampling = dict(schema_version=1, policy='real_renderer_balanced_v1',
+                        source_exposures=dict(real=1, renderer=1),
+                        portable_train_sha256=hashlib.sha256(portable.encode()).hexdigest())
+        job.atomic_json(directory / 'sampling.json', sampling)
+        stage.update(sampling_policy=sampling['policy'], inventory_train_count=2,
+                     sampling_sha256=job.file_sha(directory / 'sampling.json'),
+                     inventory_manifest_sha256=job.file_sha(directory / 'manifest.jsonl'))
+        job.validate_stage_sampling(self.bundle, stage)
+        copied = self.root / 'balanced-copy'
+        shutil.copytree(self.bundle, copied)
+        job.relocate_bundle(copied, str(self.bundle))
+        moved = dict(stage, directory=str(copied / directory.relative_to(self.bundle)))
+        job.validate_stage_sampling(copied, moved)
+        (directory / 'train.txt').write_text(str(image) + '\tA\n' + str(image) + '\tB\n')
+        with self.assertRaisesRegex(ValueError, 'frozen exposure schedule'):
+            job.validate_stage_sampling(self.bundle, stage)
+        (directory / 'train.txt').write_text(str(image) + '\tA\n' + str(image) + '\t\n')
+        sampling['source_exposures']['heldout'] = 1
+        job.atomic_json(directory / 'sampling.json', sampling)
+        stage['sampling_sha256'] = job.file_sha(directory / 'sampling.json')
+        with self.assertRaisesRegex(ValueError, 'training inventory'):
+            job.validate_stage_sampling(self.bundle, stage)
+
     def test_curriculum_executes_original_base_then_correct_sibling_dependencies(self):
         with self.assertRaisesRegex(ValueError, 'dependency has not completed'):
             job.execute_stage(self.bundle, 'names-base', self.root)

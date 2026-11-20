@@ -212,7 +212,8 @@ def relocate_bundle(bundle, original):
 
 
 def file_sha(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    with Path(path).open('rb') as stream:
+        return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
 def _portable(value, bundle):
@@ -240,7 +241,60 @@ def stage_signature(bundle, stage):
     inputs = {'stage': {key: value for key, value in stage.items() if key != 'signature'},
               'config': config, 'lists': {split: (directory / (split + '.txt')).read_text()
                                         for split in ('train', 'val')}}
+    if stage.get('sampling_policy'):
+        validate_stage_sampling(bundle, stage)
     return hashlib.sha256(json.dumps(_portable(inputs, bundle), sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def validate_stage_sampling(bundle, stage):
+    from collections import Counter
+    from lab_training_curriculum import control, renderer_observation
+    directory = stage_directory(bundle, stage)
+    sampling_path = directory / 'sampling.json'
+    manifest_path = directory / 'manifest.jsonl'
+    if (stage['sampling_policy'] != 'real_renderer_balanced_v1'
+            or file_sha(sampling_path) != stage.get('sampling_sha256')
+            or file_sha(manifest_path) != stage.get('inventory_manifest_sha256')):
+        raise ValueError('Balanced stage sampling evidence changed')
+    sampling = json.loads(sampling_path.read_text())
+    if sampling.get('schema_version') != 1 or sampling.get('policy') != stage['sampling_policy']:
+        raise ValueError('Unsupported balanced stage sampling evidence')
+    exposures = sampling.get('source_exposures')
+    if not isinstance(exposures, dict):
+        raise ValueError('Balanced stage source exposures must be an object')
+    expected, ids = Counter(), set()
+    with manifest_path.open() as stream:
+        for line in stream:
+            row = json.loads(line)
+            if row['split'] != 'train' or not row.get('optimize', True):
+                continue
+            identity = row['sample_id']
+            count = exposures.get(identity)
+            if identity in ids or type(count) is not int or count < 0:
+                raise ValueError('Balanced stage has invalid source exposure counts')
+            ids.add(identity)
+            renderer = renderer_observation(row) and not control(row)
+            if (renderer and count > 4) or (not renderer and count != 1):
+                raise ValueError('Balanced stage violates its source exposure limits')
+            relative = Path(row['image_path'])
+            if relative.is_absolute() or '..' in relative.parts:
+                raise ValueError('Balanced stage source escapes its frozen bundle')
+            expected[(relative.as_posix(), row['label'])] += count
+    if set(exposures) != ids or len(ids) != stage.get('inventory_train_count'):
+        raise ValueError('Balanced stage sampling differs from its training inventory')
+    actual, portable = Counter(), hashlib.sha256()
+    with (directory / 'train.txt').open() as stream:
+        for line in stream:
+            image, label = line.rstrip('\n').split('\t', 1)
+            try:
+                relative = Path(image).resolve().relative_to(Path(bundle).resolve()).as_posix()
+            except ValueError as error:
+                raise ValueError('Balanced stage input escapes its frozen bundle') from error
+            actual[(relative, label)] += 1
+            portable.update((relative + '\t' + label + '\n').encode())
+    if (actual != +expected or sum(actual.values()) != stage['train_count']
+            or portable.hexdigest() != sampling.get('portable_train_sha256')):
+        raise ValueError('Balanced stage inputs differ from their frozen exposure schedule')
 
 
 def curriculum_record(bundle):

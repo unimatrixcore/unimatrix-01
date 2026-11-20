@@ -1,5 +1,5 @@
 """Freeze the recovered training curriculum without changing source datasets."""
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, deque
 from copy import deepcopy
 import hashlib
 import json
@@ -30,6 +30,8 @@ ASSET_PINS = {
 }
 GRAY_IMAGES_SHA256 = 'cf50f130ee742503e6eb7b2f3e77b1c0b2402cda67db072f8c26b2dc284006b0'
 VARIANTS = ('original', 'jpeg88_dark', 'jpeg94_light', 'scale90', 'context0', 'context1')
+SAMPLING_POLICY = 'real_renderer_balanced_v1'
+RENDERER_EXPOSURE_CAP = 4
 
 
 def digest(raw):
@@ -316,6 +318,82 @@ def augment_real(bundle, root, records, images):
     return result
 
 
+def renderer_bucket(row):
+    if row['category'] != 'name':
+        return row['category']
+    label = row['label']
+    if not label:
+        shape = 'blank'
+    elif label.endswith(('...', '…')):
+        shape = 'abbreviated'
+    elif len(label) <= 3:
+        shape = '1-3'
+    elif len(label) <= 8:
+        shape = '4-8'
+    elif len(label) <= 12:
+        shape = '9-12'
+    else:
+        shape = '13+'
+    return 'name:' + shape
+
+
+def balanced_training(rows, seed):
+    renderer = [row for row in rows if renderer_observation(row)]
+    if not renderer:
+        return rows, None
+    real = [row for row in rows if not renderer_observation(row) and not control(row)]
+    controls = [row for row in rows if not renderer_observation(row) and control(row)]
+    if not real:
+        raise ValueError('Renderer curriculum requires reviewed real full-string training crops')
+    identities = [row['sample_id'] for row in rows]
+    if len(set(identities)) != len(identities):
+        raise ValueError('Balanced curriculum requires unique source identities')
+    grouped = defaultdict(lambda: defaultdict(list))
+    for row in renderer:
+        grouped[renderer_bucket(row)][row['label']].append(row)
+    rng = random.Random(seed)
+    buckets = {}
+    for name, labels in sorted(grouped.items()):
+        order = sorted(labels)
+        rng.shuffle(order)
+        states = deque()
+        for label in order:
+            variants = sorted(labels[label], key=lambda row: row['sample_id'])
+            rng.shuffle(variants)
+            states.append([variants, 0])
+        buckets[name] = states
+    active = deque(buckets)
+    schedule = []
+    target = len(real)
+    while active and len(schedule) < target:
+        name = active.popleft()
+        labels = buckets[name]
+        variants, cursor = labels.popleft()
+        schedule.append(variants[cursor % len(variants)])
+        cursor += 1
+        if cursor < len(variants) * RENDERER_EXPOSURE_CAP:
+            labels.append([variants, cursor])
+        if labels:
+            active.append(name)
+    exposures = Counter(row['sample_id'] for row in real + controls + schedule)
+    bucket_exposures = Counter(renderer_bucket(row) for row in schedule)
+    proof = {
+        'schema_version': 1, 'policy': SAMPLING_POLICY, 'seed': seed,
+        'renderer_source_exposure_cap': RENDERER_EXPOSURE_CAP,
+        'target_renderer_exposures': target, 'renderer_exposure_shortfall': target - len(schedule),
+        'source_counts': {'real': len(real), 'renderer': len(renderer), 'controls': len(controls)},
+        'exposure_counts': {'real': len(real), 'renderer': len(schedule), 'controls': len(controls)},
+        'renderer_zero_exposure_sources': sum(not exposures[row['sample_id']] for row in renderer),
+        'renderer_buckets': {name: {
+            'sources': sum(map(len, labels.values())), 'labels': len(labels),
+            'exposures': bucket_exposures[name],
+            'exposed_sources': sum(bool(exposures[row['sample_id']]) for values in labels.values() for row in values),
+        } for name, labels in sorted(grouped.items())},
+        'source_exposures': {identity: exposures[identity] for identity in sorted(identities)},
+    }
+    return real + controls + schedule, proof
+
+
 def stage_recipe(bundle, directory, stage, records, template, checkpoint, dictionary):
     directory.mkdir(parents=True, exist_ok=True)
     config = deepcopy(yaml.safe_load(Path(template).read_text()))
@@ -329,11 +407,22 @@ def stage_recipe(bundle, directory, stage, records, template, checkpoint, dictio
                   for split in ('train', 'val', 'test')}
     if not split_rows['train'] or not split_rows['val']:
         raise ValueError('Curriculum stage requires nonempty training and validation inputs')
+    inventory_train_count = len(split_rows['train'])
+    split_rows['train'], sampling = balanced_training(split_rows['train'], stage['seed'])
     random.Random(stage['seed']).shuffle(split_rows['train'])
     for split, rows in split_rows.items():
         with (directory / (split + '.txt')).open('w') as stream:
             for row in rows:
                 stream.write(str(bundle / row['image_path']) + '\t' + row['label'] + '\n')
+    sampling_fields = {}
+    if sampling is not None:
+        sampling['portable_train_sha256'] = digest(''.join(
+            row['image_path'] + '\t' + row['label'] + '\n' for row in split_rows['train']).encode())
+        sampling_path = directory / 'sampling.json'
+        sampling_path.write_text(json.dumps(sampling, sort_keys=True, indent=2) + '\n')
+        sampling_fields = {'sampling_policy': SAMPLING_POLICY,
+                           'sampling_sha256': digest(sampling_path.read_bytes()),
+                           'inventory_train_count': inventory_train_count}
     config['Global'].update(epoch_num=stage['epochs'], pretrained_model=str(checkpoint), checkpoints=None,
         seed=stage['seed'], use_gpu=True, distributed=False,
         save_model_dir=str(directory / 'checkpoints'), save_inference_dir=str(directory / 'export'),
@@ -352,7 +441,10 @@ def stage_recipe(bundle, directory, stage, records, template, checkpoint, dictio
     with (directory / 'manifest.jsonl').open('w') as stream:
         for row in records:
             stream.write(json.dumps(row) + '\n')
-    return {**stage, 'directory': str(directory), 'config': str(config_path), 'checkpoint_source': str(checkpoint),
+    if sampling is not None:
+        with (directory / 'manifest.jsonl').open('rb') as stream:
+            sampling_fields['inventory_manifest_sha256'] = hashlib.file_digest(stream, 'sha256').hexdigest()
+    return {**stage, **sampling_fields, 'directory': str(directory), 'config': str(config_path), 'checkpoint_source': str(checkpoint),
             'batch_size': 32, 'train_count': len(split_rows['train']), 'validation_count': len(split_rows['val'])}
 
 
@@ -411,7 +503,8 @@ def build_curriculum(bundle, records, resources, epochs):
              'historical_variant_count': sum(row['historical_variant'] for row in real),
              'context_full_capture_count': sum(row.get('full_capture', False) for row in real),
              'asset_provenance': asset_audit, 'holdouts_augmented': False,
-             'train_multiplicity_preserved': True, 'semantic_exclusions_preserved': True,
+             'train_multiplicity_preserved': not renderer_train, 'semantic_exclusions_preserved': True,
+             'training_sampling_policy': SAMPLING_POLICY if renderer_train else 'original_curriculum_multiplicity',
              'general_validation_policy': 'Unaugmented optimized real observations; synthetic name blank controls only in names stages.',
              'stages': [{key: stage[key] for key in ('id', 'role', 'epochs', 'learning_rate', 'train_count', 'validation_count')} for stage in stages]}
     roles = {role: {'starting_checkpoint': str(initial), 'starting_checkpoint_sha256': digest(initial.read_bytes()),
