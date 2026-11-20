@@ -24,6 +24,7 @@ if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
 from lib.ocr_contract import CONTRACT, CONTRACT_SHA256, category_for_region, validate_text, validate_text_with_currency_format
 from visible_run_evidence import render_visible_run, verify_visible_run, verified_training_target
+from name_display_evidence import verify_name_display
 from ocr_dictionary import LEGACY_PROFILE, characters_for_profile, profile_metadata
 
 
@@ -285,6 +286,20 @@ def _synthetic_evidence(row, evidence, directory, capture_cache):
     if x + width > image.width or y + height > image.height:
         raise ValueError('Synthetic crop extends outside its screenshot')
     crop = image.crop((x, y, x + width, y + height))
+    display = {}
+    displays = state.get('display_truncations', {})
+    if not isinstance(displays, dict):
+        raise ValueError('Synthetic name display evidence must be an object')
+    if row['region_id'] in displays:
+        match = re.fullmatch(r'seats\[(\d)\]\.name', row['region_id'])
+        rendered_state = state.get('state')
+        seats = rendered_state.get('seats') if isinstance(rendered_state, dict) else None
+        if (row['category'] != 'name' or not match or not isinstance(seats, list)
+                or int(match[1]) >= len(seats) or not isinstance(seats[int(match[1])], dict)):
+            raise ValueError('Synthetic name display evidence requires a source seat name')
+        display = verify_name_display(image, rect, displays[row['region_id']], row['label'], directory,
+                                      capture_cache['sha256'], seats[int(match[1])].get('name'),
+                                      capture_cache.setdefault('name_display_references', {}))
     visible_run = state['schema_version'] == 2
     if visible_run:
         if (state.get('recognition_task') != 'visible_run' or row['category'] != 'bet'
@@ -325,6 +340,7 @@ def _synthetic_evidence(row, evidence, directory, capture_cache):
             'capture_sha256': evidence['capture_sha256'], 'crop_reconstruction_verified': True,
             'visually_verified': False, 'eligible': eligible, 'exclusion_reason': reason,
             'currency_format': currency_format, 'source_dictionary': source_dictionary,
+            **display,
             **({'recognition_task': 'visible_run', 'recognition_target': row['label'],
                 'visible_run_verified': True, 'source_label': state['visible_run']['source_label'],
                 'left_boundary': state['visible_run']['left_boundary'],

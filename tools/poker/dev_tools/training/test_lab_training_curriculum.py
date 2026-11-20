@@ -179,7 +179,7 @@ class CurriculumTests(unittest.TestCase):
             records.append(row); result.append(row)
         return result
 
-    def test_selected_renderer_observations_reach_stages_once_without_mutation(self):
+    def test_renderer_inventory_is_preserved_while_effective_exposure_is_balanced(self):
         with tempfile.TemporaryDirectory() as temporary:
             fixture = self.fixture(temporary)
             renderer = copy.deepcopy(self.renderer_rows(fixture))
@@ -190,16 +190,87 @@ class CurriculumTests(unittest.TestCase):
             for stage in result['stages']:
                 rows = curriculum.read_rows(Path(stage['directory']) / 'manifest.jsonl')
                 expected = renderer if stage['role'] == 'general' else renderer[:1]
+                sampling = json.loads((Path(stage['directory']) / 'sampling.json').read_text())
+                self.assertEqual(set(sampling['source_exposures']),
+                                 {row['sample_id'] for row in rows
+                                  if row['split'] == 'train' and row.get('optimize', True)})
+                lines = (Path(stage['directory']) / 'train.txt').read_text().splitlines()
+                portable = ''.join(str(Path(path).relative_to(fixture[0])) + '\t' + label + '\n'
+                                   for path, label in (line.split('\t', 1) for line in lines))
+                self.assertEqual(sampling['portable_train_sha256'], curriculum.digest(portable.encode()))
+                self.assertEqual(len(lines), stage['train_count'])
                 for source in expected:
                     matches = [row for row in rows if row['sample_id'] == source['sample_id']]
                     self.assertEqual(matches, [source])
                     self.assertEqual((fixture[0] / source['image_path']).read_bytes(),
                                      Path(source['source_image']).read_bytes())
                     target = str(fixture[0] / source['image_path']) + '\t' + source['label']
-                    self.assertEqual((Path(stage['directory']) / 'train.txt').read_text().splitlines().count(target), 1)
+                    self.assertEqual((Path(stage['directory']) / 'train.txt').read_text().splitlines().count(target),
+                                     sampling['source_exposures'][source['sample_id']])
+                    self.assertEqual(sampling['source_exposures'][source['sample_id']], 4)
+                    self.assertEqual(stage['inventory_train_count'],
+                                     sum(row['split'] == 'train' and row.get('optimize', True) for row in rows))
+                    self.assertEqual(stage['inventory_manifest_sha256'],
+                                     curriculum.digest((Path(stage['directory']) / 'manifest.jsonl').read_bytes()))
+                    self.assertEqual(stage['sampling_sha256'],
+                                     curriculum.digest((Path(stage['directory']) / 'sampling.json').read_bytes()))
                 self.assertFalse(any(row.get('parent_sample_id', '').startswith('renderer-') for row in rows))
                 self.assertFalse(any(row.get('sample_id') in {'renderer-table', 'renderer-visible'}
                                      for row in rows if stage['role'] == 'names'))
+
+    def sampling_row(self, identity, label, category='name', renderer=False, inherited=False):
+        row = dict(sample_id=identity, split='train', label=label, category=category,
+                   optimize=True, inherited_control=inherited)
+        if renderer:
+            row.update(synthetic_evidence_valid=True, synthetic_ground_truth={
+                'generator': 'poker-offline-renderer', 'crop_reconstruction_verified': True})
+        return row
+
+    def test_balancing_limits_repeated_labels_and_equalizes_general_categories_and_name_lengths(self):
+        real = [self.sampling_row(f'real:{index}', 'Natural...') for index in range(120)]
+        controls = [self.sampling_row('blank', '', inherited=True)]
+        renderer = [self.sampling_row(f'aa:{index}', 'Aa1', renderer=True) for index in range(1000)]
+        renderer += [self.sampling_row(f'pair:{index}', 'B' + str(index), renderer=True) for index in range(100)]
+        renderer += [self.sampling_row(f'long:{index}', 'NaturalName' + str(index), renderer=True) for index in range(10)]
+        renderer += [self.sampling_row(f'status:{index}', ['Call', 'Check'][index % 2], 'status', renderer=True)
+                     for index in range(10)]
+        rows = real + controls + renderer
+        original = copy.deepcopy(rows)
+        chosen, proof = curriculum.balanced_training(rows, 123)
+        self.assertEqual(rows, original)
+        self.assertEqual(proof['source_counts'], dict(real=120, renderer=1120, controls=1))
+        self.assertEqual(proof['exposure_counts'], dict(real=120, renderer=120, controls=1))
+        self.assertEqual(len(chosen), 241)
+        self.assertEqual(proof['renderer_exposure_shortfall'], 0)
+        self.assertEqual({key: row['exposures'] for key, row in proof['renderer_buckets'].items()},
+                         {'name:1-3': 40, 'name:9-12': 40, 'status': 40})
+        self.assertLessEqual(sum(row['label'] == 'Aa1' for row in chosen), 1)
+        self.assertTrue(all(proof['source_exposures'][row['sample_id']] == 1 for row in real + controls))
+        self.assertTrue(all(proof['source_exposures'][row['sample_id']] <= 4 for row in renderer))
+        self.assertGreater(proof['renderer_zero_exposure_sources'], 1000)
+        self.assertEqual(curriculum.balanced_training(rows, 123), (chosen, proof))
+        self.assertNotEqual(curriculum.balanced_training(rows, 124)[1]['source_exposures'], proof['source_exposures'])
+
+    def test_sparse_renderer_buckets_are_capped_and_shortfalls_are_explicit(self):
+        rows = [self.sampling_row(f'real:{index}', 'Natural...') for index in range(30)]
+        rows += [self.sampling_row('renderer:short', 'Aa1', renderer=True),
+                 self.sampling_row('renderer:long', 'LongNaturalName', renderer=True),
+                 self.sampling_row('renderer:status', 'Winner', 'winner', renderer=True)]
+        chosen, proof = curriculum.balanced_training(rows, 5)
+        self.assertEqual(proof['target_renderer_exposures'], 30)
+        self.assertEqual(proof['exposure_counts']['renderer'], 12)
+        self.assertEqual(proof['renderer_exposure_shortfall'], 18)
+        self.assertEqual(Counter(row['sample_id'] for row in chosen if curriculum.renderer_observation(row)),
+                         {'renderer:short': 4, 'renderer:long': 4, 'renderer:status': 4})
+        with self.assertRaisesRegex(ValueError, 'reviewed real full-string'):
+            curriculum.balanced_training(rows[-3:], 5)
+
+    def test_renderer_display_buckets_distinguish_abbreviated_names_and_blanks(self):
+        values = [('', 'name:blank'), ('Aa', 'name:1-3'), ('Alice', 'name:4-8'),
+                  ('NaturalName', 'name:9-12'), ('VeryLongNaturalName', 'name:13+'),
+                  ('Natural...', 'name:abbreviated'), ('Natural…', 'name:abbreviated')]
+        for label, expected in values:
+            self.assertEqual(curriculum.renderer_bucket(self.sampling_row('renderer', label)), expected)
 
     def test_curriculum_source_decode_cache_is_bounded_and_renderer_is_not_cached(self):
         with tempfile.TemporaryDirectory() as temporary:

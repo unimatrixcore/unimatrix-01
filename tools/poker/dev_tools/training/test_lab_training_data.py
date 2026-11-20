@@ -245,6 +245,52 @@ class PreparationTest(unittest.TestCase):
         self.assertNotEqual(rejected.returncode, 0)
         self.assertIn('CPU or distributed recipes are not accepted', rejected.stderr)
 
+    def test_renderer_selection_adds_audited_real_replay_without_changing_selected_counts(self):
+        collection = self.collection('a' * 32, [('Alpha', png('yellow'), 1790000000000)])
+        # Export admission is covered separately; isolate renderer-triggered replay here.
+        with patch('lab_training_data.renderer_observation', side_effect=lambda row: row['label'] == 'Alpha'):
+            result = prepare(self.request([collection]))
+        bundle = Path(result['bundle'])
+        rows = read_jsonl(bundle / 'manifest.jsonl')
+        replay = next(row for row in rows if row['label'] == 'Unused')
+        self.assertTrue(replay['reviewed_real_replay'])
+        self.assertEqual(replay['split'], 'train')
+        self.assertEqual(result['summary']['selected_training'], 1)
+        self.assertEqual(result['summary']['accepted'], 1)
+        self.assertEqual(result['summary']['reviewed_real_replay_training'], 1)
+        self.assertEqual(result['summary']['reviewed_real_replay_names'], 1)
+        self.assertEqual(result['summary']['train'], 3)
+        self.assertEqual({row['label']: row['split'] for row in rows if row['label'] in {'Hold', 'Test'}},
+                         {'Hold': 'val', 'Test': 'test'})
+        audit = json.loads((bundle / 'audit.json').read_text())
+        self.assertTrue(audit['unrelated_baseline_training_used'])
+        self.assertEqual(audit['baseline_training_policy'], 'selected_renderer_with_audited_real_replay_v1')
+
+    def test_renderer_replay_respects_global_reservations_and_existing_exclusions(self):
+        from lab_training_data import _training_records
+        def row(identity, label='Alpha', **fields):
+            return dict(sample_id=identity, label=label, category='name', pixel_sha256=identity,
+                        split='train', optimize=True, groups=[],
+                        aliases=[{'sample_id': identity, 'origin': 'baseline'}], **fields)
+        renderer = row('selected')
+        candidates = [renderer, row('safe'), row('unsupported', label='☃'),
+                      row('semantic', semantic_review_sha256='review'), row('disabled'),
+                      row('constructed', inherited_control=True), row('retention', origin='retention'),
+                      row('pixel-heldout'), row('capture-heldout'), row('session-heldout'), row('blocked'),
+                      row('validation'), row('test')]
+        candidates[3]['optimize'] = candidates[4]['optimize'] = False
+        candidates[8]['groups'] = ['capture']
+        candidates[9]['groups'] = ['session']
+        candidates[-2]['split'], candidates[-1]['split'] = 'val', 'test'
+        roles = {'pixel:name|pixel-heldout': {'train', 'test'}, 'group:capture': {'val'},
+                 'group:session': {'test'}, 'pixel:name|blocked': {'challenge'}}
+        with patch('lab_training_data.renderer_observation', side_effect=lambda item: item is renderer):
+            kept, audit = _training_records(candidates, {'selected'}, roles, set('Alpha'))
+        self.assertEqual({item['sample_id'] for item in kept},
+                         {'selected', 'safe', 'constructed', 'validation', 'test'})
+        self.assertEqual([item['sample_id'] for item in kept if item.get('reviewed_real_replay')], ['safe'])
+        self.assertEqual(audit['reviewed_real_replay_training'], 1)
+
     def test_benchmark_count_includes_preserved_nonoptimizable_holdouts(self):
         baseline = self.training / 'named-continuation/final/manifest.jsonl'
         rows = read_jsonl(baseline)

@@ -18,7 +18,7 @@ from prepare_named_collection_training import (
     write_jsonl, write_recipe,
 )
 from lib.ocr_contract import CONTRACT, CONTRACT_SHA256, validate_text
-from lab_training_curriculum import build_curriculum
+from lab_training_curriculum import build_curriculum, control, renderer_observation
 from visible_run_evidence import verified_training_target
 from ocr_dictionary import (DEFAULT_PROFILE, LEGACY_PROFILE, clean_start_directory,
                             read_dictionary, profile_metadata, characters_for_profile)
@@ -535,6 +535,35 @@ def _export(request, collections, output, baseline=None):
                            materialize_images=request.get('_materialize_training', True))
 
 
+def _training_records(records, selected_ids, reservation_roles, characters):
+    selected = lambda row: any(alias['sample_id'] in selected_ids for alias in row['aliases'])
+    replay_enabled = any(row['split'] == 'train' and row.get('optimize', True)
+                         and selected(row) and renderer_observation(row) for row in records)
+    retained = []
+    for row in records:
+        row.pop('reviewed_real_replay', None)
+        replay = (replay_enabled and row['split'] == 'train' and row.get('optimize', True)
+                  and not selected(row) and not control(row) and not renderer_observation(row)
+                  and any(alias['origin'] == 'baseline' for alias in row['aliases'])
+                  and set(row['label']) <= characters
+                  and not any(char in row['label'] for char in '\t\r\n'))
+        if replay:
+            roles = set().union(*(reservation_roles.get(token, set()) for token in _reservation_tokens(row)))
+            replay = not roles - {'train'}
+        if replay:
+            row['reviewed_real_replay'] = True
+        if row['split'] != 'train' or row.get('inherited_control') or selected(row) or replay:
+            retained.append(row)
+    replays = [row for row in retained if row.get('reviewed_real_replay')]
+    return retained, {
+        'baseline_training_policy': ('selected_renderer_with_audited_real_replay_v1' if replay_enabled
+                                     else 'selected_collections_only_v1'),
+        'reviewed_real_replay_training': len(replays),
+        'reviewed_real_replay_names': sum(row['category'] == 'name' for row in replays),
+        'unrelated_baseline_training_used': bool(replays),
+    }
+
+
 def _prepare(request, export=None, materialize_training=True):
     request = dict(request, _materialize_training=materialize_training)
     collections, ids, epochs, run = _request(request)
@@ -589,8 +618,7 @@ def _prepare(request, export=None, materialize_training=True):
             *(reservation_roles[token] for token in _reservation_tokens(row)))))
         for row in records
     ]
-    records = [row for row in records if row['split'] != 'train' or row.get('inherited_control')
-               or any(alias['sample_id'] in selected_ids for alias in row['aliases'])]
+    records, replay_audit = _training_records(records, selected_ids, reservation_roles, characters)
     selected_train = [row for row in records if row['split'] == 'train'
                       and any(alias['sample_id'] in selected_ids for alias in row['aliases'])
                       and row.get('optimize', True)]
@@ -633,7 +661,8 @@ def _prepare(request, export=None, materialize_training=True):
             write_jsonl(bundle / (split + '.jsonl'), [row for row in records if row['split'] == split])
         summary = {key: selected_counts[key] for key in ('accepted', 'duplicates', 'rejected', 'reserved', 'train', 'validation', 'test', 'selected_training')}
         summary.update(inherited_holdouts=sum(row['split'] != 'train' and row['origin'] == 'baseline' for row in records),
-                       inherited_blank_controls=sum(row['split'] == 'train' and row.get('inherited_control', False) for row in records))
+                       inherited_blank_controls=sum(row['split'] == 'train' and row.get('inherited_control', False) for row in records),
+                       **{key: replay_audit[key] for key in ('reviewed_real_replay_training', 'reviewed_real_replay_names')})
         (bundle / 'audit.json').write_text(json.dumps({'training_ready': True, 'training_bundle_materialized': False,
             'validation_contract': {'version': CONTRACT['version'], 'sha256': CONTRACT_SHA256},
             'collection_ids': ids, 'source_manifest_sha256': export['manifest_sha256'],
@@ -641,7 +670,7 @@ def _prepare(request, export=None, materialize_training=True):
             'dictionary_sha256': digest(config['dictionary'].read_bytes()),
             'candidate_dictionary': config['candidate_dictionary'],
             'manifest_sha256': digest((bundle / 'manifest.jsonl').read_bytes()),
-            'unrelated_baseline_training_used': False,
+            **replay_audit,
             'partition': partition, 'summary': summary, 'roles': roles}, indent=2) + '\n')
         return {'bundle': str(bundle), 'dictionary': str(config['dictionary']), 'summary': summary, 'roles': roles,
                 'candidate_dictionary': config['candidate_dictionary']}
@@ -672,7 +701,7 @@ def _prepare(request, export=None, materialize_training=True):
         'baseline_freeze_sha256': digest((config['model_release'] / 'freeze.json').read_bytes()),
         'inherited_holdout_count': sum(row['split'] != 'train' and row['origin'] == 'baseline' for row in records),
         'inherited_training_blank_controls': sum(row['split'] == 'train' and row.get('inherited_control', False) for row in records),
-        'unrelated_baseline_training_used': False,
+        **replay_audit,
         'unsupported_training_targets': len(unsupported),
         'baseline_aliases_superseded': len(superseded),
         'roles': roles,
@@ -702,6 +731,7 @@ def _prepare(request, export=None, materialize_training=True):
         'inherited_holdouts': audit['inherited_holdout_count'],
         'inherited_blank_controls': audit['inherited_training_blank_controls'],
         'selected_training': len(selected_train),
+        **{key: replay_audit[key] for key in ('reviewed_real_replay_training', 'reviewed_real_replay_names')},
     }
     audit['summary'] = summary
     (bundle / 'audit.json').write_text(json.dumps(audit, indent=2) + '\n')

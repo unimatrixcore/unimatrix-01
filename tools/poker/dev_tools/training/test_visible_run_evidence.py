@@ -293,7 +293,11 @@ class VisibleRunTest(unittest.TestCase):
         selected, blocked, _ = collection_rows(output)
         prepared, _, _, _ = prepare_records([], selected, blocked)
         prepared[0]['image_path'] = prepared[0]['source_image']
-        records = [prepared[0], dict(prepared[0], split='val')]
+        real = {key: value for key, value in prepared[0].items()
+                if key not in {'synthetic_ground_truth', 'synthetic_evidence_valid', 'recognition_task'}}
+        real.update(sample_id='real-fixture', origin='baseline', label_evidence='audited_baseline',
+                    category='timer', region_id='timer', label='12')
+        records = [prepared[0], real, dict(prepared[0], split='val')]
         template = dict(Global={}, Optimizer={'lr': {}}, Metric={})
         template.update({key: {'dataset': {'transforms': []}, 'loader': {}} for key in ('Train', 'Eval')})
         path = self.root / 'template.yml'
@@ -307,7 +311,7 @@ class VisibleRunTest(unittest.TestCase):
         stage = dict(seed=1, epochs=1, learning_rate=1e-5)
         stage_recipe(self.root, curriculum, stage, records, path, self.root / 'weights', self.root / 'dictionary')
         for folder in (recipe, curriculum):
-            self.assertEqual((folder / 'train.txt').read_text().split('\t')[1].strip(), '1')
+            self.assertEqual(sorted(line.split('\t')[1] for line in (folder / 'train.txt').read_text().splitlines()), ['1', '12'])
         changed = deepcopy(records)
         changed[0]['label'] = '12'
         with self.assertRaisesRegex(ValueError, 'storage contract'):
