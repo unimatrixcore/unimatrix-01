@@ -91,6 +91,9 @@ pub fn assess(image: &DynamicImage, region: &Value) -> Value {
     if let Some(reason) = region["localization_error"].as_str() {
         return decision("ambiguous", reason);
     }
+    if region["guide"]["occlusion"]["partial"] == true {
+        return decision("ambiguous", "Source paint order occludes target text; visible pixels do not establish the complete amount");
+    }
     if region["localization"]["state"] == "original_negative_slot" {
         return decision(
             "absent",

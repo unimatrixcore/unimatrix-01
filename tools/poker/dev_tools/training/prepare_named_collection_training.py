@@ -24,11 +24,19 @@ import yaml
 TOOLS = Path(__file__).resolve().parents[1]
 if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
-from lib.ocr_contract import CONTRACT, CONTRACT_SHA256, category_for_region, validate_text
+from lib.ocr_contract import CONTRACT, CONTRACT_SHA256, category_for_region, validate_text_with_currency_format
+from visible_run_evidence import verified_training_target
+
+
+def iter_jsonl(path):
+    with Path(path).open() as stream:
+        for line in stream:
+            if line.strip():
+                yield json.loads(line)
 
 
 def read_jsonl(path):
-    return [json.loads(line) for line in Path(path).read_text().splitlines() if line.strip()]
+    return list(iter_jsonl(path))
 
 
 def digest(raw):
@@ -127,18 +135,22 @@ def collection_rows(export):
     metadata_only = summary.get('images_materialized') is False
     if metadata_only:
         for name in ('samples.jsonl', 'training_candidates.jsonl', 'exact_pixel_conflicts.jsonl'):
-            if digest((export / name).read_bytes()) != summary.get('manifest_sha256', {}).get(name):
+            with (export / name).open('rb') as stream:
+                actual_hash = hashlib.file_digest(stream, 'sha256').hexdigest()
+            if actual_hash != summary.get('manifest_sha256', {}).get(name):
                 raise ValueError('Verified audit snapshot metadata changed')
-    candidates = read_jsonl(export / 'training_candidates.jsonl')
-    inventory = read_jsonl(export / 'samples.jsonl')
+    candidates = iter_jsonl(export / 'training_candidates.jsonl')
     conflicts = read_jsonl(export / 'exact_pixel_conflicts.jsonl')
     blocked_groups = {row['exact_pixel_group'] for row in conflicts}
-    blocked = {exact_key(row) for row in inventory if row.get('pixel_sha256') and (
-        row.get('ai_review_blocked') or row.get('exact_pixel_group') in blocked_groups)}
+    blocked = set()
     # Capture times, not label/review timestamps, define sessions. All inventory
     # observations participate, including excluded crops between eligible rows.
     captures = defaultdict(dict)
-    for row in inventory:
+    inventory_count = 0
+    for row in iter_jsonl(export / 'samples.jsonl'):
+        inventory_count += 1
+        if row.get('pixel_sha256') and (row.get('ai_review_blocked') or row.get('exact_pixel_group') in blocked_groups):
+            blocked.add(exact_key(row))
         p = row.get('provenance') or {}
         stamp = p.get('source_capture_timestamp')
         if p.get('capture_group') and isinstance(stamp, (int, float)) and not isinstance(stamp, bool):
@@ -186,7 +198,7 @@ def collection_rows(export):
                      'origin': 'named', 'source_image': str(path), 'file_sha256': file_hash,
                      'groups': sorted(set(groups)), 'known_splits': sorted(known),
                      'fresh_session_groups': sorted(session_groups), 'optimize': True})
-    return rows, blocked, {'inventory_rows': len(inventory), 'export_conflict_groups': len(conflicts),
+    return rows, blocked, {'inventory_rows': inventory_count, 'export_conflict_groups': len(conflicts),
                            'export_summary': json.loads((export / 'summary.json').read_text()) if (export / 'summary.json').exists() else None}
 
 
@@ -490,7 +502,12 @@ def write_recipe(output, rows, template, checkpoint, dictionary, *, name_only, e
             raise ValueError('Unsafe Paddle label encoding')
         if not set(row['label']) <= characters:
             raise ValueError('Label contains characters outside checkpoint dictionary')
-        if not validate_text(row['category'], row['label'], allow_blank=True):
+        if row.get('recognition_task') == 'visible_run':
+            valid = verified_training_target(row)
+        else:
+            valid = validate_text_with_currency_format(row['category'], row['label'], allow_blank=True,
+                                                     currency_format=row.get('currency_format'))
+        if not valid:
             raise ValueError('Prepared label is outside the current storage contract')
     config['Global'].update(epoch_num=epochs, pretrained_model=str(checkpoint), checkpoints=None, seed=seed,
         use_gpu=True, distributed=False,

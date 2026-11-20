@@ -67,7 +67,7 @@ pub fn presentation_png(canonical: &[u8], mask: &Value) -> LabResult<Vec<u8>> {
     crate::media::png(&DynamicImage::ImageRgba8(output)).map_err(bad)
 }
 
-fn unmasked_pixels(image: &DynamicImage, region: &Value) -> LabResult<DynamicImage> {
+pub(super) fn unmasked_pixels(image: &DynamicImage, region: &Value) -> LabResult<DynamicImage> {
     if let Some(points) = region["polygon"].as_array().filter(|p| p.len() == 4) {
         let point = |i: usize| -> LabResult<(f64, f64)> {
             Ok((
@@ -350,6 +350,9 @@ pub fn project_guide(region: &Value, width: u32, height: u32) -> Value {
             .unwrap_or(Value::Null)
     });
     let mut projected = serde_json::json!({"policy":if guide["source"]=="pixel_panel"{"pixel_resolved_field_v2"}else{"source_css_target_anchor_v1"},"anchor":{"x":x,"y":y},"slot_polygon":corners,"alignment":guide["alignment"],"family":guide["family"],"source":guide["source"],"crop_width":width,"crop_height":height});
+    if guide["occlusion"].is_object() {
+        projected["occlusion"] = guide["occlusion"].clone();
+    }
     if guide["family"] == "split_pot_group" {
         projected["ordinal_basis"] = serde_json::json!("rendered_visible_order");
         projected["target_ordinal"] = region["id"]

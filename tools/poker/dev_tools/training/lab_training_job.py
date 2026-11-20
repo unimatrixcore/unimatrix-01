@@ -964,6 +964,7 @@ def export_checkpoint(bundle, role):
 
 def export_models(prepared, run):
     import yaml
+    from ocr_dictionary import read_dictionary, validate_characters, profile_metadata
     bundle = Path(prepared['bundle'])
     python = prepared['python']
     for role in ('general', 'names'):
@@ -986,8 +987,11 @@ def export_models(prepared, run):
                  '--save_file', portable / 'model.onnx', '--opset_version', '17',
                  '--optimize_tool', 'None'], run / 'export.log', timeout=600)
         characters = ['blank'] + yaml.safe_load((native / 'inference.yml').read_text())['PostProcess']['character_dict'] + [' ']
-        if len(characters) != 70:
-            raise ValueError('Exported OCR dictionary does not match the frozen 70-class contract')
+        profile = validate_characters(characters)
+        if characters != read_dictionary(bundle / 'dictionary.txt', profile):
+            raise ValueError('Exported OCR dictionary does not match the frozen candidate dictionary')
+        if prepared.get('candidate_dictionary', profile_metadata(profile)) != profile_metadata(profile):
+            raise ValueError('Exported OCR dictionary does not match the frozen candidate profile')
         (portable / 'characters.json').write_text(json.dumps(characters))
         command([python, TOOLS / 'lab_training_job.py', '--verify-export', directory,
                  '--bundle', bundle], run / 'export-parity.log', timeout=600)

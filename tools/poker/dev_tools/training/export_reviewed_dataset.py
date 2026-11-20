@@ -15,13 +15,16 @@ from pathlib import Path
 import re
 import sqlite3
 import sys
+import tempfile
 
 from PIL import Image
 
 TOOLS = Path(__file__).resolve().parents[1]
 if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
-from lib.ocr_contract import CONTRACT, CONTRACT_SHA256, category_for_region, validate_text
+from lib.ocr_contract import CONTRACT, CONTRACT_SHA256, category_for_region, validate_text, validate_text_with_currency_format
+from visible_run_evidence import render_visible_run, verify_visible_run, verified_training_target
+from ocr_dictionary import LEGACY_PROFILE, characters_for_profile, profile_metadata
 
 
 def safe_filename(name):
@@ -71,6 +74,46 @@ def readonly_database(path):
 
 def _rows(connection, table):
     return [dict(row) for row in connection.execute(f'SELECT * FROM {table}')]
+
+
+def _blob_metadata(connection, table, columns=None, where=''):
+    fields = list(connection.execute(f'PRAGMA table_info({table})'))
+    names = columns or [field['name'] for field in fields if field['name'] != 'crop']
+    quote = lambda name: '"' + name.replace('"', '""') + '"'
+    try:
+        connection.execute(f'SELECT _rowid_ FROM {table} LIMIT 0')
+        keys = ['_rowid_']
+    except sqlite3.OperationalError:
+        keys = [field['name'] for field in sorted(fields, key=lambda item: item['pk']) if field['pk']]
+        if not keys:
+            raise ValueError(f'{table} has no stable crop identity')
+    selected = list(dict.fromkeys([*names, *keys]))
+    rows = []
+    for value in connection.execute('SELECT ' + ','.join(quote(name) + ' AS ' + quote(name) for name in selected) + f' FROM {table}' + where):
+        row = dict(value)
+        row['_blob_source'] = (table, tuple(keys), tuple(row[name] for name in keys))
+        for name in keys:
+            if name not in names:
+                row.pop(name)
+        rows.append(row)
+    return rows
+
+
+def _read_blob(connection, source):
+    table, keys, values = source
+    quote = lambda name: '"' + name.replace('"', '""') + '"'
+    where = ' AND '.join(quote(name) + '=?' for name in keys)
+    row = connection.execute(f'SELECT crop FROM {table} WHERE ' + where, values).fetchone()
+    return row['crop'] if row else None
+
+
+def _stable_png(path):
+    before = path.stat()
+    raw = path.read_bytes()
+    after = path.stat()
+    if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+        raise ValueError('PNG changed while being read')
+    return raw
 
 
 def _sample_key(item, source=''):
@@ -166,6 +209,128 @@ def _timestamp(value):
     return None
 
 
+def _source_capture(directory, name, capture_cache):
+    name = safe_filename(name)
+    path = directory / 'full_captures' / name
+    if path.is_symlink() or path.parent.is_symlink():
+        raise ValueError('Synthetic source capture cannot be a symbolic link')
+    if capture_cache.get('name') != name:
+        before = path.stat()
+        raw = path.read_bytes()
+        after = path.stat()
+        if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+            raise ValueError('Synthetic source capture changed while being read')
+        _decode_png(raw)
+        with Image.open(BytesIO(raw)) as image:
+            rgb = image.convert('RGB')
+        capture_cache.update(name=name, sha256=hashlib.sha256(raw).hexdigest(), image=rgb)
+    return capture_cache
+
+
+def _synthetic_region_png(annotation, captures, directory, capture_cache, evidence=None):
+    capture = captures.get(annotation.get('source_id'))
+    if not capture:
+        raise ValueError('Synthetic region has no source screenshot')
+    source = _source_capture(directory, capture.get('filename'), capture_cache)
+    image = source['image']
+    if image.size != (1920, 1080):
+        raise ValueError('Synthetic source screenshot must be 1920x1080')
+    if any(type(annotation.get(key)) is not int for key in ('x', 'y', 'w', 'h')):
+        raise ValueError('Synthetic crop coordinates must be integers')
+    x, y, width, height = (annotation[key] for key in ('x', 'y', 'w', 'h'))
+    if min(x, y) < 0 or min(width, height) <= 0 or x + width > image.width or y + height > image.height:
+        raise ValueError('Synthetic crop extends outside its screenshot')
+    output = BytesIO()
+    crop = image.crop((x, y, x + width, y + height))
+    if evidence:
+        encoded = evidence.get('state_json')
+        if isinstance(encoded, str) and len(encoded.encode()) <= 2_000_000:
+            state = json.loads(encoded)
+            if isinstance(state, dict) and state.get('schema_version') == 2:
+                crop = render_visible_run(crop, state.get('visible_run') or {})
+    crop.save(output, format='PNG')
+    return output.getvalue()
+
+
+def _synthetic_evidence(row, evidence, directory, capture_cache):
+    required = ('image_sha256', 'pixel_sha256', 'capture_sha256', 'renderer_sha256')
+    if any(not isinstance(evidence.get(key), str) or not re.fullmatch(r'[a-f0-9]{64}', evidence[key])
+           for key in required):
+        raise ValueError('Synthetic evidence requires SHA256 identities')
+    if (evidence.get('filename') != row.get('source_saved_filename') or
+            evidence.get('region_id') != row['region_id'] or evidence.get('label') != row['label']):
+        raise ValueError('Synthetic evidence does not match current crop label and region')
+    if any(evidence[key] != row.get(key) for key in ('image_sha256', 'pixel_sha256')):
+        raise ValueError('Synthetic evidence does not match current crop bytes and pixels')
+    encoded = evidence.get('state_json')
+    if not isinstance(encoded, str) or len(encoded.encode()) > 2_000_000:
+        raise ValueError('Synthetic renderer state is missing or exceeds its limit')
+    state = json.loads(encoded)
+    if (not isinstance(state, dict) or type(state.get('schema_version')) is not int or state['schema_version'] not in (1, 2) or
+            state.get('generator') != 'poker-offline-renderer' or
+            state.get('renderer_sha256') != evidence['renderer_sha256'] or
+            not isinstance(state.get('labels'), dict) or not isinstance(state.get('regions'), dict) or
+            state['labels'].get(row['region_id']) != row['label']):
+        raise ValueError('Synthetic renderer state does not bind the current label')
+    rect = row['provenance'].get('crop_rect')
+    if (not isinstance(rect, dict) or any(type(rect.get(key)) is not int for key in ('x', 'y', 'w', 'h')) or
+            min(rect['x'], rect['y']) < 0 or min(rect['w'], rect['h']) <= 0 or
+            state['regions'].get(row['region_id']) != rect):
+        raise ValueError('Synthetic renderer state does not bind the current crop rectangle')
+    _source_capture(directory, row['provenance'].get('source_capture_filename'), capture_cache)
+    if capture_cache['sha256'] != evidence['capture_sha256']:
+        raise ValueError('Synthetic source screenshot hash differs')
+    image = capture_cache['image']
+    x, y, width, height = (rect[key] for key in ('x', 'y', 'w', 'h'))
+    if x + width > image.width or y + height > image.height:
+        raise ValueError('Synthetic crop extends outside its screenshot')
+    crop = image.crop((x, y, x + width, y + height))
+    visible_run = state['schema_version'] == 2
+    if visible_run:
+        if (state.get('recognition_task') != 'visible_run' or row['category'] != 'bet'
+                or not isinstance(state.get('visible_run'), dict)
+                or state.get('visible_run', {}).get('current_capture_sha256') != capture_cache['sha256']):
+            raise ValueError('Visible-run task or source capture binding differs')
+        crop = verify_visible_run(image, rect, state['visible_run'], row['label'], directory,
+                                  capture_cache.setdefault('visible_references', {}))
+    pixels = hashlib.sha256(f'{width}x{height}:RGB:'.encode() + crop.tobytes()).hexdigest()
+    if pixels != row['pixel_sha256']:
+        raise ValueError('Synthetic crop pixels differ from its source screenshot')
+    if not isinstance(state.get('eligible', {}), dict) or not isinstance(state.get('exclusions', {}), dict):
+        raise ValueError('Synthetic admission and exclusion maps must be objects')
+    eligible = state.get('eligible', {}).get(row['region_id'], True)
+    reason = state.get('exclusions', {}).get(row['region_id'])
+    if type(eligible) is not bool or (not eligible and (not isinstance(reason, str) or not reason.strip())):
+        raise ValueError('Synthetic excluded regions require a boolean admission flag and reason')
+    source_dictionary = state.get('candidate_dictionary')
+    if source_dictionary is not None:
+        if (not isinstance(source_dictionary, dict) or
+                source_dictionary != profile_metadata(source_dictionary.get('profile'))):
+            raise ValueError('Synthetic source dictionary identity differs from its profile')
+    rendered = state.get('state')
+    currency_format = None
+    if isinstance(rendered, dict) and rendered.get('displayInBB') is False:
+        if rendered.get('currency') not in ('SC', 'GC'):
+            raise ValueError('Synthetic cash display requires an explicit supported currency')
+        currency_format = '{0}'
+        if not visible_run and row['category'] in ('bank', 'bet', 'pot', 'split_pot', 'amount', 'table_info'):
+            expected = 'G' if rendered['currency'] == 'GC' else 'S'
+            money_text = (row['label'].rpartition(', NLHE - ')[2]
+                          if row['category'] == 'table_info' else row['label'])
+            if any(prefix != expected for prefix in re.findall(r'(?<!\w)([GS])(?= )', money_text)):
+                raise ValueError('Synthetic cash label currency differs from its renderer state')
+    return {'generator': state['generator'], 'schema_version': state['schema_version'],
+            'renderer_sha256': evidence['renderer_sha256'],
+            'state_sha256': hashlib.sha256(encoded.encode()).hexdigest(),
+            'capture_sha256': evidence['capture_sha256'], 'crop_reconstruction_verified': True,
+            'visually_verified': False, 'eligible': eligible, 'exclusion_reason': reason,
+            'currency_format': currency_format, 'source_dictionary': source_dictionary,
+            **({'recognition_task': 'visible_run', 'recognition_target': row['label'],
+                'visible_run_verified': True, 'source_label': state['visible_run']['source_label'],
+                'left_boundary': state['visible_run']['left_boundary'],
+                'right_boundary': state['visible_run']['right_boundary']} if visible_run else {})}
+
+
 def _current_ai_check(row, ai_items, jobs, events_by_key):
     """Only a current-pixel, current-label result can establish AI evidence."""
     candidates = []
@@ -207,38 +372,88 @@ def _current_ai_check(row, ai_items, jobs, events_by_key):
             'result': result, 'source_event_id': expected_event if candidates else None}
 
 
-def export_dataset(dataset, output, progress=None, materialize_images=True):
+def _source_evidence_admits(row):
+    proof = row.get('synthetic_ground_truth') or {}
+    return bool(row.get('image_integrity_valid') and row.get('synthetic_evidence_valid') is not False
+                and proof.get('candidate_eligible', proof.get('eligible', True)))
+
+
+def _recognition_layout(row):
+    count = 0
+    if row.get('category') == 'split_pot' and isinstance(row.get('label'), str):
+        compact = ''.join(row['label'].split())
+        amounts = list(re.finditer(CONTRACT['normalization']['amount_tokens'], compact, re.I))
+        if compact and ''.join(match[0] for match in amounts) == compact:
+            count = len(amounts)
+    limitations = row.setdefault('training_eligibility_limitations', [])
+    if count > 1:
+        row['recognition_layout'] = {'policy': 'individual_amount_panels_v1', 'component_count': count,
+                                     'kind': 'multi_panel_layout_only'}
+        row['eligible_for_training'] = False
+        if 'multi_panel_layout_only' not in limitations:
+            limitations.append('multi_panel_layout_only')
+    else:
+        row.pop('recognition_layout', None)
+        if 'multi_panel_layout_only' in limitations:
+            limitations.remove('multi_panel_layout_only')
+
+
+def export_dataset(dataset, output, progress=None, materialize_images=True, candidate_profile=LEGACY_PROFILE):
+    if not re.fullmatch(r'legacy|[a-f0-9]{32}', dataset['id']):
+        raise ValueError('Invalid dataset identity')
+    characters_for_profile(candidate_profile)
+    directory = Path(dataset['directory']).resolve()
+    with readonly_database(directory / 'data.db') as connection:
+        return _export_dataset_snapshot(dataset, output, connection, progress, materialize_images, candidate_profile)
+
+
+def _export_dataset_snapshot(dataset, output, connection, progress=None, materialize_images=True, candidate_profile=LEGACY_PROFILE):
     dataset_id = dataset['id']
+    candidate_alphabet = frozenset(characters_for_profile(candidate_profile)[1:])
+    candidate_dictionary = profile_metadata(candidate_profile)
     if progress:
         progress('reading', collection_name=dataset.get('name', dataset_id))
     if not re.fullmatch(r'legacy|[a-f0-9]{32}', dataset_id):
         raise ValueError('Invalid dataset identity')
     directory = Path(dataset['directory']).resolve()
-    with readonly_database(directory / 'data.db') as connection:
-        tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        images = _rows(connection, 'images') if 'images' in tables else []
-        reviews = _rows(connection, 'review_samples') if 'review_samples' in tables else []
-        events = _rows(connection, 'label_review_events') if 'label_review_events' in tables else []
-        predictions = _rows(connection, 'model_predictions') if 'model_predictions' in tables else []
-        captures = {row['id']: row for row in _rows(connection, 'full_captures')} if 'full_captures' in tables else {}
-        session = _session_index(_rows(connection, 'session_progress') if 'session_progress' in tables else [],
-                                 _rows(connection, 'watch_inbox') if 'watch_inbox' in tables else [])
-        queue_columns = {row['name'] for row in connection.execute('PRAGMA table_info(queue_items)')} if 'queue_items' in tables else set()
-        metadata_fields = ('queue_id','sample_key','frame_id','source','game_id','payload','active',
-                           'region_id','created_at','reviewed','discarded','label','prediction_id','pixel_sha256')
-        queue_rows = ([dict(row) for row in connection.execute('SELECT '+','.join(field for field in metadata_fields if field in queue_columns)+' FROM queue_items')]
-                      if queue_columns else [])
-        queued_crops = ({row['sample_key']: row['crop'] for row in connection.execute(
-            'SELECT sample_key,crop FROM queue_items WHERE active=1 AND reviewed=1 AND discarded=0')}
-            if {'crop','reviewed','discarded'} <= queue_columns else {})
-        ai_items = _rows(connection, 'ai_review_items') if 'ai_review_items' in tables else []
-        ai_jobs = {row['id']:row for row in _rows(connection, 'ai_review_jobs')} if 'ai_review_jobs' in tables else {}
-        capture_index = dict(session)
-        if queue_rows:
-            # Normalized rows own queue membership; old snapshots are rollback
-            # evidence, not permission to resurrect discarded queued records.
-            capture_index.update(_queue_provenance_index(queue_rows))
-            session = _queue_provenance_index([row for row in queue_rows if row.get('active')])
+    tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    images = _rows(connection, 'images') if 'images' in tables else []
+    synthetic_regions = _rows(connection, 'synthetic_regions') if 'synthetic_regions' in tables else []
+    saved_names = {row['filename'] for row in images}
+    if any(row['filename'] in saved_names for row in synthetic_regions):
+        raise ValueError('Synthetic and saved crops cannot share a filename identity')
+    synthetic_region_count = len(synthetic_regions)
+    for image in synthetic_regions:
+        image['synthetic_region'] = True
+        images.append(image)
+    del synthetic_regions, saved_names
+    reviews = _blob_metadata(connection, 'review_samples') if 'review_samples' in tables else []
+    events = _rows(connection, 'label_review_events') if 'label_review_events' in tables else []
+    predictions = _rows(connection, 'model_predictions') if 'model_predictions' in tables else []
+    captures = {row['id']: row for row in _rows(connection, 'full_captures')} if 'full_captures' in tables else {}
+    session = _session_index(_rows(connection, 'session_progress') if 'session_progress' in tables else [],
+                             _rows(connection, 'watch_inbox') if 'watch_inbox' in tables else [])
+    queue_columns = {row['name'] for row in connection.execute('PRAGMA table_info(queue_items)')} if 'queue_items' in tables else set()
+    metadata_fields = ('queue_id','sample_key','frame_id','source','game_id','payload','active',
+                       'region_id','created_at','reviewed','discarded','label','prediction_id','pixel_sha256')
+    queue_rows = ([dict(row) for row in connection.execute('SELECT '+','.join(field for field in metadata_fields if field in queue_columns)+' FROM queue_items')]
+                  if queue_columns else [])
+    queued_crops = ({row['sample_key']: row['_blob_source'] for row in _blob_metadata(connection, 'queue_items', ['sample_key'],
+        ' WHERE active=1 AND reviewed=1 AND discarded=0')}
+        if {'crop','reviewed','discarded'} <= queue_columns else {})
+    ai_items = _rows(connection, 'ai_review_items') if 'ai_review_items' in tables else []
+    ai_jobs = {row['id']:row for row in _rows(connection, 'ai_review_jobs')} if 'ai_review_jobs' in tables else {}
+    def synthetic_evidence(filename):
+        if filename is None or 'synthetic_ground_truth' not in tables:
+            return None
+        row = connection.execute('SELECT * FROM synthetic_ground_truth WHERE filename=?', (filename,)).fetchone()
+        return dict(row) if row else None
+    capture_index = dict(session)
+    if queue_rows:
+        # Normalized rows own queue membership; old snapshots are rollback
+        # evidence, not permission to resurrect discarded queued records.
+        capture_index.update(_queue_provenance_index(queue_rows))
+        session = _queue_provenance_index([row for row in queue_rows if row.get('active')])
     events_by_key = defaultdict(list)
     for event in events:
         if event.get('dataset_id') == dataset_id:
@@ -251,17 +466,30 @@ def export_dataset(dataset, output, progress=None, materialize_images=True):
     queue_by_key = {row['sample_key']:row for row in queue_rows}
     decoded_images = {}
     issues = []
-    for image in images:
-        try:
-            path = directory / 'images' / safe_filename(image['filename'])
-            before = path.stat()
-            raw = path.read_bytes()
-            after = path.stat()
-            if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
-                raise ValueError('PNG changed while being read')
-            decoded_images[image['filename']] = (raw, _decode_png(raw))
-        except (OSError, ValueError) as exc:
-            issues.append({'kind': 'saved_crop_unavailable', 'filename': image['filename'], 'error': str(exc)})
+    issue_filenames = set()
+    capture_cache = {}
+    def saved_issue(filename, error):
+        if filename not in issue_filenames:
+            issues.append({'kind': 'saved_crop_unavailable', 'filename': filename, 'error': str(error)})
+            issue_filenames.add(filename)
+    def saved_pixels(image, evidence=None):
+        safe_filename(image['filename'])
+        if image.get('synthetic_region'):
+            return _synthetic_region_png(image, captures, directory, capture_cache, evidence)
+        return _stable_png(directory / 'images' / image['filename'])
+
+    def saved_identity(filename):
+        if filename not in decoded_images:
+            try:
+                image = images_by_filename[filename]
+                decoded_images[filename] = _decode_png(saved_pixels(image, synthetic_evidence(filename)))
+            except (OSError, ValueError) as exc:
+                saved_issue(filename, exc)
+                decoded_images[filename] = None
+        return decoded_images[filename]
+
+    if progress and synthetic_region_count:
+        progress('reading', completed=len(images), total=len(images), collection_name=dataset.get('name', dataset_id))
     reviewed = []
     excluded = []
     for review in reviews:
@@ -285,9 +513,9 @@ def export_dataset(dataset, output, progress=None, materialize_images=True):
     groups = defaultdict(list)
     for review, event, matching in reviewed:
         filename = review.get('filename')
-        saved = decoded_images.get(filename)
+        saved = saved_identity(filename) if filename in images_by_filename else None
         try:
-            actual_image_hash, actual_pixel_hash, _ = _decode_png(review['crop'])
+            actual_image_hash, actual_pixel_hash, _ = _decode_png(_read_blob(connection, review['_blob_source']))
             review_pixels_intact = (actual_pixel_hash == review['pixel_sha256']
                                    and actual_image_hash == review['image_sha256'])
         except (OSError, ValueError):
@@ -295,7 +523,7 @@ def export_dataset(dataset, output, progress=None, materialize_images=True):
         overlaps = (filename in images_by_filename and saved
                     and review_pixels_intact
                     and images_by_filename[filename]['region_id'] == review['region_id']
-                    and saved[1][1] == review['pixel_sha256'])
+                    and saved[1] == review['pixel_sha256'])
         identity = ('saved', filename) if overlaps else ('review', review['sample_key'])
         groups[identity].append((review, event, matching))
     merged_filenames = {identity[1] for identity in groups if identity[0] == 'saved'}
@@ -330,8 +558,7 @@ def export_dataset(dataset, output, progress=None, materialize_images=True):
         row['observation_timestamp'] = next((stamp for value in (
             row['provenance']['source_capture_timestamp'], queue_by_key.get(review['sample_key'],{}).get('created_at'),
             image.get('timestamp') if image else None) if (stamp:=_timestamp(value)) is not None), None)
-        raw = review['crop']
-        output_rows.append((row, raw))
+        output_rows.append((row, ('blob', review['_blob_source'])))
     for image in sorted(images, key=lambda item: item['id']):
         if image['filename'] in merged_filenames:
             continue
@@ -344,7 +571,7 @@ def export_dataset(dataset, output, progress=None, materialize_images=True):
                'predictions': [], 'review_prediction': None,
                'provenance': _capture_provenance(image, image['filename'], capture_index, captures, dataset_id)}
         row['observation_timestamp'] = _timestamp(row['provenance']['source_capture_timestamp']) or _timestamp(image.get('timestamp'))
-        output_rows.append((row, decoded_images.get(image['filename'], (None, None))[0]))
+        output_rows.append((row, 'synthetic' if image.get('synthetic_region') else 'saved'))
     represented = {alias for row,_ in output_rows for alias in row['sample_key_aliases']}
     for queued in queue_rows:
         key = queued['sample_key']
@@ -357,8 +584,13 @@ def export_dataset(dataset, output, progress=None, materialize_images=True):
                'predictions':[],'review_prediction':None,'expected_pixel_sha256':queued.get('pixel_sha256'),
                'provenance':_capture_provenance(None,key,capture_index,captures,dataset_id)}
         row['observation_timestamp'] = _timestamp(row['provenance']['source_capture_timestamp']) or _timestamp(queued.get('created_at'))
-        output_rows.append((row,queued_crops[key]))
-    for completed, (row, raw) in enumerate(output_rows, 1):
+        output_rows.append((row,('blob',queued_crops[key])))
+    source_counts = {'images': len(images), 'reviews': len(reviews), 'reviewed': len(reviewed),
+                     'merged': len(merged_filenames), 'aliases': sum(len(group) - 1 for group in groups.values()),
+                     'session_unreviewed': len(set(session) - {part[0]['sample_key'] for part in reviewed})}
+    del images, images_by_filename, reviews, reviewed, groups, merged_filenames, decoded_images, represented
+    capture_cache = {}
+    for completed, (row, source) in enumerate(output_rows, 1):
         if progress:
             progress('validating', completed=completed - 1, total=len(output_rows), collection_name=dataset.get('name', dataset_id))
         row['dataset_archived'] = bool(dataset.get('archived'))
@@ -379,7 +611,8 @@ def export_dataset(dataset, output, progress=None, materialize_images=True):
         if queued and queued.get('active') and queued.get('pixel_sha256') and row.get('expected_pixel_sha256') != queued['pixel_sha256']:
             row['reviewed']=False;row['label_evidence']='unverified_current_queue_pixels'
             row['expected_pixel_sha256']=queued['pixel_sha256'];row.pop('expected_image_sha256',None)
-            raw=queued_crops.get(row['sample_key'],raw)
+            if row['sample_key'] in queued_crops:
+                source=('blob',queued_crops[row['sample_key']])
         if row['review_event'] and row['review_event']['action']=='accepted' and row.get('prediction_provenance_warning'):
             row['reviewed']=False;row['label_evidence']='unresolved_review_actor'
         row['category'] = category_for_region(row['region_id'])
@@ -394,8 +627,18 @@ def export_dataset(dataset, output, progress=None, materialize_images=True):
             row['label'] not in ('', None) and not row['completed_schema_valid'])
         row['image'] = None
         row['image_integrity_valid'] = False
+        evidence = synthetic_evidence(row.get('source_saved_filename'))
+        decoded = False
         try:
+            if source == 'synthetic':
+                annotation = dict(row['provenance']['crop_rect'], source_id=row['provenance']['source_id'], filename=row['source_saved_filename'])
+                raw = _synthetic_region_png(annotation, captures, directory, capture_cache, evidence)
+            elif source == 'saved':
+                raw = _stable_png(directory / 'images' / safe_filename(row['source_saved_filename']))
+            else:
+                raw = _read_blob(connection, source[1])
             image_hash, pixel_hash, shape = _decode_png(raw)
+            decoded = True
             row.update(image_sha256=image_hash, pixel_sha256=pixel_hash, image_dimensions=shape)
             if row.get('expected_pixel_sha256') and row['expected_pixel_sha256'] != pixel_hash:
                 raise ValueError('Decoded pixels do not match durable review identity')
@@ -412,6 +655,52 @@ def export_dataset(dataset, output, progress=None, materialize_images=True):
             row['image_integrity_valid'] = True
         except (ValueError, OSError) as exc:
             row['image_integrity_error'] = str(exc)
+            if not decoded and source in ('synthetic', 'saved'):
+                saved_issue(row['source_saved_filename'], exc)
+        raw = None
+        output_rows[completed - 1] = (row, None)
+        if evidence is not None:
+            try:
+                row['synthetic_ground_truth'] = _synthetic_evidence(row, evidence, directory, capture_cache)
+                row['synthetic_evidence_valid'] = True
+                proof = row['synthetic_ground_truth']
+                encodable = all(char in candidate_alphabet for char in row['label'])
+                reassessed = bool(candidate_profile != LEGACY_PROFILE and not proof['eligible'] and
+                                  proof['exclusion_reason'] == 'outside_current_model_dictionary' and
+                                  row['label'] and encodable)
+                proof['source_eligible'] = proof['eligible']
+                proof['candidate_eligible'] = bool(proof['eligible'] or reassessed)
+                proof['candidate_dictionary'] = candidate_dictionary
+                proof['dictionary_only_reassessment'] = reassessed
+                admitted = proof['candidate_eligible']
+                row['label_evidence'] = 'synthetic_renderer_ground_truth' if admitted else 'synthetic_renderer_excluded'
+                row['reviewed'] = admitted
+                row['visually_verified'] = False
+                currency_format = row['synthetic_ground_truth']['currency_format']
+                if currency_format is not None:
+                    row['currency_format'] = currency_format
+                    row['storage_schema_valid'] = validate_text_with_currency_format(
+                        row['category'], row['label'], allow_blank=True, currency_format=currency_format)
+                    row['completed_schema_valid'] = validate_text_with_currency_format(
+                        row['category'], row['label'], currency_format=currency_format)
+                    row['needs_contract_review'] = row['category'] is None or (
+                        row['label'] not in ('', None) and not row['completed_schema_valid'])
+                row['provenance']['split'] = 'train'
+                row['provenance']['split_eligibility'] = 'synthetic_train_only'
+                row['is_reviewed_negative'] = admitted and row['label'] == '' and row['category'] is not None
+                row['automatic_schema_valid'] = row['completed_schema_valid'] or row['is_reviewed_negative']
+                row['schema_valid'] = row['automatic_schema_valid']
+                if row['synthetic_ground_truth'].get('visible_run_verified'):
+                    row['recognition_task'] = 'visible_run'
+                    row['semantic_schema_valid'] = row['completed_schema_valid']
+                    row['recognition_contract_valid'] = bool(row['label'].strip())
+                    row['schema_valid'] = row['recognition_contract_valid']
+                    row['needs_contract_review'] = False
+                    row['is_reviewed_negative'] = False
+            except (ValueError, OSError, TypeError, KeyError) as exc:
+                row['synthetic_evidence_valid'] = False
+                row['synthetic_evidence_error'] = str(exc)
+                row['visually_verified'] = False
         row['ai_review'] = _current_ai_check(row,ai_items,ai_jobs,events_by_key)
         if row['ai_review'] and row['ai_review']['successful_current_check']:
             if not row['reviewed']:
@@ -419,12 +708,15 @@ def export_dataset(dataset, output, progress=None, materialize_images=True):
             row['reviewed'] = True;row['visually_verified'] = False
             row['is_reviewed_negative'] = row['label'] == '' and row['category'] is not None
             row['automatic_schema_valid'] = row['completed_schema_valid'] or row['is_reviewed_negative']
-            row['schema_valid'] = row['automatic_schema_valid']
+            row['schema_valid'] = (row['recognition_contract_valid'] if verified_training_target(row)
+                                   else row['automatic_schema_valid'])
         row['ai_review_blocked'] = bool(row['ai_review'] and not row['ai_review']['successful_current_check'])
         row['eligible_for_training'] = bool(row['reviewed'] and row['schema_valid'] and row['image_integrity_valid']
                                             and not row['dataset_archived'] and not row['queue_discarded']
                                             and not row['removed_unsaved_queue_observation']
-                                            and not row['ai_review_blocked'])
+                                            and not row['ai_review_blocked']
+                                            and row.get('synthetic_evidence_valid') is not False
+                                            and (row.get('synthetic_ground_truth') or {}).get('candidate_eligible', True))
         row['training_eligibility_limitations'] = ['no_split_assigned', 'not_production_acceptance_evidence']
         if not row['reviewed']:
             row['training_eligibility_limitations'].append('collector_label_requires_review')
@@ -438,14 +730,23 @@ def export_dataset(dataset, output, progress=None, materialize_images=True):
             row['training_eligibility_limitations'].append('latest_current_ai_review_'+row['ai_review']['state'])
         if row['removed_unsaved_queue_observation']:
             row['training_eligibility_limitations'].append('removed_unsaved_queue_observation')
+        if row.get('synthetic_evidence_valid') is False:
+            row['training_eligibility_limitations'].append('invalid_synthetic_renderer_evidence')
+        if row.get('synthetic_ground_truth'):
+            row['training_eligibility_limitations'].append('synthetic_train_only')
+            if not row['synthetic_ground_truth']['candidate_eligible']:
+                row['training_eligibility_limitations'].append(row['synthetic_ground_truth']['exclusion_reason'] or 'outside_candidate_dictionary')
+        _recognition_layout(row)
     if progress:
         progress('validating', completed=len(output_rows), total=len(output_rows), collection_name=dataset.get('name', dataset_id))
     summary = {'dataset_id': dataset_id, 'dataset_name': dataset.get('name'),
         'source_database': str(directory / 'data.db'), 'archived': bool(dataset.get('archived')),
-        'saved_image_rows': len(images), 'review_sample_rows': len(reviews),
-        'durable_matching_review_sample_rows': len(reviewed),
-        'saved_review_overlap_groups': len(merged_filenames),
-        'merged_review_alias_count': sum(len(group) - 1 for group in groups.values()),
+        'candidate_dictionary': candidate_dictionary,
+        'saved_image_rows': source_counts['images'] - synthetic_region_count, 'review_sample_rows': source_counts['reviews'],
+        'synthetic_region_rows': synthetic_region_count,
+        'durable_matching_review_sample_rows': source_counts['reviewed'],
+        'saved_review_overlap_groups': source_counts['merged'],
+        'merged_review_alias_count': source_counts['aliases'],
         'exported_samples': len(output_rows), 'exported_png_files': png_count,
         'reviewed_samples': sum(row['reviewed'] for row, _ in output_rows),
         'reviewed_negatives': sum(row['is_reviewed_negative'] for row, _ in output_rows),
@@ -456,7 +757,7 @@ def export_dataset(dataset, output, progress=None, materialize_images=True):
         'session_unique_samples': len(session),
         'normalized_queue_rows': len(queue_rows),
         'normalized_queue_active_rows': sum(bool(row.get('active')) for row in queue_rows),
-        'session_without_durable_review': len(set(session) - {part[0]['sample_key'] for part in reviewed}),
+        'session_without_durable_review': source_counts['session_unreviewed'],
         'excluded_review_samples': len(excluded), 'source_read_issues': issues,
         'categories': dict(Counter(row['category'] or 'unknown' for row, _ in output_rows)),
         'reviewed_status_labels': dict(Counter(row['label'] for row, _ in output_rows if row['reviewed'] and row['category'] == 'status'))}
@@ -597,7 +898,8 @@ def deduplicate_training_rows(rows, partition_baseline=(), split_reservations=No
                 'label':m['label'],'label_evidence':m['label_evidence'],
                 'observation_timestamp':m.get('observation_timestamp')} for m in sorted(members,key=identity)] if row is winner else []
             row['provenance']['split_group']='captures:'+hashlib.sha256(component.encode()).hexdigest()
-            row['provenance']['duplicate_capture_groups']=sorted(component_captures[component]) if row is winner else []
+            row['provenance']['duplicate_capture_groups']=(sorted(component_captures[component])
+                if row is winner and not component_splits[component] else [])
             row['provenance']['duplicate_known_splits']=splits
             row['dedup_canonical']=identity(winner) if winner and not reason else None
             row['dedup_resolution']=resolution
@@ -615,6 +917,20 @@ def deduplicate_training_rows(rows, partition_baseline=(), split_reservations=No
                         'reason':'newest_current_model_check' if (winner.get('ai_review') or {}).get('successful_current_check') else 'newest_reviewed_observation',
                         'label_conflict_resolved':bool(resolution),'prior_label':row['label'],'canonical_label':winner['label']})
             if winner['eligible_for_training']:candidates.append(winner)
+    # Known roles bypass fresh-session allocation. A shared anchor retains all
+    # capture edges without repeating the entire component on every sample.
+    anchors={}
+    for row in candidates:
+        component=root('pixels:'+row['exact_pixel_group'])
+        if component_splits[component]:
+            anchors.setdefault(component,row)
+    for row in rows:
+        component=root('pixels:'+row['exact_pixel_group'])
+        if component_splits[component]:
+            anchor=anchors.setdefault(component,row)
+            if row is anchor:
+                row['provenance']['duplicate_capture_groups']=sorted(component_captures[component])
+            row['provenance']['capture_component_anchor']=identity(anchor)
     return candidates,superseded,conflicts
 
 
@@ -652,10 +968,12 @@ def apply_visual_review_manifest(rows, manifest):
                 row['ai_review_blocked']=False
                 row['is_reviewed_negative']=row['label']=='' and row['category'] is not None
                 row['automatic_schema_valid']=row['completed_schema_valid'] or row['is_reviewed_negative']
-                row['schema_valid']=row['automatic_schema_valid']
+                row['schema_valid']=(row['recognition_contract_valid'] if verified_training_target(row)
+                                     else row['automatic_schema_valid'])
                 row['training_eligibility_limitations']=[item for item in row['training_eligibility_limitations']
                     if not item.startswith('latest_current_ai_review_')]
-                row['eligible_for_training']=bool(row['schema_valid'] and not row.get('dataset_archived') and
+                row['eligible_for_training']=bool(row['schema_valid'] and _source_evidence_admits(row)
+                    and not row.get('dataset_archived') and
                     not row.get('queue_discarded') and not row.get('removed_unsaved_queue_observation'))
             else:
                 row['visually_verified']=False;row['eligible_for_training']=False;row['ai_review_blocked']=True
@@ -719,8 +1037,66 @@ def apply_audited_baseline(rows, baseline):
     return {**dict(counts), 'manifest_sha256': baseline['manifest_sha256'], 'audit_sha256': baseline['audit_sha256']}
 
 
+def _manifest_hash(path):
+    with path.open('rb') as stream:
+        return hashlib.file_digest(stream, 'sha256').hexdigest()
+
+
+class _ExportRowSpool:
+    fields = (
+        'dataset_id', 'sample_key', 'sample_key_aliases', 'category', 'pixel_sha256',
+        'image_sha256', 'region_id', 'label', 'reviewed', 'image_integrity_valid',
+        'ai_review_blocked', 'dataset_archived', 'eligible_for_training',
+        'training_eligibility_limitations', 'label_evidence', 'observation_timestamp',
+        'historical_review', 'queue_id', 'queue_discarded', 'removed_unsaved_queue_observation',
+        'completed_schema_valid', 'schema_valid', 'is_reviewed_negative',
+        'visually_verified', 'automatic_schema_valid', 'needs_contract_review',
+        'storage_schema_valid', 'recognition_layout', 'recognition_task',
+        'recognition_contract_valid', 'synthetic_evidence_valid',
+    )
+    nested = {
+        'provenance': ('capture_group', 'source_capture_timestamp', 'split', 'session_id'),
+        'review_event': ('created_at', 'action', 'prior_label'),
+        'ai_review': ('successful_current_check', 'state', 'job_id', 'job_state'),
+        'synthetic_ground_truth': ('eligible', 'candidate_eligible', 'visible_run_verified', 'recognition_target'),
+    }
+
+    def __init__(self, directory):
+        self.stream = tempfile.TemporaryFile(mode='w+t', encoding='utf8', dir=directory)
+
+    def append(self, row):
+        offset = self.stream.tell()
+        self.stream.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + '\n')
+        projected = {key: row[key] for key in self.fields if key in row}
+        for key, fields in self.nested.items():
+            value = row.get(key)
+            projected[key] = ({field: value[field] for field in fields if field in value}
+                              if isinstance(value, dict) else value)
+        projected['_spool_offset'] = offset
+        return projected
+
+    def hydrate(self, projected):
+        self.stream.seek(projected['_spool_offset'])
+        original = json.loads(self.stream.readline())
+        if 'recognition_layout' not in projected:
+            original.pop('recognition_layout', None)
+        for key, value in projected.items():
+            if key in ('_spool_offset', 'review_event', 'ai_review', 'synthetic_ground_truth'):
+                continue
+            if key == 'provenance':
+                original[key].update(value)
+            else:
+                original[key] = value
+        return original
+
+    def close(self):
+        self.stream.close()
+
+
 def export_datasets(datasets, output, visual_review_manifest=None, audited_baseline=None,
-                    partition_baseline=(), split_reservations=None, progress=None, materialize_images=True):
+                    partition_baseline=(), split_reservations=None, progress=None, materialize_images=True,
+                    candidate_profile=LEGACY_PROFILE):
+    characters_for_profile(candidate_profile)
     output = Path(output).resolve()
     for dataset in datasets:
         directory = Path(dataset['directory']).resolve()
@@ -729,13 +1105,29 @@ def export_datasets(datasets, output, visual_review_manifest=None, audited_basel
     if output.exists() and any(output.iterdir()):
         raise ValueError('Output directory must be empty; use a fresh snapshot directory')
     output.mkdir(parents=True, exist_ok=True)
+    spool = _ExportRowSpool(output)
+    try:
+        return _export_datasets_spooled(datasets, output, spool, visual_review_manifest, audited_baseline,
+                                       partition_baseline, split_reservations, progress,
+                                       materialize_images, candidate_profile)
+    finally:
+        spool.close()
+
+
+def _export_datasets_spooled(datasets, output, spool, visual_review_manifest, audited_baseline,
+                             partition_baseline, split_reservations, progress,
+                             materialize_images, candidate_profile):
     rows, excluded, summaries = [], [], []
     started = datetime.now(timezone.utc).isoformat()
     for dataset in datasets:
-        samples, dropped, summary = export_dataset(dataset, output, progress, materialize_images)
-        rows.extend(samples); excluded.extend(dropped); summaries.append(summary)
+        samples, dropped, summary = export_dataset(dataset, output, progress, materialize_images, candidate_profile)
+        rows.extend(spool.append(row) for row in samples)
+        excluded.extend(dropped); summaries.append(summary)
+        del samples, dropped
     historical_summary=apply_audited_baseline(rows,audited_baseline)
     visual_summary=apply_visual_review_manifest(rows,visual_review_manifest)
+    for row in rows:
+        _recognition_layout(row)
     before_dedup_counts=Counter(row['dataset_id'] for row in rows if row['eligible_for_training'])
     for row in rows:
         row['eligible_before_exact_dedup'] = row['eligible_for_training']
@@ -754,8 +1146,12 @@ def export_datasets(datasets, output, visual_review_manifest=None, audited_basel
                  'excluded_review_samples.jsonl': excluded,
                  'superseded_exact_duplicates.jsonl':superseded,
                  'exact_pixel_conflicts.jsonl':conflicts}
+    rich_manifests = {'samples.jsonl', 'reviewed.jsonl', 'training_candidates.jsonl', 'needs_review.jsonl'}
     for filename, values in manifests.items():
-        (output / filename).write_text(''.join(json.dumps(row, ensure_ascii=False, sort_keys=True) + '\n' for row in values))
+        with (output / filename).open('w') as stream:
+            for row in values:
+                value = spool.hydrate(row) if filename in rich_manifests else row
+                stream.write(json.dumps(value, ensure_ascii=False, sort_keys=True) + '\n')
     summary = {'snapshot_started_at_utc': started, 'snapshot_finished_at_utc': datetime.now(timezone.utc).isoformat(),
         'validation_contract': {'version': CONTRACT['version'], 'sha256': CONTRACT_SHA256},
         'images_materialized': materialize_images,
@@ -763,7 +1159,8 @@ def export_datasets(datasets, output, visual_review_manifest=None, audited_basel
         'limitations': ['Not a split, training run, or production approval.',
                        'Human collector events and automated visual checks are separate evidence; neither is a prospective accuracy guarantee.',
                        'Prior external curation and visual-review manifests are not merged or changed; unverified collector label describes source-DB provenance, not proof that nobody reviewed those pixels.',
-                       'Training candidates require current matching durable human/AI evidence and one canonical exact-pixel representative.',
+                       'Training candidates require current matching durable review or screenshot-bound synthetic renderer evidence and one canonical exact-pixel representative.',
+                       'Synthetic renderer truth verifies screenshot/crop consistency, not fidelity to a live table or human visual correctness.',
                        'Unreviewed legacy empty labels remain unverified and are never promoted to negatives.',
                        'Capture identity is not a verified independent capture-session split.',
                        'PNG files live outside SQLite transactions; stable file reads and pixel identities are checked.',
@@ -779,7 +1176,7 @@ def export_datasets(datasets, output, visual_review_manifest=None, audited_basel
         'assistant_visual_review':visual_summary,
         'historical_audited_baseline':historical_summary,
         'datasets': summaries,
-        'manifest_sha256': {name: hashlib.sha256((output / name).read_bytes()).hexdigest() for name in manifests}}
+        'manifest_sha256': {name: _manifest_hash(output / name) for name in manifests}}
     (output / 'summary.json').write_text(json.dumps(summary, indent=2, ensure_ascii=False) + '\n')
     return summary
 

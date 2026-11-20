@@ -90,13 +90,15 @@ development, so none of this is prospective acceptance evidence.
 
 ## Train with real blank targets
 
-The OCR Training tab starts each version from the same original pretrained
-initialization. `lab_training_data.discover()` verifies the official source,
-the lossless tensor and character-column mapping, and the mapped checkpoint
-against `production-clean-start/provenance.json` under the training artifact
-root. Earlier poker fine-tunes are never selected as starting weights. The
-active frozen release supplies the benchmark baseline. Each version records
-its starting lineage and dataset audit hash.
+The OCR Training tab starts new versions from the original pretrained tensors
+mapped to the `punctuation73` dictionary profile. `ocr_dictionary.py` pins the
+ordered classes and dictionary encoding. `prepare_clean_ocr_start.py` creates
+the separate clean initialization; `lab_training_data.discover()` verifies its
+complete tensor-mapping proof, source hashes and role architectures. Frozen
+`compact70` versions retain their original dictionary and checkpoint. Earlier
+poker fine-tunes are never selected as starting weights. The active frozen
+release supplies the benchmark baseline. Each version records its starting
+lineage, dictionary profile and dataset audit hash.
 
 `lab_training_curriculum.py` builds the recovered training schedule: shared
 general adaptation, separate general and high-resolution name branches, then
@@ -166,9 +168,12 @@ Training uses shuffled batches32, frozen backbone/BN, and validation selection.
 
 ## Export and run
 
-Export with `run_negative_ocr.py --mode export`, selected checkpoint and the same
+For the historical `negative-ocr-v8` recipe, export with
+`run_negative_ocr.py --mode export`, selected checkpoint and the same
 width-pooling policy. Use `fix_export_metadata.py` with the previous export as
-preprocessing reference; retain the new 70-class character dictionary.
+preprocessing reference and retain that recipe's original dictionary. New
+Training-tab exports bind their dictionary to the frozen candidate profile and
+reject a different ordered vocabulary or output-head width.
 `verify_selected_ocr.py --root . --run negative-ocr-v8` checks frozen tensors and
 training/export probability parity at three widths.
 

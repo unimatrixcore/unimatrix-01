@@ -1,3 +1,5 @@
+import copy
+from collections import Counter
 import hashlib
 import json
 from pathlib import Path
@@ -5,6 +7,7 @@ import random
 import string
 import tempfile
 import unittest
+import weakref
 from unittest.mock import patch
 
 import numpy as np
@@ -150,6 +153,101 @@ class CurriculumTests(unittest.TestCase):
             self.assertEqual(sum(row.get('augmentation') is not None for row in final_rows), 6)
             self.assertEqual(result['roles']['general']['starting_checkpoint_sha256'], curriculum.digest(b'original-checkpoint'))
             self.assertTrue((bundle / 'curriculum.json').is_file())
+
+    def renderer_rows(self, fixture):
+        from ocr_dictionary import dictionary_text
+        bundle, records, *_ = fixture
+        (bundle / 'dictionary.txt').write_text(dictionary_text('punctuation73'))
+        values = [('renderer-name', 'Renderer9', 'name'),
+                  ('renderer-table', 'Table*Name, NLHE - S 1/2', 'table_info'),
+                  ('renderer-visible', '5555', 'bet')]
+        result = []
+        for index, (identity, label, category) in enumerate(values):
+            _, raw = self.image(90 + index, patterned=True)
+            path, sha, pixels = curriculum.materialize(bundle, raw)
+            row = dict(sample_id=identity, split='train', label=label, category=category,
+                image_path=path, source_image=str(bundle / path), file_sha256=sha,
+                pixel_sha256=pixels, image_dimensions=[20, 8], optimize=True, origin='named',
+                aliases=[], groups=['source-capture'], provenance={'source_value': label, 'capture_sha256': 'f'*64},
+                label_evidence='synthetic_renderer_ground_truth', synthetic_evidence_valid=True,
+                synthetic_ground_truth={'generator': 'poker-offline-renderer',
+                    'crop_reconstruction_verified': True, 'eligible': True})
+            if category == 'bet':
+                row.update(recognition_task='visible_run')
+                row['synthetic_ground_truth'].update(visible_run_verified=True,
+                    recognition_target=label, source_label='G 55555.1 BB')
+            records.append(row); result.append(row)
+        return result
+
+    def test_selected_renderer_observations_reach_stages_once_without_mutation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = self.fixture(temporary)
+            renderer = copy.deepcopy(self.renderer_rows(fixture))
+            result = self.build(fixture)
+            self.assertEqual(result['audit']['renderer_training_observations'], 3)
+            self.assertEqual(result['audit']['renderer_name_training_observations'], 1)
+            self.assertEqual(result['audit']['real_training_variants'], 12)
+            for stage in result['stages']:
+                rows = curriculum.read_rows(Path(stage['directory']) / 'manifest.jsonl')
+                expected = renderer if stage['role'] == 'general' else renderer[:1]
+                for source in expected:
+                    matches = [row for row in rows if row['sample_id'] == source['sample_id']]
+                    self.assertEqual(matches, [source])
+                    self.assertEqual((fixture[0] / source['image_path']).read_bytes(),
+                                     Path(source['source_image']).read_bytes())
+                    target = str(fixture[0] / source['image_path']) + '\t' + source['label']
+                    self.assertEqual((Path(stage['directory']) / 'train.txt').read_text().splitlines().count(target), 1)
+                self.assertFalse(any(row.get('parent_sample_id', '').startswith('renderer-') for row in rows))
+                self.assertFalse(any(row.get('sample_id') in {'renderer-table', 'renderer-visible'}
+                                     for row in rows if stage['role'] == 'names'))
+
+    def test_curriculum_source_decode_cache_is_bounded_and_renderer_is_not_cached(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = self.fixture(temporary)
+            renderer = self.renderer_rows(fixture)
+            original = curriculum.source_image
+            references = []
+            reads = Counter()
+            peak = 0
+            def tracked(bundle, row):
+                nonlocal peak
+                image = original(bundle, row)
+                reads[row['sample_id']] += 1
+                references.append(weakref.ref(image))
+                peak = max(peak, sum(reference() is not None for reference in references))
+                return image
+            with patch.object(curriculum, 'source_image', side_effect=tracked):
+                self.build(fixture)
+            self.assertLessEqual(peak, 2)
+            for row in renderer:
+                self.assertEqual(reads[row['sample_id']], 1)
+            self.assertEqual(reads['val'], 1)
+            self.assertEqual(reads['blank:train:0'], 1)
+            cache = curriculum._SourceImages(fixture[0], fixture[1])
+            self.assertEqual(set(cache.parents), {'real', 'bank'})
+
+    def test_every_renderer_source_identity_is_checked_before_stage_generation(self):
+        for mutation in ('file', 'pixels', 'dimensions', 'transcript'):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as temporary:
+                fixture = self.fixture(temporary)
+                renderer = self.renderer_rows(fixture)
+                row = renderer[-1]
+                if mutation == 'file': row['file_sha256'] = '0' * 64
+                if mutation == 'pixels': row['pixel_sha256'] = '0' * 64
+                if mutation == 'dimensions': row['image_dimensions'] = [21, 8]
+                if mutation == 'transcript': row['label'] = '55555.1'
+                with self.assertRaisesRegex(ValueError, 'Frozen source|verified transcript'):
+                    self.build(fixture)
+
+    def test_renderer_rows_never_establish_historical_glyph_parent_admission(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = self.fixture(temporary)
+            row = fixture[1][0]
+            row.update(label_evidence='synthetic_renderer_ground_truth', synthetic_evidence_valid=True,
+                synthetic_ground_truth={'generator': 'poker-offline-renderer', 'crop_reconstruction_verified': True})
+            self.assertFalse(curriculum.control(row))
+            with self.assertRaisesRegex(ValueError, 'Historical glyph parent'):
+                self.build(fixture)
 
     def test_verified_context_preserves_full_source_and_fallback_never_crops(self):
         with tempfile.TemporaryDirectory() as temporary:

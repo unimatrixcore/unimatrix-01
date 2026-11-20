@@ -11,6 +11,7 @@ import sqlite3
 
 import numpy as np
 import yaml
+from visible_run_evidence import verified_training_target
 
 
 RAW_COUNT = 4000
@@ -64,11 +65,51 @@ def materialize(bundle, raw):
     return 'images/' + path.name, sha, pixel_hash(encoded_image(raw))
 
 
+def renderer_observation(row):
+    proof = row.get('synthetic_ground_truth') or {}
+    return bool(row.get('synthetic_evidence_valid') is True
+                and proof.get('generator') == 'poker-offline-renderer'
+                and proof.get('crop_reconstruction_verified') is True)
+
+
+def source_image(bundle, row):
+    path = (bundle / row['image_path']).resolve()
+    if not path.is_relative_to(bundle):
+        raise ValueError('Frozen source image changed or escaped its bundle')
+    raw = path.read_bytes()
+    if digest(raw) != row['file_sha256']:
+        raise ValueError('Frozen source image changed or escaped its bundle')
+    image = encoded_image(raw)
+    if row.get('pixel_sha256') and pixel_hash(image) != row['pixel_sha256']:
+        raise ValueError('Frozen source pixels changed')
+    if row.get('image_dimensions') is not None and row['image_dimensions'] != [image.shape[1], image.shape[0]]:
+        raise ValueError('Frozen source dimensions changed')
+    return image
+
+
+class _SourceImages:
+    def __init__(self, bundle, records):
+        self.bundle = bundle
+        self.parents = {row['sample_id']: row for row in records
+                        if row['split'] == 'train' and row.get('optimize', True)
+                        and not control(row) and not renderer_observation(row)}
+        self.cached_id = None
+        self.cached_image = None
+
+    def __getitem__(self, identity):
+        if identity != self.cached_id:
+            self.cached_image = None
+            self.cached_image = source_image(self.bundle, self.parents[identity])
+            self.cached_id = identity
+        return self.cached_image
+
+
 def control(row):
     return bool(row.get('inherited_control') or row.get('origin') in
                 {'retention', 'blank_retention', 'constructed_blank', 'synthetic', 'synthetic_blank'}
                 or row.get('label_evidence') == 'existing_reviewed_training_glyph_render'
-                or str(row.get('label_evidence', '')).startswith('synthetic_'))
+                or (str(row.get('label_evidence', '')).startswith('synthetic_')
+                    and not renderer_observation(row)))
 
 
 def baseline_ids(row):
@@ -106,6 +147,7 @@ def frozen_controls(root, records, images, parent_records=None):
     selected = defaultdict(list)
     for row in records if parent_records is None else parent_records:
         if (row['split'] == 'train' and row.get('optimize', True) and not control(row)
+                and not renderer_observation(row)
                 and set(row.get('control_parent_roles', ['train'])) == {'train'}):
             for identity in baseline_ids(row):
                 selected[identity].append(row)
@@ -226,7 +268,8 @@ def augment_real(bundle, root, records, images):
     historical = original_variants(root)
     result = []
     for row in records:
-        if row['split'] != 'train' or not row.get('optimize', True) or control(row):
+        if (row['split'] != 'train' or not row.get('optimize', True) or control(row)
+                or renderer_observation(row)):
             continue
         image = images[row['sample_id']]
         h, w = image.shape[:2]
@@ -280,13 +323,17 @@ def stage_recipe(bundle, directory, stage, records, template, checkpoint, dictio
     for row in records:
         if not isinstance(row['label'], str) or any(char in row['label'] for char in '\t\r\n') or not set(row['label']) <= characters:
             raise ValueError('Curriculum label cannot be encoded by the frozen dictionary')
+        if row.get('recognition_task') == 'visible_run' and not verified_training_target(row):
+            raise ValueError('Curriculum visible-run label differs from its verified transcript')
     split_rows = {split: [row for row in records if row['split'] == split and (split == 'test' or row.get('optimize', True))]
                   for split in ('train', 'val', 'test')}
     if not split_rows['train'] or not split_rows['val']:
         raise ValueError('Curriculum stage requires nonempty training and validation inputs')
     random.Random(stage['seed']).shuffle(split_rows['train'])
     for split, rows in split_rows.items():
-        (directory / (split + '.txt')).write_text(''.join(str(bundle / row['image_path']) + '\t' + row['label'] + '\n' for row in rows))
+        with (directory / (split + '.txt')).open('w') as stream:
+            for row in rows:
+                stream.write(str(bundle / row['image_path']) + '\t' + row['label'] + '\n')
     config['Global'].update(epoch_num=stage['epochs'], pretrained_model=str(checkpoint), checkpoints=None,
         seed=stage['seed'], use_gpu=True, distributed=False,
         save_model_dir=str(directory / 'checkpoints'), save_inference_dir=str(directory / 'export'),
@@ -302,7 +349,9 @@ def stage_recipe(bundle, directory, stage, records, template, checkpoint, dictio
         config[key]['loader'].update(shuffle=split == 'train', batch_size_per_card=32, drop_last=False)
     config_path = directory / 'train.yml'
     config_path.write_text(yaml.safe_dump(config, sort_keys=False))
-    (directory / 'manifest.jsonl').write_text(''.join(json.dumps(row) + '\n' for row in records))
+    with (directory / 'manifest.jsonl').open('w') as stream:
+        for row in records:
+            stream.write(json.dumps(row) + '\n')
     return {**stage, 'directory': str(directory), 'config': str(config_path), 'checkpoint_source': str(checkpoint),
             'batch_size': 32, 'train_count': len(split_rows['train']), 'validation_count': len(split_rows['val'])}
 
@@ -312,15 +361,13 @@ def build_curriculum(bundle, records, resources, epochs):
     root = Path(resources['training_root']).resolve()
     if not isinstance(epochs, int) or not 1 <= epochs <= 100:
         raise ValueError('Final curriculum epochs must be between 1 and 100')
-    images = {}
     for row in records:
-        path = (bundle / row['image_path']).resolve()
-        if not path.is_relative_to(bundle) or digest(path.read_bytes()) != row['file_sha256']:
-            raise ValueError('Frozen source image changed or escaped its bundle')
-        image = encoded_image(path.read_bytes())
-        if row.get('pixel_sha256') and pixel_hash(image) != row['pixel_sha256']:
-            raise ValueError('Frozen source pixels changed')
-        images[row['sample_id']] = image
+        image = source_image(bundle, row)
+        del image
+    images = _SourceImages(bundle, records)
+    renderer_train = [row for row in records if row['split'] == 'train'
+                      and row.get('optimize', True) and renderer_observation(row) and not control(row)]
+    renderer_names = [row for row in renderer_train if row['category'] == 'name']
     controls, asset_audit = frozen_controls(root, records, images, resources.get('control_parent_provenance'))
     for family in ('raw', 'gray'):
         for row in controls[family]:
@@ -342,14 +389,14 @@ def build_curriculum(bundle, records, resources, epochs):
     names_base = bundle / 'stages/names-base'
     recipes = [
         ({'id': 'base', 'role': 'general', 'seed': 20261107, 'epochs': 8, 'learning_rate': 2e-5, 'depends_on': None},
-         base, real + controls['gray'] + real_holdouts, initial),
+         base, real + renderer_train + controls['gray'] + real_holdouts, initial),
         ({'id': 'general', 'role': 'general', 'seed': 20261107, 'epochs': 4, 'learning_rate': 2e-5, 'depends_on': 'base'},
-         bundle / 'general', real + controls['gray'] + controls['raw'] + real_holdouts, base / 'checkpoints/best_accuracy.pdparams'),
+         bundle / 'general', real + renderer_train + controls['gray'] + controls['raw'] + real_holdouts, base / 'checkpoints/best_accuracy.pdparams'),
         ({'id': 'names-base', 'role': 'names', 'seed': 202611072, 'epochs': 4, 'learning_rate': 2e-5, 'depends_on': 'base'},
-         names_base, [row for row in real if row['category'] == 'name'] + controls['raw'] + controls['gray'] + blanks + name_holdouts,
+         names_base, [row for row in real if row['category'] == 'name'] + renderer_names + controls['raw'] + controls['gray'] + blanks + name_holdouts,
          base / 'checkpoints/best_accuracy.pdparams'),
         ({'id': 'names', 'role': 'names', 'seed': 202611073, 'epochs': epochs, 'learning_rate': 1e-5, 'depends_on': 'names-base'},
-         bundle / 'names', [row for row in real if row['category'] == 'name'] + controls['raw_final'] + blanks + name_holdouts,
+         bundle / 'names', [row for row in real if row['category'] == 'name'] + renderer_names + controls['raw_final'] + blanks + name_holdouts,
          names_base / 'checkpoints/best_accuracy.pdparams'),
     ]
     if not names_requested:
@@ -358,6 +405,9 @@ def build_curriculum(bundle, records, resources, epochs):
                            bundle / 'dictionary.txt') for stage, directory, rows, checkpoint in recipes]
     audit = {'schema_version': 1, 'real_training_parents': len(real) // 6, 'real_training_variants': len(real),
              'real_variant_counts': dict(Counter(row['augmentation'] for row in real)),
+             'renderer_training_observations': len(renderer_train),
+             'renderer_name_training_observations': len(renderer_names),
+             'renderer_observations_augmented': False,
              'historical_variant_count': sum(row['historical_variant'] for row in real),
              'context_full_capture_count': sum(row.get('full_capture', False) for row in real),
              'asset_provenance': asset_audit, 'holdouts_augmented': False,
