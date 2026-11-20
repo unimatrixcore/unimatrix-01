@@ -59,6 +59,22 @@ def _reservation_lock(root):
         yield
 
 
+def _reservation_inventory(inventory):
+    by_dataset = defaultdict(list)
+    datasets_by_pixel = defaultdict(set)
+    pixels = {}
+    for row in inventory:
+        key = exact_key(row)
+        key = pixels.setdefault(key, key)
+        admitted = bool(row.get('reviewed') and row.get('image_integrity_valid')
+                        and not row.get('ai_review_blocked')
+                        and not row.get('quarantined_empty_partition_alias'))
+        by_dataset[row['dataset_id']].append((row['sample_key'], key, row['category'], row['label'] == '', admitted))
+        if admitted:
+            datasets_by_pixel[key].add(row['dataset_id'])
+    return by_dataset, datasets_by_pixel
+
+
 def reserve_splits(root, baseline, named, inventory, collections, scope='all_registry_collections'):
     """Keep whole capture/session/pixel components in durable train/val/test roles."""
     root = Path(root)
@@ -71,11 +87,7 @@ def reserve_splits(root, baseline, named, inventory, collections, scope='all_reg
             graph.join(row['sample_id'], token)
     for row in baseline + named:
         members[graph.root(row['sample_id'])].append(row)
-    datasets_by_pixel = defaultdict(set)
-    for row in inventory:
-        if (row.get('reviewed') and row.get('image_integrity_valid') and not row.get('ai_review_blocked')
-                and not row.get('quarantined_empty_partition_alias')):
-            datasets_by_pixel[exact_key(row)].add(row['dataset_id'])
+    inventory_by_dataset, datasets_by_pixel = _reservation_inventory(inventory)
     collection_ids = {row['id'] for row in collections}
     with _reservation_lock(root):
         ledger = json.loads(path.read_text()) if path.is_file() else {'version': 1, 'tokens': {}, 'collections': {}}
@@ -150,13 +162,17 @@ def reserve_splits(root, baseline, named, inventory, collections, scope='all_reg
                 reasons.append('No independent validation component is available in this collection; inherited frozen validation is used when available.')
             pixel_roles = {exact_key(row): next(iter(component['roles'])) for component in relevant if len(component['roles']) == 1
                            for row in component['evidence']}
-            row_roles = {row['sample_key']: pixel_roles[exact_key(row)] for row in inventory
-                         if row['dataset_id'] == dataset and exact_key(row) in pixel_roles
-                         and row.get('reviewed') and row.get('image_integrity_valid') and not row.get('ai_review_blocked')
-                         and not row.get('quarantined_empty_partition_alias')}
-            test_rows = [row for row in inventory if row['dataset_id'] == dataset and row_roles.get(row['sample_key']) == 'test']
-            test_categories = Counter(row['category'] for row in test_rows)
-            test_roles = Counter('names' if row['category'] == 'name' else 'general' for row in test_rows)
+            observations = inventory_by_dataset[dataset]
+            row_roles = {sample: pixel_roles[pixel] for sample, pixel, _, _, admitted in observations
+                         if pixel in pixel_roles and admitted}
+            test_categories = Counter()
+            test_roles = Counter()
+            test_blanks = 0
+            for sample, _, category, blank, _ in observations:
+                if row_roles.get(sample) == 'test':
+                    test_categories[category] += 1
+                    test_roles['names' if category == 'name' else 'general'] += 1
+                    test_blanks += blank
             available_roles = set().union(*(coverage(component, dataset)[0] for component in relevant))
             if available_roles - set(test_roles):
                 reasons.append('Benchmark coverage is unavailable for: ' + ', '.join(sorted(available_roles - set(test_roles))) + '. Existing pins or too few independent components prevent reserving those roles.')
@@ -164,7 +180,7 @@ def reserve_splits(root, baseline, named, inventory, collections, scope='all_reg
                                'validation': sum(role == 'val' for role in row_roles.values()),
                                'test': sum(role == 'test' for role in row_roles.values()), 'reasons': reasons,
                                'test_categories': dict(test_categories), 'test_roles': dict(test_roles),
-                               'test_blanks': sum(row['label'] == '' for row in test_rows)}
+                               'test_blanks': test_blanks}
         ledger['collections'].update(report)
         ledger.update(scope=scope, policy='whole_capture_session_pixel_components_v1',
                       applies_to='future_preparations_only; existing version benchmark manifests are unchanged')
@@ -192,6 +208,30 @@ class ReservationInventory:
         return iter_jsonl(self.path)
 
 
+def _encodable_named_rows(rows, characters):
+    supported, unsupported = [], []
+    survivors = {}
+    for row in rows:
+        encodable = set(row['label']) <= characters and not any(char in row['label'] for char in '\t\r\n')
+        (supported if encodable else unsupported).append(row)
+        component = (row.get('provenance') or {}).get('split_group')
+        if encodable and component:
+            survivors.setdefault(component, row)
+    transferred = {}
+    for row in unsupported:
+        component = (row.get('provenance') or {}).get('split_group')
+        if component not in survivors:
+            continue
+        edges = transferred.setdefault(component, {'groups': set(), 'known_splits': set(), 'fresh_session_groups': set()})
+        for key in edges:
+            edges[key].update(row.get(key, []))
+    for component, edges in transferred.items():
+        survivor = survivors[component]
+        for key, values in edges.items():
+            survivor[key] = sorted(set(survivor.get(key, [])) | values)
+    return supported, unsupported
+
+
 def _reserve_catalog(request, collections, exported, baseline, characters):
     catalog = request.get('reservation_collections', collections)
     scope = 'all_registry_collections' if 'reservation_collections' in request else 'selected_collections_legacy_request'
@@ -203,7 +243,7 @@ def _reserve_catalog(request, collections, exported, baseline, characters):
         # This export is only a graph input; selected training uses its own export.
         _export(request, [dict(row, archived=False) for row in catalog], global_export, baseline)
     named, blocked, _ = collection_rows(global_export)
-    named = [row for row in named if set(row['label']) <= characters and not any(char in row['label'] for char in '\t\r\n')]
+    named, _ = _encodable_named_rows(named, characters)
     components, report = reserve_splits(request['training_root'], baseline, named,
                                        ReservationInventory(global_export / 'samples.jsonl'), catalog, scope)
     roles_by_token = defaultdict(set)
@@ -515,18 +555,14 @@ def _prepare(request, export=None, materialize_training=True):
     named, blocked, _ = collection_rows(exported)
     if not named:
         raise ValueError('The selected collections contain no verified training crops. Complete their label review first.')
+    named, unencodable = _encodable_named_rows(named, characters)
     unsupported = []
-    supported = []
-    for row in named:
+    for row in unencodable:
         missing = sorted(set(row['label']) - characters)
-        if missing or any(char in row['label'] for char in '\t\r\n'):
-            unsupported.append({'sample_id': row['sample_id'], 'label': row['label'],
-                                'reason': 'target_not_encodable_by_frozen_checkpoint',
-                                'unsupported_characters': missing})
-            blocked.add((row['category'], row['pixel_sha256']))
-        else:
-            supported.append(row)
-    named = supported
+        unsupported.append({'sample_id': row['sample_id'], 'label': row['label'],
+                            'reason': 'target_not_encodable_by_frozen_checkpoint',
+                            'unsupported_characters': missing})
+        blocked.add((row['category'], row['pixel_sha256']))
     if not named:
         write_jsonl(run / 'quarantined-targets.jsonl', unsupported)
         raise ValueError('Verified labels cannot be encoded by the current model dictionary. See quarantined-targets.jsonl; a compatible starting model is required.')

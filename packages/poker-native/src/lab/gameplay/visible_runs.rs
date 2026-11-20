@@ -57,9 +57,9 @@ pub fn extract(parent: &RgbImage, descriptor: &MaskDescriptor) -> LabResult<Vec<
     // Currency artwork is saturated and precedes the monochrome text. Exclude its
     // entire horizontal extent, including antialiasing and white interior detail.
     let mut text_start = 0;
-    for (x, _, p) in masked.rgb.enumerate_pixels() {
+    for (x, y, p) in masked.rgb.enumerate_pixels() {
         let [r, g, b] = p.0;
-        if r.max(g).max(b) - r.min(g).min(b) > 70 {
+        if masked.valid_mask.get_pixel(x, y)[0] == 255 && r.max(g).max(b) - r.min(g).min(b) > 70 {
             text_start = text_start.max(x + 1);
         }
     }
@@ -96,9 +96,15 @@ pub fn extract(parent: &RgbImage, descriptor: &MaskDescriptor) -> LabResult<Vec<
     // Extend the observed ink band to both expected source-font line edges.
     // A horizontal cut across every glyph can otherwise make a clipped row
     // masquerade as a shorter, fully visible line.
+    let guard = h.div_ceil(20);
+    let Some(top) = top.checked_sub(guard) else {
+        return Ok(Vec::new());
+    };
+    let Some(bottom) = bottom.checked_add(guard).filter(|&edge| edge <= h) else {
+        return Ok(Vec::new());
+    };
     let top = top.min(h / 6);
     let bottom = bottom.max(h - h / 6);
-    let guard = h.div_ceil(20);
     let closed_side = |left: bool| {
         descriptor.panels.iter().any(|panel| {
             let edge = if left {
@@ -235,15 +241,17 @@ pub fn resolve_bet_profile(
 }
 
 pub fn eligible(region: &serde_json::Value) -> bool {
+    let isolated_partial = region["localization"]["state"] == "partially_occluded"
+        && region["guide"]["occlusion"]["partial"] == true;
     !super::regions::seat_is_empty(region)
         && region["ocr"] != false
         && region["crop_mask_source"] == "chip_columns_value"
         && region["crop_mask"].is_object()
         && region["localization_error"].is_null()
         && (region["presence"]["state"] == "present"
-            || (region["presence"]["state"] == "ambiguous"
-                && region["localization"]["state"] == "partially_occluded"
-                && region["guide"]["occlusion"]["partial"] == true))
+            || (isolated_partial
+                && (region["presence"]["state"].is_null()
+                    || region["presence"]["state"] == "ambiguous")))
 }
 
 #[cfg(test)]
@@ -317,5 +325,73 @@ mod tests {
         let mut partial = panel(0, 30);
         partial.bounds.height = 13.;
         assert!(extract(&im, &mask(vec![partial])).unwrap().is_empty());
+    }
+
+    #[test]
+    fn partially_covered_saturated_corner_does_not_hide_intact_text() {
+        let mut im = RgbImage::from_pixel(60, 30, Rgb(crop_mask::NEUTRAL_RGB));
+        paint(&mut im, 3, 10, 8, 22, [240, 190, 0]);
+        paint(&mut im, 5, 7, 12, 18, [230; 3]);
+        paint(&mut im, 25, 30, 6, 24, [220; 3]);
+        let descriptor = crop_mask::from_resolved_panels(
+            SourcePanel::ChipColumnsValue,
+            [0., 0.],
+            &[Rect {
+                x: 0.,
+                y: 0.,
+                width: 60.,
+                height: 30.,
+            }],
+        )
+        .unwrap();
+        let coverage = crop_mask::apply(&im, &descriptor).unwrap().valid_mask;
+        let (x, y, _) = coverage
+            .enumerate_pixels()
+            .find(|(x, _, value)| *x > 40 && value[0] > 100 && value[0] < 255)
+            .unwrap();
+        im.put_pixel(x, y, Rgb([0, 255, 0]));
+        let masked = crop_mask::apply(&im, &descriptor).unwrap();
+        let [r, g, b] = masked.rgb.get_pixel(x, y).0;
+        assert!(r.max(g).max(b) - r.min(g).min(b) > 70);
+        let runs = extract(&im, &descriptor).unwrap();
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].components.len(), 1);
+        assert_eq!(runs[0].components[0].x, 25);
+    }
+
+    #[test]
+    fn horizontal_mask_cuts_need_covered_margin_beyond_observed_ink() {
+        let mut im = RgbImage::from_pixel(60, 30, Rgb(crop_mask::NEUTRAL_RGB));
+        paint(&mut im, 24, 30, 4, 26, [220; 3]);
+        let mut full = panel(0, 60);
+        full.bounds.height = 30.;
+        assert_eq!(extract(&im, &mask(vec![full.clone()])).unwrap().len(), 1);
+        let mut top_cut = full.clone();
+        top_cut.bounds.y = 5.;
+        top_cut.bounds.height = 25.;
+        assert!(extract(&im, &mask(vec![top_cut])).unwrap().is_empty());
+        let mut bottom_cut = full;
+        bottom_cut.bounds.height = 25.;
+        assert!(extract(&im, &mask(vec![bottom_cut])).unwrap().is_empty());
+    }
+
+    #[test]
+    fn legacy_missing_presence_decision_only_allows_isolated_partial_runs() {
+        let mut region = serde_json::json!({
+            "category":"bet", "crop_mask_source":"chip_columns_value", "crop_mask":{},
+            "localization":{"state":"partially_occluded"}, "guide":{"occlusion":{"partial":true}}
+        });
+        assert!(eligible(&region));
+        for state in ["absent", "unknown", ""] {
+            region["presence"] = serde_json::json!({"state":state});
+            assert!(!eligible(&region), "{state}");
+        }
+        for state in ["present", "ambiguous"] {
+            region["presence"] = serde_json::json!({"state":state});
+            assert!(eligible(&region), "{state}");
+        }
+        region.as_object_mut().unwrap().remove("presence");
+        region["guide"]["occlusion"]["partial"] = false.into();
+        assert!(!eligible(&region));
     }
 }

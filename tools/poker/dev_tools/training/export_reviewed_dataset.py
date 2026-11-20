@@ -23,7 +23,7 @@ TOOLS = Path(__file__).resolve().parents[1]
 if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
 from lib.ocr_contract import CONTRACT, CONTRACT_SHA256, category_for_region, validate_text, validate_text_with_currency_format
-from visible_run_evidence import render_visible_run, verify_visible_run
+from visible_run_evidence import render_visible_run, verify_visible_run, verified_training_target
 from ocr_dictionary import LEGACY_PROFILE, characters_for_profile, profile_metadata
 
 
@@ -372,6 +372,12 @@ def _current_ai_check(row, ai_items, jobs, events_by_key):
             'result': result, 'source_event_id': expected_event if candidates else None}
 
 
+def _source_evidence_admits(row):
+    proof = row.get('synthetic_ground_truth') or {}
+    return bool(row.get('image_integrity_valid') and row.get('synthetic_evidence_valid') is not False
+                and proof.get('candidate_eligible', proof.get('eligible', True)))
+
+
 def _recognition_layout(row):
     count = 0
     if row.get('category') == 'split_pot' and isinstance(row.get('label'), str):
@@ -702,7 +708,8 @@ def _export_dataset_snapshot(dataset, output, connection, progress=None, materia
             row['reviewed'] = True;row['visually_verified'] = False
             row['is_reviewed_negative'] = row['label'] == '' and row['category'] is not None
             row['automatic_schema_valid'] = row['completed_schema_valid'] or row['is_reviewed_negative']
-            row['schema_valid'] = row['automatic_schema_valid']
+            row['schema_valid'] = (row['recognition_contract_valid'] if verified_training_target(row)
+                                   else row['automatic_schema_valid'])
         row['ai_review_blocked'] = bool(row['ai_review'] and not row['ai_review']['successful_current_check'])
         row['eligible_for_training'] = bool(row['reviewed'] and row['schema_valid'] and row['image_integrity_valid']
                                             and not row['dataset_archived'] and not row['queue_discarded']
@@ -961,10 +968,12 @@ def apply_visual_review_manifest(rows, manifest):
                 row['ai_review_blocked']=False
                 row['is_reviewed_negative']=row['label']=='' and row['category'] is not None
                 row['automatic_schema_valid']=row['completed_schema_valid'] or row['is_reviewed_negative']
-                row['schema_valid']=row['automatic_schema_valid']
+                row['schema_valid']=(row['recognition_contract_valid'] if verified_training_target(row)
+                                     else row['automatic_schema_valid'])
                 row['training_eligibility_limitations']=[item for item in row['training_eligibility_limitations']
                     if not item.startswith('latest_current_ai_review_')]
-                row['eligible_for_training']=bool(row['schema_valid'] and not row.get('dataset_archived') and
+                row['eligible_for_training']=bool(row['schema_valid'] and _source_evidence_admits(row)
+                    and not row.get('dataset_archived') and
                     not row.get('queue_discarded') and not row.get('removed_unsaved_queue_observation'))
             else:
                 row['visually_verified']=False;row['eligible_for_training']=False;row['ai_review_blocked']=True
@@ -1042,12 +1051,14 @@ class _ExportRowSpool:
         'historical_review', 'queue_id', 'queue_discarded', 'removed_unsaved_queue_observation',
         'completed_schema_valid', 'schema_valid', 'is_reviewed_negative',
         'visually_verified', 'automatic_schema_valid', 'needs_contract_review',
-        'storage_schema_valid', 'recognition_layout',
+        'storage_schema_valid', 'recognition_layout', 'recognition_task',
+        'recognition_contract_valid', 'synthetic_evidence_valid',
     )
     nested = {
         'provenance': ('capture_group', 'source_capture_timestamp', 'split', 'session_id'),
         'review_event': ('created_at', 'action', 'prior_label'),
         'ai_review': ('successful_current_check', 'state', 'job_id', 'job_state'),
+        'synthetic_ground_truth': ('eligible', 'candidate_eligible', 'visible_run_verified', 'recognition_target'),
     }
 
     def __init__(self, directory):
@@ -1070,7 +1081,7 @@ class _ExportRowSpool:
         if 'recognition_layout' not in projected:
             original.pop('recognition_layout', None)
         for key, value in projected.items():
-            if key in ('_spool_offset', 'review_event', 'ai_review'):
+            if key in ('_spool_offset', 'review_event', 'ai_review', 'synthetic_ground_truth'):
                 continue
             if key == 'provenance':
                 original[key].update(value)

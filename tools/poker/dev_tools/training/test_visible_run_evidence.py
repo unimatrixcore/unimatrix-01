@@ -1,4 +1,5 @@
 from copy import deepcopy
+from unittest import mock
 import hashlib
 from io import BytesIO
 import json
@@ -12,7 +13,7 @@ from PIL import Image
 from export_reviewed_dataset import export_datasets
 from lab_training_curriculum import stage_recipe
 from prepare_named_collection_training import collection_rows, prepare_records, write_recipe
-from visible_run_evidence import NEUTRAL, pixel_hash
+from visible_run_evidence import NEUTRAL, pixel_hash, _verify_reference_glyph_extents
 
 
 def png(image):
@@ -122,6 +123,75 @@ class VisibleRunTest(unittest.TestCase):
         self.evidence['oracle']['glyphs'][1]['retained'] = True
         self.sync()
         self.assert_rejected()
+
+    def test_touching_reference_ink_can_span_several_complete_glyph_boxes(self):
+        reference = Image.new('RGB', (8, 5), NEUTRAL)
+        reference.paste((240, 240, 240), (1, 1, 7, 4))
+        glyphs = [dict(rect=dict(x=1, y=1, w=3, h=3)),
+                  dict(rect=dict(x=4, y=1, w=3, h=3))]
+        _verify_reference_glyph_extents(reference, (0, 0, 8, 5), glyphs, '77')
+        glyphs[-1]['rect']['w'] = 1
+        with self.assertRaisesRegex(ValueError, 'declared extent'):
+            _verify_reference_glyph_extents(reference, (0, 0, 8, 5), glyphs, '77')
+
+    def test_shortened_glyph_box_cannot_hide_a_partial_digit(self):
+        self.label = self.evidence['recognition_target'] = '12'
+        glyph = self.evidence['oracle']['glyphs'][1]
+        glyph['retained'] = True
+        glyph['rect']['w'] = 1
+        self.rect['w'] = self.evidence['run_rect']['width'] = 12
+        self.evidence['coverage_rle'] = [[16, 144]]
+        self.sync()
+        row, summary, output = self.export()
+        self.assertFalse(row['synthetic_evidence_valid'])
+        self.assertIn('declared extent', row['synthetic_evidence_error'])
+        self.assertEqual(summary['counts']['training_candidates'], 0)
+        selected, blocked, _ = collection_rows(output)
+        prepared, _, _, _ = prepare_records([], selected, blocked)
+        self.assertEqual(prepared, [])
+        template = dict(Global={}, Optimizer={'lr': {}}, Metric={})
+        template.update({key: {'dataset': {'transforms': []}, 'loader': {}} for key in ('Train', 'Eval')})
+        path = self.root / 'template.yml'; path.write_text(json.dumps(template))
+        (self.root / 'weights').write_text('fixture')
+        (self.root / 'dictionary').write_text('1\n2\n')
+        with self.assertRaisesRegex(ValueError, 'no optimized train'):
+            write_recipe(self.root / 'short-recipe', prepared, path, self.root / 'weights', self.root / 'dictionary',
+                         name_only=False, epochs=1, batch_size=2, seed=1)
+        with self.assertRaisesRegex(ValueError, 'nonempty training'):
+            stage_recipe(self.root, self.root / 'short-stage', dict(seed=1), prepared, path,
+                         self.root / 'weights', self.root / 'dictionary')
+
+    def test_visual_confirmation_preserves_verified_fragment_contract_through_spool(self):
+        ai = dict(successful_current_check=False, state='flagged', job_id='job', job_state='complete')
+        with mock.patch('export_reviewed_dataset._current_ai_check', return_value=ai):
+            first, _, _ = self.export()
+            record = dict(dataset_id=first['dataset_id'], sample_key=first['sample_key'],
+                pixel_sha256=first['pixel_sha256'], label=first['label'], queue_id=first.get('queue_id'),
+                source_job_id='job', visually_reviewed=True, reviewer='assistant_visual',
+                decision='confirmed_current_label')
+            output = self.root / 'visual-fragment'
+            summary = export_datasets([dict(id='a'*32, directory=self.directory)], output,
+                                      visual_review_manifest=[record])
+        row = json.loads((output / 'samples.jsonl').read_text())
+        self.assertFalse(row['automatic_schema_valid'])
+        self.assertTrue(row['recognition_contract_valid'])
+        self.assertTrue(row['eligible_for_training'])
+        self.assertEqual(summary['counts']['training_candidates'], 1)
+        self.assertEqual(row['synthetic_ground_truth']['source_label'], '12')
+
+    def test_null_run_rectangle_is_a_row_error(self):
+        self.evidence['run_rect'] = None
+        self.sync()
+        self.assert_rejected()
+
+    def test_successful_current_ai_check_preserves_verified_fragment_contract(self):
+        with mock.patch('export_reviewed_dataset._current_ai_check', return_value={
+                'successful_current_check': True, 'state': 'unchanged'}):
+            row, summary, _ = self.export()
+        self.assertTrue(row['recognition_contract_valid'])
+        self.assertFalse(row['automatic_schema_valid'])
+        self.assertTrue(row['eligible_for_training'])
+        self.assertEqual(summary['counts']['training_candidates'], 1)
 
     def test_clean_reference_must_include_hidden_extent_of_a_cut_glyph(self):
         self.label = self.evidence['recognition_target'] = '12'

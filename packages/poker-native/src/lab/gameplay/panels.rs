@@ -417,16 +417,18 @@ struct BetPanel {
     id: String,
 }
 
-fn source_bet_panel(image: &RgbImage, region: &Value) -> Option<BetPanel> {
+fn source_bet_order(region: &Value) -> Option<usize> {
     let seat = region["source_region_id"]
         .as_str()?
         .strip_prefix("seat.")?
         .strip_suffix(".bet")?
         .parse::<usize>()
         .ok()?;
-    let order = [8, 0, 2, 6, 7, 1, 3, 5, 4]
-        .iter()
-        .position(|s| *s == seat)?;
+    [8, 0, 2, 6, 7, 1, 3, 5, 4].iter().position(|s| *s == seat)
+}
+
+fn source_bet_panel(image: &RgbImage, region: &Value) -> Option<BetPanel> {
+    let order = source_bet_order(region)?;
     let spec = &region["localizer"];
     let h = region["guide"]["slot"]["height"].as_f64()?.ceil();
     if !(20.0..=46.0).contains(&h)
@@ -438,13 +440,23 @@ fn source_bet_panel(image: &RgbImage, region: &Value) -> Option<BetPanel> {
     }
     let ax = spec["anchor"]["x"].as_f64()?;
     let ay = spec["anchor"]["y"].as_f64()?;
-    let top = (ay - h / 2.0).round() as u32;
+    let top = (ay - h / 2.0).round();
+    if !ax.is_finite()
+        || !ay.is_finite()
+        || ax <= 0.0
+        || ax >= f64::from(image.width())
+        || top < 1.0
+        || top + h >= f64::from(image.height())
+    {
+        return None;
+    }
+    let top = top as u32;
     let search = &spec["search_bounds"];
-    let left = search["x"].as_u64()? as u32;
+    let left = u32::try_from(search["x"].as_u64()?).ok()?;
     let right = left
-        .checked_add(search["width"].as_u64()? as u32)?
+        .checked_add(u32::try_from(search["width"].as_u64()?).ok()?)?
         .min(image.width());
-    if top < 1 || top + h as u32 >= image.height() || left >= right {
+    if left >= right {
         return None;
     }
     let bottom = top + h as u32;
@@ -583,16 +595,105 @@ fn source_bet_panel(image: &RgbImage, region: &Value) -> Option<BetPanel> {
     })
 }
 
+fn rectangles_overlap(a: super::crop_mask::Rect, b: super::crop_mask::Rect) -> bool {
+    a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+}
+
+fn matches_anchor(panel: &Value, spec: &Value) -> bool {
+    let Some(ax) = spec["anchor"]["x"].as_f64() else {
+        return false;
+    };
+    let Some(ay) = spec["anchor"]["y"].as_f64() else {
+        return false;
+    };
+    let px = panel["x"].as_f64().unwrap();
+    let py = panel["y"].as_f64().unwrap();
+    let pw = panel["width"].as_f64().unwrap();
+    let ph = panel["height"].as_f64().unwrap();
+    let edge = match spec["alignment"].as_str().unwrap_or("center") {
+        "left" => px,
+        "right" => px + pw,
+        _ => px + pw / 2.0,
+    };
+    (edge - ax).abs() <= spec["anchor_tolerance"].as_f64().unwrap_or(8.0)
+        && ay >= py - 2.0
+        && ay <= py + ph + 2.0
+}
+
+fn source_bet_components(image: &RgbImage, region: &Value) -> Vec<super::crop_mask::Rect> {
+    let mut spec = region["localizer"].clone();
+    let search_height = spec["search_bounds"]["height"].clone();
+    let Some(object) = spec.as_object_mut() else {
+        return Vec::new();
+    };
+    // A merged component is not a safe target, but can still establish that a
+    // neighboring anchored pill is present and its boundary needs resolving.
+    object.remove("require_currency_badge");
+    object.remove("max_currency_badges");
+    object.insert("max_height".into(), search_height);
+    candidates(image, &spec)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|panel| matches_anchor(panel, &spec))
+        .filter_map(|panel| serde_json::from_value(panel).ok())
+        .collect()
+}
+
+fn source_neighbor_overlaps(
+    image: &RgbImage,
+    region: &Value,
+    bounds: super::crop_mask::Rect,
+) -> bool {
+    region["localizer"]["source_bets"]
+        .as_array()
+        .is_some_and(|neighbors| {
+            neighbors
+                .iter()
+                .filter(|r| r["id"] != region["id"])
+                .any(|other| {
+                    if let Some(panel) = source_bet_panel(image, other) {
+                        rectangles_overlap(bounds, panel.bounds)
+                    } else {
+                        source_bet_components(image, other)
+                            .into_iter()
+                            .any(|panel| rectangles_overlap(bounds, panel))
+                    }
+                })
+        })
+}
+
 fn recover_overlapping_bet(image: &RgbImage, region: &Value) -> Option<Value> {
     use super::crop_mask::{CornerRadius, Rect, RoundedPanel};
     let own = source_bet_panel(image, region)?;
     let neighbors = region["localizer"]["source_bets"].as_array()?;
-    let mut occluders = neighbors
-        .iter()
-        .filter(|r| r["id"] != region["id"])
-        .filter_map(|r| source_bet_panel(image, r))
-        .filter(|p| p.order > own.order)
-        .collect::<Vec<_>>();
+    let mut occluders = Vec::new();
+    for other in neighbors.iter().filter(|r| r["id"] != region["id"]) {
+        if source_bet_order(other).is_some_and(|order| order <= own.order) {
+            let previous = source_bet_panel(image, other)
+                .map(|panel| vec![panel.bounds])
+                .unwrap_or_else(|| source_bet_components(image, other));
+            if region["localizer"]["alignment"] == "left"
+                && previous.into_iter().any(|bounds| {
+                    // Identical fills can hide which same-row pill owns the
+                    // observed right edge. A left anchor cannot settle it.
+                    bounds.x < own.bounds.x
+                        && (bounds.y - own.bounds.y).abs() <= 2.0
+                        && (bounds.x + bounds.width - own.bounds.x - own.bounds.width).abs() <= 2.0
+                })
+            {
+                return None;
+            }
+            continue;
+        }
+        if let Some(panel) = source_bet_panel(image, other) {
+            occluders.push(panel);
+        } else if source_bet_components(image, other)
+            .into_iter()
+            .any(|bounds| rectangles_overlap(own.bounds, bounds))
+        {
+            return None;
+        }
+    }
     occluders.sort_by_key(|p| p.order);
     let mut bounds = own.bounds;
     let mut covered = Vec::new();
@@ -905,7 +1006,19 @@ pub fn resolve(image: &DynamicImage, region: &Value) -> LabResult<Value> {
             }
             return Err(bad("Panel is missing, merged, clipped, or ambiguous"));
         }
-        matches[0].clone()
+        let selected = matches[0].clone();
+        if region["category"] == "bet"
+            && source_neighbor_overlaps(
+                rgb,
+                region,
+                serde_json::from_value(selected.clone())
+                    .map_err(|_| bad("Invalid matched bet bounds"))?,
+            )
+        {
+            return recover_overlapping_bet(rgb, region)
+                .ok_or_else(|| bad("Overlapping bet ownership cannot be established"));
+        }
+        selected
     };
     let x = selected["x"].as_f64().unwrap();
     let y = selected["y"].as_f64().unwrap();
@@ -972,10 +1085,12 @@ pub fn resolve_profile_cancellable(
         .filter(|r| r["category"] == "bet" && !super::regions::seat_is_empty(r))
         .filter_map(|r| {
             let mut r = r.clone();
-            r["localizer"]["source_bets"] = json!(source_regions
-                .iter()
-                .filter(|r| r["category"] == "bet" && !super::regions::seat_is_empty(r))
-                .collect::<Vec<_>>());
+            if r["localizer"].is_object() {
+                r["localizer"]["source_bets"] = json!(source_regions
+                    .iter()
+                    .filter(|r| r["category"] == "bet" && !super::regions::seat_is_empty(r))
+                    .collect::<Vec<_>>());
+            }
             resolve(image, &r).ok()
         })
         .filter(|r| r["localization"]["state"] != "original_negative_slot")
@@ -1285,7 +1400,10 @@ mod tests {
         json!({"id":id,"category":"bet","source_region_id":format!("seat.{seat}.bet"),"bounds":{"x":x,"y":y,"width":174.0,"height":30.0},"crop_mask_source":"chip_columns_value","guide":{"family":"bet","slot":{"x":x,"y":y,"width":174.0,"height":30.0}},"localizer":{"kind":"panel","require_currency_badge":true,"search_bounds":{"x":10,"y":20,"width":600,"height":100},"anchor":{"x":anchor,"y":y+15.0},"alignment":alignment,"anchor_tolerance":3,"min_height":20,"max_height":46}})
     }
     fn source_pill(image: &mut RgbImage, x: u32, y: u32, badge: [u8; 3]) {
-        panel(image, x, y, 174);
+        source_pill_width(image, x, y, 174, badge);
+    }
+    fn source_pill_width(image: &mut RgbImage, x: u32, y: u32, width: u32, badge: [u8; 3]) {
+        panel(image, x, y, width);
         for yy in y + 5..y + 25 {
             for xx in x + 4..x + 24 {
                 image.put_pixel(xx, yy, Rgb(badge));
@@ -1311,6 +1429,76 @@ mod tests {
         }
         let f = overlap_field("seats[5].bet", 8, 200.0, 40.0, "left", 200.0);
         assert!(source_bet_panel(&pixels, &f).is_none());
+    }
+    #[test]
+    fn source_recovery_rejects_out_of_frame_anchors_without_overflow() {
+        let mut pixels = RgbImage::from_pixel(1920, 1080, Rgb([18, 74, 136]));
+        source_pill(&mut pixels, 200, 40, [90, 200, 0]);
+        for (x, y) in [(200.0, 1e100), (1e100, 55.0), (200.0, -1e100)] {
+            let mut field = overlap_field("seats[5].bet", 8, 200.0, 40.0, "left", 200.0);
+            field["localizer"]["anchor"] = json!({"x":x,"y":y});
+            assert!(source_bet_panel(&pixels, &field).is_none());
+        }
+    }
+    #[test]
+    fn unsupported_foreground_geometry_does_not_make_a_merged_back_bet_complete() {
+        let mut pixels = RgbImage::from_pixel(1920, 1080, Rgb([18, 74, 136]));
+        source_pill(&mut pixels, 200, 40, [90, 200, 0]);
+        source_pill(&mut pixels, 330, 40, [250, 205, 0]);
+        let back = overlap_field("seats[5].bet", 8, 200.0, 40.0, "left", 200.0);
+        let mut front = overlap_field("seats[6].bet", 0, 330.0, 40.0, "right", 504.0);
+        front["crop_mask_source"] = json!("single_chip_value");
+        let image = DynamicImage::ImageRgb8(pixels);
+        let result = resolve_profile(&image, &json!({"regions":[back,front]})).unwrap();
+        assert!(result["regions"][0]["localization_error"].is_string());
+    }
+    #[test]
+    fn one_remaining_badge_does_not_assign_the_foreground_amount_to_the_back_seat() {
+        let mut pixels = RgbImage::from_pixel(1920, 1080, Rgb([18, 74, 136]));
+        source_pill(&mut pixels, 200, 40, [90, 200, 0]);
+        source_pill(&mut pixels, 205, 40, [250, 205, 0]);
+        let back = overlap_field("seats[5].bet", 8, 200.0, 40.0, "left", 200.0);
+        let front = overlap_field("seats[6].bet", 0, 205.0, 40.0, "right", 379.0);
+        assert_eq!(candidates(&pixels, &back["localizer"]).unwrap().len(), 1);
+        let image = DynamicImage::ImageRgb8(pixels);
+        let result = resolve_profile(&image, &json!({"regions":[back,front]})).unwrap();
+        assert!(result["regions"][0]["localization_error"].is_string());
+        assert!(result["regions"][1]["localization_error"].is_null());
+        assert_eq!(
+            result["regions"][1]["bounds"],
+            json!({"x":205.0,"y":40.0,"width":174.0,"height":30.0})
+        );
+    }
+    #[test]
+    fn unsupported_isolated_pill_keeps_ordinary_localization() {
+        let mut pixels = RgbImage::from_pixel(1920, 1080, Rgb([18, 74, 136]));
+        source_pill(&mut pixels, 200, 40, [90, 200, 0]);
+        let mut present = overlap_field("seats[5].bet", 8, 200.0, 40.0, "left", 200.0);
+        present["crop_mask_source"] = json!("single_chip_value");
+        let absent = overlap_field("seats[6].bet", 0, 330.0, 40.0, "right", 504.0);
+        let image = DynamicImage::ImageRgb8(pixels);
+        let result = resolve_profile(&image, &json!({"regions":[present,absent]})).unwrap();
+        assert!(result["regions"][0]["localization_error"].is_null());
+        assert_eq!(
+            result["regions"][0]["bounds"],
+            json!({"x":200,"y":40,"width":174,"height":30})
+        );
+    }
+    #[test]
+    fn left_foreground_does_not_take_a_shared_right_edge_from_an_earlier_pill() {
+        let mut pixels = RgbImage::from_pixel(1920, 1080, Rgb([18, 74, 136]));
+        source_pill(&mut pixels, 200, 40, [90, 200, 0]);
+        source_pill_width(&mut pixels, 250, 40, 100, [250, 205, 0]);
+        let back = overlap_field("seats[5].bet", 8, 200.0, 40.0, "left", 200.0);
+        let front = overlap_field("seats[6].bet", 0, 250.0, 40.0, "left", 250.0);
+        let result = resolve_profile(
+            &DynamicImage::ImageRgb8(pixels),
+            &json!({"regions":[back,front]}),
+        )
+        .unwrap();
+        assert!(result["regions"][0]["localization_error"].is_null());
+        assert_eq!(result["regions"][0]["guide"]["occlusion"]["partial"], true);
+        assert!(result["regions"][1]["localization_error"].is_string());
     }
     #[test]
     fn same_baseline_bets_export_foreground_and_only_visible_background_pixels() {
@@ -1405,6 +1593,30 @@ mod tests {
         let mut competing = field("panel");
         competing["localizer"]["anchor_tolerance"] = json!(500.);
         assert!(resolve(&DynamicImage::ImageRgb8(image), &competing).is_err());
+    }
+    #[test]
+    fn split_row_excludes_fixed_bet_without_inventing_a_localizer() {
+        let mut pixels = RgbImage::from_pixel(1920, 1080, Rgb([60, 60, 60]));
+        panel(&mut pixels, 80, 40, 100);
+        panel(&mut pixels, 190, 40, 150);
+        panel(&mut pixels, 350, 40, 100);
+        let bet = json!({"id":"seats[0].bet","category":"bet","bounds":{"x":350,"y":40,"width":100,"height":30}});
+        let pot = field("pot_row");
+        let result = resolve_profile(
+            &DynamicImage::ImageRgb8(pixels),
+            &json!({"regions":[bet.clone(),pot]}),
+        )
+        .unwrap();
+        assert_eq!(result["regions"][0]["bounds"], bet["bounds"]);
+        assert!(result["regions"][0].get("localizer").is_none());
+        assert!(result["regions"][1]["localization_error"].is_null());
+        assert_eq!(
+            result["regions"][1]["localization"]["panels"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
     }
     #[test]
     fn wrapped_split_pot_keeps_all_rows_in_reading_order_and_rejects_overlap() {

@@ -768,6 +768,47 @@ class ReservationTest(unittest.TestCase):
         self.assertEqual(report['collections']['collection']['reserved'], 2)
         self.assertEqual(report['collections']['collection']['reasons'], [])
 
+    def test_reservation_reporting_decodes_each_inventory_row_only_once(self):
+        datasets = [f'collection{index}' for index in range(30)]
+        rows = [self.row(f'{dataset}-{index}', dataset=dataset) for dataset in datasets for index in range(3)]
+        class Once:
+            scans = 0
+            def __iter__(self):
+                self.scans += 1
+                if self.scans != 1:
+                    raise AssertionError('Reservation reporting reparsed the full inventory')
+                yield from rows
+        inventory = Once()
+        _, report = self.reserve(rows, inventory=inventory, ids=datasets)
+        self.assertEqual(inventory.scans, 1)
+        for dataset in datasets:
+            self.assertEqual(report['collections'][dataset]['components'], {'train': 1, 'val': 1, 'test': 1})
+            self.assertEqual(report['collections'][dataset]['reserved'], 2)
+
+    def test_unencodable_anchor_keeps_excluded_capture_baseline_pin(self):
+        from lab_training_data import _encodable_named_rows
+        from prepare_named_collection_training import prepare_records
+        component = 'captures:shared'
+        anchor = self.row('comma', groups=['export:' + component, 'hidden-capture', 'selected-capture'])
+        anchor.update(label='S 1,000 BB', category='bank', known_splits=['train'],
+                      fresh_session_groups=['inferred:hidden'], provenance={'split_group': component})
+        survivors = [self.row(key, groups=['export:' + component, 'selected-capture']) for key in ('first', 'second')]
+        for row in survivors:
+            row.update(known_splits=['train'], fresh_session_groups=[], provenance={'split_group': component})
+        baseline = dict(self.row('baseline', groups=['hidden-capture']), origin='baseline', pinned_split='val')
+        kept, excluded = _encodable_named_rows([anchor, *survivors], set(characters_for_profile(LEGACY_PROFILE)[1:]))
+        self.assertEqual(excluded, [anchor])
+        self.assertEqual(kept, survivors)
+        self.assertIn('hidden-capture', kept[0]['groups'])
+        self.assertIn('inferred:hidden', kept[0]['fresh_session_groups'])
+        self.assertNotIn('hidden-capture', kept[1]['groups'])
+        prepared, quarantine, _, _ = prepare_records([baseline], kept, set())
+        self.assertFalse(any(row['origin'] == 'named' for row in prepared))
+        self.assertEqual({row['sample_id'] for row in quarantine}, {row['sample_id'] for row in kept})
+        components, _ = self.reserve(kept, baseline=[baseline], inventory=[anchor, *kept])
+        self.assertEqual(len(components), 1)
+        self.assertEqual(components[0]['roles'], {'train', 'val'})
+
     def test_progress_throttles_intermediate_counts_but_keeps_real_completion(self):
         progress = DataProgress(self.root)
         with patch('lab_training_data.time.monotonic', side_effect=[1, 1.01, 1.02, 1.03]):
@@ -878,6 +919,41 @@ class ReservationIntegrationTest(unittest.TestCase):
     def setUp(self):
         PreparationTest.setUp(self)
         self.reservation_policy.stop()
+
+    def test_dictionary_filtered_anchor_does_not_disconnect_a_baseline_capture_pin(self):
+        from export_reviewed_dataset import export_datasets
+        name_raw = png('purple')
+        name_group = digest(('name:' + pixels(name_raw)[0]).encode())
+        bank_raw = next(raw for index in range(1024)
+                        if (raw := png((index % 256, index // 256, 85)))
+                        and digest(('bank:' + pixels(raw)[0]).encode()) < name_group)
+        selected = self.collection('a' * 32, [
+            ('S 1,000 BB', bank_raw, 1790000000000, True, 'seats[0].bank'),
+            ('Alpha', name_raw, 1790000001000),
+        ])
+        self.append_alias(selected, 'capture1.png', 'S 1,000 BB', bank_raw)
+        with sqlite3.connect(Path(selected['directory']) / 'data.db') as connection:
+            connection.execute('UPDATE queue_items SET payload=?', (json.dumps({'split': 'train'}),))
+            connection.execute("UPDATE queue_items SET region_id='seats[1].bank' WHERE sample_key='later-alias'")
+            connection.execute("UPDATE review_samples SET region_id='seats[1].bank' WHERE sample_key='later-alias'")
+        probe = self.root / 'probe'
+        export_datasets([selected], probe)
+        inventory = read_jsonl(probe / 'samples.jsonl')
+        capture = next(row['provenance']['capture_group'] for row in inventory if row['sample_key'] == 'sample0')
+        anchor = next(row for row in read_jsonl(probe / 'training_candidates.jsonl')
+                      if row['provenance']['duplicate_capture_groups'])
+        self.assertIn(',', anchor['label'])
+        baseline_path = self.training / 'named-continuation/final/manifest.jsonl'
+        baseline = read_jsonl(baseline_path)
+        next(row for row in baseline if row['sample_id'] == 'validation')['groups'] = [capture]
+        write_jsonl(baseline_path, baseline)
+        request = dict(self.request([selected]), candidate_profile=LEGACY_PROFILE)
+        result = analyze(request)
+        self.assertFalse(result['ready'])
+        self.assertEqual(result['accepted'], 0)
+        rejected = read_jsonl(Path(request['run_dir']) / 'preparation-exclusions.jsonl')
+        self.assertTrue(any(row['sample_id'].endswith(':sample1')
+                            and row['reason'] == 'new_capture_component_bridges_pinned_roles' for row in rejected))
 
     def test_all_catalog_collections_registered_without_training_unselected(self):
         selected = self.collection('a' * 32, [('Alpha', png(color), 1790000000000 + index * 900_000)

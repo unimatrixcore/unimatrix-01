@@ -528,14 +528,18 @@ impl Gameplay {
                 results.insert(id.to_string(), json!({"prediction":null,"error":null,"rect":rect,"presence":region["presence"]}));
                 continue;
             }
-            let isolated_partial_bet = category == "bet"
+            let partial_bet = category == "bet"
                 && region["localization"]["state"] == "partially_occluded"
-                && region["guide"]["occlusion"]["partial"] == true
-                && region["crop_mask_source"] == "chip_columns_value"
-                && region["crop_mask"].is_object()
-                && region["localization_error"].is_null();
-            if isolated_partial_bet {
+                && region["guide"]["occlusion"]["partial"] == true;
+            if partial_bet {
                 let extracted = (|| -> crate::lab::LabResult<_> {
+                    if !super::visible_runs::eligible(region) {
+                        return Err(crate::lab::bad(
+                            region["localization_error"].as_str().unwrap_or(
+                                "Partial bet is not eligible for visible-run recognition",
+                            ),
+                        ));
+                    }
                     let runs = super::visible_runs::extract_region(image, region)?;
                     runs.into_iter()
                         .map(|run| {
@@ -1418,8 +1422,7 @@ for line in sys.stdin:
         );
     }
 
-    #[test]
-    fn isolated_partial_bet_reaches_local_worker_with_occlusion_and_clean_pixels() {
+    fn assert_partial_bet_presence_route(presence: Option<&str>) {
         let fixture = Fixture::new();
         let training = fixture.repo.join("dev_tools/training");
         fs::create_dir_all(&training).unwrap();
@@ -1471,6 +1474,11 @@ for line in sys.stdin:
         invalid_mask["id"] = json!("seats[2].bet");
         invalid_mask["localization"]["visible_panels"][0]["bounds"]["width"] = json!(-1.0);
         partial["crop_mask"] = json!({});
+        if let Some(state) = presence {
+            partial["presence"]["state"] = json!(state);
+        } else {
+            partial.as_object_mut().unwrap().remove("presence");
+        }
         let profile = json!({"regions":[
             {"id":"game.id","bounds":{"x":0,"y":0,"width":4,"height":4}},
             partial,ordinary_ambiguous,wrong_category,invalid_mask
@@ -1491,20 +1499,50 @@ for line in sys.stdin:
         for y in 4..14 {
             image.put_pixel(9, y, image::Rgb([244, 244, 244]));
         }
+        let frame = DynamicImage::ImageRgb8(image);
+        let resolved = super::super::panels::resolve_profile(&frame, &profile).unwrap();
+        let region = resolved["regions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|region| region["id"] == "seats[0].bet")
+            .unwrap();
+        let eligible = super::super::visible_runs::eligible(region);
+        assert_eq!(
+            eligible,
+            matches!(presence, None | Some("present" | "ambiguous"))
+        );
+        let expected_png = eligible.then(|| {
+            super::super::visible_runs::extract_region(&frame, region).unwrap()[0]
+                .png()
+                .unwrap()
+        });
         let (results, hand, count) = fixture
             .gameplay
-            .read_frame(&DynamicImage::ImageRgb8(image), &profile)
+            .read_frame(&frame, &profile)
             .unwrap()
             .unwrap();
         assert_eq!(hand, "123456");
-        assert_eq!(count, 2);
+        assert_eq!(count, if eligible { 2 } else { 1 });
         let result = &results["seats[0].bet"];
         assert!(result["prediction"].is_null());
+        assert_eq!(
+            result["presence"]["state"],
+            presence.map_or(Value::Null, |state| json!(state))
+        );
+        if !eligible {
+            assert!(!training.join("received/seats[0].bet.png").exists());
+            assert_eq!(result["error"].is_null(), presence == Some("absent"));
+            return;
+        }
+        assert_eq!(
+            fs::read(training.join("received/seats[0].bet.png")).unwrap(),
+            expected_png.unwrap()
+        );
         let run = &result["visible_runs"][0];
         assert_eq!(run["prediction"]["region_seen"], "seats[0].bet");
         assert_eq!(run["prediction"]["raw_text"], "42");
         assert_eq!(run["prediction"]["schema_valid"], false);
-        assert_eq!(result["presence"]["state"], "ambiguous");
         assert_eq!(result["occlusion"]["partial"], true);
         for id in ["seats[1].bet", "seats[0].name", "seats[2].bet"] {
             assert!(results[id]["error"].is_string(), "{id}");
@@ -1517,6 +1555,18 @@ for line in sys.stdin:
         assert_eq!(input.get_pixel(1, 8).0, [240, 240, 240]);
         assert_eq!(run["rect"]["x"], 2);
         assert_eq!(run["right_boundary"], "open");
+    }
+
+    #[test]
+    fn isolated_partial_bet_reaches_local_worker_with_occlusion_and_clean_pixels() {
+        assert_partial_bet_presence_route(Some("ambiguous"));
+    }
+
+    #[test]
+    fn partial_bet_presence_contract_matches_shared_frame_extractor() {
+        for presence in [None, Some("present"), Some("absent"), Some("unknown")] {
+            assert_partial_bet_presence_route(presence);
+        }
     }
 
     #[test]

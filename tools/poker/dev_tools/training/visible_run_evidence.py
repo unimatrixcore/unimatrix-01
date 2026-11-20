@@ -83,6 +83,30 @@ def _reference(directory, relative, expected_hash, cache):
     return image
 
 
+def _verify_reference_glyph_extents(reference, parent, glyphs, source_label):
+    fx, fy, fw, fh = parent
+    boxes = []
+    for index, glyph in enumerate(glyphs):
+        if not isinstance(glyph, dict):
+            raise ValueError('Visible-run source glyph must be an object')
+        box = rectangle(glyph.get('rect'), allow_empty=True)
+        if not source_label[index].isspace() and box[2] and box[3]:
+            boxes.append(box)
+    covered = bytearray(fw * fh)
+    for gx, gy, gw, gh in boxes:
+        for y in range(gy, min(fh, gy + gh)):
+            for x in range(gx, min(fw, gx + gw)):
+                covered[y * fw + x] = 1
+    pixels = reference.crop((fx, fy, fx + fw, fy + fh)).tobytes()
+    badge_right = (min(fh, min((box[0] for box in boxes), default=0))
+                   if source_label.startswith(('G ', 'S ')) else 0)
+    for index in range(fw * fh):
+        color = pixels[index * 3:index * 3 + 3]
+        if (index % fw >= badge_right and min(color) >= 90 and max(color) - min(color) < 45
+                and not covered[index]):
+            raise ValueError('Visible-run clean-reference glyph ink exceeds its declared extent')
+
+
 def verify_visible_run(full, rect, evidence, label, directory, reference_cache=None):
     reference_cache = {} if reference_cache is None else reference_cache
     if (not isinstance(evidence, dict) or evidence.get('recognition_target') != label
@@ -98,7 +122,9 @@ def verify_visible_run(full, rect, evidence, label, directory, reference_cache=N
     if not re.fullmatch('[a-f0-9]{64}', evidence.get('extractor_sha256', '')):
         raise ValueError('Visible-run extractor identity is missing')
     px, py, pw, ph = rectangle(evidence.get('parent_rect'))
-    run = evidence.get('run_rect', {})
+    run = evidence.get('run_rect')
+    if not isinstance(run, dict):
+        raise ValueError('Visible-run run rectangle must be an object')
     run = {k: run.get(alias) for k, alias in [('x', 'x'), ('y', 'y'), ('w', 'width'), ('h', 'height')]}
     rx, ry, rw, rh = rectangle(run)
     if (rx + rw > pw or ry + rh > ph or px + pw > full.width or py + ph > full.height
@@ -130,6 +156,7 @@ def verify_visible_run(full, rect, evidence, label, directory, reference_cache=N
     glyphs = oracle.get('glyphs')
     if not isinstance(glyphs, list) or len(glyphs) != len(source_label):
         raise ValueError('Visible-run evidence must account for every source character')
+    _verify_reference_glyph_extents(reference, (fx, fy, fw, fh), glyphs, source_label)
     retained = []
     allowed_ink = bytearray(rw * rh)
     for index, glyph in enumerate(glyphs):

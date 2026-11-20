@@ -459,6 +459,33 @@ class SyntheticRendererExportTest(unittest.TestCase):
         self.assertEqual(quarantine, [])
         self.assertFalse((self.dataset / 'images').exists())
 
+    def test_visual_confirmation_cannot_override_renderer_geometry_or_failed_evidence(self):
+        region = 'seats[0].name'
+        self.state['eligible'] = {region: False}
+        self.state['exclusions'] = {region: 'clipped_or_ellipsized'}
+        self.connection.execute('UPDATE synthetic_ground_truth SET state_json=?', (json.dumps(self.state),))
+        self.connection.commit()
+        dataset = {'id': self.dataset_id, 'directory': self.dataset}
+        ai = {'successful_current_check': False, 'state': 'flagged', 'job_id': 'job', 'job_state': 'complete'}
+        with mock.patch.object(exporter, '_current_ai_check', return_value=ai):
+            rows, _, _ = export_dataset(dataset, self.root / 'initial', materialize_images=False)
+            source = rows[0]
+            record = dict(dataset_id=source['dataset_id'], sample_key=source['sample_key'],
+                pixel_sha256=source['pixel_sha256'], label=source['label'], queue_id=source.get('queue_id'),
+                source_job_id='job', visually_reviewed=True, reviewer='assistant_visual',
+                decision='confirmed_current_label')
+            for broken in (False, True):
+                if broken:
+                    self.connection.execute("UPDATE synthetic_ground_truth SET capture_sha256=?", ('0'*64,))
+                    self.connection.commit()
+                output = self.root / ('visual-' + str(broken))
+                summary = export_datasets([dataset], output, visual_review_manifest=[record], materialize_images=False)
+                row = json.loads((output / 'samples.jsonl').read_text())
+                self.assertTrue(row['visually_verified'])
+                self.assertFalse(row['eligible_for_training'])
+                self.assertEqual(row['synthetic_evidence_valid'], not broken)
+                self.assertEqual(summary['counts']['training_candidates'], 0)
+
     def test_clipped_annotation_is_retained_but_never_admitted(self):
         self.state['eligible'] = {'seats[0].name': False}
         self.state['exclusions'] = {'seats[0].name': 'rendered_text_clipped'}
@@ -601,7 +628,7 @@ class CaptureComponentDeduplicationTest(unittest.TestCase):
             row['provenance']['raw_state'] = ['source' * 10000]
             row['ai_review'] = {'state': 'unchanged', 'result': {'huge': 'response' * 10000}}
             projected = spool.append(row)
-            self.assertNotIn('synthetic_ground_truth', projected)
+            self.assertNotIn('source_label', projected['synthetic_ground_truth'])
             self.assertNotIn('raw_state', projected['provenance'])
             self.assertNotIn('result', projected['ai_review'])
             self.assertEqual(spool.hydrate(projected), row)
