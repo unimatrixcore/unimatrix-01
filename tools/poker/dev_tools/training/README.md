@@ -115,6 +115,15 @@ records the actual multiplicities and portable input hash, and
 original multiplicity. This preparation policy requires a fresh paired benchmark
 after training; balanced inputs alone do not establish improved recognition.
 
+Truncated renderer names require a literal reference with CSS ellipsis disabled
+and every declared glyph inside the crop. A text-hidden reference isolates the
+actual ink; font metrics alone cannot distinguish clipped ink from empty ascent
+space. `name_display_evidence.py` checks that ink against the crop, content and
+glyph bounds, and binds the literal reference to the source pixels and seat username. Training uses
+only the visible prefix plus three periods; the hidden username stays provenance.
+The native Unicode ellipsis is normalized explicitly. A reference that can still
+clip text cannot prove which characters are visible.
+
 `lab_training_curriculum.py` builds the recovered training schedule: shared
 general adaptation, separate general and high-resolution name branches, then
 real-name reweighting. It preserves audited glyph controls, train-only crop
