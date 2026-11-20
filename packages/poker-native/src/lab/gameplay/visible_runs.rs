@@ -85,26 +85,44 @@ pub fn extract(parent: &RgbImage, descriptor: &MaskDescriptor) -> LabResult<Vec<
             });
         }
     }
-    let Some(top) = components.iter().map(|c| c.y).min() else {
+    let guard = h.div_ceil(20);
+    let top = h / 6;
+    let bottom = h - h / 6;
+    let vertical_safe = |component: &PixelRect| {
+        let Some(first_y) = component.y.checked_sub(guard) else {
+            return false;
+        };
+        let Some(last_y) = (component.y + component.height)
+            .checked_add(guard)
+            .filter(|&edge| edge <= h)
+        else {
+            return false;
+        };
+        let first_x = component.x.saturating_sub(guard);
+        let last_x = (component.x + component.width + guard).min(w);
+        (first_x..last_x).all(|x| {
+            (first_y.min(top)..last_y.max(bottom))
+                .all(|y| masked.valid_mask.get_pixel(x, y)[0] == 255)
+        })
+    };
+    let observed_top = components
+        .iter()
+        .filter(|c| vertical_safe(c))
+        .map(|c| c.y)
+        .min();
+    let Some(observed_top) = observed_top else {
         return Ok(Vec::new());
     };
-    let bottom = components.iter().map(|c| c.y + c.height).max().unwrap();
-    // A lone low fragment provides no line-height evidence.
-    if (bottom - top) * 3 < h {
+    let observed_bottom = components
+        .iter()
+        .filter(|c| vertical_safe(c))
+        .map(|c| c.y + c.height)
+        .max()
+        .unwrap();
+    // Rejected edge clusters cannot establish the line height of a lone low fragment.
+    if (observed_bottom - observed_top) * 3 < h {
         return Ok(Vec::new());
     }
-    // Extend the observed ink band to both expected source-font line edges.
-    // A horizontal cut across every glyph can otherwise make a clipped row
-    // masquerade as a shorter, fully visible line.
-    let guard = h.div_ceil(20);
-    let Some(top) = top.checked_sub(guard) else {
-        return Ok(Vec::new());
-    };
-    let Some(bottom) = bottom.checked_add(guard).filter(|&edge| edge <= h) else {
-        return Ok(Vec::new());
-    };
-    let top = top.min(h / 6);
-    let bottom = bottom.max(h - h / 6);
     let closed_side = |left: bool| {
         descriptor.panels.iter().any(|panel| {
             let edge = if left {
@@ -121,7 +139,14 @@ pub fn extract(parent: &RgbImage, descriptor: &MaskDescriptor) -> LabResult<Vec<
     };
     let left_closed = closed_side(true);
     let right_closed = closed_side(false);
-    let safe = |x: u32| (top..bottom).all(|y| masked.valid_mask.get_pixel(x, y)[0] == 255);
+    let mut rejected_columns = vec![false; w as usize];
+    for component in components.iter().filter(|c| !vertical_safe(c)) {
+        rejected_columns[component.x as usize..(component.x + component.width) as usize].fill(true);
+    }
+    let safe = |x: u32| {
+        !rejected_columns[x as usize]
+            && (top..bottom).all(|y| masked.valid_mask.get_pixel(x, y)[0] == 255)
+    };
     let mut runs = Vec::new();
     let mut start = 0;
     while start < w {
@@ -142,7 +167,7 @@ pub fn extract(parent: &RgbImage, descriptor: &MaskDescriptor) -> LabResult<Vec<
         let kept: Vec<_> = components
             .iter()
             .copied()
-            .filter(|c| c.x >= start + guard && c.x + c.width + guard <= end)
+            .filter(|c| c.x >= start + guard && c.x + c.width + guard <= end && vertical_safe(c))
             .collect();
         if let (Some(first), Some(last)) = (kept.first(), kept.last()) {
             // Keep the outer antialias fringe and a little original background.
@@ -373,6 +398,70 @@ mod tests {
         let mut bottom_cut = full;
         bottom_cut.bounds.height = 25.;
         assert!(extract(&im, &mask(vec![bottom_cut])).unwrap().is_empty());
+    }
+
+    #[test]
+    fn glyph_edge_clusters_leave_the_intact_prefix_unchanged() {
+        let mut im = RgbImage::from_pixel(60, 35, Rgb(crop_mask::NEUTRAL_RGB));
+        paint(&mut im, 25, 30, 7, 26, [220; 3]);
+        let mut full = panel(0, 60);
+        full.bounds.height = 35.;
+        let descriptor = mask(vec![full]);
+        let expected = serde_json::to_value(extract(&im, &descriptor).unwrap()).unwrap();
+        for (top, bottom) in [(0, 26), (7, 35)] {
+            let mut with_edge = im.clone();
+            paint(&mut with_edge, 45, 50, top, bottom, [220; 3]);
+            let runs = extract(&with_edge, &descriptor).unwrap();
+            assert_eq!(runs.len(), 1);
+            assert_eq!(runs[0].components.len(), 1);
+            assert_eq!(serde_json::to_value(runs).unwrap(), expected);
+        }
+        let mut low = RgbImage::from_pixel(60, 35, Rgb(crop_mask::NEUTRAL_RGB));
+        paint(&mut low, 25, 28, 24, 27, [220; 3]);
+        paint(&mut low, 45, 50, 0, 26, [220; 3]);
+        assert!(extract(&low, &descriptor).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_rejected_vertical_fragment_separates_intact_runs() {
+        let mut im = RgbImage::from_pixel(100, 35, Rgb(crop_mask::NEUTRAL_RGB));
+        for (left, right) in [(20, 25), (65, 70)] {
+            paint(&mut im, left, right, 7, 26, [220; 3]);
+        }
+        paint(&mut im, 40, 45, 0, 26, [220; 3]);
+        let mut full = panel(0, 100);
+        full.bounds.height = 35.;
+        let runs = extract(&im, &mask(vec![full])).unwrap();
+        assert_eq!(runs.len(), 2);
+        assert_eq!(runs[0].components[0].x, 20);
+        assert_eq!(runs[1].components[0].x, 65);
+        assert!(runs[0].rect.x + runs[0].rect.width < 40);
+        assert!(runs[1].rect.x > 45);
+        assert!(runs.iter().all(|run| run.components.len() == 1));
+    }
+
+    #[test]
+    #[ignore = "requires source-bound parent screenshot and mask"]
+    fn source_glyph_edge_keeps_verified_prefix() {
+        let root = std::path::PathBuf::from(std::env::var("POKER_VISIBLE_RUN_FIXTURE").unwrap());
+        let parent = image::open(root.join("parent.png")).unwrap().to_rgb8();
+        assert_eq!(
+            rgb_hash(&parent),
+            "90dd404d975e5bfeeeb94697f99201fbf95b8b70bf9e0309634e95db1e6c10e5"
+        );
+        let descriptor: MaskDescriptor =
+            serde_json::from_slice(&std::fs::read(root.join("mask.json")).unwrap()).unwrap();
+        let runs = extract(&parent, &descriptor).unwrap();
+        assert_eq!(runs.len(), 1);
+        assert_eq!(
+            runs[0].pixel_sha256,
+            "abc49a27ed18f8e0b49550fd34c74fa9318c8aa2c250b0901fd6eb7b9501effe"
+        );
+        assert_eq!((runs[0].rect.x, runs[0].rect.width), (33, 128));
+        assert!(runs[0]
+            .components
+            .iter()
+            .all(|component| component.y == 7 && component.height == 19));
     }
 
     #[test]
