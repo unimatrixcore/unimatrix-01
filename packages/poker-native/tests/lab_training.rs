@@ -48,7 +48,7 @@ def stop(signum, frame):
     temp.replace(root / 'run.json')
     raise SystemExit(0)
 signal.signal(signal.SIGTERM, stop)
-value.update(pid=os.getpid(), status='training', stage='Fixture running')
+value.update(pid=os.getpid(), status='training', stage='Fixture running', supervisor_cwd=os.getcwd())
 temp.write_text(json.dumps(value))
 temp.replace(root / 'run.json')
 time.sleep(60)
@@ -244,6 +244,14 @@ fn active_run_blocks_a_second_native_service_and_stops_only_its_supervisor() {
     loop {
         let state = request(&service, "GET", "/api/training", Value::Null);
         if state.body["runs"][0]["status"] == "training" {
+            assert_eq!(
+                state.body["runs"][0]["supervisor_cwd"],
+                root.path()
+                    .join("data/ocr-training/lab-runs")
+                    .join(id)
+                    .to_string_lossy()
+                    .as_ref()
+            );
             break;
         }
         assert!(

@@ -31,6 +31,8 @@ if '-c' in rest:
     if declared!=args.name_high_resolution:
         raise ValueError('Name resolution flag must match the recorded training/export configuration')
 source=args.source.resolve();sys.path.insert(0,str(source))
+from aspect_resize_policy import install_policy as install_aspect_resize_policy
+install_aspect_resize_policy()
 if args.mode == 'train':
     from checkpoint_resume import install_checkpoint_receipts
     install_checkpoint_receipts()

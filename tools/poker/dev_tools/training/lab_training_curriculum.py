@@ -424,18 +424,26 @@ def stage_recipe(bundle, directory, stage, records, template, checkpoint, dictio
                            'sampling_sha256': digest(sampling_path.read_bytes()),
                            'inventory_train_count': inventory_train_count}
     config['Global'].update(epoch_num=stage['epochs'], pretrained_model=str(checkpoint), checkpoints=None,
-        seed=stage['seed'], use_gpu=True, distributed=False,
+        seed=stage['seed'], use_gpu=True, distributed=False, collector_aspect_preserving=True,
         save_model_dir=str(directory / 'checkpoints'), save_inference_dir=str(directory / 'export'),
-        character_dict_path=str(dictionary), eval_batch_step=[0, max(1, math.ceil(len(split_rows['train']) / 32))])
+        character_dict_path=str(dictionary))
     config['Optimizer']['lr']['learning_rate'] = stage['learning_rate']
     config['Loss'] = {'name': 'CollectorBlankCTCLoss'}
     config['Metric'].update(ignore_space=False, is_filter=False)
     for split, key in [('train', 'Train'), ('val', 'Eval')]:
         transforms = config[key]['dataset']['transforms']
-        if any(next(iter(transform)) not in {'DecodeImage', 'CollectorCTCLabelEncode', 'RecResizeImg', 'KeepKeys'} for transform in transforms):
+        if any(next(iter(transform)) not in {'DecodeImage', 'CollectorCTCLabelEncode', 'RecResizeImg', 'CollectorAspectResize', 'KeepKeys'} for transform in transforms):
             raise ValueError('Curriculum template includes an unreviewed transform')
+        if sum(next(iter(transform)) in {'RecResizeImg', 'CollectorAspectResize'} for transform in transforms) != 1:
+            raise ValueError('Curriculum template must declare exactly one image resize')
+        config[key]['dataset']['transforms'] = [
+            {'CollectorAspectResize': None} if next(iter(transform)) in {'RecResizeImg', 'CollectorAspectResize'} else transform
+            for transform in transforms]
         config[key]['dataset'].update(data_dir=str(bundle), label_file_list=[str(directory / (split + '.txt'))], ratio_list=[1.0])
         config[key]['loader'].update(shuffle=split == 'train', batch_size_per_card=32, drop_last=False)
+    config['Eval']['loader']['batch_size_per_card'] = 1
+    from aspect_resize_policy import epoch_steps
+    config['Global']['eval_batch_step'] = [0, epoch_steps(directory / 'train.txt')]
     config_path = directory / 'train.yml'
     config_path.write_text(yaml.safe_dump(config, sort_keys=False))
     with (directory / 'manifest.jsonl').open('w') as stream:

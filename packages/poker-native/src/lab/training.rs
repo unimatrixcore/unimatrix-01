@@ -421,6 +421,7 @@ impl TrainingManager {
             .open(dir.join("supervisor.log"))?;
         let mut command = Command::new(&self.python);
         command
+            .current_dir(dir)
             .arg(self.script())
             .arg("--request")
             .arg(dir.join("request.json"))
