@@ -144,6 +144,11 @@ class CurriculumTests(unittest.TestCase):
                 self.assertIsNone(config['Global']['checkpoints'])
                 self.assertTrue(config['Train']['loader']['shuffle'])
                 self.assertFalse(config['Eval']['loader']['shuffle'])
+                self.assertTrue(config['Global']['collector_aspect_preserving'])
+                self.assertEqual(config['Eval']['loader']['batch_size_per_card'], 1)
+                for section in ('Train', 'Eval'):
+                    self.assertEqual([next(iter(op)) for op in config[section]['dataset']['transforms']],
+                                     ['DecodeImage', 'CollectorCTCLabelEncode', 'CollectorAspectResize', 'KeepKeys'])
             self.assertEqual(stages[1]['checkpoint_source'], str(bundle / 'stages/base/checkpoints/best_accuracy.pdparams'))
             self.assertEqual(stages[2]['checkpoint_source'], stages[1]['checkpoint_source'])
             self.assertEqual(stages[3]['checkpoint_source'], str(bundle / 'stages/names-base/checkpoints/best_accuracy.pdparams'))

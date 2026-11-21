@@ -429,7 +429,8 @@ def execute_stage(bundle, stage_id, source, resume=False):
               'checkpoint_sha256': file_sha(initial), 'counts': counts, 'lists_sha256': lists,
               'blank_counts': blanks, 'resume': checkpoint, 'command': args, 'runtime_model_replaced': False,
               'implementation_sha256': {name: file_sha(TOOLS / name) for name in
-                  ('run_negative_ocr.py', 'compact_ocr_policy.py', 'negative_ctc_policy.py', 'name_resolution_policy.py', 'checkpoint_resume.py')
+                  ('run_negative_ocr.py', 'compact_ocr_policy.py', 'negative_ctc_policy.py', 'name_resolution_policy.py', 'checkpoint_resume.py',
+                   'aspect_resize_policy.py', 'portable_ocr.py')
                   if (TOOLS / name).is_file()},
               'state': 'running', 'started_at': time.time(), 'supervisor_pid': os.getpid()}
     if status_path.is_file():
@@ -488,7 +489,11 @@ def role_job(role, bundle, source, original=None, remote=False, resume=False, st
         config = yaml.safe_load(config_path.read_text())
         rows = sum(len(Path(path).read_text().splitlines()) for path in config['Train']['dataset']['label_file_list'])
         batch = config['Train']['loader']['batch_size_per_card']
-        recipe_metadata.update(epochs=config['Global']['epoch_num'], steps_per_epoch=math.ceil(rows / batch))
+        steps = math.ceil(rows / batch)
+        if config['Global'].get('collector_aspect_preserving') is True:
+            from aspect_resize_policy import epoch_steps
+            steps = epoch_steps(config['Train']['dataset']['label_file_list'][0], batch)
+        recipe_metadata.update(epochs=config['Global']['epoch_num'], steps_per_epoch=steps)
     disconnected = threading.Event()
     if remote:
         def watch_connection():
