@@ -85,6 +85,30 @@ class AspectSamplerTests(unittest.TestCase):
 
 
 class PolicyTests(unittest.TestCase):
+    def test_eval_rejects_oversized_inputs_before_upstream_can_replace_a_sample(self):
+        calls = []
+        data = SimpleNamespace(build_dataloader=lambda *args: calls.append(args))
+        install_policy(data, SimpleNamespace())
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / 'crop.png'
+            labels = root / 'val.txt'
+            labels.write_text(str(path) + '\tPot: G 18 BB\n')
+            config = {'Global': {'collector_aspect_preserving': True},
+                      'Eval': {'dataset': {'name': 'SimpleDataSet', 'ratio_list': [1.0],
+                               'label_file_list': [str(labels)], 'transforms': [
+                                   {'DecodeImage': {}}, {'CollectorCTCLabelEncode': None},
+                                   {'CollectorAspectResize': None}, {'KeepKeys': {}}]},
+                               'loader': {'shuffle': False, 'drop_last': False, 'batch_size_per_card': 32}}}
+            cv2.imwrite(str(path), np.zeros((31, 2100, 3), np.uint8))
+            with self.assertRaisesRegex(ValueError, 'aspect-preserving inference bounds'):
+                data.build_dataloader(config, 'Eval', None, None)
+            self.assertEqual(calls, [])
+            cv2.imwrite(str(path), np.zeros((31, 410, 3), np.uint8))
+            data.build_dataloader(config, 'Eval', None, None)
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(calls[0][0]['Eval']['loader']['batch_size_per_card'], 1)
+
     def test_legacy_delegates_unchanged_and_opt_in_loader_is_explicit(self):
         seen = []
         sentinel = object()

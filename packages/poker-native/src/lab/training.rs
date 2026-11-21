@@ -102,6 +102,8 @@ impl TrainingManager {
         registry: Arc<datasets::DatasetRegistry>,
         environment: HashMap<String, String>,
     ) -> LabResult<Self> {
+        let data_root = std::path::absolute(data_root)?;
+        let tools_root = std::path::absolute(tools_root)?;
         let training_root = data_root.join("ocr-training");
         let root = training_root.join("lab-runs");
         fs::create_dir_all(&root)?;
@@ -1144,6 +1146,29 @@ use std::os::unix::ffi::OsStrExt;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn relative_training_paths_remain_absolute_after_a_directory_change() {
+        let cwd = std::env::current_dir().unwrap();
+        let root = tempfile::tempdir_in(&cwd).unwrap();
+        let relative = root.path().strip_prefix(&cwd).unwrap();
+        let registry =
+            Arc::new(datasets::DatasetRegistry::new(root.path().join("collections")).unwrap());
+        let manager = TrainingManager::new(
+            relative.join("data"),
+            relative.join("tools"),
+            registry,
+            HashMap::new(),
+        )
+        .unwrap();
+        assert_eq!(manager.tools_root, root.path().join("tools"));
+        assert_eq!(manager.root, root.path().join("data/ocr-training/lab-runs"));
+        assert_eq!(
+            manager.script(),
+            root.path()
+                .join("tools/dev_tools/training/lab_training_job.py")
+        );
+    }
 
     #[test]
     fn full_screenshot_annotations_are_counted_without_claiming_review() {

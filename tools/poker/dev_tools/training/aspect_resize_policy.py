@@ -132,6 +132,7 @@ def install_policy(data_module=None, imaug_module=None):
                 'seed': config['Global']['seed'],
             }
         else:
+            epoch_steps(dataset['label_file_list'][0], batch_size=1)
             configured[mode]['loader']['batch_size_per_card'] = 1
         loader = original(configured, mode, device, logger, seed)
         if mode == 'Train':
