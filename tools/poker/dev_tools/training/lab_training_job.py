@@ -247,22 +247,29 @@ def stage_signature(bundle, stage):
 
 
 def validate_stage_sampling(bundle, stage):
-    from collections import Counter
-    from lab_training_curriculum import control, renderer_observation
+    from collections import Counter, defaultdict
+    from lab_training_curriculum import control, renderer_observation, renderer_bucket, renderer_visual_stratum
     directory = stage_directory(bundle, stage)
     sampling_path = directory / 'sampling.json'
     manifest_path = directory / 'manifest.jsonl'
-    if (stage['sampling_policy'] != 'real_renderer_balanced_v1'
+    versions = {'real_renderer_balanced_v1': 1, 'real_renderer_visual_balanced_v2': 2,
+                'real_renderer_visual_labels_balanced_v3': 3,
+                'real_renderer_visual_labels_balanced_v4': 4}
+    if (stage['sampling_policy'] not in versions
             or file_sha(sampling_path) != stage.get('sampling_sha256')
             or file_sha(manifest_path) != stage.get('inventory_manifest_sha256')):
         raise ValueError('Balanced stage sampling evidence changed')
     sampling = json.loads(sampling_path.read_text())
-    if sampling.get('schema_version') != 1 or sampling.get('policy') != stage['sampling_policy']:
+    if sampling.get('schema_version') != versions[stage['sampling_policy']] or sampling.get('policy') != stage['sampling_policy']:
         raise ValueError('Unsupported balanced stage sampling evidence')
     exposures = sampling.get('source_exposures')
     if not isinstance(exposures, dict):
         raise ValueError('Balanced stage source exposures must be an object')
     expected, ids = Counter(), set()
+    visual_sources = defaultdict(list)
+    name_sources = defaultdict(list)
+    augmentation_sources = defaultdict(list)
+    required_names = set()
     with manifest_path.open() as stream:
         for line in stream:
             row = json.loads(line)
@@ -280,8 +287,45 @@ def validate_stage_sampling(bundle, stage):
             if relative.is_absolute() or '..' in relative.parts:
                 raise ValueError('Balanced stage source escapes its frozen bundle')
             expected[(relative.as_posix(), row['label'])] += count
+            if renderer and sampling.get('schema_version') >= 2:
+                stratum = renderer_visual_stratum(row, sampling['schema_version'] < 4)
+                visual_sources[(renderer_bucket(row), stratum)].append((row, count))
+                if stratum != 'legacy_unspecified':
+                    augmentation_sources[(renderer_bucket(row), row.get('augmentation', 'original'))].append((row, count))
+                if row['category'] == 'name':
+                    name_sources[row['label']].append((row, count))
+                    if stratum != 'legacy_unspecified':
+                        required_names.add(row['label'])
     if set(exposures) != ids or len(ids) != stage.get('inventory_train_count'):
         raise ValueError('Balanced stage sampling differs from its training inventory')
+    if sampling.get('schema_version') >= 2:
+        visual = [{'bucket': key[0], 'stratum': key[1], 'sources': len(values),
+                   'labels': len({row['label'] for row, _ in values}),
+                   'exposures': sum(count for _, count in values),
+                   'exposed_sources': sum(count > 0 for _, count in values)}
+                  for key, values in sorted(visual_sources.items())]
+        uncovered = sum(row['stratum'] != 'legacy_unspecified' and row['exposures'] == 0 for row in visual)
+        if (uncovered or sampling.get('renderer_visual_uncovered_strata') != 0
+                or sampling.get('renderer_visual_strata') != visual):
+            raise ValueError('Balanced stage visual-stratum coverage differs from its frozen inventory')
+    if sampling.get('schema_version') >= 3:
+        names = [{'label': label, 'sources': len(name_sources[label]),
+                  'exposures': sum(count for _, count in name_sources[label]),
+                  'exposed_sources': sum(count > 0 for _, count in name_sources[label])}
+                 for label in sorted(required_names)]
+        if (any(row['exposures'] == 0 for row in names)
+                or sampling.get('renderer_uncovered_name_labels') != 0
+                or sampling.get('renderer_name_labels') != names):
+            raise ValueError('Balanced stage name-label coverage differs from its frozen inventory')
+    if sampling.get('schema_version') == 4:
+        augmentations = [{'bucket': key[0], 'augmentation': key[1], 'sources': len(values),
+                          'exposures': sum(count for _, count in values),
+                          'exposed_sources': sum(count > 0 for _, count in values)}
+                         for key, values in sorted(augmentation_sources.items())]
+        if (any(row['exposures'] == 0 for row in augmentations)
+                or sampling.get('renderer_uncovered_augmentations') != 0
+                or sampling.get('renderer_augmentations') != augmentations):
+            raise ValueError('Balanced stage augmentation coverage differs from its frozen inventory')
     actual, portable = Counter(), hashlib.sha256()
     with (directory / 'train.txt').open() as stream:
         for line in stream:

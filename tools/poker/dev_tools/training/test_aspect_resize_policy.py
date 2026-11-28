@@ -13,6 +13,14 @@ from portable_ocr import normalize_crop
 
 
 class AspectResizeTests(unittest.TestCase):
+    def test_runtime_cap_does_not_relax_no_squeeze_training_admission(self):
+        image = np.zeros((13, 868, 3), np.uint8)
+        self.assertEqual(normalize_crop(image).shape, (1, 3, 48, 3200))
+        with self.assertRaisesRegex(ValueError, r'868x13.*3204\.923077.*3200'):
+            tensor_width(868, 13)
+        self.assertEqual(tensor_width(800, 12), 3200)
+        self.assertEqual(tensor_width(866, 13), normalize_crop(np.zeros((13, 866, 3), np.uint8)).shape[-1])
+
     def test_training_pixels_equal_runtime_for_wide_narrow_and_blank_crops(self):
         rng = np.random.default_rng(31)
         for height, width in ((31, 410), (37, 176), (31, 1126)):
@@ -30,6 +38,16 @@ class AspectResizeTests(unittest.TestCase):
 
 
 class AspectSamplerTests(unittest.TestCase):
+    def test_epoch_failure_identifies_list_line_and_source_geometry(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            image = root / 'clipped-caption.png'
+            cv2.imwrite(str(image), np.zeros((13, 868, 3), np.uint8))
+            labels = root / 'train.txt'
+            labels.write_text(str(image) + '\tOCR Table, NLHE - G 0.5/1\n')
+            with self.assertRaisesRegex(ValueError, r'train\.txt:1:.*clipped-caption\.png.*868x13'):
+                epoch_steps(labels)
+
     def fixture(self, root):
         paths = []
         for index, (width, height) in enumerate(((100, 31), (410, 31), (410, 31), (1126, 31))):

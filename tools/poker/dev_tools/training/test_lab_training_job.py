@@ -1,3 +1,4 @@
+import copy
 import io
 import hashlib
 import json
@@ -212,7 +213,7 @@ class TrainingJobTests(unittest.TestCase):
             process = subprocess.Popen([sys.executable, '-c', script, str(marker), child], start_new_session=True)
             try:
                 deadline = time.monotonic() + 5
-                while not marker.exists() and time.monotonic() < deadline:
+                while (not marker.exists() or not marker.read_text().strip()) and time.monotonic() < deadline:
                     time.sleep(.02)
                 descendant = int(marker.read_text())
                 time.sleep(.2)
@@ -455,6 +456,46 @@ print('best metric, acc: 0.9, is_float16: False, best_epoch: 1')
         job.atomic_json(directory / 'sampling.json', sampling)
         stage['sampling_sha256'] = job.file_sha(directory / 'sampling.json')
         with self.assertRaisesRegex(ValueError, 'training inventory'):
+            job.validate_stage_sampling(self.bundle, stage)
+
+    def test_visual_sampling_receipt_is_recomputed_from_frozen_sources(self):
+        from lab_training_curriculum import balanced_training
+        stage = dict(self.stage('base'))
+        directory = Path(stage['directory'])
+        image = next((self.bundle / 'images').iterdir())
+        relative = image.relative_to(self.bundle).as_posix()
+        rows = [dict(sample_id='real', split='train', category='name', label='A', image_path=relative),
+                dict(sample_id='renderer', split='train', category='name', label='', image_path=relative,
+                     synthetic_evidence_valid=True, synthetic_ground_truth={
+                         'generator': 'poker-offline-renderer', 'crop_reconstruction_verified': True,
+                         'visual_stratum': {'plate_state': 'folded', 'seat': 1}})]
+        chosen, sampling = balanced_training(rows, 123)
+        self.assertEqual(len(chosen), 2)
+        (directory / 'manifest.jsonl').write_text(''.join(json.dumps(row) + '\n' for row in rows))
+        portable = relative + '\tA\n' + relative + '\t\n'
+        sampling['portable_train_sha256'] = hashlib.sha256(portable.encode()).hexdigest()
+        job.atomic_json(directory / 'sampling.json', sampling)
+        stage.update(sampling_policy=sampling['policy'], inventory_train_count=2,
+                     sampling_sha256=job.file_sha(directory / 'sampling.json'),
+                     inventory_manifest_sha256=job.file_sha(directory / 'manifest.jsonl'))
+        job.validate_stage_sampling(self.bundle, stage)
+        original = copy.deepcopy(sampling)
+        sampling['renderer_name_labels'][0]['exposures'] = 0
+        job.atomic_json(directory / 'sampling.json', sampling)
+        stage['sampling_sha256'] = job.file_sha(directory / 'sampling.json')
+        with self.assertRaisesRegex(ValueError, 'name-label coverage'):
+            job.validate_stage_sampling(self.bundle, stage)
+        sampling = copy.deepcopy(original)
+        sampling['renderer_augmentations'][0]['exposures'] = 0
+        job.atomic_json(directory / 'sampling.json', sampling)
+        stage['sampling_sha256'] = job.file_sha(directory / 'sampling.json')
+        with self.assertRaisesRegex(ValueError, 'augmentation coverage'):
+            job.validate_stage_sampling(self.bundle, stage)
+        sampling = original
+        sampling['renderer_visual_strata'][0]['exposures'] = 2
+        job.atomic_json(directory / 'sampling.json', sampling)
+        stage['sampling_sha256'] = job.file_sha(directory / 'sampling.json')
+        with self.assertRaisesRegex(ValueError, 'visual-stratum coverage'):
             job.validate_stage_sampling(self.bundle, stage)
 
     def test_curriculum_executes_original_base_then_correct_sibling_dependencies(self):

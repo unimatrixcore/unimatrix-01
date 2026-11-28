@@ -2,6 +2,82 @@ use poker_native::lab::{LabRequest, LabService};
 use serde_json::{json, Value};
 use std::{collections::BTreeMap, path::PathBuf, time::Duration};
 
+fn canonical(profile_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    use sha2::{Digest, Sha256};
+    use std::io::{self, BufRead, Write};
+    let profile = std::fs::read(profile_path)?;
+    let parsed: Value = serde_json::from_slice(&profile)?;
+    let profile_sha = format!("{:x}", Sha256::digest(&profile));
+    let executable_sha = format!(
+        "{:x}",
+        Sha256::digest(std::fs::read(std::env::current_exe()?)?)
+    );
+    let default_ids = parsed["regions"]
+        .as_array()
+        .ok_or("Missing profile regions")?
+        .iter()
+        .filter(|r| r["ocr"] != false)
+        .filter_map(|r| r["id"].as_str().map(str::to_owned))
+        .collect::<Vec<_>>();
+    for line in io::stdin().lock().lines() {
+        let result = (|| -> Result<Value, Box<dyn std::error::Error>> {
+            let line = line?;
+            if line.len() > 1_048_576 {
+                return Err("Canonical request exceeds limit".into());
+            }
+            let request: Value = serde_json::from_str(&line)?;
+            let frame = std::fs::read(request["image_path"].as_str().ok_or("Missing image_path")?)?;
+            if frame.len() > 32 * 1024 * 1024 {
+                return Err("Source screenshot exceeds limit".into());
+            }
+            let ids = if request["region_ids"].is_null() {
+                default_ids.clone()
+            } else {
+                request["region_ids"]
+                    .as_array()
+                    .filter(|v| !v.is_empty() && v.len() <= 192)
+                    .ok_or("Expected1to192region_ids")?
+                    .iter()
+                    .map(|v| {
+                        v.as_str()
+                            .map(str::to_owned)
+                            .ok_or("Region ID must be a string")
+                    })
+                    .collect::<Result<Vec<_>, _>>()?
+            };
+            let evidence =
+                poker_native::lab::gameplay::ai::GameplayAi::export_pixel_evidence_partial(
+                    &profile, &frame, &ids,
+                )
+                .map_err(|e| e.message)?;
+            let items = evidence
+                .into_iter()
+                .map(|(id, item)| match item {
+                    Ok(item) => {
+                        let mut value =
+                            serde_json::to_value(&item).expect("Pixel evidence serialization");
+                        value["png_base64"] = json!(STANDARD.encode(&item.png));
+                        value["image_sha256"] = json!(format!("{:x}", Sha256::digest(&item.png)));
+                        value["available"] = json!(true);
+                        value
+                    }
+                    Err(error) => json!({"region_id":id,"available":false,"error":error}),
+                })
+                .collect::<Vec<_>>();
+            Ok(
+                json!({"protocol":"native_canonical_crop_v1","profile_sha256":profile_sha,
+                "tool_sha256":executable_sha,"capture_sha256":format!("{:x}",Sha256::digest(&frame)),
+                "provider_calls":0,"items":items}),
+            )
+        })();
+        let result = result.unwrap_or_else(|e| json!({"error":e.to_string()}));
+        println!("{}", result);
+        io::stdout().flush()?;
+    }
+    Ok(())
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     let operation=args.first().map(String::as_str).ok_or("Usage: gameplay-ai prepare|status|start|items --session ID [--run ID --budget N --root PATH --config PATH]")?;
@@ -10,6 +86,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .find(|pair| pair[0] == key)
             .map(|pair| pair[1].clone())
     };
+    if operation == "canonical" {
+        return canonical(&option("--profile").ok_or("--profile is required")?);
+    }
     if operation == "export" {
         let selection: Value = serde_json::from_slice(&std::fs::read(
             option("--selection").ok_or("--selection is required")?,

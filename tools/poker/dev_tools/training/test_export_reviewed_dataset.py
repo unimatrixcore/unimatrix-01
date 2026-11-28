@@ -1,4 +1,5 @@
 import copy
+import base64
 import hashlib
 import io
 import json
@@ -23,6 +24,47 @@ def png(image):
 
 
 class SyntheticRendererExportTest(unittest.TestCase):
+    def test_known_native_caption_localizer_is_quarantined_without_rewriting_source_admission(self):
+        self.cash('OCR Table, NLHE - S 0.5/1', 'table.info')
+        proof = {'generator': 'poker-offline-renderer', 'schema_version': 3,
+                 'eligible': True, 'exclusion_reason': None, 'currency_format': '{0}',
+                 'native_crop_verified': True, 'crop_reconstruction_verified': True,
+                 'native_tool_sha256': '868214a3fb3d972943a982e812851580e81f6895689ad2b9ff7688d8e6791a59',
+                 'native_profile_sha256': 'f3e05596327a81f75ca9ae28df3cd015cc1ef1e0cb050b9084d962db6c366755'}
+        def attempted_baseline_override(rows, baseline):
+            rows[0]['eligible_for_training'] = True
+            return {'matched': 1}
+        with mock.patch.object(exporter, '_synthetic_evidence', return_value=proof), \
+                mock.patch.object(exporter, 'apply_audited_baseline', side_effect=attempted_baseline_override):
+            row, summary = self.export()
+        self.assertTrue(row['synthetic_evidence_valid'])
+        self.assertTrue(row['synthetic_ground_truth']['source_eligible'])
+        self.assertTrue(row['synthetic_ground_truth']['eligible'])
+        self.assertIsNone(row['synthetic_ground_truth']['exclusion_reason'])
+        self.assertFalse(row['synthetic_ground_truth']['candidate_eligible'])
+        self.assertFalse(row['eligible_for_training'])
+        self.assertEqual(summary['synthetic_source_excluded_samples'], 0)
+        self.assertEqual(summary['counts']['native_target_quarantines'], 1)
+        ledger = json.loads((self.root / 'export/native_target_quarantines.jsonl').read_text())
+        self.assertEqual(ledger['sample_key'], row['sample_key'])
+        self.assertTrue(ledger['source_eligible'])
+        self.assertEqual(ledger['image_dimensions'], [12, 7])
+        self.assertEqual(ledger['reason'], 'source_caption_ink_unqualified_for_native_text_line_localizer')
+        self.assertEqual((self.root / 'export/training_candidates.jsonl').read_text(), '')
+
+    def test_native_caption_quarantine_is_exact_tool_profile_and_category_scope(self):
+        proof = {'native_crop_verified': True,
+                 'native_tool_sha256': '868214a3fb3d972943a982e812851580e81f6895689ad2b9ff7688d8e6791a59',
+                 'native_profile_sha256': 'f3e05596327a81f75ca9ae28df3cd015cc1ef1e0cb050b9084d962db6c366755'}
+        row = {'category': 'table_info', 'label': 'OCR Table, NLHE - S 0.5/1'}
+        self.assertIsNotNone(exporter.native_target_quarantine(row, proof))
+        for changed in ({'native_tool_sha256': 'f' * 64}, {'native_profile_sha256': 'f' * 64},
+                        {'native_crop_verified': False}):
+            self.assertIsNone(exporter.native_target_quarantine(row, {**proof, **changed}))
+        self.assertIsNone(exporter.native_target_quarantine({'category': 'name', 'label': 'Player 1'}, proof))
+        self.assertIsNone(exporter.native_target_quarantine({'category': 'table_info', 'label': ''}, proof))
+        self.assertIsNone(exporter.native_target_quarantine(row, {}))
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -92,6 +134,155 @@ class SyntheticRendererExportTest(unittest.TestCase):
         self.connection.commit()
         (self.dataset / 'images/name.png').unlink()
         (self.dataset / 'images').rmdir()
+
+    def test_native_virtual_crop_reconstructs_full_frame_and_preserves_visual_stratum(self):
+        import native_crop_evidence as native
+        self.full_frame_only()
+        profile=self.dataset/'native/profile.json'
+        profile.parent.mkdir()
+        profile.write_text(json.dumps({'regions':[{'id':'seats[0].name','source_region_id':'seat.0.name','category':'name'}]}))
+        full=Image.open(self.dataset/'full_captures/frame.png').convert('RGB')
+        capture=native.digest((self.dataset/'full_captures/frame.png').read_bytes())
+        blank=Image.new('RGB',full.size,'black')
+        reference=self.dataset/'references/name-hidden.png';reference.parent.mkdir();reference.write_bytes(png(blank))
+        crop=full.crop((2,3,14,10));raw=png(crop)
+        item={'available':True,'region_id':'seats[0].name','image_sha256':native.digest(raw),'pixel_sha256':native.pixel_hash(crop),
+              'bounds':{'x':2,'y':3,'width':12,'height':7},'crop_mask':None,'card_sampling':None,'card_plane':None,
+              'png_base64':base64.b64encode(raw).decode()}
+        proof={k:v for k,v in item.items() if k not in ('available','png_base64')}
+        proof.update(protocol=native.PROTOCOL,profile='native/profile.json',profile_sha256=native.digest(profile.read_bytes()),
+            tool_sha256='a'*64,capture_sha256=capture,renderer_region_id='seats[0].name',source_rect=self.rect,
+            source_dom_pixel_sha256=native.pixel_hash(crop),width=12,height=7,
+            name_ink_reference={'policy':'all_player_names_text_hidden_v2','screenshot':'references/name-hidden.png',
+                'screenshot_sha256':native.digest(reference.read_bytes()),'source_capture_sha256':capture,
+                'restored_capture_sha256':capture,'layout_unchanged':True,'hidden_region_ids':['seats[0].name'],
+                'source_rects':{'seats[0].name':self.rect},'scope':'actual_native_name_fields',
+                'native_name_bounds':[item['bounds']],'comparison_policy':'exact_rgb_difference_with_declared_name_fields_v1',
+                'outside_name_changes':[],'outside_name_changed_pixels':0,'outside_name_bounds':None})
+        self.state.update(schema_version=3,native_crop=proof,visual_stratum={'display_kind':'account','state':'folded'},
+                          state={'seats':[{'name':'Il1OO0','displayName':'Player 1'}],
+                                 'useDisplayNameInsteadOfNickInClient':False})
+        self.connection.execute('UPDATE synthetic_ground_truth SET state_json=?',(json.dumps(self.state),))
+        self.connection.commit()
+        client=mock.Mock();client.frame.return_value={'seats[0].name':item}
+        with mock.patch.object(native,'NativeCropClient',return_value=client):
+            row,_=self.export()
+        self.assertTrue(row['synthetic_evidence_valid'])
+        self.assertTrue(row['synthetic_ground_truth']['native_crop_verified'])
+        self.assertEqual(row['synthetic_ground_truth']['visual_stratum'],{'display_kind':'account','state':'folded'})
+        self.assertFalse((self.dataset/'images').exists())
+        self.assertEqual(row['pixel_sha256'],native.pixel_hash(crop))
+        self.state['state']['useDisplayNameInsteadOfNickInClient']=True
+        self.connection.execute('UPDATE synthetic_ground_truth SET state_json=?',(json.dumps(self.state),))
+        self.connection.commit()
+        shutil.rmtree(self.root/'export')
+        with mock.patch.object(native,'NativeCropClient',return_value=client):
+            wrong,_=self.export()
+        self.assertFalse(wrong['synthetic_evidence_valid'])
+        self.assertIn('controlled display state',wrong['synthetic_evidence_error'])
+
+
+    def reserved_native_fixture(self):
+        import native_crop_evidence as native
+        self.full_frame_only()
+        profile=self.dataset/'native/profile.json'
+        profile.parent.mkdir()
+        profile.write_text(json.dumps({'regions':[{'id':'seats[0].name','source_region_id':'seat.0.name','category':'name'}]}))
+        full=Image.open(self.dataset/'full_captures/frame.png').convert('RGB')
+        capture=native.digest((self.dataset/'full_captures/frame.png').read_bytes())
+        blank=Image.new('RGB',full.size,'black')
+        reference=self.dataset/'references/name-hidden.png';reference.parent.mkdir();reference.write_bytes(png(blank))
+        crop=full.crop((2,3,14,10));raw=png(crop)
+        item={'available':True,'region_id':'seats[0].name','image_sha256':native.digest(raw),'pixel_sha256':native.pixel_hash(crop),
+              'bounds':{'x':2,'y':3,'width':12,'height':7},'crop_mask':None,'card_sampling':None,'card_plane':None,
+              'png_base64':base64.b64encode(raw).decode()}
+        proof={k:v for k,v in item.items() if k not in ('available','png_base64')}
+        proof.update(protocol=native.PROTOCOL,profile='native/profile.json',profile_sha256=native.digest(profile.read_bytes()),
+            tool_sha256='a'*64,capture_sha256=capture,renderer_region_id='seats[0].name',source_rect=self.rect,
+            source_dom_pixel_sha256=native.pixel_hash(crop),width=12,height=7,
+            name_ink_reference={'policy':'all_player_names_text_hidden_v2','screenshot':'references/name-hidden.png',
+                'screenshot_sha256':native.digest(reference.read_bytes()),'source_capture_sha256':capture,
+                'restored_capture_sha256':capture,'layout_unchanged':True,'hidden_region_ids':['seats[0].name'],
+                'source_rects':{'seats[0].name':self.rect},'scope':'actual_native_name_fields',
+                'native_name_bounds':[item['bounds']],'comparison_policy':'exact_rgb_difference_with_declared_name_fields_v1',
+                'outside_name_changes':[],'outside_name_changed_pixels':0,'outside_name_bounds':None})
+        self.state.update(schema_version=3,native_crop=proof,visual_stratum={'display_kind':'account','state':'folded'},
+                          state={'seats':[{'name':'HiddenAccount','displayName':'Player 1','status':'reserved'}],
+                                 'useDisplayNameInsteadOfNickInClient':False})
+        self.state['labels']['seats[0].name']='*RESERVED*'
+        self.connection.execute("UPDATE synthetic_regions SET label='*RESERVED*'")
+        self.connection.execute("UPDATE synthetic_ground_truth SET label='*RESERVED*',state_json=?",(json.dumps(self.state),))
+        self.connection.commit()
+        client=mock.Mock();client.frame.return_value={'seats[0].name':item}
+        return native, client
+
+    def update_reserved_native_fixture(self):
+        self.connection.execute('UPDATE synthetic_ground_truth SET state_json=?', (json.dumps(self.state),))
+        self.connection.commit()
+
+    def test_native_reserved_literal_passes_with_native_ink_proof(self):
+        native, client = self.reserved_native_fixture()
+        with mock.patch.object(native, 'NativeCropClient', return_value=client):
+            row, _ = self.export()
+        self.assertTrue(row['synthetic_evidence_valid'])
+        self.assertTrue(row['synthetic_ground_truth']['native_crop_verified'])
+        self.assertEqual(row['label'], '*RESERVED*')
+
+    def test_native_reserved_override_precedes_display_name_mode(self):
+        native, client = self.reserved_native_fixture()
+        self.state['state']['useDisplayNameInsteadOfNickInClient'] = True
+        self.update_reserved_native_fixture()
+        with mock.patch.object(native, 'NativeCropClient', return_value=client):
+            row, _ = self.export()
+        self.assertTrue(row['synthetic_evidence_valid'])
+        self.assertEqual(row['label'], '*RESERVED*')
+
+    def test_native_reserved_rejects_hidden_username_label(self):
+        native, client = self.reserved_native_fixture()
+        self.state['labels']['seats[0].name'] = 'HiddenAccount'
+        self.connection.execute("UPDATE synthetic_regions SET label='HiddenAccount'")
+        self.connection.execute("UPDATE synthetic_ground_truth SET label='HiddenAccount'")
+        self.update_reserved_native_fixture()
+        with mock.patch.object(native, 'NativeCropClient', return_value=client):
+            row, _ = self.export()
+        self.assertFalse(row['synthetic_evidence_valid'])
+        self.assertIn('controlled display state', row['synthetic_evidence_error'])
+
+    def test_native_ordinary_seat_cannot_claim_reserved_override(self):
+        native, client = self.reserved_native_fixture()
+        self.state['state']['seats'][0]['status'] = 'playing'
+        self.update_reserved_native_fixture()
+        with mock.patch.object(native, 'NativeCropClient', return_value=client):
+            row, _ = self.export()
+        self.assertFalse(row['synthetic_evidence_valid'])
+        self.assertIn('controlled display state', row['synthetic_evidence_error'])
+
+    def test_native_reserved_still_rejects_tampered_native_pixels(self):
+        native, client = self.reserved_native_fixture()
+        with mock.patch.object(native, 'NativeCropClient', return_value=client):
+            row, _ = self.export()
+        self.assertTrue(row['synthetic_evidence_valid'])
+        self.state['native_crop']['pixel_sha256'] = 'f' * 64
+        self.update_reserved_native_fixture()
+        evidence = dict(zip([column[0] for column in self.connection.execute('SELECT * FROM synthetic_ground_truth').description],
+                            self.connection.execute('SELECT * FROM synthetic_ground_truth').fetchone()))
+        with mock.patch.object(native, 'NativeCropClient', return_value=client):
+            with self.assertRaisesRegex(ValueError, 'pixel_sha256 differs'):
+                exporter._synthetic_evidence(row, evidence, self.dataset, {})
+
+    def test_native_reserved_still_rejects_clipped_name_ink(self):
+        native, client = self.reserved_native_fixture()
+        with mock.patch.object(native, 'NativeCropClient', return_value=client):
+            row, _ = self.export()
+        self.assertTrue(row['synthetic_evidence_valid'])
+        client.frame.return_value['seats[0].name']['bounds']['x'] = 3
+        self.state['native_crop']['bounds']['x'] = 3
+        self.update_reserved_native_fixture()
+        evidence = dict(zip([column[0] for column in self.connection.execute('SELECT * FROM synthetic_ground_truth').description],
+                            self.connection.execute('SELECT * FROM synthetic_ground_truth').fetchone()))
+        with mock.patch.object(native, 'NativeCropClient', return_value=client):
+            with self.assertRaisesRegex(ValueError, 'preserve every verified displayed-name ink pixel'):
+                exporter._synthetic_evidence(row, evidence, self.dataset, {})
 
     def test_candidate_dictionary_reopens_only_verified_dictionary_exclusions(self):
         self.cash('S 1,234.5')

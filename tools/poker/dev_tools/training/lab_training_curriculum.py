@@ -30,7 +30,7 @@ ASSET_PINS = {
 }
 GRAY_IMAGES_SHA256 = 'cf50f130ee742503e6eb7b2f3e77b1c0b2402cda67db072f8c26b2dc284006b0'
 VARIANTS = ('original', 'jpeg88_dark', 'jpeg94_light', 'scale90', 'context0', 'context1')
-SAMPLING_POLICY = 'real_renderer_balanced_v1'
+SAMPLING_POLICY = 'real_renderer_visual_labels_balanced_v4'
 RENDERER_EXPOSURE_CAP = 4
 
 
@@ -264,7 +264,23 @@ def context_image(root, row, image, margins):
     return result, {'full_capture': True, 'source_filename': found[0], 'capture_sha256': digest(raw)}
 
 
-def augment_real(bundle, root, records, images):
+def _variant_fits(image, row, variant, exclusions):
+    from aspect_resize_policy import tensor_width
+    height, width = image.shape[:2]
+    try:
+        tensor_width(width, height)
+    except ValueError as error:
+        if exclusions is not None:
+            exclusions.append({'sample_id': row['sample_id'] + ':curriculum:' + variant,
+                'parent_sample_id': row['sample_id'], 'label': row['label'], 'category': row['category'],
+                'augmentation': variant, 'image_dimensions': [width, height],
+                'curriculum_parent_file_sha256': row['file_sha256'],
+                'reason': 'unsupported_aspect_preserving_generated_crop', 'detail': str(error)})
+        return False
+    return True
+
+
+def augment_real(bundle, root, records, images, exclusions=None):
     import cv2
     from build_production_dataset import photometric
     historical = original_variants(root)
@@ -311,10 +327,13 @@ def augment_real(bundle, root, records, images):
                 if not ok:
                     raise ValueError('Cannot encode training variation')
                 data = encoded.tobytes()
+            if not _variant_fits(generated, row, variant, exclusions):
+                continue
             path, sha, pixels = materialize(bundle, data)
             result.append({**row, **extra, 'sample_id': row['sample_id'] + ':curriculum:' + variant,
                            'parent_sample_id': row['sample_id'], 'image_path': path, 'source_image': str(bundle / path),
-                           'file_sha256': sha, 'pixel_sha256': pixels})
+                           'file_sha256': sha, 'pixel_sha256': pixels,
+                           'image_dimensions': [generated.shape[1], generated.shape[0]]})
     return result
 
 
@@ -324,6 +343,8 @@ def renderer_bucket(row):
     label = row['label']
     if not label:
         shape = 'blank'
+    elif re.fullmatch(r'Player [1-9]', label):
+        shape = 'anonymous'
     elif label.endswith(('...', '…')):
         shape = 'abbreviated'
     elif len(label) <= 3:
@@ -337,6 +358,71 @@ def renderer_bucket(row):
     return 'name:' + shape
 
 
+def renderer_visual_stratum(row, include_augmentation=True):
+    proof = row.get('synthetic_ground_truth') or {}
+    metadata = proof.get('visual_stratum')
+    if metadata is not None and not isinstance(metadata, dict):
+        raise ValueError('Renderer visual stratum must be an object')
+    if not isinstance(metadata, dict) or not metadata:
+        if proof.get('schema_version') == 3 and (proof.get('native_crop_verified')
+                                                or proof.get('native_crop_parent_verified')):
+            metadata = {}
+        else:
+            return 'legacy_unspecified'
+    fields = {}
+    for key in ('display_kind', 'plate_state', 'seat', 'timer_color', 'timer_phase', 'background', 'case_family'):
+        value = metadata.get(key)
+        if value is None:
+            continue
+        if type(value) not in (str, int, bool) or len(str(value)) > 128:
+            raise ValueError('Renderer visual stratum must contain bounded scalar values')
+        fields[key] = value
+    if include_augmentation:
+        fields['augmentation'] = row.get('augmentation', 'original')
+    if row['category'] == 'name' and re.fullmatch(r'Player [1-9]', row['label']):
+        fields['anonymous_label'] = row['label']
+    return json.dumps(fields, sort_keys=True, separators=(',', ':'))
+
+
+def augment_renderer(bundle, records, exclusions=None):
+    import cv2
+    from build_production_dataset import photometric
+    result = []
+    for row in records:
+        proof = row.get('synthetic_ground_truth') or {}
+        if (row['split'] != 'train' or not row.get('optimize', True)
+                or not renderer_observation(row) or proof.get('schema_version') != 3
+                or proof.get('native_crop_verified') is not True):
+            continue
+        image = source_image(bundle, row)
+        h, w = image.shape[:2]
+        for variant in ('jpeg88_dark', 'jpeg94_light', 'scale90'):
+            if variant == 'scale90':
+                generated = cv2.resize(image, (max(4, round(w * .9)), max(4, round(h * .9))), interpolation=cv2.INTER_AREA)
+            else:
+                generated = photometric(image, 88 if variant == 'jpeg88_dark' else 94,
+                                        -8 if variant == 'jpeg88_dark' else 7)
+            if not _variant_fits(generated, row, variant, exclusions):
+                continue
+            ok, encoded = cv2.imencode('.png', generated)
+            if not ok:
+                raise ValueError('Cannot encode native renderer training variation')
+            path, sha, pixels = materialize(bundle, encoded.tobytes())
+            parent = {'sample_id': row['sample_id'], 'file_sha256': row['file_sha256'],
+                      'pixel_sha256': row['pixel_sha256']}
+            result.append({**row, 'sample_id': row['sample_id'] + ':curriculum:' + variant,
+                'parent_sample_id': row['sample_id'], 'augmentation': variant,
+                'curriculum_parent_file_sha256': row['file_sha256'],
+                'curriculum_parent_pixel_sha256': row['pixel_sha256'],
+                'image_path': path, 'source_image': str(bundle / path), 'file_sha256': sha,
+                'pixel_sha256': pixels, 'image_dimensions': [generated.shape[1], generated.shape[0]],
+                'synthetic_ground_truth': {**proof, 'native_crop_verified': False,
+                    'native_crop_parent_verified': True, 'derived_from': parent,
+                    'preparation_transform': variant}})
+        del image
+    return result
+
+
 def balanced_training(rows, seed):
     renderer = [row for row in rows if renderer_observation(row)]
     if not renderer:
@@ -348,61 +434,172 @@ def balanced_training(rows, seed):
     identities = [row['sample_id'] for row in rows]
     if len(set(identities)) != len(identities):
         raise ValueError('Balanced curriculum requires unique source identities')
-    grouped = defaultdict(lambda: defaultdict(list))
+    grouped = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
     for row in renderer:
-        grouped[renderer_bucket(row)][row['label']].append(row)
+        grouped[renderer_bucket(row)][renderer_visual_stratum(row, False)][row['label']].append(row)
     rng = random.Random(seed)
     buckets = {}
-    for name, labels in sorted(grouped.items()):
-        order = sorted(labels)
-        rng.shuffle(order)
-        states = deque()
-        for label in order:
-            variants = sorted(labels[label], key=lambda row: row['sample_id'])
-            rng.shuffle(variants)
-            states.append([variants, 0])
-        buckets[name] = states
+    for name, strata in sorted(grouped.items()):
+        strata_states = deque()
+        for stratum, labels in sorted(strata.items()):
+            order = sorted(labels)
+            rng.shuffle(order)
+            states = deque()
+            for label in order:
+                variants = sorted(labels[label], key=lambda row: row['sample_id'])
+                rng.shuffle(variants)
+                states.append([variants, 0])
+            strata_states.append([stratum, states])
+        buckets[name] = strata_states
     active = deque(buckets)
     schedule = []
     target = len(real)
+    pending = {(name, stratum) for name, strata in grouped.items()
+               for stratum in strata if stratum != 'legacy_unspecified'}
+    required_names = {row['label'] for row in renderer if row['category'] == 'name'
+                      and renderer_visual_stratum(row, False) != 'legacy_unspecified'}
+    pending_names = set(required_names)
+    pending_augmentations = defaultdict(set)
+    for row in renderer:
+        if renderer_visual_stratum(row, False) != 'legacy_unspecified':
+            pending_augmentations[renderer_bucket(row)].add(row.get('augmentation', 'original'))
+    if len(pending) > target:
+        raise ValueError(f'Renderer visual-stratum coverage requires {len(pending)} exposures but the reviewed-real budget is {target}')
+    if len(pending_names) > target:
+        raise ValueError(f'Renderer name-label coverage requires {len(pending_names)} exposures but the reviewed-real budget is {target}')
+
+    def unseen_name(labels):
+        return any(values[0]['category'] == 'name' and values[0]['label'] in pending_names
+                   for values, _ in labels)
+
+    def unseen_augmentation(labels, name):
+        required = pending_augmentations.get(name, set())
+        return any(row.get('augmentation', 'original') in required
+                   and renderer_visual_stratum(row, False) != 'legacy_unspecified'
+                   for values, cursor in labels for row in values[cursor:])
+
     while active and len(schedule) < target:
         name = active.popleft()
-        labels = buckets[name]
+        strata = buckets[name]
+        if pending:
+            if not any((name, stratum) in pending for stratum, _ in strata):
+                active.append(name)
+                continue
+            while (name, strata[0][0]) not in pending:
+                strata.rotate(-1)
+        elif pending_names:
+            if not any(unseen_name(labels) for _, labels in strata):
+                active.append(name)
+                continue
+            while not unseen_name(strata[0][1]):
+                strata.rotate(-1)
+        elif pending_augmentations:
+            if not any(unseen_augmentation(labels, name) for _, labels in strata):
+                active.append(name)
+                continue
+            while not unseen_augmentation(strata[0][1], name):
+                strata.rotate(-1)
+        stratum, labels = strata.popleft()
+        if pending_names and unseen_name(labels):
+            while labels[0][0][0]['label'] not in pending_names:
+                labels.rotate(-1)
+        elif not pending and not pending_names and pending_augmentations:
+            while not unseen_augmentation([labels[0]], name):
+                labels.rotate(-1)
         variants, cursor = labels.popleft()
+        if pending_augmentations.get(name) and cursor < len(variants):
+            for position in range(cursor, len(variants)):
+                row = variants[position]
+                if (row.get('augmentation', 'original') in pending_augmentations[name]
+                        and renderer_visual_stratum(row, False) != 'legacy_unspecified'):
+                    variants[cursor], variants[position] = variants[position], variants[cursor]
+                    break
         schedule.append(variants[cursor % len(variants)])
+        pending.discard((name, stratum))
+        if variants[0]['category'] == 'name':
+            pending_names.discard(variants[0]['label'])
+        selected = schedule[-1]
+        if renderer_visual_stratum(selected, False) != 'legacy_unspecified':
+            pending_augmentations[name].discard(selected.get('augmentation', 'original'))
+            if not pending_augmentations[name]:
+                del pending_augmentations[name]
         cursor += 1
         if cursor < len(variants) * RENDERER_EXPOSURE_CAP:
             labels.append([variants, cursor])
         if labels:
+            strata.append([stratum, labels])
+        if strata:
             active.append(name)
     exposures = Counter(row['sample_id'] for row in real + controls + schedule)
     bucket_exposures = Counter(renderer_bucket(row) for row in schedule)
+    visual_sources = defaultdict(list)
+    visual_exposures = Counter((renderer_bucket(row), renderer_visual_stratum(row, False)) for row in schedule)
+    augmentation_sources = defaultdict(list)
+    for row in renderer:
+        visual_sources[(renderer_bucket(row), renderer_visual_stratum(row, False))].append(row)
+        if renderer_visual_stratum(row, False) != 'legacy_unspecified':
+            augmentation_sources[(renderer_bucket(row), row.get('augmentation', 'original'))].append(row)
+    uncovered = [key for key in visual_sources if key[1] != 'legacy_unspecified' and not visual_exposures[key]]
+    if uncovered:
+        raise ValueError(f'Renderer visual-stratum coverage is incomplete: {len(uncovered)} strata received no training exposure within the reviewed-real budget')
+    if pending_names:
+        raise ValueError(f'Renderer name-label coverage is incomplete: {len(pending_names)} labels received no training exposure within the reviewed-real budget')
+    if pending_augmentations:
+        raise ValueError('Renderer augmentation coverage is incomplete within the reviewed-real budget')
+    name_sources = defaultdict(list)
+    for row in renderer:
+        if row['category'] == 'name' and row['label'] in required_names:
+            name_sources[row['label']].append(row)
     proof = {
-        'schema_version': 1, 'policy': SAMPLING_POLICY, 'seed': seed,
+        'schema_version': 4, 'policy': SAMPLING_POLICY, 'seed': seed,
         'renderer_source_exposure_cap': RENDERER_EXPOSURE_CAP,
         'target_renderer_exposures': target, 'renderer_exposure_shortfall': target - len(schedule),
         'source_counts': {'real': len(real), 'renderer': len(renderer), 'controls': len(controls)},
         'exposure_counts': {'real': len(real), 'renderer': len(schedule), 'controls': len(controls)},
         'renderer_zero_exposure_sources': sum(not exposures[row['sample_id']] for row in renderer),
         'renderer_buckets': {name: {
-            'sources': sum(map(len, labels.values())), 'labels': len(labels),
+            'sources': sum(len(values) for labels in strata.values() for values in labels.values()),
+            'labels': len({label for labels in strata.values() for label in labels}),
             'exposures': bucket_exposures[name],
-            'exposed_sources': sum(bool(exposures[row['sample_id']]) for values in labels.values() for row in values),
-        } for name, labels in sorted(grouped.items())},
+            'exposed_sources': sum(bool(exposures[row['sample_id']]) for labels in strata.values() for values in labels.values() for row in values),
+        } for name, strata in sorted(grouped.items())},
+        'renderer_visual_strata': [{'bucket': key[0], 'stratum': key[1], 'sources': len(values),
+            'labels': len({row['label'] for row in values}), 'exposures': visual_exposures[key],
+            'exposed_sources': sum(bool(exposures[row['sample_id']]) for row in values)}
+            for key, values in sorted(visual_sources.items())],
+        'renderer_visual_uncovered_strata': len(uncovered),
+        'renderer_name_labels': [{'label': label, 'sources': len(values),
+            'exposures': sum(exposures[row['sample_id']] for row in values),
+            'exposed_sources': sum(bool(exposures[row['sample_id']]) for row in values)}
+            for label, values in sorted(name_sources.items())],
+        'renderer_uncovered_name_labels': len(pending_names),
+        'renderer_augmentations': [{'bucket': key[0], 'augmentation': key[1], 'sources': len(values),
+            'exposures': sum(exposures[row['sample_id']] for row in values),
+            'exposed_sources': sum(bool(exposures[row['sample_id']]) for row in values)}
+            for key, values in sorted(augmentation_sources.items())],
+        'renderer_uncovered_augmentations': sum(len(values) for values in pending_augmentations.values()),
         'source_exposures': {identity: exposures[identity] for identity in sorted(identities)},
     }
     return real + controls + schedule, proof
 
 
 def stage_recipe(bundle, directory, stage, records, template, checkpoint, dictionary):
+    from aspect_resize_policy import png_width
     directory.mkdir(parents=True, exist_ok=True)
     config = deepcopy(yaml.safe_load(Path(template).read_text()))
     characters = set(Path(dictionary).read_text().splitlines()) | {' '}
+    checked_images = set()
     for row in records:
         if not isinstance(row['label'], str) or any(char in row['label'] for char in '\t\r\n') or not set(row['label']) <= characters:
             raise ValueError('Curriculum label cannot be encoded by the frozen dictionary')
         if row.get('recognition_task') == 'visible_run' and not verified_training_target(row):
             raise ValueError('Curriculum visible-run label differs from its verified transcript')
+        if (row['split'] == 'test' or row.get('optimize', True)) and row['image_path'] not in checked_images:
+            try:
+                png_width(bundle / row['image_path'])
+            except ValueError as error:
+                raise ValueError(f'Curriculum crop {row["sample_id"]}: {error}') from error
+            checked_images.add(row['image_path'])
     split_rows = {split: [row for row in records if row['split'] == split and (split == 'test' or row.get('optimize', True))]
                   for split in ('train', 'val', 'test')}
     if not split_rows['train'] or not split_rows['val']:
@@ -467,6 +664,10 @@ def build_curriculum(bundle, records, resources, epochs):
     images = _SourceImages(bundle, records)
     renderer_train = [row for row in records if row['split'] == 'train'
                       and row.get('optimize', True) and renderer_observation(row) and not control(row)]
+    renderer_parent_count = len(renderer_train)
+    variant_exclusions = []
+    renderer_variants = augment_renderer(bundle, renderer_train, variant_exclusions)
+    renderer_train += renderer_variants
     renderer_names = [row for row in renderer_train if row['category'] == 'name']
     controls, asset_audit = frozen_controls(root, records, images, resources.get('control_parent_provenance'))
     for family in ('raw', 'gray'):
@@ -474,7 +675,10 @@ def build_curriculum(bundle, records, resources, epochs):
             raw = row.pop('_raw')
             path, sha, pixels = materialize(bundle, raw)
             row.update(image_path=path, source_image=str(bundle / path), file_sha256=sha, pixel_sha256=pixels)
-    real = augment_real(bundle, root, records, images)
+    real = augment_real(bundle, root, records, images, variant_exclusions)
+    with (bundle / 'curriculum-augmentation-exclusions.jsonl').open('w') as stream:
+        for row in variant_exclusions:
+            stream.write(json.dumps(row) + '\n')
     real_holdouts = [row for row in records if row['split'] != 'train' and not control(row)]
     name_holdouts = [row for row in real_holdouts if row['category'] == 'name']
     blanks = [row for row in records if row['category'] == 'name' and row['label'] == ''
@@ -506,8 +710,11 @@ def build_curriculum(bundle, records, resources, epochs):
     audit = {'schema_version': 1, 'real_training_parents': len(real) // 6, 'real_training_variants': len(real),
              'real_variant_counts': dict(Counter(row['augmentation'] for row in real)),
              'renderer_training_observations': len(renderer_train),
+             'renderer_training_parents': renderer_parent_count,
              'renderer_name_training_observations': len(renderer_names),
-             'renderer_observations_augmented': False,
+             'renderer_observations_augmented': bool(renderer_variants),
+             'renderer_variant_counts': dict(Counter(row['augmentation'] for row in renderer_variants)),
+             'unsupported_generated_variations': len(variant_exclusions),
              'historical_variant_count': sum(row['historical_variant'] for row in real),
              'context_full_capture_count': sum(row.get('full_capture', False) for row in real),
              'asset_provenance': asset_audit, 'holdouts_augmented': False,

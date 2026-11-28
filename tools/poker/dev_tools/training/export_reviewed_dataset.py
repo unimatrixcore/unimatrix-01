@@ -25,6 +25,7 @@ if str(TOOLS) not in sys.path:
 from lib.ocr_contract import CONTRACT, CONTRACT_SHA256, category_for_region, validate_text, validate_text_with_currency_format
 from visible_run_evidence import render_visible_run, verify_visible_run, verified_training_target
 from name_display_evidence import verify_name_display
+from native_crop_evidence import verify_native_crop, native_target_quarantine as native_target_policy
 from ocr_dictionary import LEGACY_PROFILE, characters_for_profile, profile_metadata
 
 
@@ -249,6 +250,11 @@ def _synthetic_region_png(annotation, captures, directory, capture_cache, eviden
             state = json.loads(encoded)
             if isinstance(state, dict) and state.get('schema_version') == 2:
                 crop = render_visible_run(crop, state.get('visible_run') or {})
+            elif isinstance(state, dict) and state.get('schema_version') == 3:
+                crop = verify_native_crop(image, {k:annotation[k] for k in ('x','y','w','h')},
+                                          state.get('native_crop'), evidence['region_id'], directory,
+                                          source['sha256'], capture_cache,
+                                          state.get('display_truncations', {}).get(evidence['region_id']))
     crop.save(output, format='PNG')
     return output.getvalue()
 
@@ -267,7 +273,7 @@ def _synthetic_evidence(row, evidence, directory, capture_cache):
     if not isinstance(encoded, str) or len(encoded.encode()) > 2_000_000:
         raise ValueError('Synthetic renderer state is missing or exceeds its limit')
     state = json.loads(encoded)
-    if (not isinstance(state, dict) or type(state.get('schema_version')) is not int or state['schema_version'] not in (1, 2) or
+    if (not isinstance(state, dict) or type(state.get('schema_version')) is not int or state['schema_version'] not in (1, 2, 3) or
             state.get('generator') != 'poker-offline-renderer' or
             state.get('renderer_sha256') != evidence['renderer_sha256'] or
             not isinstance(state.get('labels'), dict) or not isinstance(state.get('regions'), dict) or
@@ -308,6 +314,28 @@ def _synthetic_evidence(row, evidence, directory, capture_cache):
             raise ValueError('Visible-run task or source capture binding differs')
         crop = verify_visible_run(image, rect, state['visible_run'], row['label'], directory,
                                   capture_cache.setdefault('visible_references', {}))
+    native_crop = state['schema_version'] == 3
+    if native_crop:
+        if state.get('recognition_task') is not None:
+            raise ValueError('Native canonical parent proof cannot replace a partial recognition task')
+        if row['region_id'] == 'dealer':
+            rendered=state.get('state')
+            if not isinstance(rendered,dict) or rendered.get('dealer')!=state.get('native_crop',{}).get('source_dealer'):
+                raise ValueError('Native dealer target differs from its controlled source seat')
+        if row['category'] == 'name' and row['region_id'] not in displays:
+            match = re.fullmatch(r'seats\[(\d)\]\.name', row['region_id'])
+            rendered = state.get('state')
+            seats = rendered.get('seats') if isinstance(rendered,dict) else None
+            if not match or not isinstance(seats,list) or int(match[1]) >= len(seats):
+                raise ValueError('Native name truth requires its controlled source seat')
+            seat = seats[int(match[1])]
+            expected = '*RESERVED*' if seat.get('status') == 'reserved' else (
+                seat.get('displayName') if rendered.get('useDisplayNameInsteadOfNickInClient') and seat.get('displayName') else seat.get('name'))
+            if expected != row['label']:
+                raise ValueError('Native name label differs from its controlled display state')
+        crop = verify_native_crop(image, rect, state.get('native_crop'), row['region_id'], directory,
+                                  capture_cache['sha256'], capture_cache, displays.get(row['region_id']))
+        width, height = crop.size
     pixels = hashlib.sha256(f'{width}x{height}:RGB:'.encode() + crop.tobytes()).hexdigest()
     if pixels != row['pixel_sha256']:
         raise ValueError('Synthetic crop pixels differ from its source screenshot')
@@ -340,6 +368,10 @@ def _synthetic_evidence(row, evidence, directory, capture_cache):
             'capture_sha256': evidence['capture_sha256'], 'crop_reconstruction_verified': True,
             'visually_verified': False, 'eligible': eligible, 'exclusion_reason': reason,
             'currency_format': currency_format, 'source_dictionary': source_dictionary,
+            **({'native_crop_verified':True, 'native_crop_protocol':state['native_crop']['protocol'],
+                'native_tool_sha256':state['native_crop']['tool_sha256'],
+                'native_profile_sha256':state['native_crop']['profile_sha256'],
+                'visual_stratum':state.get('visual_stratum', {})} if native_crop else {}),
             **display,
             **({'recognition_task': 'visible_run', 'recognition_target': row['label'],
                 'visible_run_verified': True, 'source_label': state['visible_run']['source_label'],
@@ -386,6 +418,13 @@ def _current_ai_check(row, ai_items, jobs, events_by_key):
             'job_created_at': job['created_at'], 'model': job['model'], 'state': state,
             'successful_current_check': bool(accepted), 'visually_verified': False,
             'result': result, 'source_event_id': expected_event if candidates else None}
+
+
+def native_target_quarantine(row, proof):
+    if proof.get('native_crop_verified') is not True:
+        return None
+    return native_target_policy(row.get('category'), row.get('label'),
+                                proof.get('native_tool_sha256'), proof.get('native_profile_sha256'))
 
 
 def _source_evidence_admits(row):
@@ -685,7 +724,10 @@ def _export_dataset_snapshot(dataset, output, connection, progress=None, materia
                                   proof['exclusion_reason'] == 'outside_current_model_dictionary' and
                                   row['label'] and encodable)
                 proof['source_eligible'] = proof['eligible']
-                proof['candidate_eligible'] = bool(proof['eligible'] or reassessed)
+                quarantine = native_target_quarantine(row, proof)
+                if quarantine is not None:
+                    proof['native_target_quarantine'] = quarantine
+                proof['candidate_eligible'] = bool((proof['eligible'] or reassessed) and quarantine is None)
                 proof['candidate_dictionary'] = candidate_dictionary
                 proof['dictionary_only_reassessment'] = reassessed
                 admitted = proof['candidate_eligible']
@@ -751,7 +793,9 @@ def _export_dataset_snapshot(dataset, output, connection, progress=None, materia
         if row.get('synthetic_ground_truth'):
             row['training_eligibility_limitations'].append('synthetic_train_only')
             if not row['synthetic_ground_truth']['candidate_eligible']:
-                row['training_eligibility_limitations'].append(row['synthetic_ground_truth']['exclusion_reason'] or 'outside_candidate_dictionary')
+                quarantine = row['synthetic_ground_truth'].get('native_target_quarantine')
+                row['training_eligibility_limitations'].append(quarantine['reason'] if quarantine else
+                    row['synthetic_ground_truth']['exclusion_reason'] or 'outside_candidate_dictionary')
         _recognition_layout(row)
     if progress:
         progress('validating', completed=len(output_rows), total=len(output_rows), collection_name=dataset.get('name', dataset_id))
@@ -1074,7 +1118,7 @@ class _ExportRowSpool:
         'provenance': ('capture_group', 'source_capture_timestamp', 'split', 'session_id'),
         'review_event': ('created_at', 'action', 'prior_label'),
         'ai_review': ('successful_current_check', 'state', 'job_id', 'job_state'),
-        'synthetic_ground_truth': ('eligible', 'candidate_eligible', 'visible_run_verified', 'recognition_target'),
+        'synthetic_ground_truth': ('eligible', 'candidate_eligible', 'visible_run_verified', 'recognition_target', 'native_target_quarantine'),
     }
 
     def __init__(self, directory):
@@ -1144,6 +1188,8 @@ def _export_datasets_spooled(datasets, output, spool, visual_review_manifest, au
     visual_summary=apply_visual_review_manifest(rows,visual_review_manifest)
     for row in rows:
         _recognition_layout(row)
+        if (row.get('synthetic_ground_truth') or {}).get('native_target_quarantine'):
+            row['eligible_for_training'] = False
     before_dedup_counts=Counter(row['dataset_id'] for row in rows if row['eligible_for_training'])
     for row in rows:
         row['eligible_before_exact_dedup'] = row['eligible_for_training']
@@ -1155,13 +1201,25 @@ def _export_datasets_spooled(datasets, output, spool, visual_review_manifest, au
         dataset_summary['training_candidates']=sum(row['eligible_for_training'] for row in rows if row['dataset_id']==dataset_summary['dataset_id'])
         dataset_summary['reviewed_samples']=sum(row['reviewed'] for row in rows if row['dataset_id']==dataset_summary['dataset_id'])
         dataset_summary['reviewed_negatives']=sum(row['is_reviewed_negative'] for row in rows if row['dataset_id']==dataset_summary['dataset_id'])
+    native_quarantines = []
+    for row in rows:
+        quarantine = (row.get('synthetic_ground_truth') or {}).get('native_target_quarantine')
+        if quarantine:
+            original = spool.hydrate(row)
+            native_quarantines.append({**{key: row.get(key) for key in
+                ('dataset_id', 'sample_key', 'label', 'category', 'image_sha256', 'pixel_sha256')},
+                'image_dimensions': original.get('image_dimensions'), 'image': original.get('image'),
+                'capture_sha256': original['synthetic_ground_truth'].get('capture_sha256'),
+                'source_eligible': row['synthetic_ground_truth']['eligible'],
+                'candidate_eligible': False, **quarantine})
     manifests = {'samples.jsonl': rows,
                  'reviewed.jsonl': [row for row in rows if row['reviewed']],
                  'training_candidates.jsonl': candidates,
                  'needs_review.jsonl': [row for row in rows if not row['eligible_for_training']],
                  'excluded_review_samples.jsonl': excluded,
                  'superseded_exact_duplicates.jsonl':superseded,
-                 'exact_pixel_conflicts.jsonl':conflicts}
+                 'exact_pixel_conflicts.jsonl':conflicts,
+                 'native_target_quarantines.jsonl': native_quarantines}
     rich_manifests = {'samples.jsonl', 'reviewed.jsonl', 'training_candidates.jsonl', 'needs_review.jsonl'}
     for filename, values in manifests.items():
         with (output / filename).open('w') as stream:
@@ -1189,6 +1247,8 @@ def _export_datasets_spooled(datasets, output, spool, visual_review_manifest, au
         'ai_review_in_progress':any((row.get('ai_review') or {}).get('job_state') in ('queued','running') for row in rows),
         'ai_review_blocked_samples':sum(bool(row.get('ai_review_blocked')) for row in rows),
         'quarantine_reasons':dict(Counter(item['reason'] for item in conflicts)),
+        'synthetic_source_excluded_samples':sum((row.get('synthetic_ground_truth') or {}).get('eligible') is False for row in rows),
+        'native_target_quarantine_reasons':dict(Counter(item['reason'] for item in native_quarantines)),
         'assistant_visual_review':visual_summary,
         'historical_audited_baseline':historical_summary,
         'datasets': summaries,

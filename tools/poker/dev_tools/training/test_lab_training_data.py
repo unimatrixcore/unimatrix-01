@@ -25,6 +25,41 @@ def png(color):
 
 
 
+class AspectAdmissionTest(unittest.TestCase):
+    def row(self, dimensions, split='train'):
+        return {'sample_id': 'source-caption', 'label': 'OCR Table, NLHE - G 0.5/1',
+                'category': 'table_info', 'image_dimensions': list(dimensions), 'split': split,
+                'optimize': True, 'file_sha256': 'a' * 64, 'pixel_sha256': 'b' * 64}
+
+    def test_unsupported_training_source_is_preserved_with_explicit_optimization_exclusion(self):
+        from lab_training_data import _aspect_training_admission
+        row = self.row((868, 13))
+        ledger = _aspect_training_admission([row])
+        self.assertFalse(row['optimize'])
+        self.assertEqual(row['image_dimensions'], [868, 13])
+        self.assertEqual(row['label'], 'OCR Table, NLHE - G 0.5/1')
+        self.assertEqual(ledger[0]['reason'], 'unsupported_aspect_preserving_source_crop')
+        self.assertEqual(ledger[0]['sample_id'], row['sample_id'])
+        self.assertIn('3204.923077', ledger[0]['detail'])
+
+    def test_protected_holdout_geometry_is_never_silently_removed(self):
+        from lab_training_data import _aspect_training_admission
+        for split in ('val', 'test'):
+            row = self.row((868, 13), split)
+            with self.assertRaisesRegex(ValueError, 'Protected ' + split + ' crop source-caption'):
+                _aspect_training_admission([row])
+            self.assertTrue(row['optimize'])
+
+    def test_supported_source_and_existing_semantic_exclusion_are_unchanged(self):
+        from lab_training_data import _aspect_training_admission
+        supported = self.row((800, 12))
+        excluded = self.row((868, 13))
+        excluded['optimize'] = False
+        self.assertEqual(_aspect_training_admission([supported, excluded]), [])
+        self.assertTrue(supported['optimize'])
+        self.assertNotIn('aspect_training_exclusion', excluded)
+
+
 class PreparationTest(unittest.TestCase):
     def setUp(self):
         # These preparation fixtures isolate review/export/model provenance;
@@ -68,8 +103,10 @@ class PreparationTest(unittest.TestCase):
         template = {
             'Global': {}, 'Optimizer': {'lr': {}}, 'Loss': {}, 'Metric': {},
             'Architecture': {'model_type': 'rec', 'Backbone': {'name': 'PPLCNetV4', 'model_size': 'small'}, 'Head': {'name': 'CTCHead'}},
-            'Train': {'dataset': {'transforms': [{'DecodeImage': {}}]}, 'loader': {}},
-            'Eval': {'dataset': {'transforms': [{'DecodeImage': {}}]}, 'loader': {}},
+            'Train': {'dataset': {'transforms': [{'DecodeImage': {}}, {'CollectorCTCLabelEncode': None},
+                        {'RecResizeImg': {}}, {'KeepKeys': {}}]}, 'loader': {}},
+            'Eval': {'dataset': {'transforms': [{'DecodeImage': {}}, {'CollectorCTCLabelEncode': None},
+                        {'RecResizeImg': {}}, {'KeepKeys': {}}]}, 'loader': {}},
         }
         for role in ('general', 'names'):
             path = baseline / role
