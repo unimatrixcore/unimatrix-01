@@ -17,6 +17,67 @@ import lab_training_curriculum as curriculum
 
 
 class CurriculumTests(unittest.TestCase):
+    def test_stage_rejects_unsupported_source_before_any_label_list_is_written(self):
+        import cv2
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = self.fixture(temporary)
+            bundle, records, resources, *_ = fixture
+            image = np.zeros((13, 868, 3), np.uint8)
+            relative, sha, pixels = curriculum.materialize(bundle, cv2.imencode('.png', image)[1].tobytes())
+            bad = {**records[0], 'sample_id': 'bad-caption', 'label': 'Caption', 'image_path': relative,
+                   'file_sha256': sha, 'pixel_sha256': pixels}
+            directory = bundle / 'guard-stage'
+            stage = {'id': 'guard', 'role': 'general', 'seed': 1, 'epochs': 1, 'learning_rate': 1e-5}
+            with self.assertRaisesRegex(ValueError, 'Curriculum crop bad-caption:.*868x13'):
+                curriculum.stage_recipe(bundle, directory, stage, [bad, records[3]], resources['general_template'],
+                                        bundle / 'starting/general.pdparams', bundle / 'dictionary.txt')
+            self.assertFalse((directory / 'train.txt').exists())
+            self.assertFalse((directory / 'val.txt').exists())
+
+    def test_real_augmentation_preserves_source_and_records_unsupported_rounding(self):
+        import cv2
+        with tempfile.TemporaryDirectory() as temporary:
+            bundle = Path(temporary)
+            image = np.arange(9 * 600 * 3, dtype=np.uint8).reshape(9, 600, 3)
+            raw = cv2.imencode('.png', image)[1].tobytes()
+            relative, sha, pixels = curriculum.materialize(bundle, raw)
+            row = {'sample_id': 'real-boundary', 'split': 'train', 'category': 'name', 'label': 'Boundary',
+                'origin': 'named', 'aliases': [], 'optimize': True, 'image_path': relative,
+                'file_sha256': sha, 'pixel_sha256': pixels, 'image_dimensions': [600, 9]}
+            rejected = []
+            with patch.object(curriculum, 'original_variants', return_value={}):
+                variants = curriculum.augment_real(bundle, bundle, [row], {'real-boundary': image}, rejected)
+            self.assertEqual({r['augmentation'] for r in variants},
+                {'original', 'jpeg88_dark', 'jpeg94_light', 'context0', 'context1'})
+            self.assertEqual(len(rejected), 1)
+            self.assertEqual(rejected[0]['augmentation'], 'scale90')
+            self.assertEqual(rejected[0]['image_dimensions'], [540, 8])
+            context = next(r for r in variants if r['augmentation'] == 'context0')
+            self.assertEqual(context['image_dimensions'], [604, 12])
+            self.assertEqual(row['image_dimensions'], [600, 9])
+
+    def test_rounding_variant_that_would_require_squeezing_is_excluded_before_materialization(self):
+        import cv2
+        with tempfile.TemporaryDirectory() as temporary:
+            bundle = Path(temporary)
+            image = np.arange(9 * 600 * 3, dtype=np.uint8).reshape(9, 600, 3)
+            ok, raw = cv2.imencode('.png', image)
+            self.assertTrue(ok)
+            relative, sha, pixels = curriculum.materialize(bundle, raw.tobytes())
+            row = {'sample_id': 'boundary-parent', 'split': 'train', 'category': 'name', 'label': 'Boundary',
+                'optimize': True, 'image_path': relative, 'file_sha256': sha, 'pixel_sha256': pixels,
+                'image_dimensions': [600, 9], 'synthetic_evidence_valid': True,
+                'synthetic_ground_truth': {'generator': 'poker-offline-renderer', 'schema_version': 3,
+                    'crop_reconstruction_verified': True, 'native_crop_verified': True}}
+            rejected = []
+            variants = curriculum.augment_renderer(bundle, [row], rejected)
+            self.assertEqual({r['augmentation'] for r in variants}, {'jpeg88_dark', 'jpeg94_light'})
+            self.assertEqual(rejected[0]['image_dimensions'], [540, 8])
+            self.assertEqual(rejected[0]['parent_sample_id'], 'boundary-parent')
+            self.assertEqual(rejected[0]['reason'], 'unsupported_aspect_preserving_generated_crop')
+            self.assertEqual(row['image_dimensions'], [600, 9])
+            self.assertEqual(curriculum.digest((bundle / relative).read_bytes()), sha)
+
     def image(self, value, *, patterned=False):
         import cv2
         image = np.full((8, 20, 3), value, np.uint8)
@@ -272,10 +333,131 @@ class CurriculumTests(unittest.TestCase):
 
     def test_renderer_display_buckets_distinguish_abbreviated_names_and_blanks(self):
         values = [('', 'name:blank'), ('Aa', 'name:1-3'), ('Alice', 'name:4-8'),
+                  ('Player 1', 'name:anonymous'), ('Player 9', 'name:anonymous'),
                   ('NaturalName', 'name:9-12'), ('VeryLongNaturalName', 'name:13+'),
                   ('Natural...', 'name:abbreviated'), ('Natural…', 'name:abbreviated')]
         for label, expected in values:
             self.assertEqual(curriculum.renderer_bucket(self.sampling_row('renderer', label)), expected)
+
+    def test_visual_coverage_precedes_repeats_without_exceeding_real_budget(self):
+        rows = [self.sampling_row(f'real:{i}', 'Real') for i in range(21)]
+        for i in range(20):
+            row = self.sampling_row(f'account:{i}', 'Name' + str(i), renderer=True)
+            row['synthetic_ground_truth']['visual_stratum'] = {'plate_state': 'folded', 'seat': i}
+            rows.append(row)
+        anonymous = self.sampling_row('anonymous', 'Player 1', renderer=True)
+        anonymous['synthetic_ground_truth']['visual_stratum'] = {'display_kind': 'anonymous', 'plate_state': 'active'}
+        rows.append(anonymous)
+        chosen, proof = curriculum.balanced_training(rows, 123)
+        self.assertEqual(proof['exposure_counts'], dict(real=21, renderer=21, controls=0))
+        self.assertEqual(proof['renderer_visual_uncovered_strata'], 0)
+        self.assertEqual(len(proof['renderer_visual_strata']), 21)
+        self.assertTrue(all(row['exposures'] == 1 for row in proof['renderer_visual_strata']))
+        self.assertTrue(all(proof['source_exposures'][row['sample_id']] == 1 for row in rows))
+        self.assertEqual(curriculum.balanced_training(rows, 123), (chosen, proof))
+        with self.assertRaisesRegex(ValueError, 'reviewed-real budget'):
+            curriculum.balanced_training(rows[1:], 123)
+
+    def test_visual_groups_cannot_hide_admitted_name_labels_or_bigrams(self):
+        real = [self.sampling_row(f'real:{i}', 'Real') for i in range(20)]
+        renderer = []
+        for i, label in enumerate([f'L00{i}' for i in range(10)] + ['Aaaa'] * 8):
+            row = self.sampling_row(f'renderer:{i}', label, renderer=True)
+            row['synthetic_ground_truth']['visual_stratum'] = {'seat': max(0, i - 9)}
+            renderer.append(row)
+        chosen, proof = curriculum.balanced_training(real + renderer, 20261121)
+        labels = {row['label'] for row in chosen if curriculum.renderer_observation(row)}
+        required = {row['label'] for row in renderer}
+        self.assertEqual(labels, required)
+        pairs = lambda values: {text[i:i+2] for text in values for i in range(len(text)-1)}
+        self.assertEqual(pairs(labels), pairs(required))
+        self.assertEqual(proof['renderer_uncovered_name_labels'], 0)
+        self.assertEqual(proof['renderer_visual_uncovered_strata'], 0)
+        self.assertEqual(proof['exposure_counts']['renderer'], len(real))
+        self.assertTrue(all(row['exposures'] > 0 for row in proof['renderer_name_labels']))
+        self.assertTrue(all(proof['source_exposures'][row['sample_id']] <= 4 for row in renderer))
+        with self.assertRaisesRegex(ValueError, 'name-label coverage.*reviewed-real budget'):
+            curriculum.balanced_training(real[:10] + renderer, 20261121)
+        with self.assertRaisesRegex(ValueError, 'name-label coverage is incomplete'):
+            curriculum.balanced_training(real[:11] + renderer, 20261121)
+
+    def test_visual_and_degradation_coverage_does_not_require_the_full_cross_product(self):
+        real = [self.sampling_row(f'real:{i}', 'Real') for i in range(20)]
+        renderer = []
+        for i in range(20):
+            for variant in ('original', 'jpeg88_dark', 'jpeg94_light', 'scale90'):
+                row = self.sampling_row(f'renderer:{i}:{variant}', 'Name', renderer=True)
+                row['augmentation'] = variant
+                row['synthetic_ground_truth']['visual_stratum'] = {'case_family': str(i), 'plate_state': 'folded'}
+                renderer.append(row)
+        chosen, proof = curriculum.balanced_training(real + renderer, 20261121)
+        self.assertEqual(len(proof['renderer_visual_strata']), 20)
+        self.assertEqual(len(proof['renderer_augmentations']), 4)
+        self.assertEqual(proof['renderer_uncovered_augmentations'], 0)
+        self.assertTrue(all(row['exposures'] > 0 for row in proof['renderer_augmentations']))
+        self.assertEqual(proof['exposure_counts']['renderer'], 20)
+        self.assertEqual(len(chosen), 40)
+        with self.assertRaisesRegex(ValueError, 'augmentation coverage is incomplete'):
+            curriculum.balanced_training(real[:3] + renderer[:4], 20261121)
+        _, sparse = curriculum.balanced_training(real + renderer[:4], 20261121)
+        self.assertEqual(sparse['exposure_counts']['renderer'], 16)
+        self.assertEqual(sparse['renderer_exposure_shortfall'], 4)
+        self.assertTrue(all(sparse['source_exposures'][row['sample_id']] == 4 for row in renderer[:4]))
+
+    def test_native_renderer_variants_bind_verified_parents_and_leave_holdouts_unchanged(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = self.fixture(temporary)
+            parents = self.renderer_rows(fixture)
+            parent = parents[0]
+            parent['synthetic_ground_truth'].update(schema_version=3, native_crop_verified=True,
+                visual_stratum={'plate_state': 'folded', 'seat': 2})
+            heldout = dict(parent, sample_id='renderer-heldout', split='test')
+            original = copy.deepcopy(fixture[1] + [heldout])
+            variants = curriculum.augment_renderer(fixture[0], fixture[1] + [heldout])
+            self.assertEqual(fixture[1] + [heldout], original)
+            self.assertEqual({row['augmentation'] for row in variants}, {'jpeg88_dark', 'jpeg94_light', 'scale90'})
+            self.assertTrue(all(row['parent_sample_id'] == parent['sample_id'] for row in variants))
+            for row in variants:
+                self.assertEqual(row['curriculum_parent_file_sha256'], parent['file_sha256'])
+                self.assertEqual(row['curriculum_parent_pixel_sha256'], parent['pixel_sha256'])
+                self.assertTrue(row['synthetic_ground_truth']['native_crop_parent_verified'])
+                self.assertFalse(row['synthetic_ground_truth']['native_crop_verified'])
+                self.assertEqual(row['label'], parent['label'])
+                self.assertTrue(curriculum.renderer_observation(row))
+                curriculum.source_image(fixture[0], row)
+            scaled = next(r for r in variants if r['augmentation'] == 'scale90')
+            self.assertEqual(scaled['image_dimensions'], [18, 7])
+            self.assertNotEqual(scaled['pixel_sha256'], parent['pixel_sha256'])
+            self.assertFalse(curriculum.augment_renderer(fixture[0], [heldout] + parents[1:]))
+
+    def test_targeted_case_family_is_not_hidden_by_matching_plate_and_seat(self):
+        real = [self.sampling_row(f'real:{i}', 'Real') for i in range(2)]
+        renderer = []
+        for family in ('name-corpus', 'name-context'):
+            row = self.sampling_row(family, 'Word16', renderer=True)
+            row['synthetic_ground_truth']['visual_stratum'] = {
+                'plate_state': 'folded', 'seat': 1, 'case_family': family}
+            renderer.append(row)
+        _, proof = curriculum.balanced_training(real + renderer, 123)
+        self.assertEqual(len(proof['renderer_visual_strata']), 2)
+        self.assertTrue(all(row['exposures'] == 1 for row in proof['renderer_visual_strata']))
+
+    def test_anonymous_labels_each_reach_the_same_visual_state(self):
+        real = [self.sampling_row(f'real:{i}', 'Real') for i in range(9)]
+        renderer = []
+        for i in range(1, 10):
+            row = self.sampling_row(f'player:{i}', f'Player {i}', renderer=True)
+            row['synthetic_ground_truth']['visual_stratum'] = {'plate_state': 'folded', 'seat': 1}
+            renderer.append(row)
+        _, proof = curriculum.balanced_training(real + renderer, 123)
+        self.assertEqual(len(proof['renderer_visual_strata']), 9)
+        self.assertTrue(all(row['exposures'] == 1 for row in proof['renderer_visual_strata']))
+
+    def test_malformed_visual_metadata_cannot_silently_disable_coverage(self):
+        row = self.sampling_row('renderer', 'Name', renderer=True)
+        row['synthetic_ground_truth']['visual_stratum'] = []
+        with self.assertRaisesRegex(ValueError, 'must be an object'):
+            curriculum.renderer_visual_stratum(row)
 
     def test_curriculum_source_decode_cache_is_bounded_and_renderer_is_not_cached(self):
         with tempfile.TemporaryDirectory() as temporary:

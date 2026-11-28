@@ -564,6 +564,29 @@ def _training_records(records, selected_ids, reservation_roles, characters):
     }
 
 
+def _aspect_training_admission(records):
+    from aspect_resize_policy import tensor_width
+    exclusions = []
+    for row in records:
+        if not row.get('optimize', True) and row['split'] != 'test':
+            continue
+        dimensions = row.get('image_dimensions')
+        if not isinstance(dimensions, (list, tuple)) or len(dimensions) != 2:
+            raise ValueError('Verified source dimensions are missing: ' + row['sample_id'])
+        try:
+            tensor_width(*dimensions)
+        except ValueError as error:
+            if row['split'] != 'train':
+                raise ValueError(f'Protected {row["split"]} crop {row["sample_id"]}: {error}') from error
+            row['optimize'] = False
+            row['aspect_training_exclusion'] = 'unsupported_aspect_preserving_source_crop'
+            exclusions.append({'sample_id': row['sample_id'], 'label': row['label'],
+                'category': row['category'], 'image_dimensions': list(dimensions),
+                'file_sha256': row['file_sha256'], 'pixel_sha256': row['pixel_sha256'],
+                'reason': row['aspect_training_exclusion'], 'detail': str(error)})
+    return exclusions
+
+
 def _prepare(request, export=None, materialize_training=True):
     request = dict(request, _materialize_training=materialize_training)
     collections, ids, epochs, run = _request(request)
@@ -613,6 +636,8 @@ def _prepare(request, export=None, materialize_training=True):
                 quarantine.extend({'sample_id': alias['sample_id'], 'reason': 'audited_semantic_name_exclusion'}
                                   for alias in row['aliases'] if alias['sample_id'] in selected_ids)
     quarantine.extend(unsupported)
+    aspect_exclusions = _aspect_training_admission(records)
+    quarantine.extend(aspect_exclusions)
     control_parent_provenance = [
         dict(row, control_parent_roles=sorted({row['split']} | set().union(
             *(reservation_roles[token] for token in _reservation_tokens(row)))))
@@ -703,6 +728,7 @@ def _prepare(request, export=None, materialize_training=True):
         'inherited_training_blank_controls': sum(row['split'] == 'train' and row.get('inherited_control', False) for row in records),
         **replay_audit,
         'unsupported_training_targets': len(unsupported),
+        'unsupported_aspect_training_targets': len(aspect_exclusions),
         'baseline_aliases_superseded': len(superseded),
         'roles': roles,
     }

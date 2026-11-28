@@ -172,6 +172,16 @@ impl GameplayAi {
         frame_raw: &[u8],
         ids: &[String],
     ) -> LabResult<Vec<PixelEvidence>> {
+        Self::export_pixel_evidence_partial(profile_raw, frame_raw, ids)?
+            .into_iter()
+            .map(|(_, result)| result.map_err(bad))
+            .collect()
+    }
+    pub fn export_pixel_evidence_partial(
+        profile_raw: &[u8],
+        frame_raw: &[u8],
+        ids: &[String],
+    ) -> LabResult<Vec<(String, Result<PixelEvidence, String>)>> {
         let profile: Value = serde_json::from_slice(profile_raw)?;
         let image = image::DynamicImage::ImageRgb8(
             crate::media::decode_image(frame_raw)
@@ -189,42 +199,45 @@ impl GameplayAi {
             .ok_or_else(|| bad("Missing source regions"))?;
         let mut exported = Vec::new();
         for id in ids {
-            let region = regions
-                .iter()
-                .find(|r| r["id"] == *id)
-                .ok_or_else(|| bad("Unknown source region"))?;
-            if region["ocr"] == false {
-                return Err(bad("This is a visual indicator, not rendered OCR text"));
-            }
-            if cache::proven_empty_seat(id, region) {
-                return Err(bad("Seat is proven empty; no OCR crop is admitted"));
-            }
-            let region = super::panels::resolve(&image, region)?;
-            let region = &region;
-            let material = PixelMaterial::new(crops::crop_pixels(&image, region)?)?;
-            let png = crate::media::png(&material.image).map_err(bad)?;
-            let presentation_png = crops::presentation_png(&png, &region["crop_mask"])?;
-            exported.push(PixelEvidence {
-                region_id: id.clone(),
-                category: crate::labels::category_for_region(id)
-                    .ok_or_else(|| bad("Unknown OCR category"))?
-                    .into(),
-                pixel_sha256: material.pixels,
-                crop_mask: region["crop_mask"].clone(),
-                presence: region["presence"].clone(),
-                seat_occupancy: region["seat_occupancy"].clone(),
-                card_sampling: region["card_sampling"].clone(),
-                card_plane: region["card_plane"].clone(),
-                bounds: region["bounds"].clone(),
-                guide: crops::recording_guide(
-                    region,
-                    &material.image,
-                    image.width(),
-                    image.height(),
-                ),
-                png,
-                presentation_png,
-            });
+            let result = (|| -> LabResult<PixelEvidence> {
+                let region = regions
+                    .iter()
+                    .find(|r| r["id"] == *id)
+                    .ok_or_else(|| bad("Unknown source region"))?;
+                if region["ocr"] == false {
+                    return Err(bad("This is a visual indicator, not rendered OCR text"));
+                }
+                if cache::proven_empty_seat(id, region) {
+                    return Err(bad("Seat is proven empty; no OCR crop is admitted"));
+                }
+                let region = super::panels::resolve(&image, region)?;
+                let region = &region;
+                let material = PixelMaterial::new(crops::crop_pixels(&image, region)?)?;
+                let png = crate::media::png(&material.image).map_err(bad)?;
+                let presentation_png = crops::presentation_png(&png, &region["crop_mask"])?;
+                Ok(PixelEvidence {
+                    region_id: id.clone(),
+                    category: crate::labels::category_for_region(id)
+                        .ok_or_else(|| bad("Unknown OCR category"))?
+                        .into(),
+                    pixel_sha256: material.pixels,
+                    crop_mask: region["crop_mask"].clone(),
+                    presence: region["presence"].clone(),
+                    seat_occupancy: region["seat_occupancy"].clone(),
+                    card_sampling: region["card_sampling"].clone(),
+                    card_plane: region["card_plane"].clone(),
+                    bounds: region["bounds"].clone(),
+                    guide: crops::recording_guide(
+                        region,
+                        &material.image,
+                        image.width(),
+                        image.height(),
+                    ),
+                    png,
+                    presentation_png,
+                })
+            })();
+            exported.push((id.clone(), result.map_err(|error| error.message)));
         }
         Ok(exported)
     }

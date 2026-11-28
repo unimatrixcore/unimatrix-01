@@ -669,6 +669,7 @@ impl TrainingManager {
             "export_reviewed_dataset.py",
             "prepare_named_collection_training.py",
             "lab_training_curriculum.py",
+            "native_crop_evidence.py",
         ] {
             content.extend_from_slice(name.as_bytes());
             let path = self.tools_root.join("dev_tools/training").join(name);
@@ -683,6 +684,44 @@ impl TrainingManager {
                 content.extend_from_slice(&raw);
             } else {
                 content.extend_from_slice(b"missing");
+            }
+        }
+        content.extend_from_slice(b"native_canonical_crop_v1");
+        let mut helpers = Vec::new();
+        if let Some(path) = self.environment.get("POKER_NATIVE_CROP_TOOL") {
+            helpers.push(PathBuf::from(path));
+        }
+        let frozen = self.training_root.join("native-crop-tools");
+        if frozen.is_dir() {
+            for entry in fs::read_dir(frozen)? {
+                let entry = entry?;
+                helpers.push(entry.path().join("gameplay-ai"));
+            }
+        }
+        helpers.sort();
+        for helper in helpers {
+            content.extend_from_slice(helper.to_string_lossy().as_bytes());
+            match fs::metadata(&helper) {
+                Ok(metadata) => {
+                    let modified = metadata
+                        .modified()?
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map_err(|_| {
+                            conflict("Native helper timestamp precedes the system epoch")
+                        })?;
+                    content.extend_from_slice(&metadata.len().to_le_bytes());
+                    content.extend_from_slice(&modified.as_nanos().to_le_bytes());
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    content.extend_from_slice(b"missing")
+                }
+                Err(error) => return Err(error.into()),
+            }
+        }
+        if let Some(config) = &self.config_root {
+            let profile = config.join("gameplay-regions.json");
+            if profile.is_file() {
+                content.extend_from_slice(&fs::read(profile)?);
             }
         }
         Ok(super::sha256(&content))
@@ -1108,6 +1147,21 @@ fn collection_revision(directory: &Path) -> LabResult<String> {
             Err(error) => return Err(error.into()),
         }
     }
+    let profiles = directory.join("native/profiles");
+    if profiles.is_dir() {
+        let mut files = fs::read_dir(profiles)?
+            .map(|entry| entry.map(|e| e.path()))
+            .collect::<std::io::Result<Vec<_>>>()?;
+        files.sort();
+        for file in files {
+            datasets::plain(&file)?;
+            let raw = fs::read(&file)?;
+            if raw.len() > 1_048_576 {
+                return Err(conflict("Native source profile exceeds its size bound"));
+            }
+            stamps.push(json!([file.file_name(), super::sha256(&raw)]));
+        }
+    }
     Ok(super::sha256(&serde_json::to_vec(&stamps)?))
 }
 
@@ -1298,6 +1352,7 @@ mod tests {
         for name in [
             "prepare_named_collection_training.py",
             "lab_training_curriculum.py",
+            "native_crop_evidence.py",
         ] {
             let before = manager.analysis_protocol().unwrap();
             fs::write(
@@ -1309,6 +1364,15 @@ mod tests {
             assert_ne!(before, after);
             assert_eq!(after, manager.analysis_protocol().unwrap());
         }
+        let helper = manager
+            .training_root
+            .join("native-crop-tools")
+            .join("a".repeat(64))
+            .join("gameplay-ai");
+        fs::create_dir_all(helper.parent().unwrap()).unwrap();
+        let before = manager.analysis_protocol().unwrap();
+        fs::write(&helper, b"trusted native implementation").unwrap();
+        assert_ne!(before, manager.analysis_protocol().unwrap());
         let first = manager.collection_counts().unwrap()[0]["revision"].clone();
         assert_eq!(first, manager.collection_counts().unwrap()[0]["revision"]);
         let protocol = manager.analysis_protocol().unwrap();

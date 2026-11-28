@@ -11,8 +11,12 @@ from portable_ocr import normalize_crop
 
 
 def tensor_width(width, height):
-    if not 0 < width <= 16384 or not 0 < height <= 4096 or 48 * width / height > 3200:
-        raise ValueError('Training crop exceeds the aspect-preserving inference bounds')
+    if not 0 < width <= 16384 or not 0 < height <= 4096:
+        raise ValueError(f'Training crop {width}x{height} exceeds the aspect-preserving inference bounds: '
+                         'source width must be 1..16384 and height 1..4096')
+    if 48 * width / height > 3200:
+        raise ValueError(f'Training crop {width}x{height} exceeds the aspect-preserving inference bounds: '
+                         f'uncapped 48px tensor width {48 * width / height:.6f} exceeds 3200')
     return min(3200, int(48 * max(320 / 48, width / height)))
 
 
@@ -34,19 +38,25 @@ def png_width(path):
         header = stream.read(24)
     if len(header) != 24 or header[:8] != b'\x89PNG\r\n\x1a\n' or header[12:16] != b'IHDR':
         raise ValueError('Aspect-preserving training requires frozen PNG crops')
-    return tensor_width(*struct.unpack('>II', header[16:24]))
+    try:
+        return tensor_width(*struct.unpack('>II', header[16:24]))
+    except ValueError as error:
+        raise ValueError(f'{path}: {error}') from error
 
 
 def epoch_steps(label_file, batch_size=32, width_budget=10240):
     widths = {}
     counts = Counter()
-    for line in Path(label_file).read_text().splitlines():
+    for index, line in enumerate(Path(label_file).read_text().splitlines()):
         filename, _ = line.split('\t', 1)
         path = Path(filename)
         if not path.is_absolute():
             raise ValueError('Frozen aspect training paths must be absolute')
         if path not in widths:
-            widths[path] = png_width(path)
+            try:
+                widths[path] = png_width(path)
+            except ValueError as error:
+                raise ValueError(f'{label_file}:{index + 1}: {error}') from error
         counts[widths[path]] += 1
     return sum(math.ceil(count / min(batch_size, max(1, width_budget // width)))
                for width, count in counts.items())
